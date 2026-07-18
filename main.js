@@ -1,17 +1,3 @@
-// main.js
-// This is the "brain" of the desktop app. It does two things:
-//   1. Starts a tiny local web server that serves your app's files
-//      (index.html, manifest.json, dsp-processor.js, data/, js/, etc.)
-//   2. Opens a window and points it at that local server.
-//
-// WHY A LOCAL SERVER INSTEAD OF JUST OPENING index.html DIRECTLY?
-// Opening a file straight off disk (a "file://" URL) is a much stricter,
-// flakier environment for fetch() of thousands of oddly-named text files,
-// and your AudioWorklet (dsp-processor.js) wants a "secure context" that
-// file:// doesn't reliably provide. Serving over http://127.0.0.1 instead
-// makes the packaged app behave exactly like it did in a normal browser
-// during development — no CORS surprises, no worklet quirks.
-
 const { app, BrowserWindow, screen } = require('electron');
 const path = require('path');
 const http = require('http');
@@ -38,11 +24,6 @@ const MIME_TYPES = {
 let mainWindow;
 let server;
 
-// Serves one file, honoring an HTTP Range header if the browser sent one.
-// Audio/video elements rely on Range support (206 Partial Content + Accept-Ranges)
-// to seek and to report a real, finite duration. Without it, Chromium treats the
-// resource like an unbounded live stream: duration comes back as Infinity, and any
-// attempt to seek just restarts playback from byte 0 instead of moving the playhead.
 function serveFile(filePath, stats, req, res) {
   const ext = path.extname(filePath).toLowerCase();
   const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
@@ -58,7 +39,7 @@ function serveFile(filePath, stats, req, res) {
     if (isNaN(end) || end > fileSize - 1) end = fileSize - 1;
 
     if (start > end || start >= fileSize) {
-      res.writeHead(416, { 'Content-Range': `bytes */${fileSize}` });
+      res.writeHead(416, { 'Content-Range': `bytes */${fileSize}`, 'Connection': 'close' });
       res.end();
       return;
     }
@@ -70,7 +51,8 @@ function serveFile(filePath, stats, req, res) {
       'Content-Length': chunkSize,
       'Content-Range': `bytes ${start}-${end}/${fileSize}`,
       'Accept-Ranges': 'bytes',
-      'Cache-Control': 'no-store'
+      'Cache-Control': 'no-store',
+      'Connection': 'close'
     });
     stream.pipe(res);
     stream.on('error', () => { res.end(); });
@@ -81,14 +63,14 @@ function serveFile(filePath, stats, req, res) {
     'Content-Type': mimeType,
     'Content-Length': fileSize,
     'Accept-Ranges': 'bytes',
-    'Cache-Control': 'no-store'
+    'Cache-Control': 'no-store',
+    'Connection': 'close'
   });
-  fs.createReadStream(filePath).pipe(res);
+  const stream = fs.createReadStream(filePath);
+  stream.pipe(res);
+  stream.on('error', () => { res.end(); });
 }
 
-// Where the actual web app files live.
-//  - While developing (npm start): ./app-files next to this file.
-//  - Once packaged into an installer: resources/app-files next to the exe.
 function getAppRoot() {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'app-files')
@@ -99,31 +81,29 @@ function startLocalServer(rootDir) {
   return new Promise((resolve, reject) => {
     server = http.createServer((req, res) => {
       try {
-        // req.url arrives already percent-encoded by the browser (e.g. spaces as %20,
-        // and now that index.html encodes each path segment, things like & and ' too).
-        // Decode it back to the real filename so we can find the file on disk.
         const rawPath = decodeURIComponent(req.url.split('?')[0]);
         let filePath = path.normalize(path.join(rootDir, rawPath));
 
-        // Safety check: never allow a request to escape the app-files folder.
-        if (!filePath.startsWith(path.normalize(rootDir))) {
-          res.writeHead(403);
+        const relativePath = path.relative(rootDir, filePath);
+        const isSafe = (relativePath === '') || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
+
+        if (!isSafe) {
+          res.writeHead(403, { 'Connection': 'close' });
           res.end('Forbidden');
           return;
         }
 
         fs.stat(filePath, (err, stats) => {
           if (err) {
-            res.writeHead(404);
+            res.writeHead(404, { 'Connection': 'close' });
             res.end('Not found');
             return;
           }
           if (stats.isDirectory()) {
             filePath = path.join(filePath, 'index.html');
-            // Re-stat: we just changed filePath to point at the directory's index.html.
             fs.stat(filePath, (dirErr, dirStats) => {
               if (dirErr) {
-                res.writeHead(404);
+                res.writeHead(404, { 'Connection': 'close' });
                 res.end('Not found');
                 return;
               }
@@ -134,13 +114,11 @@ function startLocalServer(rootDir) {
           serveFile(filePath, stats, req, res);
         });
       } catch (e) {
-        res.writeHead(500);
+        res.writeHead(500, { 'Connection': 'close' });
         res.end('Server error');
       }
     });
 
-    // Port 0 = "give me any free port." Binding to 127.0.0.1 (not 0.0.0.0) means
-    // this server is only reachable from this same machine, not the network.
     server.listen(0, '127.0.0.1', () => resolve(server.address().port));
     server.on('error', reject);
   });
@@ -150,11 +128,6 @@ async function createWindow() {
   const rootDir = getAppRoot();
   const port = await startLocalServer(rootDir);
 
-  // Size the window to the actual screen's usable area up front, rather than a fixed
-  // 1440x900 guess. Calling .maximize() on a still-hidden (show:false) window is an
-  // Electron quirk that doesn't reliably "stick" on every platform — the window can end
-  // up shown at its original small size regardless, exactly what you were seeing. Setting
-  // real pixel bounds up front sidesteps that quirk entirely.
   const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
 
   mainWindow = new BrowserWindow({
@@ -162,9 +135,6 @@ async function createWindow() {
     height: screenHeight,
     x: 0,
     y: 0,
-    // Your app's own CSS switches to a compact "mobile" layout below 1280x750 —
-    // enforcing this as the hard floor means resizing can never drop the window
-    // into that broken in-between zone.
     minWidth: 360,
     minHeight: 360,
     autoHideMenuBar: true,
@@ -179,9 +149,6 @@ async function createWindow() {
   mainWindow.loadURL(`http://127.0.0.1:${port}/index.html`);
 
   mainWindow.once('ready-to-show', () => {
-    // Belt-and-suspenders: also flip the actual "maximized" OS flag now that the window
-    // already has full-screen-sized bounds, so the restore/double-click-titlebar behavior
-    // is correct too.
     mainWindow.maximize();
     mainWindow.show();
   });

@@ -5112,6 +5112,35 @@ Object.defineProperty(window, 'localStorage', {
     }
 });
 
+// ==========================================
+// SIMILAR CURVES CACHE
+// ==========================================
+const SimilarCurvesCache = {
+    results: null,
+    targetHash: "",
+    query: "",
+    getTargetFingerprint: function() {
+        try {
+            const targetCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'target' && c.visible);
+            const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
+            const activeId = targetCurve ? targetCurve.id : (baseCurve ? baseCurve.id : 'none');
+            const resEnabled = EQ_Module.resonanceCalEnabled ? '1' : '0';
+            const resHz = PEQDB_Module.resonanceHz || '8000';
+            const alignHz = PEQDB_Module.alignHz || 'mean';
+            const alignDb = PEQDB_Module.alignDb || '75';
+            return `${activeId}-${resEnabled}-${resHz}-${alignHz}-${alignDb}`;
+        } catch(e) {
+            return "";
+        }
+    },
+    isValid: function(currentQuery) {
+        if (!this.results) return false;
+        if (this.query !== currentQuery) return false;
+        if (this.targetHash !== this.getTargetFingerprint()) return false;
+        return true;
+    }
+};
+
     // ==========================================
 // FAIL-SAFE ON-SCREEN ERROR DIAGNOSTIC SYSTEM
 // ==========================================
@@ -5210,16 +5239,16 @@ var Mascot = window.Mascot || {
             ab_b: '🅱️',
             balance: '⚖️',
             leak_left: '🙉',
-            leak_right: '🙉',
-            arrow_up: '⬆️',
-            arrow_down: '⬇️',
-            arrow_left: '⬅️',
-            arrow_right: '➡️',
-            arrow_up_left: '↖️',
-            arrow_up_right: '↗️',
-            arrow_down_right: '↘️',
-            arrow_down_left: '↙️',
-            hearing_test: '🧐'
+                leak_right: '🙉',
+                arrow_up: '↑',
+                arrow_down: '↓',
+                arrow_left: '←',
+                arrow_right: '→',
+                arrow_up_left: '↖',
+                arrow_up_right: '↗',
+                arrow_down_right: '↘',
+                arrow_down_left: '↙',
+                hearing_test: '🧐'
         },
 
         setExpression: function(expr) {
@@ -5230,12 +5259,21 @@ var Mascot = window.Mascot || {
             this.currentExpression = expr;
             el.textContent = this.expressions[expr] || this.expressions.idle;
 
-            // Reset classes and apply matching animation (emoji-font fallback kept)
-            el.className = "inline select-none emoji-font";
+            // Reset styling parameters
             el.style.fontSize = "22px";
             el.style.lineHeight = "1";
             el.style.textShadow = "none";
             el.style.transform = ""; 
+
+            if (expr.startsWith('arrow_')) {
+                // Use standard text rendering for plain Unicode arrows so they inherit theme colors
+                el.className = "inline select-none";
+                el.style.color = "var(--accent-blue)";
+            } else {
+                // Restore emoji-specific classes and clear inline text colors
+                el.className = "inline select-none emoji-font";
+                el.style.color = "";
+            } 
             
             const animMap = {
                 idle: 'anim-mascot-idle',
@@ -18008,12 +18046,28 @@ const DBCache = {
                 _dbGetAll: function() {
                     return new Promise((resolve) => {
                         if (!this.db) return resolve([]);
+                        
+                        // Safety timeout to prevent IndexedDB transaction stalls from hanging startup
+                        const timeoutId = setTimeout(() => {
+                            console.warn("[CurveIndexer] _dbGetAll timed out.");
+                            resolve([]);
+                        }, 1500);
+
                         try {
                             const tx = this.db.transaction(this.STORE_NAME, "readonly");
                             const req = tx.objectStore(this.STORE_NAME).getAll();
-                            req.onsuccess = () => resolve(req.result || []);
-                            req.onerror = () => resolve([]);
-                        } catch (e) { resolve([]); }
+                            req.onsuccess = () => {
+                                clearTimeout(timeoutId);
+                                resolve(req.result || []);
+                            };
+                            req.onerror = () => {
+                                clearTimeout(timeoutId);
+                                resolve([]);
+                            };
+                        } catch (e) {
+                            clearTimeout(timeoutId);
+                            resolve([]);
+                        }
                     });
                 },
 
@@ -18141,69 +18195,69 @@ const DBCache = {
                 },
 
                 _bgRunning: false,
-                startBackgroundWarmup: function(dataset) {
-                    if (this._bgRunning) return;
-                    if (!dataset || dataset.length === 0) return;
-                    this._bgRunning = true;
+        startBackgroundWarmup: function(dataset) {
+            if (this._bgRunning) return;
+            if (!dataset || dataset.length === 0) return;
+            this._bgRunning = true;
 
-                    let index = 0;
-                    const updateProgressUI = () => {
-                        const indicator = document.getElementById('peqdb-indexing-indicator');
-                        if (!indicator) return;
-                        if (index < dataset.length) {
-                            const isFirstLaunch = (localStorage.getItem('squig_db_indexed') !== 'true');
-                            if (isFirstLaunch) {
-                                indicator.classList.remove('hidden');
-                                const pct = Math.round((index / dataset.length) * 100);
-                                indicator.textContent = `⚡ Indexing: ${pct}%`;
-                            } else {
-                                indicator.classList.add('hidden');
-                            }
-                        } else {
-                            indicator.classList.add('hidden');
-                        }
-                    };
-
-                    const step = async () => {
-                        if (window.FindEngine && FindEngine.updateIndexingProgressBar) {
-                            FindEngine.updateIndexingProgressBar();
-                        }
-
-                        if (index >= dataset.length) {
-                            updateProgressUI();
-                            localStorage.setItem('squig_db_indexed', 'true');
-                            localStorage.setItem('squig_db_cached_count', dataset.length.toString());
-                            PEQDB_Module.databaseFullyLoaded = true;
-                            PEQDB_Module.renderList(false, true);
-                            if (PEQDB_Module.searchMode === 'similar') {
-                                PEQDB_Module.debouncedFindSimilarCurves();
-                            }
-                            return;
-                        }
-
-                        if (EQ_Module.isDragging || (window.TestLab_Module && TestLab_Module.spatialActive)) {
-                            setTimeout(step, 1000);
-                            return;
-                        }
-
-                        const batchSize = 25;
-                        const batch = [];
-                        for (let i = 0; i < batchSize && index < dataset.length; i++) {
-                            const item = dataset[index++];
-                            if (item && (!item.data || item.data.length < 2)) batch.push(item);
-                        }
-
-                        if (batch.length > 0) {
-                            await Promise.all(batch.map(item => this.loadCurve(item)));
-                            updateProgressUI();
-                            setTimeout(step, 10);
-                        } else {
-                            setTimeout(step, 0);
-                        }
-                    };
-
-                    setTimeout(step, 300);
+            let index = 0;
+            const updateProgressUI = () => {
+                const indicator = document.getElementById('peqdb-indexing-indicator');
+                if (!indicator) return;
+                if (index < dataset.length) {
+                    const isFirstLaunch = (localStorage.getItem('squig_db_indexed') !== 'true');
+                    if (isFirstLaunch) {
+                        indicator.classList.remove('hidden');
+                        const pct = Math.round((index / dataset.length) * 100);
+                        indicator.textContent = `⚡ Indexing: ${pct}%`;
+                    } else {
+                        indicator.classList.add('hidden');
+                    }
+                } else {
+                    indicator.classList.add('hidden');
                 }
+            };
+
+            const step = async () => {
+                if (window.FindEngine && FindEngine.updateIndexingProgressBar) {
+                    FindEngine.updateIndexingProgressBar();
+                }
+
+                if (index >= dataset.length) {
+                    updateProgressUI();
+                    localStorage.setItem('squig_db_indexed', 'true');
+                    localStorage.setItem('squig_db_cached_count', dataset.length.toString());
+                    PEQDB_Module.databaseFullyLoaded = true;
+                    PEQDB_Module.renderList(false, true);
+                    if (PEQDB_Module.searchMode === 'similar') {
+                        PEQDB_Module.debouncedFindSimilarCurves();
+                    }
+                    return;
+                }
+
+                if (EQ_Module.isDragging || (window.TestLab_Module && TestLab_Module.spatialActive)) {
+                    setTimeout(step, 1000);
+                    return;
+                }
+
+                const batchSize = 5; // Reduced to 5 to prevent queue saturation on local http server
+                const batch = [];
+                for (let i = 0; i < batchSize && index < dataset.length; i++) {
+                    const item = dataset[index++];
+                    if (item && (!item.data || item.data.length < 2)) batch.push(item);
+                }
+
+                if (batch.length > 0) {
+                    await Promise.all(batch.map(item => this.loadCurve(item)));
+                    updateProgressUI();
+                    setTimeout(step, 10);
+                } else {
+                    setTimeout(step, 0);
+                }
+            };
+
+            setTimeout(step, 300);
+        }
             };
 
             const PEQDB_Module = {
@@ -24005,6 +24059,16 @@ loadSoundLibrary: async function() {
                         this.populateCloneSelector();
                     } else {
                         this.updateIndexingProgressBar();
+                        
+                        // Safety Fallback Timeout: Force-hide the progress bar after 3 seconds
+                        // if background thread or IndexedDB operations take too long.
+                        setTimeout(() => {
+                            if (progressContainer && !progressContainer.classList.contains('hidden')) {
+                                progressContainer.classList.add('hidden');
+                                PEQDB_Module.databaseFullyLoaded = true;
+                                console.warn("[FindEngine] Progress bar auto-hidden via safety timer.");
+                            }
+                        }, 3000);
                     }
                 },
 
