@@ -1,0 +1,20 @@
+[
+  {
+    "id": "neon_stars",
+    "name": "Neon Stars",
+    "emoji": "✨",
+    "file": "neon_stars.js"
+  },
+  {
+    "id": "liquid_fiber",
+    "name": "Liquid Fiber Wave",
+    "emoji": "🌊",
+    "file": "liquid_fiber.js"
+  },
+  {
+    "id": "cosmic_vortex",
+    "name": "Cosmic Vortex",
+    "emoji": "🌀",
+    "file": "cosmic_vortex.js"
+  }
+]

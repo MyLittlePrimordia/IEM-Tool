@@ -1,0 +1,137 @@
+[
+  {
+    "id": "void",
+    "name": "Void",
+    "emoji": "🕳️",
+    "variables": {
+      "--accent-blue": "#f97316",
+      "--bg-body": "#000000",
+      "--bg-window": "#000000",
+      "--bg-card": "#000000",
+      "--bg-sidebar": "#000000",
+      "--bg-input": "#000000",
+      "--text-main": "#ffffff",
+      "--text-secondary": "#a1a1aa"
+    }
+  },
+  {
+    "id": "synthwave",
+    "name": "Synthwave",
+    "emoji": "🌇",
+    "variables": {
+      "--accent-blue": "#ff007f",
+      "--bg-body": "#08020f",
+      "--bg-window": "#0f051d",
+      "--bg-card": "rgba(24, 10, 42, 0.65)",
+      "--bg-sidebar": "#08020f",
+      "--bg-input": "#1a0a2f",
+      "--text-main": "#ffe5f0",
+      "--text-secondary": "#bda2d3"
+    }
+  },
+  {
+    "id": "pipboy",
+    "name": "Pipboy",
+    "emoji": "📟",
+    "variables": {
+      "--accent-blue": "#22c55e",
+      "--bg-body": "#010402",
+      "--bg-window": "#030804",
+      "--bg-card": "rgba(6, 17, 10, 0.85)",
+      "--bg-sidebar": "#010402",
+      "--bg-input": "#08120a",
+      "--text-main": "#4ade80",
+      "--text-secondary": "#16a34a"
+    }
+  },
+  {
+    "id": "sakura",
+    "name": "Sakura",
+    "emoji": "🌸",
+    "variables": {
+      "--accent-blue": "#f472b6",
+      "--bg-body": "#1a0812",
+      "--bg-window": "#2a0c1a",
+      "--bg-card": "rgba(45, 18, 30, 0.8)",
+      "--bg-sidebar": "#1a0812",
+      "--bg-input": "#3a1224",
+      "--text-main": "#fce7f3",
+      "--text-secondary": "#f9a8d4"
+    }
+  },
+  {
+    "id": "midnight",
+    "name": "Midnight",
+    "emoji": "🌙",
+    "variables": {
+      "--accent-blue": "#a78bfa",
+      "--bg-body": "#05040b",
+      "--bg-window": "#0c0820",
+      "--bg-card": "rgba(20, 15, 40, 0.8)",
+      "--bg-sidebar": "#05040b",
+      "--bg-input": "#140c30",
+      "--text-main": "#ede9fe",
+      "--text-secondary": "#a5b4fc"
+    }
+  },
+  {
+    "id": "ocean",
+    "name": "Ocean",
+    "emoji": "🌊",
+    "variables": {
+      "--accent-blue": "#2563eb",
+      "--bg-body": "#070a13",
+      "--bg-window": "#0c1020",
+      "--bg-card": "rgba(14, 20, 35, 0.85)",
+      "--bg-sidebar": "#070a13",
+      "--bg-input": "#111827",
+      "--text-main": "#e0f2fe",
+      "--text-secondary": "#64748b"
+    }
+  },
+  {
+    "id": "sunset",
+    "name": "Sunset",
+    "emoji": "🌅",
+    "variables": {
+      "--accent-blue": "#f97316",
+      "--bg-body": "#1a0500",
+      "--bg-window": "#2a0c00",
+      "--bg-card": "rgba(50, 20, 5, 0.85)",
+      "--bg-sidebar": "#1a0500",
+      "--bg-input": "#3a1500",
+      "--text-main": "#fff7ed",
+      "--text-secondary": "#fdba74"
+    }
+  },
+  {
+    "id": "crimson",
+    "name": "Crimson",
+    "emoji": "🩸",
+    "variables": {
+      "--accent-blue": "#dc2626",
+      "--bg-body": "#0a0202",
+      "--bg-window": "#140505",
+      "--bg-card": "rgba(35, 8, 8, 0.9)",
+      "--bg-sidebar": "#0a0202",
+      "--bg-input": "#220a0a",
+      "--text-main": "#fef2f2",
+      "--text-secondary": "#fca5a5"
+    }
+  },
+  {
+    "id": "graphite",
+    "name": "Graphite",
+    "emoji": "🖤",
+    "variables": {
+      "--accent-blue": "#787878",
+      "--bg-body": "#000000",
+      "--bg-window": "#090909",
+      "--bg-card": "rgba(16, 16, 16, 0.96)",
+      "--bg-sidebar": "#040404",
+      "--bg-input": "#111111",
+      "--text-main": "#eeeeee",
+      "--text-secondary": "#474747"
+    }
+  }
+]

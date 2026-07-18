@@ -1,0 +1,51 @@
+[
+  {
+    "name": "Comic Sans MS",
+    "emoji": "💻",
+    "file": "comicsansms.ttf",
+    "scale": 1.0,
+    "letterSpacing": "normal"
+  },
+  {
+    "name": "Monospace",
+    "emoji": "📟",
+    "file": "JetBrainsMono.ttf",
+    "scale": 1.0,
+    "letterSpacing": "normal"
+  },
+  {
+    "name": "Hachi Maru Pop",
+    "emoji": "🌸",
+    "file": "hachimarupop.ttf",
+    "scale": 1.0,
+    "letterSpacing": "normal"
+  },
+  {
+    "name": "Black Ops One",
+    "emoji": "🔫",
+    "file": "blackopsone.ttf",
+    "scale": 1.0,
+    "letterSpacing": "normal"
+  },
+  {
+    "name": "Silkscreen",
+    "emoji": "🔑",
+    "file": "silkscreen.ttf",
+    "scale": 1.0,
+    "letterSpacing": "normal"
+  },
+  {
+    "name": "Comfortaa",
+    "emoji": "☁️",
+    "file": "comfortaa.ttf",
+    "scale": 1.0,
+    "letterSpacing": "normal"
+  },
+  {
+    "name": "Protest Revolution",
+    "emoji": "✊",
+    "file": "protestrevolution.ttf",
+    "scale": 1.0,
+    "letterSpacing": "normal"
+  }
+]

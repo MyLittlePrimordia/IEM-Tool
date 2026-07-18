@@ -1,0 +1,52 @@
+{
+  "name": "iem-tool",
+  "version": "1.0.0",
+  "description": "🎧 IEM Tool - Parametric EQ & Frequency Response Analyzer",
+  "main": "main.js",
+  "author": "🍄 MyLittlePrimordia",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.mylittleprimordia.iemtool",
+    "productName": "IEM Tool",
+    "asar": false,
+    "files": [
+      "**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "app-files",
+        "to": "app-files"
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "IEM Tool"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "icon.png"
+    }
+  }
+}
