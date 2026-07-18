@@ -34,7 +34,7 @@ Built for IEM enthusiasts who want an all-in-one offline tool for reviewing, tun
 The main review workspace for analyzing IEMs, ratings, notes, and sound characteristics.
 
 <p align="center">
-  <img src="screenshots/REVIEW.png" width="900">
+  <img src="app-files/screenshots/REVIEW.png" width="900">
 </p>
 
 ---
@@ -44,7 +44,7 @@ The main review workspace for analyzing IEMs, ratings, notes, and sound characte
 Advanced equalizer tools including tuning, presets, frequency adjustments, and audio customization.
 
 <p align="center">
-  <img src="screenshots/EQ.png" width="900">
+  <img src="app-files/screenshots/EQ.png" width="900">
 </p>
 
 ---
@@ -54,7 +54,7 @@ Advanced equalizer tools including tuning, presets, frequency adjustments, and a
 Frequency testing, audio tools, blind comparisons, and diagnostics for evaluating IEM performance.
 
 <p align="center">
-  <img src="screenshots/TEST.png" width="900">
+  <img src="app-files/screenshots/TEST.png" width="900">
 </p>
 
 ---
@@ -64,7 +64,7 @@ Frequency testing, audio tools, blind comparisons, and diagnostics for evaluatin
 Real-time music visualizers and immersive audio effects.
 
 <p align="center">
-  <img src="screenshots/VISUALIZER.png" width="900">
+  <img src="app-files/screenshots/VISUALIZER.png" width="900">
 </p>
 
 ---
@@ -74,7 +74,7 @@ Real-time music visualizers and immersive audio effects.
 Application controls, customization options, themes, and preferences.
 
 <p align="center">
-  <img src="screenshots/SETTINGS.png" width="900">
+  <img src="app-files/screenshots/SETTINGS.png" width="900">
 </p>
 
 ---
@@ -86,55 +86,55 @@ Customize your IEM review cards with different visual styles.
 ## 🌑 Void
 
 <p align="center">
-  <img src="screenshots/VOID.png" width="500">
+  <img src="app-files/screenshots/VOID.png" width="500">
 </p>
 
 ## 🖤 Graphite
 
 <p align="center">
-  <img src="screenshots/GRAPHITE.png" width="500">
+  <img src="app-files/screenshots/GRAPHITE.png" width="500">
 </p>
 
 ## 🌙 Midnight
 
 <p align="center">
-  <img src="screenshots/MIDNIGHT.png" width="500">
+  <img src="app-files/screenshots/MIDNIGHT.png" width="500">
 </p>
 
 ## 🌊 Ocean
 
 <p align="center">
-  <img src="screenshots/OCEAN.png" width="500">
+  <img src="app-files/screenshots/OCEAN.png" width="500">
 </p>
 
 ## 🔥 Crimson
 
 <p align="center">
-  <img src="screenshots/CRIMSON.png" width="500">
+  <img src="app-files/screenshots/CRIMSON.png" width="500">
 </p>
 
 ## 🌸 Sakura
 
 <p align="center">
-  <img src="screenshots/SAKURA.png" width="500">
+  <img src="app-files/screenshots/SAKURA.png" width="500">
 </p>
 
 ## 🌅 Sunset
 
 <p align="center">
-  <img src="screenshots/SUNSET.png" width="500">
+  <img src="app-files/screenshots/SUNSET.png" width="500">
 </p>
 
 ## 🎹 Synthwave
 
 <p align="center">
-  <img src="screenshots/SYNTHWAVE.png" width="500">
+  <img src="app-files/screenshots/SYNTHWAVE.png" width="500">
 </p>
 
 ## ☢️ Pip-Boy
 
 <p align="center">
-  <img src="screenshots/PIPBOY.png" width="500">
+  <img src="app-files/screenshots/PIPBOY.png" width="500">
 </p>
 
 ---
