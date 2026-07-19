@@ -1,0 +1,57 @@
+name: Build IEM Tool (Mac + Linux)
+
+on:
+  workflow_dispatch:
+  release:
+    types: [created]
+
+jobs:
+
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Linux
+        run: npm run dist-linux
+
+      - name: Upload Linux Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: IEM-Tool-Linux
+          path: dist/*.AppImage
+
+
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build macOS
+        run: npm run dist-mac
+
+      - name: Upload macOS Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: IEM-Tool-macOS
+          path: dist/*.dmg
