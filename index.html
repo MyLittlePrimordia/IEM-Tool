@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="theme-graphite">
+<html lang="en" class="theme-void">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
@@ -7774,7 +7774,7 @@ window.updateExpandedAutoHide = function() {
                 letterSpacing: "normal"
             }];
         },
-        currentTheme: 'graphite',
+        currentTheme: 'void',
 
         switchTab: function(tabId) {
             if (tabId !== 'visualizer' && window.EQ && EQ.isVizFullscreen) {
@@ -7809,9 +7809,9 @@ window.updateExpandedAutoHide = function() {
                     activeBtn.classList.remove('text-[var(--text-secondary)]', 'text-white');
                     activeBtn.classList.add('shadow-sm');
                     
-                    const savedTheme = localStorage.getItem('settings_theme_id') || 'graphite';
+                    const savedTheme = localStorage.getItem('settings_theme_id') || 'void';
                     const t = (this.themeMap && this.themeMap[savedTheme]) ? this.themeMap[savedTheme] : 
-                              ((this.themeMap && this.themeMap['graphite']) ? this.themeMap['graphite'] : { accent: '#787878' });
+                              ((this.themeMap && this.themeMap['void']) ? this.themeMap['void'] : { accent: '#787878' });
                     const accentColor = t.accent || '#787878';
                     activeBtn.style.backgroundColor = accentColor;
                     activeBtn.style.color = this.getContrastTextColor ? this.getContrastTextColor(accentColor) : '#ffffff';
@@ -7922,7 +7922,7 @@ window.updateExpandedAutoHide = function() {
 
         cycleTheme: function() {
             const keys = Object.keys(this.themeMap);
-            const current = localStorage.getItem('settings_theme_id') || 'graphite';
+            const current = localStorage.getItem('settings_theme_id') || 'void';
             let nextIdx = (keys.indexOf(current) + 1) % keys.length;
             if (nextIdx < 0 || nextIdx >= keys.length) nextIdx = 0;
             this.setGlobalTheme(keys[nextIdx]);
@@ -7943,7 +7943,7 @@ window.updateExpandedAutoHide = function() {
         setGlobalTheme: function(themeId) {
             try {
                 const t = (this.themeMap && this.themeMap[themeId]) ? this.themeMap[themeId] : this._defaultThemeEntry();
-                this.currentTheme = this.themeMap[themeId] ? themeId : 'graphite';
+                this.currentTheme = this.themeMap[themeId] ? themeId : 'void';
 
                 const root = document.documentElement;
                 
@@ -8587,8 +8587,8 @@ window.updateExpandedAutoHide = function() {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 
                 // Read active theme's accent color dynamically
-                const savedThemeId = localStorage.getItem('settings_theme_id') || 'graphite';
-                const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['graphite'];
+                const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
+                const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['void'];
                 const themeAccent = activeThemeConfig.accent || "#787878";
                 
                 while (particles.length < maxParticles) {
@@ -8878,8 +8878,8 @@ window.updateExpandedAutoHide = function() {
             this.settingsRestored = true;
             
             try {
-                const savedTheme = localStorage.getItem('settings_theme_id') || 'graphite'; // Default skin is now Parchment
-                this.setGlobalTheme(this.themeMap[savedTheme] ? savedTheme : 'graphite');
+                const savedTheme = localStorage.getItem('settings_theme_id') || 'void'; // Default skin is now Slate
+                this.setGlobalTheme(this.themeMap[savedTheme] ? savedTheme : 'void');
 
                 const savedFont = localStorage.getItem('settings_font_id') || 'Silkscreen';
                 this.setGlobalFont(this.fontMap[savedFont] ? savedFont : 'Silkscreen');
@@ -9036,7 +9036,7 @@ window.updateExpandedAutoHide = function() {
     // means themeMap is fully populated before DOMContentLoaded even fires, which is what
     // makes the immediate theme-application below possible.
     App._defaultThemeEntry = function() {
-        const g = this.builtInThemes.find(t => t.id === 'graphite');
+        const g = this.builtInThemes.find(t => t.id === 'void');
         return g ? { name: g.name, emoji: g.emoji, accent: g.variables['--accent-blue'], variables: g.variables } : null;
     };
     App.builtInThemes.forEach(theme => {
@@ -9055,13 +9055,13 @@ window.updateExpandedAutoHide = function() {
     // need to wait on font loading or anything else.
     (function applySavedThemeImmediately() {
         try {
-            const savedId = localStorage.getItem('settings_theme_id') || 'graphite';
+            const savedId = localStorage.getItem('settings_theme_id') || 'void';
             const theme = App.builtInThemes.find(t => t.id === savedId);
             if (theme) {
                 document.documentElement.className = 'theme-' + savedId;
                 Object.entries(theme.variables).forEach(([k, v]) => document.documentElement.style.setProperty(k, v));
             }
-        } catch (e) { /* falls back to the static theme-graphite already on <html> */ }
+        } catch (e) { /* falls back to the static theme-void already on <html> */ }
     })();
     // ==========================================
     // 2. IEM EVALUATION WORKSPACE MODULE
@@ -9422,7 +9422,7 @@ window.updateExpandedAutoHide = function() {
         },
         initChart: function() {
             const ctx = document.getElementById('radarChart').getContext('2d');
-        const savedThemeId = localStorage.getItem('settings_theme_id') || 'graphite';
+        const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
         const activeThemeConfig = (window.App && App.themeMap && App.themeMap[savedThemeId]) || {};
         const themeVars = activeThemeConfig.variables || {};
         const accentColor = activeThemeConfig.accent || themeVars['--accent-blue'] || '#6488b0';
@@ -10780,7 +10780,7 @@ window.updateExpandedAutoHide = function() {
             biasClass = unifiedBiasClass;
             if(badge) { badge.innerHTML = biasStr; badge.className = biasClass; }
 if(this.radarChart) {
-                const savedThemeId = localStorage.getItem('settings_theme_id') || 'graphite';
+                const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
                 const activeThemeConfig = (window.App && App.themeMap && App.themeMap[savedThemeId]) || {};
                 const themeVars = activeThemeConfig.variables || {};
                 const accentColor = activeThemeConfig.accent || themeVars['--accent-blue'] || '#6488b0';
@@ -15440,8 +15440,8 @@ if (diffR > 0.4) {
                     totalEnergy = (totalEnergy / bufferLength) / 255;
 
                     // Retrieve current active theme accent color dynamically (Set default fallback to Parchment)
-                    const savedThemeId = localStorage.getItem('settings_theme_id') || 'graphite';
-                    const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['graphite'];
+                    const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
+                    const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['void'];
                     const themeAccent = activeThemeConfig.accent === '#ffffff' ? '#ffffff' : activeThemeConfig.accent;
 
                     const mode = EQ_Module.vizModes[EQ_Module.vizModeIndex];
@@ -24629,8 +24629,8 @@ loadSoundLibrary: async function() {
                     const minDb = 60;
                     const maxDb = 90;
 
-                    const savedThemeId = localStorage.getItem('settings_theme_id') || 'graphite';
-                    const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['graphite'];
+                    const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
+                    const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['void'];
                     const themeAccent = activeThemeConfig.accent || "#3b82f6";
 
                     // 3. Draw the sculpted target curve with a beautiful glowing trace
@@ -25389,8 +25389,8 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                                         sctx.fillStyle = '#000000';
                                         sctx.fillRect(0, 0, sw, sh);
 
-                                        const savedThemeId = localStorage.getItem('settings_theme_id') || 'graphite';
-                                        const themeConfig = App.themeMap[savedThemeId] || App.themeMap['graphite'];
+                                        const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
+                                        const themeConfig = App.themeMap[savedThemeId] || App.themeMap['void'];
                                         const sparkColor = themeConfig.accent || '#3b82f6';
 
                                         const norm = CurveUtils.normalizeTo75dB(subData, 500, 75);
@@ -25754,8 +25754,8 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                             sctx.fillStyle = '#000000';
                             sctx.fillRect(0, 0, sw, sh);
 
-                            const savedThemeId = localStorage.getItem('settings_theme_id') || 'graphite';
-                            const themeConfig = App.themeMap[savedThemeId] || App.themeMap['graphite'];
+                            const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
+                            const themeConfig = App.themeMap[savedThemeId] || App.themeMap['void'];
                             const sparkColor = themeConfig.accent || '#3b82f6';
 
                             const norm = CurveUtils.normalizeTo75dB(subData, 500, 75);
@@ -26183,8 +26183,8 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                                 sctx.fillStyle = '#000000';
                                 sctx.fillRect(0, 0, sw, sh);
 
-                                const savedThemeId = localStorage.getItem('settings_theme_id') || 'graphite';
-                                const themeConfig = App.themeMap[savedThemeId] || App.themeMap['graphite'];
+                                const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
+                                const themeConfig = App.themeMap[savedThemeId] || App.themeMap['void'];
                                 const sparkColor = themeConfig.accent || '#3b82f6';
 
                                 const norm = CurveUtils.normalizeTo75dB(c.item.data, 500, 75);
@@ -26472,8 +26472,8 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                                 sctx.fillStyle = '#000000';
                                 sctx.fillRect(0, 0, sw, sh);
                                 
-                                const savedThemeId = localStorage.getItem('settings_theme_id') || 'graphite';
-                                const themeConfig = App.themeMap[savedThemeId] || App.themeMap['graphite'];
+                                const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
+                                const themeConfig = App.themeMap[savedThemeId] || App.themeMap['void'];
                                 const sparkColor = themeConfig.accent || '#3b82f6';
                                 
                                 const norm = CurveUtils.normalizeTo75dB(item.data, 500, 75);
