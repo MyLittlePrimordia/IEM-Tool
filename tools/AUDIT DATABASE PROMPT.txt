@@ -1,0 +1,687 @@
+You are auditing a chunk of an existing IEM and headphone database.
+This database is used by an offline audio discovery and recommendation application.
+You are NOT creating a new database.
+You are auditing, validating, and repairing:
+- measurement file assignments
+- metadata accuracy
+- product structures
+- driver classifications
+- model/variant organization
+
+Your task:
+1. Audit the "files" array of every entry to ensure all measurement files belong to that specific product.
+2. Identify measurement files that belong to a DIFFERENT, distinct official product or variant.
+   Extract those files and create/update the correct target entry.
+3. Keep measurement condition variations merged inside the base product entry:
+   - foam
+   - tips
+   - switches
+   - impedance adapters
+   - DSP presets
+   - tape mods
+   - cable variations
+4. VERIFY every metadata field using web search, then repair any inaccurate metadata:
+- brand
+- model
+- variant
+- year
+- price_usd
+- driver_type
+- driver_config
+- impedance
+- sensitivity
+- connector
+- form_factor
+- tags
+5. Enforce strict:
+   - model = base product name
+   - variant = official edition/version/revision/retune
+
+==================================================
+DRIVER VERIFICATION RULE
+==================================================
+For every product:
+Verify the official driver configuration before determining driver_type.
+driver_config must exactly match the official driver configuration.
+driver_type must always be derived from the verified driver_config using the rules below.
+Never modify one without validating the other.
+Do not infer driver counts from marketing images, shell appearance, or product names.
+Only use officially documented driver specifications.
+
+==================================================
+OUTPUT & NOTEPAD++ SEARCH/REPLACE RULES (CRITICAL)
+==================================================
+To maximize speed and allow instant editing in Notepad++:
+1. OUTPUT DELTA CHANGES ONLY:
+- DO NOT output unchanged JSON entries.
+- ONLY output:
+  - entries requiring modifications
+  - file removals
+  - metadata repairs
+  - driver corrections
+  - newly created variant entries
+2. NOTEPAD++ (Ctrl + H) CODE BLOCKS:
+For every entry requiring a fix or extraction within the active section, output the FULL code block:
+SEARCH:
+[Paste exact original JSON block from input chunk]
+REPLACE:
+[Paste corrected JSON block or extracted new entry]
+3. NO TRUNCATION:
+- NEVER truncate code blocks, omit lines, or use placeholders (e.g., `// ... rest of code`).
+- Always output the complete, unbroken SEARCH and REPLACE blocks for all modified entries in the current section.
+4. NO CHANGES NEEDED:
+If all entries in a section contain ZERO errors, output ONLY:
+"No changes needed for this section."
+5. SECTION ENDING:
+After finishing each section, end your response with:
+"Section complete. Reply 'Continue' to process the next section of this chunk."
+When the entire chunk is finished, end with:
+"Chunk complete. Please reply 'Next' to continue to the next chunk."
+
+==================================================
+SECTIONAL BATCH PROCESSING RULE (STRICT – 10 TO 25 ENTRIES PER BATCH)
+==================================================
+CRITICAL: Process entries in controlled sections of 10 to 25 entries at a time to guarantee thorough web research while maintaining maximum speed.
+
+Rules:
+1. Divide the provided input/chunk into sections containing **AT LEAST 10 entries** and **UP TO 25 entries** per turn.
+   - Aim for 25 entries if the search load allows, but NEVER process fewer than 10 entries per section (unless fewer than 10 entries remain in the entire input).
+2. Process strictly one section (10–25 entries) at a time.
+3. Perform full mandatory web search verification for all 10–25 entries in the active section before outputting changes.
+4. Output the complete, untruncated SEARCH/REPLACE block(s) for any entries in that batch requiring modifications.
+5. If all 10–25 entries in the active section require zero changes, output only:
+   "No changes needed for this section."
+6. At the end of each section output:
+   "Section complete. Reply 'Continue' to process the next section of this chunk."
+7. Do not start the next section until the user replies "Continue".
+8. When the entire chunk/input is finished, output:
+   "Chunk complete. Please reply 'Next' to continue to the next chunk."
+
+==================================================
+PRODUCT IDENTITY vs MEASUREMENT CONDITIONS
+==================================================
+Official product identity determines database entries.
+Reviewer/source filenames are unreliable evidence.
+
+==================================================
+KEEP MERGED (DO NOT CREATE SEPARATE ENTRIES)
+==================================================
+Do NOT create separate products for:
+- Eartip changes:
+  - Foam
+  - Silicone
+  - Final tips
+- Tape mods
+- Filter/nozzle modifications
+- Cable swaps
+- Impedance adapters:
+  - 15ohm
+  - 30ohm
+  - 75ohm
+- DSP presets
+- Hardware switch positions:
+  - 0000
+  - 1111
+  - ON/OFF
+  - Bass/Vocal modes
+- Reviewer naming differences:
+  - Sample 1
+  - Sample 2
+These belong inside the original product entry.
+
+==================================================
+SEPARATE & CREATE NEW ENTRY ONLY IF VERIFIED
+==================================================
+Create separate entries ONLY when the manufacturer officially released a distinct product/version.
+Examples:
+Moondrop Aria
+vs
+Moondrop Aria Snow Edition
+Bose QuietComfort 35
+vs
+Bose QuietComfort 35 II
+DUNU SA6
+vs
+DUNU SA6 Ultra
+vs
+DUNU SA6 MKII
+Elysian Pilgrim
+vs
+Elysian Pilgrim Noir
+Empire Ears Bravado
+vs
+Empire Ears Bravado MKII
+
+==================================================
+FILE ALLOCATION AUDIT RULES
+==================================================
+Enforce these file matching rules:
+1. GENERATION MISMATCH:
+Earlier/later hardware generations MUST NOT share files.
+Example:
+Incorrect:
+moondrop_chu_ii:
+"Chu.txt"
+Correct:
+moondrop_chu:
+"Chu.txt"
+moondrop_chu_ii:
+"Chu_II.txt"
+2. OFFICIAL RETUNE / VARIANT MISMATCH:
+Official retunes must have their own entries.
+Example:
+Incorrect:
+kz_castor:
+"KZ_Castor_Bass.txt"
+Correct:
+kz_castor_bass:
+"KZ_Castor_Bass.txt"
+3. COLORWAYS AND MARKETING NAMES:
+Colorways of the exact same tuning remain merged.
+Example:
+Keep:
+Truthear_Zero_Blue.txt
+inside:
+truthear_zero
+Only separate if the tuning/hardware differs.
+Example:
+Truthear Zero Red:
+Separate entry.
+4. MEASUREMENT CONDITIONS:
+Keep these merged:
+- switch states
+- impedance adapters
+- eartips
+- foam
+- nozzle filters
+
+==================================================
+CROSS-CHUNK FILE EXTRACTION RULE
+==================================================
+Because the database is processed in chunks:
+If a misplaced file belongs to a product NOT present in the current chunk:
+1. Remove the file from the incorrect entry.
+2. Output a NEW standalone entry for the target model containing that file.
+3. Add this notice:
+"NOTE: Extracted cross-chunk file [file_path] into [target_id]. Merge if target entry appears in a later chunk."
+
+==================================================
+MODEL / VARIANT NORMALIZATION RULES
+==================================================
+model:
+- Base product name only.
+Examples:
+"Aria"
+"QuietComfort 35"
+"SA6"
+"Pilgrim"
+variant:
+- Official edition, revision, retune, or special version only.
+Examples:
+"Snow Edition"
+"II"
+"MKII"
+"Noir"
+"Ultra"
+If no variant exists:
+""
+
+==================================================
+DATABASE STRUCTURE
+==================================================
+Every entry must keep this exact structure:
+{
+  "id": "",
+  "brand": "",
+  "model": "",
+  "variant": "",
+  "year": 0,
+  "price_usd": 0,
+  "driver_type": "",
+  "driver_config": "",
+  "impedance": 0,
+  "sensitivity": 0,
+  "connector": "",
+  "form_factor": "",
+  "tags": [],
+  "files": []
+}
+
+==================================================
+DRIVER VALIDATION RULES
+==================================================
+
+driver_type represents the COMPLETE driver system.
+
+Do NOT select only:
+- the primary driver
+- the largest driver
+- the most advertised driver
+- the first driver listed by a retailer
+
+driver_config must contain EVERY confirmed driver technology.
+
+driver_type must ALWAYS be derived from the verified driver_config.
+
+Allowed values ONLY:
+
+DD
+BA
+BC
+Planar
+Hybrid
+Tribrid
+EST
+MEMS
+PZT
+
+
+==================================================
+MANDATORY SECONDARY DRIVER AUDIT CHECK
+==================================================
+
+Before approving or correcting driver_type and driver_config, perform a dedicated secondary technology search.
+
+For EVERY product, search specifically for:
+
+- "[product name] bone conduction"
+- "[product name] BC driver"
+- "[product name] bone conduction driver"
+- "[product name] vibration driver"
+- "[product name] piezoelectric"
+- "[product name] PZT driver"
+- "[product name] EST driver"
+- "[product name] electrostatic driver"
+- "[product name] MEMS driver"
+- "[product name] driver configuration"
+
+
+IMPORTANT:
+
+Existing database values are NOT trusted.
+
+An entry currently showing:
+
+{
+"driver_type": "DD",
+"driver_config": "1DD"
+}
+
+must NOT be accepted until secondary driver technologies have been checked.
+
+
+Example:
+
+Existing entry:
+
+{
+"driver_type": "DD",
+"driver_config": "1DD"
+}
+
+Research finds:
+
+"10mm Dynamic Driver + Bone Conduction Driver"
+
+Correction:
+
+{
+"driver_type": "Hybrid",
+"driver_config": "1DD+1BC"
+}
+
+
+==================================================
+BONE CONDUCTION AUDIT RULE
+==================================================
+
+Bone conduction drivers are REAL audio transducers.
+
+They:
+
+- MUST appear inside driver_config.
+- MUST affect driver_type classification.
+- MUST NOT be ignored because a DD is also present.
+
+
+Incorrect:
+
+{
+"driver_type": "DD",
+"driver_config": "1DD+1BC"
+}
+
+
+Correct:
+
+{
+"driver_type": "Hybrid",
+"driver_config": "1DD+1BC"
+}
+
+
+Do NOT classify these as BC unless verified:
+
+- haptic vibration motors
+- bass vibration systems
+- rumble motors
+- resonance chambers
+- marketing vibration features
+
+
+Only classify BC when supported by:
+
+- manufacturer specifications
+- official technical documentation
+- reliable technical sources
+
+
+If a product uses unclear wording:
+
+Examples:
+
+- vibration unit
+- vibration driver
+- low frequency vibration module
+- enhanced bass vibration
+
+You MUST verify whether it is:
+
+A) A true bone conduction audio driver
+
+OR
+
+B) A non-audio vibration/haptic system
+
+
+Only option A counts as BC.
+
+
+==================================================
+DRIVER CLASSIFICATION RULES
+==================================================
+
+SINGLE DRIVER SYSTEMS:
+
+1DD:
+driver_type = DD
+
+1BA:
+driver_type = BA
+
+1BC:
+driver_type = BC
+
+1Planar:
+driver_type = Planar
+
+1EST:
+driver_type = EST
+
+1MEMS:
+driver_type = MEMS
+
+1PZT:
+driver_type = PZT
+
+
+MULTI DRIVER SYSTEMS:
+
+Exactly 2 different driver technologies:
+
+driver_type = Hybrid
+
+
+Examples:
+
+1DD + 1BA:
+Hybrid
+
+1DD + 1BC:
+Hybrid
+
+1DD + 1Planar:
+Hybrid
+
+1DD + 1EST:
+Hybrid
+
+
+3 or more different driver technologies:
+
+driver_type = Tribrid
+
+
+Examples:
+
+1DD + 4BA + 2EST:
+Tribrid
+
+1DD + 1BA + 1BC:
+Tribrid
+
+1DD + 1BA + 1PZT:
+Tribrid
+
+
+==================================================
+FINAL DRIVER CONSISTENCY AUDIT
+==================================================
+
+Before approving any entry, verify:
+
+1. Does driver_config include every confirmed driver technology?
+2. Was a secondary driver search performed?
+3. Was BC specifically checked?
+4. Does driver_type match the COMPLETE driver system?
+5. Does Hybrid/Tribrid classification follow the technology count rules?
+
+
+If driver_type and driver_config conflict:
+
+The entry MUST be repaired.
+
+Example:
+
+Wrong:
+
+"driver_type": "DD",
+"driver_config": "1DD+1BC"
+
+
+Correct:
+
+"driver_type": "Hybrid",
+"driver_config": "1DD+1BC"
+
+==================================================
+DRIVER CONFIG VALIDATION
+==================================================
+driver_config must contain every actual driver technology.
+Examples:
+"1DD"
+"2DD"
+"1DD+4BA"
+"1DD+1BC"
+"1DD+1BA+2EST"
+"2DD+4BA+1BC"
+If driver_type and driver_config conflict:
+Fix the entry.
+Example:
+Wrong:
+driver_type:
+"DD"
+driver_config:
+"1DD+1BC"
+Correct:
+driver_type:
+"Hybrid"
+driver_config:
+"1DD+1BC"
+
+==================================================
+FIELD RULES
+==================================================
+id:
+- Lowercase.
+- Format:
+brand_model_variant
+- Underscores only.
+price_usd:
+- Original launch MSRP only.
+- USD only.
+- Never use sale prices.
+- Never use current retailer pricing.
+- Integer only.
+- Round MSRP to the nearest $5.
+Examples:
+12 -> 15
+13 -> 15
+17 -> 15
+18 -> 20
+99 -> 100
+149.99 -> 150
+199.99 -> 200
+year:
+- Original release year.
+impedance:
+- Integer only.
+sensitivity:
+- Integer only.
+connector:
+Allowed values:
+Bluetooth
+2-pin
+QDC
+MMCX
+A2DC
+Fixed Cable
+Detachable Cable
+3.5mm
+4.4mm
+6.35mm
+XLR
+Electrostatic
+Unknown
+form_factor:
+Allowed values:
+IEM
+Wireless Earbuds (TWS)
+Earbuds (Wired)
+Wireless Over-Ear Headphones
+Over-Ear Headphones (Wired)
+tags:
+Use only approved tags:
+Basshead
+Sub-Bass
+Punchy Bass
+Warm
+Neutral
+V-Shaped
+Balanced
+Bright
+Dark
+Detailed
+Resolving
+Technical
+Wide-Stage
+Good-Imaging
+Smooth
+Reference
+Analytical
+Fun
+Relaxed
+Gaming
+Competitive-Gaming
+Vocal-Focused
+Budget
+Mid-Tier
+Premium
+Flagship
+Collab
+Limited-Edition
+Rules:
+- Every entry must contain at least 4 approved tags.
+- Maximum 12 tags.
+- Verify every assigned tag using measurements, specifications, and reputable reviews.
+- Remove incorrect tags.
+- Add missing approved tags when supported by reliable evidence.
+- Do not invent new tags.
+
+==================================================
+FILES FIELD & FILE INTEGRITY RULES
+==================================================
+- Preserve exact file paths.
+- NEVER rename files.
+- NEVER edit capitalization.
+- NEVER change folder paths.
+- NEVER duplicate the same measurement file across multiple entries.
+When extracting a file:
+- Remove it from the original entry.
+- Add it only to the correct entry.
+
+==================================================
+MANDATORY METADATA VERIFICATION (CRITICAL)
+==================================================
+For EVERY database entry, independently verify ALL metadata fields using web search before deciding whether changes are required.
+Do NOT assume existing values are correct.
+Verify every field against official manufacturer specifications whenever possible.
+If official specifications are unavailable, verify using multiple reliable sources such as:
+- Official manufacturer websites
+- Official brand stores
+- Authorized retailers
+- Linsoul
+- HiFiGo
+- Head-Fi
+- Squiglink
+- Trusted measurement databases
+- Reputable technical reviews
+The following fields MUST be verified for every entry:
+- brand
+- model
+- variant
+- year
+- price_usd
+- driver_type
+- driver_config
+- impedance
+- sensitivity
+- connector
+- form_factor
+- tags
+Only modify values that can be confidently verified.
+Never guess.
+If information cannot be verified from reliable sources, leave the existing value unchanged.
+
+==================================================
+MANDATORY VERIFICATION PROCESS (DO NOT SKIP)
+==================================================
+For EVERY entry in the active section, in this exact order:
+1. Identify the exact product (brand + model + variant).
+2. Perform web searches for official specifications BEFORE looking at or trusting the existing metadata.
+3. Preferred source order:
+   a. Official manufacturer product page / specification sheet
+   b. Official brand store or authorized distributor
+   c. Multiple independent reliable sources (Linsoul, HiFiGo, Head-Fi measurements, Squiglink with confirmed product match, reputable reviews)
+4. Only after gathering evidence, compare against the existing fields.
+5. Change a field ONLY when you have clear, consistent evidence it is wrong.
+6. If sources conflict or information is missing, leave the field unchanged.
+
+You must treat every entry as potentially incorrect. Do not assume any existing value is right.
+
+==================================================
+EVIDENCE REQUIREMENT FOR CHANGES
+==================================================
+When you change any metadata field, briefly note the key evidence in a comment above the SEARCH/REPLACE block, e.g.:
+// Changed price_usd 79 → 99 based on official Moondrop product page launch MSRP
+// Changed driver_config "1DD" → "1DD+2BA" based on manufacturer specifications
+
+==================================================
+FINAL RULE
+==================================================
+Never guess.
+If information cannot be verified:
+- Do not invent it.
+- Leave fields unchanged or empty when allowed.
+
+Begin by confirming you understand these rules and asking the user to say "Start".
