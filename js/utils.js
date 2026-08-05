@@ -1,8 +1,3 @@
-// ==========================================================================
-// utils.js — CurveUtils: core high-precision DSP math (log grid generation,
-// cubic-spline interpolation, dB normalization, gaussian smoothing, curve
-// averaging).
-// ==========================================================================
 const CurveUtils = {
     generateLogGrid: function(numPoints = 500) {
         const grid = new Float32Array(numPoints);
@@ -54,7 +49,6 @@ const CurveUtils = {
     cubicSplineInterpolate: function(points, targetFreqs) {
         if (!points || points.length < 2) return new Float32Array(targetFreqs.length).fill(75.0);
 
-        // Deduplicate points with identical (or near-identical) log-frequency
         const rawX = [];
         const rawA = [];
         for (let i = 0; i < points.length; i++) {
@@ -72,7 +66,7 @@ const CurveUtils = {
         const a = new Float32Array(rawA);
 
         const h = new Float32Array(n - 1);
-        for (let i = 0; i < n - 1; i++) h[i] = Math.max(1e-6, x[i + 1] - x[i]); // safety floor
+        for (let i = 0; i < n - 1; i++) h[i] = Math.max(1e-6, x[i + 1] - x[i]);
 
         const alpha = new Float32Array(n - 1);
         for (let i = 1; i < n - 1; i++) {
@@ -120,7 +114,6 @@ const CurveUtils = {
                 if (x[mid] < val) low = mid + 1;
                 else high = mid - 1;
             }
-            // Clamped to n - 2 to guarantee b, c, d coefficient arrays never read out-of-bounds
             const idx = Math.min(n - 2, Math.max(0, high));
             const dx = val - x[idx];
             results[k] = a[idx] + b[idx] * dx + c[idx] * dx * dx + d[idx] * dx * dx * dx;
@@ -143,7 +136,7 @@ const CurveUtils = {
             for (let j = 0; j < n; j++) {
                 const diff = logFreqs[i] - logFreqs[j];
                 const distSq = diff * diff;
-                if (distSq > 9 * sigma * sigma) continue; 
+                if (distSq > 9 * sigma * sigma) continue;
                 const w = Math.exp(distSq * factor);
                 valueSum += values[j] * w;
                 weightSum += w;
@@ -157,7 +150,6 @@ const CurveUtils = {
         if (!curves || curves.length === 0) return new Float32Array(logGrid.length).fill(75.0);
         if (curves.length === 1) return curves[0].cachedInterp || this.cubicSplineInterpolate(curves[0].data, logGrid);
 
-        const numCurves = curves.length;
         const len = logGrid.length;
         const interpolatedMatrix = [];
 

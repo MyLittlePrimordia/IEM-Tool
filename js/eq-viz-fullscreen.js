@@ -1,22 +1,5 @@
-// ==========================================================================
-// eq-viz-fullscreen.js — Visualizer fullscreen mode for EQ_Module: enter/exit,
-// the auto-hide-controls-on-inactivity timer and its listeners, and effect
-// cycling. Extracted verbatim from the monolithic inline script (audit #4,
-// fifteenth slice -- eleventh slice out of EQ_Module).
-//
-// Same re-attachment pattern as the previous EQ_Module slices: defines a plain
-// object of just this state + these methods, re-attached via
-// Object.assign(EQ_Module, EQ_VizFullscreenMethods) right after EQ_Module's own
-// closing brace, so `this` inside every method here is still EQ_Module -- no
-// call sites changed.
-//
-// Checked before extracting: only reads/calls its own state
-// (isVizFullscreen/vizAutoHideTimer/isHoveringVizControls/vizModeIndex/vizModes/
-// customEffectsList/fullscreenVizCanvas/the bound _on* handler refs) and its own
-// methods, plus this.drawCurve() read the same way from every other slice.
-// ==========================================================================
 const EQ_VizFullscreenMethods = {
-isVizFullscreen: false,
+    isVizFullscreen: false,
     vizAutoHideTimer: null,
     isHoveringVizControls: false,
 
@@ -55,7 +38,7 @@ isVizFullscreen: false,
     exitVisualizerFullscreen: function() {
         this.isVizFullscreen = false;
         document.body.classList.remove('viz-fullscreen-active');
-        
+
         const btn = document.getElementById('viz-fullscreen-btn');
         if (btn) btn.innerHTML = '⛶ Fullscreen';
 
@@ -112,13 +95,13 @@ isVizFullscreen: false,
         const footer = document.getElementById('global-footer-bar');
         const overlay = document.getElementById('viz-controls-overlay');
 
-        this._onControlEnter = () => { 
-            this.isHoveringVizControls = true; 
-            clearTimeout(this.vizAutoHideTimer); 
+        this._onControlEnter = () => {
+            this.isHoveringVizControls = true;
+            clearTimeout(this.vizAutoHideTimer);
         };
-        this._onControlLeave = () => { 
-            this.isHoveringVizControls = false; 
-            this.resetVizAutoHideTimer(); 
+        this._onControlLeave = () => {
+            this.isHoveringVizControls = false;
+            this.resetVizAutoHideTimer();
         };
 
         [footer, overlay].forEach(el => {
@@ -141,29 +124,28 @@ isVizFullscreen: false,
     },
 
     cycleVizEffect: function() {
-            this.vizModeIndex = (this.vizModeIndex + 1) % this.vizModes.length;
-            const btn = document.getElementById('viz-effect-btn');
-            if (btn) {
-                const names = {
-                    horizontalSpectrogram: '🌅 Spectrogram',
-                    fullScreenWaterfall: '⛰️ Waterfall',
-                    acousticTunnel: '🌌 Tunnel',
-                    oledSpectrum: '📊 Spectrum',
-                    oscilloscope: '📈 Waveform',
-                    audioMesh: '🌐 Mesh'
-                };
-                
-                let activeName = names[this.vizModes[this.vizModeIndex]];
-                
-                // Inspect dynamic index array to resolve metadata for dynamic effects
-                if (!activeName && this.customEffectsList) {
-                    const customMatch = this.customEffectsList.find(e => e.id === this.vizModes[this.vizModeIndex]);
-                    if (customMatch) {
-                        activeName = `${customMatch.emoji} ${customMatch.name}`;
-                    }
+        this.vizModeIndex = (this.vizModeIndex + 1) % this.vizModes.length;
+        const btn = document.getElementById('viz-effect-btn');
+        if (btn) {
+            const names = {
+                horizontalSpectrogram: '🌅 Spectrogram',
+                fullScreenWaterfall: '⛰️ Waterfall',
+                acousticTunnel: '🌌 Tunnel',
+                oledSpectrum: '📊 Spectrum',
+                oscilloscope: '📈 Waveform',
+                audioMesh: '🌐 Mesh'
+            };
+
+            let activeName = names[this.vizModes[this.vizModeIndex]];
+
+            if (!activeName && this.customEffectsList) {
+                const customMatch = this.customEffectsList.find(e => e.id === this.vizModes[this.vizModeIndex]);
+                if (customMatch) {
+                    activeName = `${customMatch.emoji} ${customMatch.name}`;
                 }
-                
-                btn.textContent = ` ${activeName || 'Unknown'}`;
             }
-        },
+
+            btn.textContent = ` ${activeName || 'Unknown'}`;
+        }
+    },
 };
