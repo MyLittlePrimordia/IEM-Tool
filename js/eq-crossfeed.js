@@ -1,19 +1,3 @@
-// ==========================================================================
-// eq-crossfeed.js — Crossfeed/speaker-simulation effect for EQ_Module: mode
-// cycling, speaker-sim mode, UI sync, DSP node updates, and level control.
-// Extracted verbatim from the monolithic inline script (audit #4, eighth slice
-// -- fourth slice out of EQ_Module).
-//
-// Same re-attachment pattern as the previous EQ_Module slices: defines a plain
-// object of just these methods, re-attached via
-// Object.assign(EQ_Module, EQ_CrossfeedMethods) right after EQ_Module's own
-// closing brace, so `this` inside every method here is still EQ_Module -- no
-// call sites changed.
-//
-// Checked before extracting: only reads/calls its own state (crossfeedState,
-// speakerSimMode, stereoExpandLevel) and its own methods (updateCrossfeedDSP,
-// updateCrossfeedUI).
-// ==========================================================================
 const EQ_CrossfeedMethods = {
     cycleCrossfeed: function() {
         const options = ['off', 'on'];

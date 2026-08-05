@@ -1,27 +1,3 @@
-// ==========================================================================
-// eq-band-handlers.js — Per-band UI event handlers for EQ_Module: type/slope
-// cycling, copy, the freq/gain/Q slider + numeric-input handlers, reset,
-// auto-gain-match toggle + recalculation, bypass toggle, and the DPR canvas
-// sizing helper. Extracted verbatim from the monolithic inline script (audit
-// #4, eighteenth slice -- fourteenth slice out of EQ_Module).
-//
-// Note: setupDPRCanvas is a general-purpose canvas-DPI helper with zero
-// `this.` dependencies (just takes a canvas element) -- it physically sat in
-// the middle of this cluster in the original file and is used elsewhere too
-// (graph drawing), but moving it here changes nothing since it does not
-// reference EQ_Module state at all.
-//
-// Same re-attachment pattern as the previous EQ_Module slices: defines a plain
-// object of just these methods, re-attached via
-// Object.assign(EQ_Module, EQ_BandHandlerMethods) right after EQ_Module's own
-// closing brace, so `this` inside every method here is still EQ_Module -- no
-// call sites changed.
-//
-// Checked before extracting: reads/calls core EQ_Module state (bands,
-// autoGainMatchActive, autoGainCompensationDb) and core methods (updateSlider,
-// getRealValues, logHzToSlider, sliderToLogHz, updatePreamp) -- normal for
-// methods on a shared object, unaffected by which file the source lives in.
-// ==========================================================================
 const EQ_BandHandlerMethods = {
         cycleBandType: function(i) {
             const b = this.bands[i];

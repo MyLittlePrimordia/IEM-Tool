@@ -1,9 +1,3 @@
-// ==========================================================================
-// eq-presets.js — Custom EQ preset CRUD + built-in preset application for
-// EQ_Module: localStorage-backed custom presets (get/save/delete/apply/
-// render), the save-preset modal, and applying a built-in named preset onto
-// the current bands.
-// ==========================================================================
 const EQ_PresetMethods = {
         getCustomPresets: function() {
             try {

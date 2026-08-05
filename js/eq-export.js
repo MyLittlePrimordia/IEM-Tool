@@ -1,8 +1,3 @@
-// ==========================================================================
-// eq-export.js — Preset export/download functions for EQ_Module: triggerDownload,
-// getSanitizedExportFilename, and the per-app-format exporters (Peace, Wavelet,
-// Poweramp, Qudelix, FxSound).
-// ==========================================================================
 const EQ_ExportMethods = {
         triggerDownload: function(filename, text) { 
             const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });

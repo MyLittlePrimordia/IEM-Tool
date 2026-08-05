@@ -1,20 +1,3 @@
-// ==========================================================================
-// eq-loudness.js — Loudness/perceptual bass-treble compensation for EQ_Module:
-// state (active/calibration volume/strength), on/off toggle, per-parameter
-// updates, and the worklet DSP payload builder (low/high shelf filters scaled
-// by calibration volume). Extracted verbatim from the monolithic inline script
-// (audit #4, eleventh slice -- seventh slice out of EQ_Module).
-//
-// Same re-attachment pattern as the previous EQ_Module slices: defines a plain
-// object of just this state + these methods, re-attached via
-// Object.assign(EQ_Module, EQ_LoudnessMethods) right after EQ_Module's own
-// closing brace, so `this` inside every method here is still EQ_Module -- no
-// call sites changed.
-//
-// Checked before extracting: only reads/calls its own state
-// (loudnessActive/CalibrationVol/Strength) and its own method (updateLoudnessDSP),
-// plus this.drawCurve()/this.graphBuilt read the same way from every other slice.
-// ==========================================================================
 const EQ_LoudnessMethods = {
         loudnessActive: false,
         loudnessCalibrationVol: 50,

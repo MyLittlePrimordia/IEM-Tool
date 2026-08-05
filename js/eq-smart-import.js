@@ -1,20 +1,3 @@
-// ==========================================================================
-// eq-smart-import.js — "Smart Import" file-based EQ preset import for
-// EQ_Module: modal open/close, file selection + reading, format parsing
-// (Peace-style .txt) and graphic-EQ coordinate mapping onto the slider bands.
-// Extracted verbatim from the monolithic inline script (audit #4, thirteenth
-// slice -- ninth slice out of EQ_Module).
-//
-// Same re-attachment pattern as the previous EQ_Module slices: defines a plain
-// object of just this state + these methods, re-attached via
-// Object.assign(EQ_Module, EQ_SmartImportMethods) right after EQ_Module's own
-// closing brace, so `this` inside every method here is still EQ_Module -- no
-// call sites changed.
-//
-// Checked before extracting: only reads this.bands/this.advancedBands (core EQ
-// band arrays) and calls this.loadValues() (core method) to apply the parsed
-// result -- both fine to leave as this.X since EQ_Module stays one object.
-// ==========================================================================
 const EQ_SmartImportMethods = {
     parsedEQData: null,
             showSmartImportModal: function() {

@@ -1,21 +1,3 @@
-// ==========================================================================
-// accessibility.js — Accessibility: blue-light filter, mono/stereo channel
-// mode, L/R balance handling. Extracted verbatim from the monolithic inline
-// script (audit #4, third slice).
-//
-// This one DOES reach into other modules, but only through late-bound global
-// lookups that resolve at call time (window.EQ, window.toggleAudioMode,
-// window.isMonoMode, Mascot, window.syncGlobalSliders) -- never at load time.
-// Every method here only runs from a UI event handler, long after the rest of
-// the app has finished loading and those globals exist, so moving this file
-// earlier in the load order (it's injected in <head>, before Mascot/EQ_Module
-// are even declared) is safe. This is a different situation from utils.js and
-// audio-engine.js, which had zero cross-module references at all -- read this
-// note before extracting anything else this way, since the safety argument
-// here rests on 'nothing calls these methods until after boot', not on
-// 'nothing here touches other modules'.
-// ==========================================================================
-// Temporary Accessibility Shim to prevent lifecycle exceptions during transition
     const Accessibility = {
         blueLightActive: false,
         init: function() {

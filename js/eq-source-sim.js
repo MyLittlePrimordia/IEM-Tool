@@ -1,23 +1,3 @@
-// ==========================================================================
-// eq-source-sim.js — Source/fit simulation for EQ_Module: applies a fixed
-// source-impedance-style filter pair, then per-parameter eartip/insertion-
-// depth/acoustic-seal simulation filters (cycled via cycleTipSound/
-// cycleFitDepth/cycleSealQuality), plus the selector-color UI sync. Extracted
-// verbatim from the monolithic inline script (audit #4, sixteenth slice --
-// twelfth slice out of EQ_Module).
-//
-// Same re-attachment pattern as the previous EQ_Module slices: defines a plain
-// object of just these methods, re-attached via
-// Object.assign(EQ_Module, EQ_SourceSimMethods) right after EQ_Module's own
-// closing brace, so `this` inside every method here is still EQ_Module -- no
-// call sites changed.
-//
-// Checked before extracting: only reads/calls its own state (sourceSimGain/
-// sourceSimLowF/sourceSimLowG/sourceSimHighF/sourceSimHighG, simState,
-// tipOptions/depthOptions/sealOptions) and its own methods
-// (updateSelectorColors, updateSimulation), plus this.drawCurve()/this.graphBuilt/
-// this.updatePreamp read the same way from every other slice.
-// ==========================================================================
 const EQ_SourceSimMethods = {
         applySourceSimulation: function() {
             if (!this.graphBuilt) return;

@@ -1,8 +1,3 @@
-// ==========================================================================
-// audio-engine.js — SharedAudio: the app's single Web Audio graph (AudioContext,
-// master gain/panner, limiter, compressor, analyser + stereo splitter, worklet
-// node reference) plus the window.isMonoMode flag it drives.
-// ==========================================================================
 window.isMonoMode = false;
 
 const SharedAudio = {

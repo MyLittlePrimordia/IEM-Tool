@@ -1,9 +1,3 @@
-/**
- * dsp-processor.js (Production High-Performance DSP Engine)
- * Low-latency, CPU-optimized AudioWorkletProcessor.
- * Bypasses sub-sample math when parameters are settled to maximize efficiency.
- */
-
 const SMOOTHING_TIME_CONSTANT_SECONDS = 200 / 44100;
 
 function computeSmoothingFactor(sampleRate) {

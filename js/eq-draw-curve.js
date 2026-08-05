@@ -1,11 +1,3 @@
-// ==========================================================================
-// eq-draw-curve.js — Graph draw scheduling + the alternate "Large Response"
-// viewport renderer for EQ_Module. drawCurve is the throttled rAF scheduler
-// that everything else in the app calls to request a redraw; it delegates the
-// actual squig-graph painting to this.drawSquiglinkGraphInternal. drawLargeResponse
-// is a separate, self-contained canvas (#eq-largeResponseViz) that computes and
-// paints its own full frequency response independently of the main squig graph.
-// ==========================================================================
 const EQ_DrawCurveMethods = {
     drawCurve: function() {
         if (this.drawPending) return;

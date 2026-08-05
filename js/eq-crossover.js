@@ -1,21 +1,3 @@
-// ==========================================================================
-// eq-crossover.js — Virtual crossover simulator for EQ_Module: on/off toggle,
-// way-count/type cycling, per-band trim/frequency parameter updates, and the
-// worklet DSP payload builder. Extracted verbatim from the monolithic inline
-// script (audit #4, ninth slice -- fifth slice out of EQ_Module).
-//
-// Same re-attachment pattern as the previous EQ_Module slices: defines a plain
-// object of just these methods, re-attached via
-// Object.assign(EQ_Module, EQ_CrossoverMethods) right after EQ_Module's own
-// closing brace, so `this` inside every method here is still EQ_Module -- no
-// call sites changed.
-//
-// Checked before extracting: only reads/calls its own state
-// (crossoverActive/Type/Freq1-4/*Trim, xoType, crossoverTypeModes) and its own
-// methods (setCrossoverType, updateCrossoverDSP), plus this.drawCurve()/
-// this.graphBuilt which are core EQ_Module state read the same way from every
-// other slice.
-// ==========================================================================
 const EQ_CrossoverMethods = {
         toggleCrossover: function() {
             this.crossoverActive = !this.crossoverActive;

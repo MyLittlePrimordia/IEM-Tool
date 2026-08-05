@@ -1,9 +1,3 @@
-// ==========================================================================
-// eq-dynamics.js — Compressor/limiter/anti-clip dynamics controls for
-// EQ_Module: prevent-clipping toggle + its UI sync, the dynamics drawer
-// expand/collapse, limiter toggle, compressor toggle, and per-parameter
-// compressor updates.
-// ==========================================================================
 const EQ_DynamicsMethods = {
     togglePreventClipping: function() {
         this.preventClipping = !this.preventClipping; 

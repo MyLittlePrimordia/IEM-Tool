@@ -1,22 +1,3 @@
-// ==========================================================================
-// eq-reverb.js — Reverb effect for EQ_Module: on/off toggle, preset cycling,
-// per-parameter updates, the synthetic impulse-response generator, and the DSP
-// wet/dry mix application. Extracted verbatim from the monolithic inline script
-// (audit #4, seventh slice -- third slice out of EQ_Module).
-//
-// Same re-attachment pattern as the previous EQ_Module slices: defines a plain
-// object of just these methods, re-attached via
-// Object.assign(EQ_Module, EQ_ReverbMethods) right after EQ_Module's own closing
-// brace, so `this` inside every method here is still EQ_Module -- no call sites
-// changed.
-//
-// Checked before extracting: only reads/calls other EQ_Module state (reverbActive,
-// reverbParams, reverbPresets, audioEl) and its own methods. Note: TestLab_Module
-// elsewhere in the app also has a method literally named createImpulseResponse --
-// that one generates a test impulse for TestLab's own signal generator, not this
-// one; the two are unrelated (different object, different purpose) despite the
-// name match, so nothing here calls or depends on it.
-// ==========================================================================
 const EQ_ReverbMethods = {
     toggleReverb: function() {
         this.reverbActive = !this.reverbActive;

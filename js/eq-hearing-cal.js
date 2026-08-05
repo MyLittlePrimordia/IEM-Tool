@@ -1,22 +1,3 @@
-// ==========================================================================
-// eq-hearing-cal.js — Hearing/resonance calibration and de-esser for EQ_Module:
-// per-band hearing-loss compensation offsets, resonance/volume compensation
-// toggles, calibration gain application, and de-esser toggle + sensitivity.
-// Extracted verbatim from the monolithic inline script (audit #4, fourteenth
-// slice -- tenth slice out of EQ_Module).
-//
-// Same re-attachment pattern as the previous EQ_Module slices: defines a plain
-// object of just this state + these methods, re-attached via
-// Object.assign(EQ_Module, EQ_HearingCalMethods) right after EQ_Module's own
-// closing brace, so `this` inside every method here is still EQ_Module -- no
-// call sites changed.
-//
-// Checked before extracting: only reads/calls its own state
-// (hearingCalEnabled/hearingOffsets/resonanceCalEnabled/volumeCompEnabled/
-// deEsserEnabled/deEsserSensitivity/deEsserReductionDb) and this.hearingFilters/
-// this.preampNode/this.drawCurve/this.graphBuilt/this.updatePreamp, which are
-// core EQ_Module state read the same way from every other slice.
-// ==========================================================================
 const EQ_HearingCalMethods = {
             hearingCalEnabled: false,
             hearingOffsets: [0, 0, 0, 0, 0, 0, 0, 0], // Map to 250, 500, 1k, 2k, 4k, 8k, 12k, 16k

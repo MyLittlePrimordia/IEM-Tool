@@ -1,23 +1,95 @@
-// ==========================================================================
-// eq-playlist.js — Music/playlist transport controls for EQ_Module: loading
-// audio/audio.json, play/pause/shuffle/repeat/prev/next, seek, volume fade and
-// mute. Extracted verbatim from the monolithic inline script (audit #4, sixth
-// slice -- second slice out of EQ_Module).
-//
-// Same re-attachment pattern as js/eq-export.js: this file defines a plain
-// object of just these methods, and the main script does
-// Object.assign(EQ_Module, EQ_PlaylistMethods) right after EQ_Module's own
-// closing brace, so `this` inside every method here is still EQ_Module and
-// every existing call site (this.playPlaylistIndex(), EQ.toggleMute(), etc.)
-// keeps working unchanged.
-//
-// Checked before extracting: only reads/calls other EQ_Module state (audioEl,
-// playlist, playlistIndex, shuffleActive, repeatActive, musicVolumeNode,
-// graphBuilt, lastVolume) and methods (drawCurve, ensureDSPGraph,
-// updateLoudnessDSP, updateMarquee, clearGhostFiles) -- normal for methods on a
-// shared object, unaffected by which file the source lives in.
-// ==========================================================================
 const EQ_PlaylistMethods = {
+        // Shuffle bag state (indices into this.playlist). Rebuilt via _rebuildShuffleBag.
+        // Avoids the classic Math.random() "same song again" problem by exhausting
+        // the full permutation before reshuffling, and never starting a new bag
+        // with the track that just finished.
+        _shuffleOrder: null,
+        _shufflePos: -1,
+
+        /**
+         * Fisher-Yates shuffle of an array of indices.
+         * Optionally keep `excludeIndex` out of the first slot so the same track
+         * is never played twice in a row when a new bag is generated.
+         */
+        _rebuildShuffleBag: function(excludeIndex) {
+            const n = this.playlist ? this.playlist.length : 0;
+            if (n === 0) {
+                this._shuffleOrder = [];
+                this._shufflePos = -1;
+                return;
+            }
+
+            const order = Array.from({ length: n }, (_, i) => i);
+
+            // Fisher-Yates
+            for (let i = n - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                const tmp = order[i];
+                order[i] = order[j];
+                order[j] = tmp;
+            }
+
+            // If we just played a track, make sure the new bag doesn't start with it
+            // (unless there's only one track).
+            if (n > 1 && excludeIndex !== undefined && excludeIndex !== null && order[0] === excludeIndex) {
+                // Swap first element with a random later one
+                const swapWith = 1 + Math.floor(Math.random() * (n - 1));
+                const tmp = order[0];
+                order[0] = order[swapWith];
+                order[swapWith] = tmp;
+            }
+
+            this._shuffleOrder = order;
+            this._shufflePos = -1; // next call to _nextShuffledIndex advances to 0
+        },
+
+        /**
+         * Returns the next index from the shuffle bag. Rebuilds the bag when
+         * exhausted (or when the playlist length changed).
+         */
+        _nextShuffledIndex: function() {
+            const n = this.playlist.length;
+            if (n === 0) return 0;
+
+            // Bag missing, empty, or out of sync with playlist size → rebuild
+            if (!this._shuffleOrder || this._shuffleOrder.length !== n) {
+                this._rebuildShuffleBag(this.playlistIndex);
+            }
+
+            this._shufflePos++;
+
+            if (this._shufflePos >= this._shuffleOrder.length) {
+                // Exhausted the bag — rebuild, avoiding the track we just played
+                this._rebuildShuffleBag(this.playlistIndex);
+                this._shufflePos = 0;
+            }
+
+            return this._shuffleOrder[this._shufflePos];
+        },
+
+        /**
+         * Returns the previous index from the shuffle bag (history).
+         * If we're at the start of the bag, rebuild and pick a random different track.
+         */
+        _prevShuffledIndex: function() {
+            const n = this.playlist.length;
+            if (n === 0) return 0;
+
+            if (!this._shuffleOrder || this._shuffleOrder.length !== n) {
+                this._rebuildShuffleBag(this.playlistIndex);
+            }
+
+            if (this._shufflePos > 0) {
+                this._shufflePos--;
+                return this._shuffleOrder[this._shufflePos];
+            }
+
+            // At the beginning of history — rebuild so we don't just stay put
+            this._rebuildShuffleBag(this.playlistIndex);
+            this._shufflePos = 0;
+            return this._shuffleOrder[0];
+        },
+
         setupPlaylist: async function() {
             try {
                 const res = await fetch('./audio/audio.json');
@@ -28,9 +100,16 @@ const EQ_PlaylistMethods = {
                         url: `./audio/${item.file}`
                     }));
                     if (this.playlist.length > 0) {
-                        // Pick a random track index on load if Shuffle is active, otherwise default to the first track
-                        const startIndex = this.shuffleActive ? Math.floor(Math.random() * this.playlist.length) : 0;
-                        this.playlistIndex = startIndex;
+                        // When shuffle is already on, start with a proper bag instead of a single random pick
+                        if (this.shuffleActive) {
+                            this._rebuildShuffleBag();
+                            this.playlistIndex = this._nextShuffledIndex();
+                        } else {
+                            this.playlistIndex = 0;
+                            this._shuffleOrder = null;
+                            this._shufflePos = -1;
+                        }
+                        const startIndex = this.playlistIndex;
                         const track = this.playlist[startIndex];
                         
                         this.audioEl.src = track.url;
@@ -117,6 +196,8 @@ const EQ_PlaylistMethods = {
             this.clearGhostFiles();
             this.playlist = [];
             this.playlistIndex = 0;
+            this._shuffleOrder = null;
+            this._shufflePos = -1;
             
             const infoText = document.getElementById("playlist-track-info");
             if (infoText) infoText.textContent = "No tracks Loaded";
@@ -140,6 +221,17 @@ const EQ_PlaylistMethods = {
                     else el.classList.remove('active-yellow');
                 }
             });
+
+            if (this.shuffleActive) {
+                // Build a fresh bag the moment shuffle is turned on.
+                // Exclude the currently playing track so the very next "Next"
+                // won't immediately re-select it.
+                this._rebuildShuffleBag(this.playlistIndex);
+            } else {
+                this._shuffleOrder = null;
+                this._shufflePos = -1;
+            }
+
             showToast(this.shuffleActive ? "Shuffle Mode: ON" : "Shuffle Mode: Off", "🔀");
         },
         toggleRepeat: function() {
@@ -158,9 +250,9 @@ const EQ_PlaylistMethods = {
             if (this.playlist.length === 0) return;
             
             if (this.shuffleActive) {
-                const randIndex = Math.floor(Math.random() * this.playlist.length);
-                this.playlistIndex = randIndex;
-                this.playPlaylistIndex(randIndex);
+                const prevIndex = this._prevShuffledIndex();
+                this.playlistIndex = prevIndex;
+                this.playPlaylistIndex(prevIndex);
                 return;
             }
 
@@ -170,15 +262,16 @@ const EQ_PlaylistMethods = {
         nextTrack: function() {
             if (this.playlist.length === 0) return;
             
+            // Repeat-one takes priority over shuffle
             if (this.repeatActive) {
                 this.playPlaylistIndex(this.playlistIndex);
                 return;
             }
             
             if (this.shuffleActive) {
-                const randIndex = Math.floor(Math.random() * this.playlist.length);
-                this.playlistIndex = randIndex;
-                this.playPlaylistIndex(randIndex);
+                const nextIndex = this._nextShuffledIndex();
+                this.playlistIndex = nextIndex;
+                this.playPlaylistIndex(nextIndex);
                 return;
             }
 

@@ -1,27 +1,3 @@
-// ==========================================================================
-// eq-squig-graph.js — The main frequency-response graph renderer for
-// EQ_Module (the #eq-squiglinkViz canvas): drawSquiglinkGraphInternal (the
-// ~670-line core painter -- grid, static-vs-live layer caching, curve
-// plotting, match overlays), its drawNormalCurves helper, the dB-to-Y
-// coordinate mapper (dbToY_squig), and the band-node dot renderer (drawDot,
-// also called from eq-draw-curve.js's drawLargeResponse). Extracted verbatim
-// from the monolithic inline script (audit #4, twentieth slice -- sixteenth
-// slice out of EQ_Module, and the largest single slice so far at ~850 lines).
-//
-// Same re-attachment pattern as the previous EQ_Module slices: defines a plain
-// object of just these methods, re-attached via
-// Object.assign(EQ_Module, EQ_SquigGraphMethods) right after EQ_Module's own
-// closing brace, so `this` inside every method here is still EQ_Module -- no
-// call sites changed, including the this.drawDot() call already made from
-// eq-draw-curve.js.
-//
-// Checked before extracting: reads/calls core EQ_Module state (bands,
-// advancedBands, simState, loudnessActive, deEsser*, the static-cache-canvas
-// fields, preampSliderEl) and core methods (getActiveCanvasFont, setupDPRCanvas)
-// plus late-bound globals (CurveUtils, PEQDB_Module) -- none of which are
-// affected by which file the source lives in. Pre-validated this block parses
-// standalone (wrapped in a throwaway object literal) before writing this file.
-// ==========================================================================
 const EQ_SquigGraphMethods = {
         // Live spectrum analyzer overlay: shows the currently playing audio's real-time
         // frequency content on the main graph, behind the EQ curve. Reads the same FFT data
