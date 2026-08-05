@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="theme-void">
+<html lang="en" class="theme-slate">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
@@ -161,7 +161,7 @@
         }
 
         /* 8-Bit Theme Color Engine Configuration */
-        .theme-void {
+        .theme-slate {
             /* "Slate" — Master Dark */
             --bg-body: #111115;
             --bg-window: #16161c;
@@ -181,7 +181,7 @@
             --accent-blue-rgb: 100, 136, 176;
         }
 
-        .theme-graphite {
+        .theme-parchment {
             /* "Parchment" — Original Background Colors with Brighter Copper-Amber Knobs */
             --bg-body: #cdb98c;
             --bg-window: #d4c093;
@@ -201,7 +201,7 @@
             --accent-blue-rgb: 200, 90, 14;
         }
 
-        .theme-crimson {
+        .theme-ember {
             /* "Ember" — RED */
             --bg-body: #181111;
             --bg-window: #201616;
@@ -221,7 +221,7 @@
             --accent-blue-rgb: 200, 75, 75;
         }
 
-        .theme-ocean {
+        .theme-circuit {
             /* "Circuit" — BLUE */
             --bg-body: #101520;
             --bg-window: #161c2b;
@@ -261,7 +261,7 @@
             --accent-blue-rgb: 72, 154, 88;
         }
 
-        .theme-sunset {
+        .theme-cartridge {
             /* "Cartridge" — ORANGE */
             --bg-body: #191410;
             --bg-window: #211a15;
@@ -281,7 +281,7 @@
             --accent-blue-rgb: 200, 115, 58;
         }
 
-        .theme-midnight {
+        .theme-arcade {
             /* "Arcade" — PURPLE */
             --bg-body: #14111d;
             --bg-window: #1b1728;
@@ -301,7 +301,7 @@
             --accent-blue-rgb: 130, 98, 200;
         }
 
-        .theme-sakura {
+        .theme-blush {
             /* "Blush" — PINK */
             --bg-body: #1a1116;
             --bg-window: #22161d;
@@ -351,47 +351,47 @@
         }
 
         /* Parchment Light Mode High-Contrast Black/Dark Text Overrides */
-        .theme-graphite [class*="text-stone-"],
-        .theme-graphite [class*="text-zinc-"],
-        .theme-graphite [class*="text-slate-"],
-        .theme-graphite .btn-clear,
-        .theme-graphite .db-title-text,
-        .theme-graphite .section-card span,
-        .theme-graphite .section-card p,
-        .theme-graphite .section-card div,
-        .theme-graphite .section-card label,
-        .theme-graphite button,
-        .theme-graphite .text-white {
+        .theme-parchment [class*="text-stone-"],
+        .theme-parchment [class*="text-zinc-"],
+        .theme-parchment [class*="text-slate-"],
+        .theme-parchment .btn-clear,
+        .theme-parchment .db-title-text,
+        .theme-parchment .section-card span,
+        .theme-parchment .section-card p,
+        .theme-parchment .section-card div,
+        .theme-parchment .section-card label,
+        .theme-parchment button,
+        .theme-parchment .text-white {
             color: var(--text-main) !important;
         }
 
         /* Parchment Theme Rich Darkening Hover Overrides (Replaces Bright White Flashes) */
-        .theme-graphite button:not(.no-tactile):hover,
-        .theme-graphite .category-pill:hover,
-        .theme-graphite .tag:hover,
-        .theme-graphite label.btn-label:hover,
-        .theme-graphite .btn-clear:hover,
-        .theme-graphite #global-footer-bar button:hover,
-        .theme-graphite #global-footer-bar label.btn-label:hover,
-        .theme-graphite #tl-controls-spatial > div.btn-clear:hover,
-        .theme-graphite #tl-controls-spatial > button.btn-clear:hover,
-        .theme-graphite #tl-controls-graph > div.btn-clear:hover,
-        .theme-graphite #tl-controls-graph > button.btn-clear:hover {
+        .theme-parchment button:not(.no-tactile):hover,
+        .theme-parchment .category-pill:hover,
+        .theme-parchment .tag:hover,
+        .theme-parchment label.btn-label:hover,
+        .theme-parchment .btn-clear:hover,
+        .theme-parchment #global-footer-bar button:hover,
+        .theme-parchment #global-footer-bar label.btn-label:hover,
+        .theme-parchment #tl-controls-spatial > div.btn-clear:hover,
+        .theme-parchment #tl-controls-spatial > button.btn-clear:hover,
+        .theme-parchment #tl-controls-graph > div.btn-clear:hover,
+        .theme-parchment #tl-controls-graph > button.btn-clear:hover {
             filter: brightness(0.88) !important;
         }
 
         /* Preserve Tip / Depth / Seal Status Colors in Parchment Theme */
-        .theme-graphite #lbl-tip-sound.text-red-500,
-        .theme-graphite #lbl-seal-quality.text-red-500 { color: #a51616 !important; }
-        .theme-graphite #lbl-tip-sound.text-green-400,
-        .theme-graphite #lbl-seal-quality.text-green-400,
-        .theme-graphite #lbl-fit-depth.text-emerald-400 { color: #15803d !important; }
-        .theme-graphite #lbl-tip-sound.text-orange-400 { color: #c2410c !important; }
-        .theme-graphite #lbl-tip-sound.text-cyan-400 { color: #0369a1 !important; }
-        .theme-graphite #lbl-tip-sound.text-purple-400,
-        .theme-graphite #lbl-fit-depth.text-purple-400 { color: #7e22ce !important; }
-        .theme-graphite #lbl-fit-depth.text-pink-400 { color: #be185d !important; }
-        .theme-graphite #lbl-seal-quality.text-yellow-400 { color: #a16207 !important; }
+        .theme-parchment #lbl-tip-sound.text-red-500,
+        .theme-parchment #lbl-seal-quality.text-red-500 { color: #a51616 !important; }
+        .theme-parchment #lbl-tip-sound.text-green-400,
+        .theme-parchment #lbl-seal-quality.text-green-400,
+        .theme-parchment #lbl-fit-depth.text-emerald-400 { color: #15803d !important; }
+        .theme-parchment #lbl-tip-sound.text-orange-400 { color: #c2410c !important; }
+        .theme-parchment #lbl-tip-sound.text-cyan-400 { color: #0369a1 !important; }
+        .theme-parchment #lbl-tip-sound.text-purple-400,
+        .theme-parchment #lbl-fit-depth.text-purple-400 { color: #7e22ce !important; }
+        .theme-parchment #lbl-fit-depth.text-pink-400 { color: #be185d !important; }
+        .theme-parchment #lbl-seal-quality.text-yellow-400 { color: #a16207 !important; }
 
         /* Fix 2: Visualizer Canvas Overlay Buttons White Text */
         #viz-controls-overlay button,
@@ -400,40 +400,40 @@
         }
 
         /* Fix 3: Tone Generator Boxes in Parchment Theme */
-        .theme-graphite #tone-region {
+        .theme-parchment #tone-region {
             background-color: var(--bg-input) !important;
             color: var(--text-main) !important;
             border: 2px solid #000000 !important;
         }
-        .theme-graphite #tone-map {
+        .theme-parchment #tone-map {
             background-color: var(--bg-input) !important;
         }
-        .theme-graphite #tone-map > div:first-child {
+        .theme-parchment #tone-map > div:first-child {
             opacity: 0.25 !important;
         }
 
         /* Fix 4: Ear Resonance Peak Readout Box in Parchment Theme */
-     .theme-graphite #resonance-lock-hz {
+     .theme-parchment #resonance-lock-hz {
          background-color: var(--bg-input) !important;
          color: var(--text-main) !important;
          border: 2px solid #000000 !important;
      }
 
      /* Fix 4b: Parchment 3D Soundstage High-Contrast Dark Radar Scope */
-     .theme-graphite .spatial-pad-container {
+     .theme-parchment .spatial-pad-container {
          background: #1a1105 !important;
          border: 3px solid #000000 !important;
      }
-     .theme-graphite .spatial-grid {
+     .theme-parchment .spatial-grid {
          background-image: linear-gradient(rgba(200, 90, 14, 0.25) 1px, transparent 1px), linear-gradient(90deg, rgba(200, 90, 14, 0.25) 1px, transparent 1px) !important;
      }
-     .theme-graphite .spatial-axis-h,
-     .theme-graphite .spatial-axis-v {
+     .theme-parchment .spatial-axis-h,
+     .theme-parchment .spatial-axis-v {
          background: rgba(200, 90, 14, 0.5) !important;
      }
 
      /* Fix 7: Bias Badge Box (Darker Tan BG + Black Text) */
-     .theme-graphite #bias-badge {
+     .theme-parchment #bias-badge {
          background-color: #a39169 !important;
          color: #1a1105 !important;
          border: 2px solid #000000 !important;
@@ -441,7 +441,7 @@
      }
 
      /* Fix 8: Driver Config Unit Indicator Box ("0 Units") */
-     .theme-graphite #driver-header-count-badge {
+     .theme-parchment #driver-header-count-badge {
          background-color: var(--bg-input) !important;
          color: var(--text-main) !important;
          border: 2px solid #000000 !important;
@@ -449,81 +449,81 @@
      }
 
 /* Fix 10: Find Tab Search Dropdowns in Parchment Theme */
-     .theme-graphite #find-gk-search-results,
-     .theme-graphite #find-taste-results,
-     .theme-graphite #find-upgrade-search-results,
-     .theme-graphite #find-brand-suggestions-box,
-     .theme-graphite #brand-suggestions {
+     .theme-parchment #find-gk-search-results,
+     .theme-parchment #find-taste-results,
+     .theme-parchment #find-upgrade-search-results,
+     .theme-parchment #find-brand-suggestions-box,
+     .theme-parchment #brand-suggestions {
          background-color: var(--bg-card) !important;
          color: var(--text-main) !important;
          border: 3px solid #000000 !important;
      }
-     .theme-graphite #find-gk-search-results > div,
-     .theme-graphite #find-taste-results > div,
-     .theme-graphite #find-upgrade-search-results > div,
-     .theme-graphite #find-brand-suggestions-box > div,
-     .theme-graphite #brand-suggestions > div {
+     .theme-parchment #find-gk-search-results > div,
+     .theme-parchment #find-taste-results > div,
+     .theme-parchment #find-upgrade-search-results > div,
+     .theme-parchment #find-brand-suggestions-box > div,
+     .theme-parchment #brand-suggestions > div {
          background-color: var(--bg-input) !important;
          color: var(--text-main) !important;
          border: 1px solid #000000 !important;
      }
-     .theme-graphite #find-gk-search-results > div:hover,
-         .theme-graphite #find-taste-results > div:hover,
-         .theme-graphite #find-upgrade-search-results > div:hover,
-         .theme-graphite #find-brand-suggestions-box > div:hover,
-         .theme-graphite #brand-suggestions > div:hover {
+     .theme-parchment #find-gk-search-results > div:hover,
+         .theme-parchment #find-taste-results > div:hover,
+         .theme-parchment #find-upgrade-search-results > div:hover,
+         .theme-parchment #find-brand-suggestions-box > div:hover,
+         .theme-parchment #brand-suggestions > div:hover {
              background-color: var(--accent-blue) !important;
              color: #ffffff !important;
          }
 
          /* Fix Find Tab Match & Upgrade Card Stepper Hover Text in Parchment */
-         .theme-graphite #find-matches-grid button:hover,
-         .theme-graphite #find-matches-grid button:hover span,
-         .theme-graphite #find-col-results button:hover,
-         .theme-graphite #find-col-results button:hover span,
-         .theme-graphite #find-col-tools button:hover,
-         .theme-graphite #find-col-tools button:hover span {
+         .theme-parchment #find-matches-grid button:hover,
+         .theme-parchment #find-matches-grid button:hover span,
+         .theme-parchment #find-col-results button:hover,
+         .theme-parchment #find-col-results button:hover span,
+         .theme-parchment #find-col-tools button:hover,
+         .theme-parchment #find-col-tools button:hover span {
              background-color: var(--accent-blue) !important;
              color: #ffffff !important;
          }
 
          /* Parchment High-Contrast Square Delete / Clear X Buttons */
-         .theme-graphite button[onclick*="removeTasteFavorite"],
-         .theme-graphite button[onclick*="clearUpgradeBaseIem"],
-         .theme-graphite button[onclick*="clearGkFlagship"],
-         .theme-graphite button[title*="Remove"] {
+         .theme-parchment button[onclick*="removeTasteFavorite"],
+         .theme-parchment button[onclick*="clearUpgradeBaseIem"],
+         .theme-parchment button[onclick*="clearGkFlagship"],
+         .theme-parchment button[title*="Remove"] {
              background-color: #a51616 !important;
              color: #ffffff !important;
              border: 2px solid #000000 !important;
          }
-         .theme-graphite button[onclick*="removeTasteFavorite"]:hover,
-         .theme-graphite button[onclick*="clearUpgradeBaseIem"]:hover,
-         .theme-graphite button[onclick*="clearGkFlagship"]:hover,
-         .theme-graphite button[title*="Remove"]:hover {
+         .theme-parchment button[onclick*="removeTasteFavorite"]:hover,
+         .theme-parchment button[onclick*="clearUpgradeBaseIem"]:hover,
+         .theme-parchment button[onclick*="clearGkFlagship"]:hover,
+         .theme-parchment button[title*="Remove"]:hover {
              background-color: #e53e3e !important;
              color: #ffffff !important;
          }
 
      /* Fix 11: EQ Sidebar Arrows, Slot Cards & Thicker 8-Bit Scrollbars for Parchment */
-     .theme-graphite #eq-col-db button {
+     .theme-parchment #eq-col-db button {
          color: var(--text-main) !important;
      }
      /* Fix Database Multi-File Source Arrows */
-     .theme-graphite .peqdb-row-item button {
+     .theme-parchment .peqdb-row-item button {
          background-color: var(--bg-input) !important;
          color: var(--text-main) !important;
          border: 2px solid #000000 !important;
      }
      /* Fix Slot Cards: Raised 8-Bit Buttons & Preserved Color Tint */
-     .theme-graphite #base-slot > div,
-     .theme-graphite #target-slot > div,
-     .theme-graphite #reference-pile > div {
+     .theme-parchment #base-slot > div,
+     .theme-parchment #target-slot > div,
+     .theme-parchment #reference-pile > div {
          color: #1a1105;
      }
      /* Role Badges (BASE / TARGET / REF): Raised 8-Bit Badge */
-     .theme-graphite #base-slot > div span.tracking-wider,
-     .theme-graphite #target-slot > div span.tracking-wider,
-     .theme-graphite #reference-pile > div span.tracking-wider {
+     .theme-parchment #base-slot > div span.tracking-wider,
+     .theme-parchment #target-slot > div span.tracking-wider,
+     .theme-parchment #reference-pile > div span.tracking-wider {
          background-color: var(--bg-card) !important;
          color: #1a1105 !important;
          border: 2px solid #000000 !important;
@@ -554,73 +554,73 @@
          transform: none !important;
      }
      /* Mini Action Buttons (Eye, Export, Search, Delete) */
-     .theme-graphite #base-slot > div button:not([style*="background-color"]),
-     .theme-graphite #target-slot > div button:not([style*="background-color"]),
-     .theme-graphite #reference-pile > div button:not([style*="background-color"]) {
+     .theme-parchment #base-slot > div button:not([style*="background-color"]),
+     .theme-parchment #target-slot > div button:not([style*="background-color"]),
+     .theme-parchment #reference-pile > div button:not([style*="background-color"]) {
          background-color: var(--bg-card) !important;
          border: 2px solid #000000 !important;
          color: #1a1105 !important;
          box-shadow: 1px 1px 0px 0px #000000 !important;
      }
      /* Preserve Color Cycle Circle Button */
-     .theme-graphite #base-slot > div button[style*="background-color"],
-     .theme-graphite #target-slot > div button[style*="background-color"],
-     .theme-graphite #reference-pile > div button[style*="background-color"] {
+     .theme-parchment #base-slot > div button[style*="background-color"],
+     .theme-parchment #target-slot > div button[style*="background-color"],
+     .theme-parchment #reference-pile > div button[style*="background-color"] {
          border: 2px solid #000000 !important;
          box-shadow: 1px 1px 0px 0px #000000 !important;
      }
      /* Card Title Text */
-     .theme-graphite #base-slot > div span[id^="marquee-"],
-     .theme-graphite #target-slot > div span[id^="marquee-"],
-     .theme-graphite #reference-pile > div span[id^="marquee-"] {
+     .theme-parchment #base-slot > div span[id^="marquee-"],
+     .theme-parchment #target-slot > div span[id^="marquee-"],
+     .theme-parchment #reference-pile > div span[id^="marquee-"] {
          color: #1a1105 !important;
      }
      /* Fix EQ Filter Card Type (PK) & Slope (12dB) Buttons */
-     .theme-graphite .eq-card-select {
+     .theme-parchment .eq-card-select {
          background-color: var(--bg-input) !important;
          color: var(--text-main) !important;
          border: 2px solid #000000 !important;
      }
-     .theme-graphite .eq-cards-scroll-container::-webkit-scrollbar,
-     .theme-graphite #peqdb-list::-webkit-scrollbar,
-     .theme-graphite #similar-list::-webkit-scrollbar,
-     .theme-graphite #find-results-container::-webkit-scrollbar {
+     .theme-parchment .eq-cards-scroll-container::-webkit-scrollbar,
+     .theme-parchment #peqdb-list::-webkit-scrollbar,
+     .theme-parchment #similar-list::-webkit-scrollbar,
+     .theme-parchment #find-results-container::-webkit-scrollbar {
          width: 8px !important;
          height: 8px !important;
      }
-     .theme-graphite .eq-cards-scroll-container::-webkit-scrollbar-thumb,
-     .theme-graphite #peqdb-list::-webkit-scrollbar-thumb,
-     .theme-graphite #similar-list::-webkit-scrollbar-thumb,
-     .theme-graphite #find-results-container::-webkit-scrollbar-thumb {
+     .theme-parchment .eq-cards-scroll-container::-webkit-scrollbar-thumb,
+     .theme-parchment #peqdb-list::-webkit-scrollbar-thumb,
+     .theme-parchment #similar-list::-webkit-scrollbar-thumb,
+     .theme-parchment #find-results-container::-webkit-scrollbar-thumb {
          background: var(--accent-blue) !important;
          border: 2px solid #000000 !important;
          border-radius: 0px !important;
      }
 
         /* Fix 5 Refinement: AutoEQ White Text & Burgundy Red OFF Switches */
-.theme-graphite button[onclick*="generateLeastSquaresAutoEQ"],
-.theme-graphite button[onclick*="generateLeastSquaresAutoEQ"] span,
-.theme-graphite #autoeq-btn-label {
+.theme-parchment button[onclick*="generateLeastSquaresAutoEQ"],
+.theme-parchment button[onclick*="generateLeastSquaresAutoEQ"] span,
+.theme-parchment #autoeq-btn-label {
     color: #ffffff !important;
     background-color: #312e81 !important;
     border-color: #000000 !important;
 }
-        .theme-graphite .retro-switch-btn:not(.is-on) {
+        .theme-parchment .retro-switch-btn:not(.is-on) {
             background: #3b1212 !important;
             color: #f87171 !important;
             border: 2px solid #000000 !important;
         }
-        .theme-graphite .retro-switch-btn:not(.is-on) span {
+        .theme-parchment .retro-switch-btn:not(.is-on) span {
             color: #f87171 !important;
             border: none !important;
             background: transparent !important;
         }
-        .theme-graphite .retro-switch-btn.is-on {
+        .theme-parchment .retro-switch-btn.is-on {
             background: #146c34 !important;
             color: #ffffff !important;
             border: 2px solid #000000 !important;
         }
-        .theme-graphite .retro-switch-btn.is-on span {
+        .theme-parchment .retro-switch-btn.is-on span {
             color: #ffffff !important;
             border: none !important;
             background: transparent !important;
@@ -645,10 +645,10 @@
         #graph-match-badges-overlay > div:last-child .text-\[8px\] {
             color: #facc15 !important;
         }
-        .theme-graphite [class*="text-stone-400"],
-        .theme-graphite [class*="text-zinc-400"],
-        .theme-graphite [class*="text-zinc-500"],
-        .theme-graphite [class*="text-stone-500"] {
+        .theme-parchment [class*="text-stone-400"],
+        .theme-parchment [class*="text-zinc-400"],
+        .theme-parchment [class*="text-zinc-500"],
+        .theme-parchment [class*="text-stone-500"] {
             color: var(--text-secondary);
         }
 
@@ -671,14 +671,14 @@
         /* 100% Pure CSS Retro Gaming Background Motifs (Zero URL Keywords) */
         
         /* 1. Slate — Studio Tech Grid (KEPT) */
-        .theme-void body, .theme-void #app-window {
+        .theme-slate body, .theme-slate #app-window {
             background-image: linear-gradient(to right, rgba(255,255,255,0.08) 2px, transparent 2px),
                               linear-gradient(to bottom, rgba(255,255,255,0.08) 2px, transparent 2px) !important;
             background-size: 32px 32px !important;
         }
 
         /* 2. Parchment — 8-Bit Quadrant Map Grid & Fine Cross-Hatch */
-        .theme-graphite body, .theme-graphite #app-window {
+        .theme-parchment body, .theme-parchment #app-window {
             background-image: linear-gradient(to right, rgba(26,17,5,0.15) 2px, transparent 2px),
                               linear-gradient(to bottom, rgba(26,17,5,0.15) 2px, transparent 2px),
                               repeating-linear-gradient(45deg, rgba(26,17,5,0.05) 0px, rgba(26,17,5,0.05) 2px, transparent 2px, transparent 8px) !important;
@@ -686,14 +686,14 @@
         }
 
         /* 3. Ember — Galaga Missile Defense Laser Crosshatch (KEPT) */
-        .theme-crimson body, .theme-crimson #app-window {
+        .theme-ember body, .theme-ember #app-window {
             background-image: linear-gradient(45deg, rgba(200,75,75,0.15) 2px, transparent 2px),
                               linear-gradient(-45deg, rgba(200,75,75,0.15) 2px, transparent 2px) !important;
             background-size: 20px 20px !important;
         }
 
         /* 4. Circuit — Pure CSS Subtle PCB Grid (ZERO url() keyword) */
-        .theme-ocean body, .theme-ocean #app-window {
+        .theme-circuit body, .theme-circuit #app-window {
             background-image:
 
         /* faint terrain pixels */
@@ -750,20 +750,20 @@
 }
 
         /* 6. Cartridge — NES / Atari Cartridge Racing Stripes (KEPT) */
-        .theme-sunset body, .theme-sunset #app-window {
+        .theme-cartridge body, .theme-cartridge #app-window {
             background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.08) 0px, rgba(255,255,255,0.08) 12px, transparent 12px, transparent 24px),
                               repeating-linear-gradient(0deg, rgba(0,0,0,0.2) 0px, rgba(0,0,0,0.2) 2px, transparent 2px, transparent 4px) !important;
         }
 
         /* 7. Arcade — Space Invaders / Breakout Pixel Brick Wall (KEPT) */
-        .theme-midnight body, .theme-midnight #app-window {
+        .theme-arcade body, .theme-arcade #app-window {
             background-image: linear-gradient(to right, rgba(255,255,255,0.10) 2px, transparent 2px),
                               repeating-linear-gradient(0deg, rgba(255,255,255,0.10) 0px, rgba(255,255,255,0.10) 2px, transparent 2px, transparent 16px) !important;
             background-size: 32px 100%, 100% 16px !important;
         }
 
         /* 8. Blush — Kirby / Tetris 8-Bit Pixel Checker Dither (KEPT) */
-        .theme-sakura body, .theme-sakura #app-window {
+        .theme-blush body, .theme-blush #app-window {
             background-image: linear-gradient(45deg, rgba(255,255,255,0.10) 25%, transparent 25%),
                               linear-gradient(-45deg, rgba(255,255,255,0.10) 25%, transparent 25%),
                               linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.10) 75%),
@@ -6751,13 +6751,21 @@ select,
 // ==========================================
 // LEGACY THEME ID MIGRATION
 // Theme ids were renamed to drop old placeholder codenames
-// ('pipboy' -> 'byte', 'synthwave' -> 'bit'). Display labels already
-// said "Byte"/"Bit" — only the internal id lagged. Runs once on load
-// so anyone with a saved theme keeps their pick.
+// ('pipboy' -> 'byte', 'synthwave' -> 'bit'), and again to retire the v1
+// internal codenames in favor of the v2 names that now match the display
+// labels ('void' -> 'slate', 'graphite' -> 'parchment', 'crimson' -> 'ember',
+// 'ocean' -> 'circuit', 'sunset' -> 'cartridge', 'midnight' -> 'arcade',
+// 'sakura' -> 'blush'). Display labels already said "Slate"/"Parchment"/etc —
+// only the internal id lagged. Runs once on load so anyone with a saved
+// theme keeps their pick.
 // ==========================================
 (function migrateLegacyThemeIds() {
     try {
-        const legacyMap = { pipboy: 'byte', synthwave: 'bit' };
+        const legacyMap = {
+            pipboy: 'byte', synthwave: 'bit',
+            void: 'slate', graphite: 'parchment', crimson: 'ember',
+            ocean: 'circuit', sunset: 'cartridge', midnight: 'arcade', sakura: 'blush'
+        };
         const saved = localStorage.getItem('settings_theme_id');
         if (saved && legacyMap[saved]) {
             localStorage.setItem('settings_theme_id', legacyMap[saved]);
@@ -7619,14 +7627,14 @@ window.updateExpandedAutoHide = function() {
         // Theme data used to live in a separate themes.json that had to be fetched over the
         // network. It's now baked directly into the app so there's one less file to ship/host.
         builtInThemes: [
-            { "id": "void", "name": "Slate", "emoji": "🕹️", "variables": { "--accent-blue": "#6488b0", "--bg-body": "#111115", "--bg-window": "#16161c", "--bg-card": "#202028", "--bg-sidebar": "#0d0d10", "--bg-input": "#181822", "--text-main": "#f0f0f4", "--text-secondary": "#8c8c9e", "--border-color": "#000000" } },
-            { "id": "graphite", "name": "Parchment", "emoji": "📜", "variables": { "--accent-blue": "#c85a0e", "--bg-body": "#cdb98c", "--bg-window": "#d4c093", "--bg-card": "#e2d2a8", "--bg-sidebar": "#bda87d", "--bg-input": "#e6d8b0", "--text-main": "#1a1105", "--text-secondary": "#4a3722", "--border-color": "#000000" } },
-            { "id": "crimson", "name": "Ember", "emoji": "🔴", "variables": { "--accent-blue": "#c84b4b", "--bg-body": "#181111", "--bg-window": "#201616", "--bg-card": "#2c1e1e", "--bg-sidebar": "#130d0d", "--bg-input": "#171010", "--text-main": "#f5ecec", "--text-secondary": "#a88080", "--border-color": "#000000" } },
-            { "id": "ocean", "name": "Circuit", "emoji": "🔵", "variables": { "--accent-blue": "#457cb4", "--bg-body": "#101520", "--bg-window": "#161c2b", "--bg-card": "#20283b", "--bg-sidebar": "#0d111a", "--bg-input": "#121724", "--text-main": "#ecf2f8", "--text-secondary": "#788ca8", "--border-color": "#000000" } },
+            { "id": "slate", "name": "Slate", "emoji": "🕹️", "variables": { "--accent-blue": "#6488b0", "--bg-body": "#111115", "--bg-window": "#16161c", "--bg-card": "#202028", "--bg-sidebar": "#0d0d10", "--bg-input": "#181822", "--text-main": "#f0f0f4", "--text-secondary": "#8c8c9e", "--border-color": "#000000" } },
+            { "id": "parchment", "name": "Parchment", "emoji": "📜", "variables": { "--accent-blue": "#c85a0e", "--bg-body": "#cdb98c", "--bg-window": "#d4c093", "--bg-card": "#e2d2a8", "--bg-sidebar": "#bda87d", "--bg-input": "#e6d8b0", "--text-main": "#1a1105", "--text-secondary": "#4a3722", "--border-color": "#000000" } },
+            { "id": "ember", "name": "Ember", "emoji": "🔴", "variables": { "--accent-blue": "#c84b4b", "--bg-body": "#181111", "--bg-window": "#201616", "--bg-card": "#2c1e1e", "--bg-sidebar": "#130d0d", "--bg-input": "#171010", "--text-main": "#f5ecec", "--text-secondary": "#a88080", "--border-color": "#000000" } },
+            { "id": "circuit", "name": "Circuit", "emoji": "🔵", "variables": { "--accent-blue": "#457cb4", "--bg-body": "#101520", "--bg-window": "#161c2b", "--bg-card": "#20283b", "--bg-sidebar": "#0d111a", "--bg-input": "#121724", "--text-main": "#ecf2f8", "--text-secondary": "#788ca8", "--border-color": "#000000" } },
             { "id": "byte", "name": "Byte", "emoji": "📟", "variables": { "--accent-blue": "#489a58", "--bg-body": "#111812", "--bg-window": "#162018", "--bg-card": "#202d23", "--bg-sidebar": "#0d130e", "--bg-input": "#121a13", "--text-main": "#ecf5ed", "--text-secondary": "#7ea383", "--border-color": "#000000" } },
-            { "id": "sunset", "name": "Cartridge", "emoji": "🟠", "variables": { "--accent-blue": "#c8733a", "--bg-body": "#191410", "--bg-window": "#211a15", "--bg-card": "#2e251e", "--bg-sidebar": "#13100d", "--bg-input": "#18130f", "--text-main": "#f7f0eb", "--text-secondary": "#aa8e80", "--border-color": "#000000" } },
-            { "id": "midnight", "name": "Arcade", "emoji": "👾", "variables": { "--accent-blue": "#8262c8", "--bg-body": "#14111d", "--bg-window": "#1b1728", "--bg-card": "#272138", "--bg-sidebar": "#100e18", "--bg-input": "#14111f", "--text-main": "#f2edf8", "--text-secondary": "#9284a8", "--border-color": "#000000" } },
-            { "id": "sakura", "name": "Blush", "emoji": "🌸", "variables": { "--accent-blue": "#c85a95", "--bg-body": "#1a1116", "--bg-window": "#22161d", "--bg-card": "#301e28", "--bg-sidebar": "#140e13", "--bg-input": "#191016", "--text-main": "#f8edf4", "--text-secondary": "#ac8497", "--border-color": "#000000" } },
+            { "id": "cartridge", "name": "Cartridge", "emoji": "🟠", "variables": { "--accent-blue": "#c8733a", "--bg-body": "#191410", "--bg-window": "#211a15", "--bg-card": "#2e251e", "--bg-sidebar": "#13100d", "--bg-input": "#18130f", "--text-main": "#f7f0eb", "--text-secondary": "#aa8e80", "--border-color": "#000000" } },
+            { "id": "arcade", "name": "Arcade", "emoji": "👾", "variables": { "--accent-blue": "#8262c8", "--bg-body": "#14111d", "--bg-window": "#1b1728", "--bg-card": "#272138", "--bg-sidebar": "#100e18", "--bg-input": "#14111f", "--text-main": "#f2edf8", "--text-secondary": "#9284a8", "--border-color": "#000000" } },
+            { "id": "blush", "name": "Blush", "emoji": "🌸", "variables": { "--accent-blue": "#c85a95", "--bg-body": "#1a1116", "--bg-window": "#22161d", "--bg-card": "#301e28", "--bg-sidebar": "#140e13", "--bg-input": "#191016", "--text-main": "#f8edf4", "--text-secondary": "#ac8497", "--border-color": "#000000" } },
             { "id": "bit", "name": "Bit", "emoji": "🪙", "variables": { "--accent-blue": "#ca9f33", "--bg-body": "#18150d", "--bg-window": "#201c11", "--bg-card": "#2e2918", "--bg-sidebar": "#13110a", "--bg-input": "#18150d", "--text-main": "#f7f4e8", "--text-secondary": "#ab9d78", "--border-color": "#000000" } }
         ],
         loadDynamicThemes: function() {
@@ -7774,7 +7782,7 @@ window.updateExpandedAutoHide = function() {
                 letterSpacing: "normal"
             }];
         },
-        currentTheme: 'void',
+        currentTheme: 'slate',
 
         switchTab: function(tabId) {
             if (tabId !== 'visualizer' && window.EQ && EQ.isVizFullscreen) {
@@ -7809,9 +7817,9 @@ window.updateExpandedAutoHide = function() {
                     activeBtn.classList.remove('text-[var(--text-secondary)]', 'text-white');
                     activeBtn.classList.add('shadow-sm');
                     
-                    const savedTheme = localStorage.getItem('settings_theme_id') || 'void';
+                    const savedTheme = localStorage.getItem('settings_theme_id') || 'slate';
                     const t = (this.themeMap && this.themeMap[savedTheme]) ? this.themeMap[savedTheme] : 
-                              ((this.themeMap && this.themeMap['void']) ? this.themeMap['void'] : { accent: '#787878' });
+                              ((this.themeMap && this.themeMap['slate']) ? this.themeMap['slate'] : { accent: '#787878' });
                     const accentColor = t.accent || '#787878';
                     activeBtn.style.backgroundColor = accentColor;
                     activeBtn.style.color = this.getContrastTextColor ? this.getContrastTextColor(accentColor) : '#ffffff';
@@ -7882,14 +7890,14 @@ window.updateExpandedAutoHide = function() {
                 container.innerHTML = '';
                 
                 const themes = [
-                    { id: 'void', label: '🕹️ Slate', emoji: '🕹️' },
-                    { id: 'graphite', label: '📜 Parchment', emoji: '📜' },
-                    { id: 'crimson', label: '🔴 Ember', emoji: '🔴' },
-                    { id: 'ocean', label: '🔵 Circuit', emoji: '🔵' },
+                    { id: 'slate', label: '🕹️ Slate', emoji: '🕹️' },
+                    { id: 'parchment', label: '📜 Parchment', emoji: '📜' },
+                    { id: 'ember', label: '🔴 Ember', emoji: '🔴' },
+                    { id: 'circuit', label: '🔵 Circuit', emoji: '🔵' },
                     { id: 'byte', label: '📟 Byte', emoji: '📟' },
-                    { id: 'sunset', label: '🟠 Cartridge', emoji: '🟠' },
-                    { id: 'midnight', label: '👾 Arcade', emoji: '👾' },
-                    { id: 'sakura', label: '🌸 Blush', emoji: '🌸' },
+                    { id: 'cartridge', label: '🟠 Cartridge', emoji: '🟠' },
+                    { id: 'arcade', label: '👾 Arcade', emoji: '👾' },
+                    { id: 'blush', label: '🌸 Blush', emoji: '🌸' },
                     { id: 'bit', label: '🪙 Bit', emoji: '🪙' }
                 ];
                 
@@ -7922,7 +7930,7 @@ window.updateExpandedAutoHide = function() {
 
         cycleTheme: function() {
             const keys = Object.keys(this.themeMap);
-            const current = localStorage.getItem('settings_theme_id') || 'void';
+            const current = localStorage.getItem('settings_theme_id') || 'slate';
             let nextIdx = (keys.indexOf(current) + 1) % keys.length;
             if (nextIdx < 0 || nextIdx >= keys.length) nextIdx = 0;
             this.setGlobalTheme(keys[nextIdx]);
@@ -7943,7 +7951,7 @@ window.updateExpandedAutoHide = function() {
         setGlobalTheme: function(themeId) {
             try {
                 const t = (this.themeMap && this.themeMap[themeId]) ? this.themeMap[themeId] : this._defaultThemeEntry();
-                this.currentTheme = this.themeMap[themeId] ? themeId : 'void';
+                this.currentTheme = this.themeMap[themeId] ? themeId : 'slate';
 
                 const root = document.documentElement;
                 
@@ -8587,8 +8595,8 @@ window.updateExpandedAutoHide = function() {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 
                 // Read active theme's accent color dynamically
-                const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
-                const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['void'];
+                const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
+                const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
                 const themeAccent = activeThemeConfig.accent || "#787878";
                 
                 while (particles.length < maxParticles) {
@@ -8878,8 +8886,8 @@ window.updateExpandedAutoHide = function() {
             this.settingsRestored = true;
             
             try {
-                const savedTheme = localStorage.getItem('settings_theme_id') || 'void'; // Default skin is now Slate
-                this.setGlobalTheme(this.themeMap[savedTheme] ? savedTheme : 'void');
+                const savedTheme = localStorage.getItem('settings_theme_id') || 'slate'; // Default skin is now Slate
+                this.setGlobalTheme(this.themeMap[savedTheme] ? savedTheme : 'slate');
 
                 const savedFont = localStorage.getItem('settings_font_id') || 'Silkscreen';
                 this.setGlobalFont(this.fontMap[savedFont] ? savedFont : 'Silkscreen');
@@ -9036,7 +9044,7 @@ window.updateExpandedAutoHide = function() {
     // means themeMap is fully populated before DOMContentLoaded even fires, which is what
     // makes the immediate theme-application below possible.
     App._defaultThemeEntry = function() {
-        const g = this.builtInThemes.find(t => t.id === 'void');
+        const g = this.builtInThemes.find(t => t.id === 'slate');
         return g ? { name: g.name, emoji: g.emoji, accent: g.variables['--accent-blue'], variables: g.variables } : null;
     };
     App.builtInThemes.forEach(theme => {
@@ -9055,13 +9063,13 @@ window.updateExpandedAutoHide = function() {
     // need to wait on font loading or anything else.
     (function applySavedThemeImmediately() {
         try {
-            const savedId = localStorage.getItem('settings_theme_id') || 'void';
+            const savedId = localStorage.getItem('settings_theme_id') || 'slate';
             const theme = App.builtInThemes.find(t => t.id === savedId);
             if (theme) {
                 document.documentElement.className = 'theme-' + savedId;
                 Object.entries(theme.variables).forEach(([k, v]) => document.documentElement.style.setProperty(k, v));
             }
-        } catch (e) { /* falls back to the static theme-void already on <html> */ }
+        } catch (e) { /* falls back to the static theme-slate already on <html> */ }
     })();
     // ==========================================
     // 2. IEM EVALUATION WORKSPACE MODULE
@@ -9215,7 +9223,7 @@ window.updateExpandedAutoHide = function() {
         },
 
         cycleExportThemeDirection: function(dir) {
-            const themes = ['void', 'bit', 'byte', 'sakura', 'midnight', 'ocean', 'sunset', 'crimson', 'graphite'];
+            const themes = ['slate', 'bit', 'byte', 'blush', 'arcade', 'circuit', 'cartridge', 'ember', 'parchment'];
             let curIdx = themes.indexOf(this.exportTheme);
             if (curIdx === -1) curIdx = 0;
             const total = themes.length;
@@ -9422,7 +9430,7 @@ window.updateExpandedAutoHide = function() {
         },
         initChart: function() {
             const ctx = document.getElementById('radarChart').getContext('2d');
-        const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
+        const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
         const activeThemeConfig = (window.App && App.themeMap && App.themeMap[savedThemeId]) || {};
         const themeVars = activeThemeConfig.variables || {};
         const accentColor = activeThemeConfig.accent || themeVars['--accent-blue'] || '#6488b0';
@@ -10780,7 +10788,7 @@ window.updateExpandedAutoHide = function() {
             biasClass = unifiedBiasClass;
             if(badge) { badge.innerHTML = biasStr; badge.className = biasClass; }
 if(this.radarChart) {
-                const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
+                const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
                 const activeThemeConfig = (window.App && App.themeMap && App.themeMap[savedThemeId]) || {};
                 const themeVars = activeThemeConfig.variables || {};
                 const accentColor = activeThemeConfig.accent || themeVars['--accent-blue'] || '#6488b0';
@@ -11279,7 +11287,7 @@ exportReviewCard: async function() {
             const notes = document.getElementById('review-notes').value.trim() || "No custom impressions entered.";
             
             // Map selected theme ID directly to active theme parameters
-            const selectedThemeId = IEM_Module.exportTheme || localStorage.getItem('settings_theme_id') || 'void';
+            const selectedThemeId = IEM_Module.exportTheme || localStorage.getItem('settings_theme_id') || 'slate';
             const selectedFontFamily = IEM_Module.exportFont || localStorage.getItem('settings_font_id') || 'Silkscreen';
 
             const fontStack = App.fontMap[selectedFontFamily] || '"Silkscreen", monospace';
@@ -11330,7 +11338,7 @@ exportReviewCard: async function() {
             }));
 
             // Pull live CSS variables from active or target theme
-            const themeEntry = (App.themeMap && App.themeMap[selectedThemeId]) || (App.themeMap && App.themeMap.void);
+            const themeEntry = (App.themeMap && App.themeMap[selectedThemeId]) || (App.themeMap && App.themeMap.slate);
             const v = themeEntry ? (themeEntry.variables || {}) : {};
 
             const currentTheme = {
@@ -11359,7 +11367,7 @@ exportReviewCard: async function() {
             ctx.save();
             ctx.lineWidth = 2;
             
-            if (selectedThemeId === 'graphite') { // Parchment — 36px Grid + 45deg Fine Crosshatch
+            if (selectedThemeId === 'parchment') { // Parchment — 36px Grid + 45deg Fine Crosshatch
                 ctx.save();
                 ctx.strokeStyle = 'rgba(26, 17, 5, 0.15)';
                 ctx.lineWidth = 2;
@@ -11375,7 +11383,7 @@ exportReviewCard: async function() {
                     ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + 800, 800); ctx.stroke();
                 }
                 ctx.restore();
-            } else if (selectedThemeId === 'crimson') { // Ember — 20px 45deg Laser Crosshatch (X-Grid)
+            } else if (selectedThemeId === 'ember') { // Ember — 20px 45deg Laser Crosshatch (X-Grid)
                 ctx.save();
                 ctx.strokeStyle = 'rgba(200, 75, 75, 0.15)';
                 ctx.lineWidth = 2;
@@ -11384,7 +11392,7 @@ exportReviewCard: async function() {
                     ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i - 800, 800); ctx.stroke();
                 }
                 ctx.restore();
-            } else if (selectedThemeId === 'ocean') { // Circuit — PCB Radar Rings + 48px Grid
+            } else if (selectedThemeId === 'circuit') { // Circuit — PCB Radar Rings + 48px Grid
                 ctx.save();
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.035)';
                 ctx.lineWidth = 1;
@@ -11421,7 +11429,7 @@ exportReviewCard: async function() {
                     ctx.fillRect(0, y, 1200, 2);
                 }
                 ctx.restore();
-            } else if (selectedThemeId === 'sunset') { // Cartridge — NES/Atari 12px Thick 45deg Racing Stripes
+            } else if (selectedThemeId === 'cartridge') { // Cartridge — NES/Atari 12px Thick 45deg Racing Stripes
                 ctx.save();
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
                 for (let i = -800; i < 2000; i += 24) {
@@ -11438,7 +11446,7 @@ exportReviewCard: async function() {
                     ctx.fillRect(0, y, 1200, 2);
                 }
                 ctx.restore();
-            } else if (selectedThemeId === 'midnight') { // Arcade — 32x16px Pixel Brick Wall
+            } else if (selectedThemeId === 'arcade') { // Arcade — 32x16px Pixel Brick Wall
                 ctx.save();
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
                 ctx.lineWidth = 2;
@@ -11450,7 +11458,7 @@ exportReviewCard: async function() {
                     }
                 }
                 ctx.restore();
-            } else if (selectedThemeId === 'sakura') { // Blush — 20px 8-Bit Pixel Checker Dither
+            } else if (selectedThemeId === 'blush') { // Blush — 20px 8-Bit Pixel Checker Dither
                 ctx.save();
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.10)';
                 for (let x = 0; x < 1200; x += 20) {
@@ -11479,7 +11487,7 @@ exportReviewCard: async function() {
                     }
                 }
                 ctx.restore();
-            } else { // Slate (void) — 32px Tech Grid
+            } else { // Slate — 32px Tech Grid
                 ctx.save();
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
                 ctx.lineWidth = 2;
@@ -11733,7 +11741,7 @@ exportReviewCard: async function() {
             const biasBoxX = 310 + (540 - biasBoxW) / 2;
             const biasBoxY = 132;
 
-            ctx.fillStyle = selectedThemeId === 'graphite' ? '#a39169' : (currentTheme.bgInput || currentTheme.bgCard);
+            ctx.fillStyle = selectedThemeId === 'parchment' ? '#a39169' : (currentTheme.bgInput || currentTheme.bgCard);
 ctx.strokeStyle = currentTheme.border;
 ctx.lineWidth = 2;
 ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
@@ -15440,8 +15448,8 @@ if (diffR > 0.4) {
                     totalEnergy = (totalEnergy / bufferLength) / 255;
 
                     // Retrieve current active theme accent color dynamically (Set default fallback to Parchment)
-                    const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
-                    const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['void'];
+                    const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
+                    const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
                     const themeAccent = activeThemeConfig.accent === '#ffffff' ? '#ffffff' : activeThemeConfig.accent;
 
                     const mode = EQ_Module.vizModes[EQ_Module.vizModeIndex];
@@ -16718,47 +16726,30 @@ const DBCache = {
 
                 _loadCatalog: async function() {
                     try {
-                        const res = await fetch('./database.json');
-                        if (!res.ok) throw new Error("database.json missing");
-
-                        const contentLength = res.headers.get('Content-Length');
-                        const totalBytes = contentLength ? parseInt(contentLength, 10) : 2200000;
-
-                        const reader = res.body ? res.body.getReader() : null;
-                        let list = null;
-
-                        if (reader) {
-                            let receivedBytes = 0;
-                            const chunks = [];
-                            
-                            while (true) {
-                                const { done, value } = await reader.read();
-                                if (done) break;
-                                
-                                chunks.push(value);
-                                receivedBytes += value.length;
-
-                                const pct = Math.min(100, Math.round((receivedBytes / totalBytes) * 100));
-                                this.updateCatalogProgressUI(pct, receivedBytes, totalBytes);
-                            }
-
-                            const allChunks = new Uint8Array(receivedBytes);
-                            let position = 0;
-                            for (const chunk of chunks) {
-                                allChunks.set(chunk, position);
-                                position += chunk.length;
-                            }
-
-                            const jsonText = new TextDecoder("utf-8").decode(allChunks);
-                            list = JSON.parse(jsonText);
-                        } else {
-                            list = await res.json();
+                        // 1. Try to download the small zipped file first
+                        let res = await fetch('./database.json.gz');
+                        
+                        // Fallback if the .gz file isn't found
+                        if (!res.ok) {
+                            console.warn("database.json.gz not found, trying database.json...");
+                            res = await fetch('./database.json');
+                            if (!res.ok) throw new Error("Database file missing");
+                            const list = await res.json();
+                            this.catalog = Array.isArray(list) ? list : [];
+                            this.updateCatalogProgressUI(100, 0, 0, true);
+                            return;
                         }
 
+                        // 2. Unzip it automatically inside the browser
+                        const decompressedStream = res.body.pipeThrough(new DecompressionStream('gzip'));
+                        const response = new Response(decompressedStream);
+                        
+                        // 3. Read the JSON data
+                        const list = await response.json();
                         this.catalog = Array.isArray(list) ? list : [];
-                        this.updateCatalogProgressUI(100, totalBytes, totalBytes, true);
+                        this.updateCatalogProgressUI(100, 0, 0, true);
                     } catch (e) {
-                        console.warn("[CurveIndexer] Could not load iem_database.json:", e);
+                        console.warn("[CurveIndexer] Could not load catalog:", e);
                         this.catalog = [];
                         this.updateCatalogProgressUI(100, 0, 0, true);
                     }
@@ -24629,8 +24620,8 @@ loadSoundLibrary: async function() {
                     const minDb = 60;
                     const maxDb = 90;
 
-                    const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
-                    const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['void'];
+                    const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
+                    const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
                     const themeAccent = activeThemeConfig.accent || "#3b82f6";
 
                     // 3. Draw the sculpted target curve with a beautiful glowing trace
@@ -25389,8 +25380,8 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                                         sctx.fillStyle = '#000000';
                                         sctx.fillRect(0, 0, sw, sh);
 
-                                        const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
-                                        const themeConfig = App.themeMap[savedThemeId] || App.themeMap['void'];
+                                        const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
+                                        const themeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
                                         const sparkColor = themeConfig.accent || '#3b82f6';
 
                                         const norm = CurveUtils.normalizeTo75dB(subData, 500, 75);
@@ -25754,8 +25745,8 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                             sctx.fillStyle = '#000000';
                             sctx.fillRect(0, 0, sw, sh);
 
-                            const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
-                            const themeConfig = App.themeMap[savedThemeId] || App.themeMap['void'];
+                            const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
+                            const themeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
                             const sparkColor = themeConfig.accent || '#3b82f6';
 
                             const norm = CurveUtils.normalizeTo75dB(subData, 500, 75);
@@ -26183,8 +26174,8 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                                 sctx.fillStyle = '#000000';
                                 sctx.fillRect(0, 0, sw, sh);
 
-                                const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
-                                const themeConfig = App.themeMap[savedThemeId] || App.themeMap['void'];
+                                const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
+                                const themeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
                                 const sparkColor = themeConfig.accent || '#3b82f6';
 
                                 const norm = CurveUtils.normalizeTo75dB(c.item.data, 500, 75);
@@ -26472,8 +26463,8 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                                 sctx.fillStyle = '#000000';
                                 sctx.fillRect(0, 0, sw, sh);
                                 
-                                const savedThemeId = localStorage.getItem('settings_theme_id') || 'void';
-                                const themeConfig = App.themeMap[savedThemeId] || App.themeMap['void'];
+                                const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
+                                const themeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
                                 const sparkColor = themeConfig.accent || '#3b82f6';
                                 
                                 const norm = CurveUtils.normalizeTo75dB(item.data, 500, 75);
