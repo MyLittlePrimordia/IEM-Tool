@@ -54488,6 +54488,29 @@
     ]
   },
   {
+  "id": "juzear_nimbus",
+  "brand": "JUZEAR",
+  "model": "Nimbus",
+  "variant": "",
+  "year": 2026,
+  "price_usd": 55,
+  "driver_type": "DD",
+  "driver_config": "1DD",
+  "impedance": 32,
+  "sensitivity": 108,
+  "connector": "2-pin",
+  "form_factor": "IEM",
+  "tags": [
+    "Balanced",
+    "Smooth",
+    "Detailed",
+    "Budget"
+  ],
+  "files": [
+    "data/JAYTISS/JUZEAR NIMBUS.txt"
+  ]
+},
+  {
     "id": "juzear_41t",
     "brand": "Juzear",
     "model": "41T",
