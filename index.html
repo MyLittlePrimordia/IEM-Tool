@@ -3859,6 +3859,16 @@ div[class*="gap-1.5"].w-full:not(#tl-controls-graph):not(#tl-controls-spatial):n
     background: var(--accent-blue) !important;
     color: #ffffff !important;
 }
+#global-footer-bar button.is-on,
+#global-footer-bar label.btn-label.is-on {
+    background: var(--accent-blue) !important;
+    color: #ffffff !important;
+    box-shadow: inset 2px 2px 0px 0px rgba(0, 0, 0, 0.35) !important;
+}
+#global-footer-bar button.is-on svg,
+#global-footer-bar button.is-on span {
+    color: #ffffff !important;
+}
 #global-footer-bar .h-8 {
     height: 32px !important;
     align-items: center !important;
@@ -16425,6 +16435,28 @@ switchCategory: function(catId) {
     };
     Object.assign(EQ_Module, EQ_ExportMethods);
     Object.assign(EQ_Module, EQ_PlaylistMethods);
+
+    // Sync Shuffle & Repeat active highlight states
+    const origToggleShuffle = EQ_Module.toggleShuffle;
+    EQ_Module.toggleShuffle = function() {
+        if (origToggleShuffle) origToggleShuffle.call(this);
+        else this.shuffleActive = !this.shuffleActive;
+        ['playlist-shuffle-btn', 'mobile-shuffle-btn'].forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) btn.classList.toggle('is-on', !!this.shuffleActive);
+        });
+    };
+
+    const origToggleRepeat = EQ_Module.toggleRepeat;
+    EQ_Module.toggleRepeat = function() {
+        if (origToggleRepeat) origToggleRepeat.call(this);
+        else this.repeatActive = !this.repeatActive;
+        ['playlist-repeat-btn', 'mobile-repeat-btn'].forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) btn.classList.toggle('is-on', !!this.repeatActive);
+        });
+    };
+
     Object.assign(EQ_Module, EQ_ReverbMethods);
     Object.assign(EQ_Module, EQ_CrossfeedMethods);
     Object.assign(EQ_Module, EQ_CrossoverMethods);
