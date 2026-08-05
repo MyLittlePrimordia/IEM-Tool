@@ -5035,6 +5035,22 @@ select,
                                         <input type="range" id="sim-tip-strength" min="0" max="100" value="100" class="w-full h-1 cursor-pointer" oninput="EQ.updateSimulation()">
                                     </div>
 
+                                    <div class="flex flex-col gap-1.5 py-0.5 pt-1 border-t border-black/30">
+                                        <div class="flex justify-between items-center text-xs font-bold text-zinc-300 uppercase tracking-wider">
+                                            <span>📻 Source Gear</span>
+                                            <span id="gear-sim-sub-label" class="font-mono text-emerald-400 font-bold text-[10px]">Off</span>
+                                        </div>
+                                        <div class="flex items-center gap-1.5 w-full h-9">
+                                            <button type="button" onclick="EQ.cycleGearSim(-1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
+                                            <button id="btn-gear-sim" onclick="EQ.cycleGearSim(1)" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none shadow-none">
+                                                <span id="label-gear-sim" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-bold">
+                                                    <span class="truncate">Off</span>
+                                                </span>
+                                            </button>
+                                            <button type="button" onclick="EQ.cycleGearSim(1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">▶</button>
+                                        </div>
+                                    </div>
+
                                     <div id="deesser-sens-container" class="flex flex-col gap-1.5 py-0.5 opacity-40 pointer-events-none transition-all duration-200">
                                         <div class="flex justify-between text-xs font-bold text-zinc-300 uppercase tracking-wider">
                                             <span>🛡️ Vocal Sibilance De-Esser</span>
@@ -13334,6 +13350,19 @@ this.advancedBands.forEach((b, i) => {
                 });
             }
 
+            if (this.sourceSimLowG !== undefined && this.sourceSimHighG !== undefined) {
+                const simLowF = this.sourceSimLowF || 10;
+                const simLowG = this.sourceSimLowG || 0;
+                const simHighF = this.sourceSimHighF || 22000;
+                const simHighG = this.sourceSimHighG || 0;
+
+                for (let j = 0; j < numPoints; j++) {
+                    const f = freqs[j];
+                    if (simLowG !== 0) filterMag[j] *= this.getBiquadMagnitude('lowshelf', f, simLowF, 0.7, simLowG);
+                    if (simHighG !== 0) filterMag[j] *= this.getBiquadMagnitude('highshelf', f, simHighF, 0.7, simHighG);
+                }
+            }
+
             if (this.deEsserEnabled && this.deEsserReductionDb !== 0 && this.deEsserFilter) {
                 const activeFreq = this.deEsserFilter.frequency.value;
                 for (let j = 0; j < numPoints; j++) {
@@ -14789,6 +14818,7 @@ if (diffR > 0.4) {
             this.bands.forEach((_, i) => this.updateSlider(i, 'main'));
             this.advancedBands.forEach((_, i) => this.updateSlider(i, 'adv'));
             this.updateSimulation();
+            if (this.applyGearSimDSP) this.applyGearSimDSP();
             this.updateLoudnessDSP();
             this.updateCrossoverDSP();
 

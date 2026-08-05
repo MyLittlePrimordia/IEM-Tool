@@ -256,4 +256,70 @@ const EQ_SourceSimMethods = {
             });
             this.drawCurve();
         },
+
+        gearSimOptions: [
+            { id: 'off', label: 'Off', icon: null, sub: 'Off', lowF: 10, lowG: 0, highF: 22000, highG: 0 },
+            { id: 'desktop', label: 'Desktop Amp', icon: 'icons/desktop.png', sub: 'Clean & Flat', lowF: 10, lowG: 0, highF: 22000, highG: 0 },
+            { id: 'laptop', label: 'Laptop', icon: 'icons/laptop.png', sub: 'Light Low-Cut', lowF: 40, lowG: -2.5, highF: 16000, highG: -1.5 },
+            { id: 'phone', label: 'Phone', icon: 'icons/phone.png', sub: 'Mid-Bass Warmth', lowF: 120, lowG: 3.0, highF: 12000, highG: -3.5 },
+            { id: 'dongle', label: 'Dongle DAC', icon: 'icons/dongle.png', sub: 'Portable Clean', lowF: 80, lowG: 1.5, highF: 18000, highG: -1.0 },
+            { id: 'tube', label: 'Tube Amp', icon: 'icons/tube.png', sub: 'Warm & Smooth', lowF: 150, lowG: 5.0, highF: 5000, highG: -4.5 },
+            { id: 'adapter10', label: '10Ω Adapter', icon: 'icons/impedance.png', sub: '+1.5dB Bass Boost', lowF: 120, lowG: 1.5, highF: 14000, highG: -1.0 },
+            { id: 'adapter20', label: '20Ω Adapter', icon: 'icons/impedance.png', sub: '+2.5dB Bass Boost', lowF: 140, lowG: 2.5, highF: 12000, highG: -2.0 },
+            { id: 'adapter30', label: '30Ω Adapter', icon: 'icons/impedance.png', sub: '+3.5dB Bass Boost', lowF: 150, lowG: 3.5, highF: 10000, highG: -3.0 },
+            { id: 'adapter50', label: '50Ω Adapter', icon: 'icons/impedance.png', sub: '+5.0dB Bass Boost', lowF: 160, lowG: 5.0, highF: 8000, highG: -4.0 },
+            { id: 'adapter75', label: '75Ω Adapter', icon: 'icons/impedance.png', sub: '+7.0dB Bass Boost', lowF: 180, lowG: 7.0, highF: 6000, highG: -5.0 },
+            { id: 'adapter100', label: '100Ω Adapter', icon: 'icons/impedance.png', sub: '+9.0dB Bass Boost', lowF: 200, lowG: 9.0, highF: 5000, highG: -6.0 }
+        ],
+        currentGearIdx: 0,
+
+        cycleGearSim: function(dir) {
+            const total = this.gearSimOptions.length;
+            this.currentGearIdx = ((this.currentGearIdx || 0) + dir + total) % total;
+            const gear = this.gearSimOptions[this.currentGearIdx];
+
+            const labelEl = document.getElementById('label-gear-sim');
+            const subLabelEl = document.getElementById('gear-sim-sub-label');
+
+            if (labelEl) {
+                if (gear.id === 'off') {
+                    labelEl.innerHTML = `<span class="truncate">Off</span>`;
+                } else {
+                    labelEl.innerHTML = `<img src="${gear.icon}" class="w-6 h-6 object-contain flex-shrink-0 inline-block"><span class="truncate">${gear.label}</span>`;
+                }
+            }
+            if (subLabelEl) {
+                subLabelEl.textContent = gear.sub;
+            }
+
+            this.applyGearSimDSP();
+            this.drawCurve();
+            if (window.Mascot) Mascot.triggerTemporaryExpression('cool', 1200);
+            if (gear.id === 'off') {
+                showToast("Gear Simulator: Off", "📻");
+            } else {
+                showToast(`Simulating ${gear.label} (${gear.sub})`, "📻");
+            }
+        },
+
+        applyGearSimDSP: function() {
+            if (!this.gearSimOptions) return;
+            const gear = this.gearSimOptions[this.currentGearIdx || 0];
+            if (!gear) return;
+
+            this.sourceSimLowF = gear.lowF;
+            this.sourceSimLowG = gear.lowG;
+            this.sourceSimHighF = gear.highF;
+            this.sourceSimHighG = gear.highG;
+
+            if (SharedAudio.workletNode) {
+                SharedAudio.workletNode.port.postMessage({
+                    type: 'updateSimulations',
+                    sims: [
+                        { index: 10, bypassed: gear.lowG === 0, filterType: 'lowshelf', frequency: gear.lowF, gain: gear.lowG, q: 0.7 },
+                        { index: 11, bypassed: gear.highG === 0, filterType: 'highshelf', frequency: gear.highF, gain: gear.highG, q: 0.7 }
+                    ]
+                });
+            }
+        },
 };
