@@ -16,5 +16,29 @@
     "name": "Cosmic Vortex",
     "emoji": "🌀",
     "file": "cosmic_vortex.js"
+  },
+  {
+    "id": "spectrum_bars",
+    "name": "Spectrum Bars",
+    "emoji": "📊",
+    "file": "spectrum_bars.js"
+  },
+  {
+    "id": "radial_burst",
+    "name": "Radial Burst",
+    "emoji": "☀️",
+    "file": "radial_burst.js"
+  },
+  {
+    "id": "eq_grid",
+    "name": "EQ Grid",
+    "emoji": "🟩",
+    "file": "eq_grid.js"
+  },
+  {
+    "id": "aurora_ribbons",
+    "name": "Aurora Ribbons",
+    "emoji": "🌈",
+    "file": "aurora_ribbons.js"
   }
 ]
