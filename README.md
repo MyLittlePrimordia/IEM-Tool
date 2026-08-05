@@ -175,6 +175,26 @@ This utility splits a large `database.json` file into smaller AI-friendly JSON c
 
 ---
 
+### 4. 🗜️ Compress Database (`Compress Database.exe`)
+
+#### ❓ What does this tool do?
+IEM Tool loads the measurement catalog from `database.json` (or the smaller `database.json.gz` when available). Large catalogs can take longer to download and parse.
+This utility compresses `database.json` into a GZip archive (`database.json.gz`) so the app can load the catalog faster and with less bandwidth, without changing any of the data inside.
+
+#### 🌟 Key Features:
+* **📦 GZip Compression:** Creates a standard `database.json.gz` file from `database.json`.
+* **🔒 Lossless:** Does not modify or remove any catalog entries — only compresses the file.
+* **📂 Same-folder workflow:** Reads and writes next to the executable for a simple drop-in setup.
+* **📉 Smaller footprint:** Often reduces catalog size significantly for quicker loading.
+
+#### 🚀 How to use it:
+1. Place **`Compress Database.exe`** in the same folder as your **`database.json`**.
+2. Run **`Compress Database.exe`**.
+3. It will generate **`database.json.gz`** in that same folder.
+4. Keep both files (or prefer the `.gz` in your app setup) — IEM Tool can load the compressed catalog when present.
+
+---
+
 ## 🛠️ Built With
 
 * **HTML5 / Vanilla JavaScript (ES6+)**

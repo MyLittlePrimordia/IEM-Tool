@@ -1,1 +1,0 @@
-Add-Type -Assembly System.IO.Compression; $s=[IO.File]::OpenRead("database.json"); $d=[IO.File]::Create("database.json.gz"); $z=[IO.Compression.GZipStream]::new($d,[IO.Compression.CompressionMode]::Compress); $s.CopyTo($z); $z.Dispose(); $d.Dispose(); $s.Dispose()
