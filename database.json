@@ -59196,6 +59196,30 @@
     ]
   },
   {
+  "id": "koss_kph30_wireless",
+  "brand": "Koss",
+  "model": "KPH30",
+  "variant": "Wireless",
+  "year": 2025,
+  "price_usd": 60,
+  "driver_type": "DD",
+  "driver_config": "1DD",
+  "impedance": 32,
+  "sensitivity": 104,
+  "connector": "Bluetooth",
+  "form_factor": "Wireless Over-Ear Headphones",
+  "tags": [
+    "Budget",
+    "Warm",
+    "Balanced",
+    "Relaxed",
+    "Fun"
+  ],
+  "files": [
+    "data/SUPER REVIEW/KOSS KPH30 WIRELESS.txt"
+  ]
+},
+  {
     "id": "koss_kph40_utility",
     "brand": "Koss",
     "model": "KPH40",
