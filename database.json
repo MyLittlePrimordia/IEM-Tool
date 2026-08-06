@@ -42079,6 +42079,31 @@
     ]
   },
   {
+"id": "gold_planar_gl850",
+"brand": "Gold Planar",
+"model": "GL850",
+"variant": "",
+"year": 2020,
+"price_usd": 1020,
+"driver_type": "Planar",
+"driver_config": "1Planar",
+"impedance": 32,
+"sensitivity": 90,
+"connector": "Detachable Cable",
+"form_factor": "Over-Ear Headphones (Wired)",
+"tags": [
+"Balanced",
+"Detailed",
+"Resolving",
+"Technical",
+"Wide-Stage",
+"Premium"
+],
+"files": [
+"data/UNHEARD LAB/GOLD PLANAR GL850.txt"
+]
+},
+  {
     "id": "goldplanar_amt16",
     "brand": "Gold Planar",
     "model": "AMT16",
