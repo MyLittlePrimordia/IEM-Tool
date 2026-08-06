@@ -30050,6 +30050,54 @@
     ]
   },
   {
+"id": "euiu_ei_01",
+"brand": "EUIU",
+"model": "EI-01",
+"variant": "",
+"year": 2026,
+"price_usd": 30,
+"driver_type": "DD",
+"driver_config": "1DD",
+"impedance": 32,
+"sensitivity": 109,
+"connector": "2-pin",
+"form_factor": "IEM",
+"tags": [
+"Budget",
+"Balanced",
+"Neutral",
+"Smooth",
+"Gaming"
+],
+"files": [
+"data/SOUNDCHECK39/EUIU EI-01.txt"
+]
+},
+{
+"id": "euiu_ui_05",
+"brand": "EUIU",
+"model": "UI-05",
+"variant": "",
+"year": 2026,
+"price_usd": 100,
+"driver_type": "Hybrid",
+"driver_config": "2DD+3BA",
+"impedance": 17,
+"sensitivity": 106,
+"connector": "2-pin",
+"form_factor": "IEM",
+"tags": [
+"Balanced",
+"Detailed",
+"Resolving",
+"Smooth",
+"Good-Imaging"
+],
+"files": [
+"data/SOUNDCHECK39/EUIU UI-05.txt"
+]
+},
+  {
     "id": "e_mu_teak",
     "brand": "E-Mu",
     "model": "Teak",
