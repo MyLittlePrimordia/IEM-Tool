@@ -1,10 +1,35 @@
 let auroraTime = 0;
 
+let _aurAccent = null;
+let _aurRgb = null;
+let _aurGrads = null;
+let _aurGradH = -1;
+
 EQ_Module.customEffects.aurora_ribbons = function(fctx, dataArray, timeDomain, w, h, themeAccent, bassIntensity, midrange, treble) {
     fctx.fillStyle = "rgba(0, 0, 0, 0.16)";
     fctx.fillRect(0, 0, w, h);
 
-    const rgb = PEQDB_Module.hexToRgb(themeAccent);
+    // Rebuild the four ribbon gradients only when the accent color or canvas
+    // height changes. The gradient's alpha envelope is fixed (edges 0, peak 1);
+    // the per-frame brightness is applied via globalAlpha, so the peak alpha
+    // stays `min(0.85, alpha+0.3)` exactly as before — no gradient is created
+    // per frame.
+    if (themeAccent !== _aurAccent || _aurGradH !== h) {
+        _aurAccent = themeAccent;
+        _aurRgb = PEQDB_Module.hexToRgb(themeAccent);
+        _aurGradH = h;
+        _aurGrads = [];
+        for (let r = 0; r < 4; r++) {
+            const baseY = h * ((r + 0.5) / 4);
+            const bandHeight = (h / 4) * 0.9;
+            const g = fctx.createLinearGradient(0, baseY - bandHeight, 0, baseY + bandHeight);
+            g.addColorStop(0, `rgba(${_aurRgb}, 0)`);
+            g.addColorStop(0.5, `rgba(${_aurRgb}, 1)`);
+            g.addColorStop(1, `rgba(${_aurRgb}, 0)`);
+            _aurGrads[r] = g;
+        }
+    }
+    const rgb = _aurRgb;
     auroraTime += 0.015 + bassIntensity * 0.03;
 
     const ribbonCount = 4;
@@ -41,12 +66,10 @@ EQ_Module.customEffects.aurora_ribbons = function(fctx, dataArray, timeDomain, w
         fctx.closePath();
 
         const alpha = 0.12 + treble * 0.15 + (r === 0 ? bassIntensity * 0.1 : 0);
-        const grad = fctx.createLinearGradient(0, baseY - bandHeight, 0, baseY + bandHeight);
-        grad.addColorStop(0, `rgba(${rgb}, 0)`);
-        grad.addColorStop(0.5, `rgba(${rgb}, ${Math.min(0.85, alpha + 0.3)})`);
-        grad.addColorStop(1, `rgba(${rgb}, 0)`);
-        fctx.fillStyle = grad;
+        fctx.globalAlpha = Math.min(0.85, alpha + 0.3);
+        fctx.fillStyle = _aurGrads[r];
         fctx.fill();
+        fctx.globalAlpha = 1;
     }
     fctx.restore();
 };

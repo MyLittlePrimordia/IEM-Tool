@@ -322,8 +322,14 @@ const EQ_SquigGraphMethods = {
 
             let preVal = (this.preampSliderEl) ? parseFloat(this.preampSliderEl.value) : 0;
             const preLin = Math.pow(10, preVal / 20); 
-            const totalMag = new Float32Array(steps);
-            const eqDb = new Float32Array(steps);
+
+            // Reuse pre-allocated scratch buffers instead of allocating two new
+            // Float32Arrays per draw (the graph redraws on every slider/toggle
+            // change, so this avoids GC churn in the hot path).
+            if (!this._eqDbBuf || this._eqDbBuf.length !== steps) this._eqDbBuf = new Float32Array(steps);
+            if (!this._totalMagBuf || this._totalMagBuf.length !== steps) this._totalMagBuf = new Float32Array(steps);
+            const eqDb = this._eqDbBuf;
+            const totalMag = this._totalMagBuf;
             for(let j = 0; j < steps; j++) {
                 eqDb[j] = 20 * Math.log10(Math.max(1e-10, filterMag[j] * preLin));
                 totalMag[j] = filterMag[j] * preLin;
@@ -346,12 +352,24 @@ const EQ_SquigGraphMethods = {
             let targetSpline = null;
 
             if (baseCurve) {
-                const baseNorm = PEQDB_Module.getNormalizedData(baseCurve.data, baseCurve.name);
-                baseSpline = PEQDB_Module.Spline.build(baseNorm);
+                // Memoize spline per (data, alignDb) — drawCurve fires on every
+                // slider input event, and rebuilding the spline each time was a
+                // large chunk of the drag cost. Rebuild only when the source
+                // data or the alignment reference actually changed.
+                if (!baseCurve._cmpSpline || baseCurve._cmpSplineData !== baseCurve.data || baseCurve._cmpSplineAlignDb !== PEQDB_Module.alignDb) {
+                    baseCurve._cmpSpline = PEQDB_Module.Spline.build(PEQDB_Module.getNormalizedData(baseCurve.data, baseCurve.name));
+                    baseCurve._cmpSplineData = baseCurve.data;
+                    baseCurve._cmpSplineAlignDb = PEQDB_Module.alignDb;
+                }
+                baseSpline = baseCurve._cmpSpline;
             }
             if (targetCurve) {
-                const targetNorm = PEQDB_Module.getNormalizedData(targetCurve.data, targetCurve.name);
-                targetSpline = PEQDB_Module.Spline.build(targetNorm);
+                if (!targetCurve._cmpSpline || targetCurve._cmpSplineData !== targetCurve.data || targetCurve._cmpSplineAlignDb !== PEQDB_Module.alignDb) {
+                    targetCurve._cmpSpline = PEQDB_Module.Spline.build(PEQDB_Module.getNormalizedData(targetCurve.data, targetCurve.name));
+                    targetCurve._cmpSplineData = targetCurve.data;
+                    targetCurve._cmpSplineAlignDb = PEQDB_Module.alignDb;
+                }
+                targetSpline = targetCurve._cmpSpline;
             }
 
             if (EQ_Module.graphMode === 'heatmap') {

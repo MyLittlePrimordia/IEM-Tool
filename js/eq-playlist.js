@@ -142,6 +142,7 @@ const EQ_PlaylistMethods = {
         },
         playPlaylistIndex: function(index) {
             if(index < 0 || index >= this.playlist.length) return;
+            this.playlistIndex = index;
             const infoText = document.getElementById("playlist-track-info");
             const mobInfoText = document.getElementById("mobile-track-info");
             const modalInfoText = document.getElementById("modal-track-name");

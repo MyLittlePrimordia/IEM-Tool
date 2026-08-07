@@ -18,7 +18,13 @@ const SafeStorage = {
             try {
                 localStorage.setItem(key, value);
             } catch (e) {
-                console.warn("[SafeStorage] Write limit exceeded.");
+                // Quota/private-mode failures: keep the value in memory so a
+                // later read still returns it for this session instead of the
+                // caller silently losing the write (the preset would vanish
+                // on the next page load regardless, but in-session behavior
+                // must not lie about the save).
+                console.warn("[SafeStorage] Write limit exceeded; keeping value in memory.", e);
+                this.memoryStorage[key] = String(value);
             }
         } else {
             this.memoryStorage[key] = String(value);

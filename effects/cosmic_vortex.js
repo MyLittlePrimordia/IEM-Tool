@@ -1,6 +1,26 @@
 let vortexParticles = [];
 let vortexAngle = 0;
 
+let _cosmicAccent = null;
+let _cosmicRgb = null;
+let _cosmicGlowSprite = null;
+let _cosmicGlowColor = null;
+
+function _cGlowSprite(colorHex) {
+    if (_cosmicGlowSprite && _cosmicGlowColor === colorHex) return _cosmicGlowSprite;
+    if (!_cosmicGlowSprite) { _cosmicGlowSprite = document.createElement('canvas'); _cosmicGlowSprite.width = 64; _cosmicGlowSprite.height = 64; }
+    const c = _cosmicGlowSprite.getContext('2d');
+    c.clearRect(0, 0, 64, 64);
+    const g = c.createRadialGradient(32, 32, 2, 32, 32, 32);
+    g.addColorStop(0, colorHex);
+    g.addColorStop(0.45, colorHex);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g;
+    c.fillRect(0, 0, 64, 64);
+    _cosmicGlowColor = colorHex;
+    return _cosmicGlowSprite;
+}
+
 EQ_Module.customEffects.cosmic_vortex = function(fctx, dataArray, timeDomain, w, h, themeAccent, bassIntensity, midrange, treble) {
     // True OLED trailing clear layer
     fctx.fillStyle = "rgba(0, 0, 0, 0.16)";
@@ -22,7 +42,9 @@ EQ_Module.customEffects.cosmic_vortex = function(fctx, dataArray, timeDomain, w,
         }
     }
 
-    const rgb = PEQDB_Module.hexToRgb(themeAccent);
+    if (themeAccent !== _cosmicAccent) { _cosmicAccent = themeAccent; _cosmicRgb = PEQDB_Module.hexToRgb(themeAccent); }
+    const rgb = _cosmicRgb;
+    const glowSprite = _cGlowSprite(themeAccent);
     vortexAngle += 0.005 + (midrange * 0.02);
 
     fctx.save();
@@ -47,12 +69,16 @@ EQ_Module.customEffects.cosmic_vortex = function(fctx, dataArray, timeDomain, w,
         // Color intensity matches distance from core (edge-fading)
         const distanceAlpha = Math.sin(p.distanceRatio * Math.PI) * (0.3 + treble * 0.7);
 
-        fctx.fillStyle = `rgba(${rgb}, ${distanceAlpha})`;
-        fctx.shadowBlur = p.size * (1.0 + treble * 6.0);
-        fctx.shadowColor = themeAccent;
-        
+        // Pre-rendered soft glow sprite instead of per-particle shadowBlur (very expensive)
+        const coreR = p.size * (1.0 + bassIntensity * 1.5);
+        const glowR = coreR * 3.2 * (1.0 + treble * 1.5);
+        fctx.globalAlpha = distanceAlpha;
+        fctx.drawImage(glowSprite, x - glowR, y - glowR, glowR * 2, glowR * 2);
+        fctx.globalAlpha = 1;
+
+        fctx.fillStyle = `rgba(${rgb}, ${Math.min(1, distanceAlpha + 0.35)})`;
         fctx.beginPath();
-        fctx.arc(x, y, p.size * (1.0 + bassIntensity * 1.5), 0, Math.PI * 2);
+        fctx.arc(x, y, coreR, 0, Math.PI * 2);
         fctx.fill();
     });
 

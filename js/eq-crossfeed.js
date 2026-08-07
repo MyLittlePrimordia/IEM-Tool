@@ -51,8 +51,6 @@ const EQ_CrossfeedMethods = {
             // 2.0kHz lowpass lets vocal sparkle and room echo bleed naturally for organic depth
             const filterHz = 2000;
             
-            console.log(`[Crossfeed Active] Slider Level: ${levelVal}% | Bleed Gain: ${crossVal.toFixed(3)} | Direct Gain: ${directVal.toFixed(3)}`);
-
             // Apply parameters smoothly to the global output DSP graph
             setAudioParamSmooth(SharedAudio.crossGainL.gain, crossVal, 0.02);
             setAudioParamSmooth(SharedAudio.crossGainR.gain, crossVal, 0.02);

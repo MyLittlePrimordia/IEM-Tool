@@ -1,12 +1,16 @@
 let waveScrollOffset = 0;
 
+let _liqAccent = null;
+let _liqRgb = null;
+
 EQ_Module.customEffects.liquid_fiber = function(fctx, dataArray, timeDomain, w, h, themeAccent, bassIntensity, midrange, treble) {
     fctx.fillStyle = "rgba(0, 0, 0, 0.22)"; // Heavy trails for liquid visual flow
     fctx.fillRect(0, 0, w, h);
 
     const numStrands = 5;
     const cy = h / 2;
-    const rgb = PEQDB_Module.hexToRgb(themeAccent);
+    if (themeAccent !== _liqAccent) { _liqAccent = themeAccent; _liqRgb = PEQDB_Module.hexToRgb(themeAccent); }
+    const rgb = _liqRgb;
 
     // Scroll speed is modulated by average bass levels
     waveScrollOffset += 0.05 + (bassIntensity * 0.12);

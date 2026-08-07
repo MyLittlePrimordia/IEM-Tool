@@ -144,7 +144,7 @@ const EQ_CrossoverMethods = {
         updateCrossoverDSP: function() {
             if (!this.graphBuilt || !SharedAudio.workletNode) return;
 
-            const type = this.xoType;
+            const type = this.crossoverType;
             const lG = Math.pow(10, this.crossoverLowTrim / 20);
             const lmG = Math.pow(10, type === '5way' ? this.crossoverLowMidTrim / 20 : -150 / 20);
             const mG = Math.pow(10, (type === '3way' || type === '4way' || type === '5way') ? this.crossoverMidTrim / 20 : -150 / 20);
@@ -153,22 +153,22 @@ const EQ_CrossoverMethods = {
 
             const payload = [
                 // Driver 1 Lowpass
-                { index: 0, bypassed: !this.crossoverActive, filterType: 'lowpass', frequency: type === '5way' ? this.crossoverFreq1 : (type === '2way' ? this.crossoverFreq3 : this.crossoverFreq2), gain: 0, q: 0.5 },
+                { index: 0, bypassed: !this.crossoverActive, filterType: 'lowpass', frequency: type === '5way' ? this.crossoverFreq1 : (type === '2way' ? this.crossoverFreq3 : this.crossoverFreq2), gain: 0, q: 0.707 },
                 
                 // Driver 2 Bandpass (Highpass / Lowpass pair)
-                { index: 1, bypassed: !this.crossoverActive || type !== '5way', filterType: 'highpass', frequency: this.crossoverFreq1, gain: 0, q: 0.5 },
-                { index: 2, bypassed: !this.crossoverActive || type !== '5way', filterType: 'lowpass', frequency: this.crossoverFreq2, gain: 0, q: 0.5 },
+                { index: 1, bypassed: !this.crossoverActive || type !== '5way', filterType: 'highpass', frequency: this.crossoverFreq1, gain: 0, q: 0.707 },
+                { index: 2, bypassed: !this.crossoverActive || type !== '5way', filterType: 'lowpass', frequency: this.crossoverFreq2, gain: 0, q: 0.707 },
                 
                 // Driver 3 Bandpass (Highpass / Lowpass pair)
-                { index: 3, bypassed: !this.crossoverActive || !['3way', '4way', '5way'].includes(type), filterType: 'highpass', frequency: this.crossoverFreq2, gain: 0, q: 0.5 },
-                { index: 4, bypassed: !this.crossoverActive || !['3way', '4way', '5way'].includes(type), filterType: 'lowpass', frequency: this.crossoverFreq3, gain: 0, q: 0.5 },
+                { index: 3, bypassed: !this.crossoverActive || !['3way', '4way', '5way'].includes(type), filterType: 'highpass', frequency: this.crossoverFreq2, gain: 0, q: 0.707 },
+                { index: 4, bypassed: !this.crossoverActive || !['3way', '4way', '5way'].includes(type), filterType: 'lowpass', frequency: this.crossoverFreq3, gain: 0, q: 0.707 },
                 
                 // Driver 4 Bandpass (Highpass / Lowpass pair)
-                { index: 5, bypassed: !this.crossoverActive || !['4way', '5way'].includes(type), filterType: 'highpass', frequency: this.crossoverFreq3, gain: 0, q: 0.5 },
-                { index: 6, bypassed: !this.crossoverActive || !['4way', '5way'].includes(type), filterType: 'lowpass', frequency: this.crossoverFreq4, gain: 0, q: 0.5 },
+                { index: 5, bypassed: !this.crossoverActive || !['4way', '5way'].includes(type), filterType: 'highpass', frequency: this.crossoverFreq3, gain: 0, q: 0.707 },
+                { index: 6, bypassed: !this.crossoverActive || !['4way', '5way'].includes(type), filterType: 'lowpass', frequency: this.crossoverFreq4, gain: 0, q: 0.707 },
                 
                 // Driver 5 Highpass
-                { index: 7, bypassed: !this.crossoverActive, filterType: 'highpass', frequency: type === '2way' ? this.crossoverFreq3 : (type === '3way' ? this.crossoverFreq3 : this.crossoverFreq4), gain: 0, q: 0.5 }
+                { index: 7, bypassed: !this.crossoverActive, filterType: 'highpass', frequency: type === '2way' ? this.crossoverFreq3 : (type === '3way' ? this.crossoverFreq3 : this.crossoverFreq4), gain: 0, q: 0.707 }
             ];
 
             SharedAudio.workletNode.port.postMessage({

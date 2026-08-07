@@ -33,7 +33,7 @@ const EQ_PresetMethods = {
 
             const presetData = {
                 p: config.preVal,
-                m: config.mainVals.map(v => ({ g: v.g, hz: v.hz, q: v.q, type: v.type || 'peaking' })),
+                m: config.mainVals.map(v => ({ g: v.g, hz: v.hz, q: v.q, type: v.type || 'peaking', s: v.slope })),
                 a: config.advVals.map(v => ({ g: v.g, hz: v.hz, q: v.q, type: v.type || 'peaking' })),
                 name: name
             };
@@ -110,6 +110,7 @@ const EQ_PresetMethods = {
                     const hzVal = isObject ? val.hz : undefined;
                     const qVal = isObject ? val.q : undefined;
                     const typeVal = isObject ? val.type : undefined;
+                    const slopeVal = isObject ? val.s : undefined;
 
                     const slider = document.getElementById("eq-s" + i);
                     if (slider) slider.value = gainVal;
@@ -130,6 +131,14 @@ const EQ_PresetMethods = {
                         if (typeBtn) {
                             const labelMap = { peaking: 'PK', lowshelf: 'LS', highshelf: 'HS', highpass: 'HP', lowpass: 'LP', notch: 'Notch' };
                             typeBtn.textContent = labelMap[typeVal] || 'PK';
+                        }
+                    }
+                    if (slopeVal !== undefined && this.bands[i]) {
+                        this.bands[i].slope = slopeVal;
+                        const slopeBtn = document.getElementById(`eq-sl_m${i}`);
+                        if (slopeBtn) {
+                            slopeBtn.textContent = `${slopeVal}dB`;
+                            slopeBtn.classList.remove('hidden');
                         }
                     }
 
@@ -225,6 +234,10 @@ const EQ_PresetMethods = {
                         if (b) {
                             b.g = val;
                         }
+                        // The live DSP reads the fader value (getLiveAdvancedFiltersState),
+                        // so mirror the gain onto the slider element, not just the model.
+                        const aSlider = document.getElementById("eq-a" + i);
+                        if (aSlider) aSlider.value = val;
                         this.updateSlider(i, 'adv');
                     });
                 }

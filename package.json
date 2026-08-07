@@ -11,12 +11,15 @@
     "dist": "electron-builder --publish never",
     "dist-win": "electron-builder --win --publish never",
     "dist-mac": "electron-builder --mac --publish never",
-    "dist-linux": "electron-builder --linux --publish never"
+    "dist-linux": "electron-builder --linux --publish never",
+    "build:js": "node scripts/build-bundle.mjs",
+    "check:js": "node scripts/check-js.mjs"
   },
 
   "devDependencies": {
     "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "terser": "^5.31.0"
   },
 
   "build": {
@@ -48,7 +51,13 @@
 
     "mac": {
       "target": [
-        "dmg"
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
       "icon": "icon.icns",
       "category": "public.app-category.utilities"
@@ -56,7 +65,13 @@
 
     "linux": {
       "target": [
-        "AppImage"
+        "AppImage",
+        {
+          "target": "tar.gz",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "icon.png",
       "category": "Utility"

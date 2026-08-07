@@ -86,7 +86,7 @@ const EQ_ReverbMethods = {
     const rt60 = 0.4 + (preset.size * 1.6) + (preset.fade * 2.5);
     const duration = Math.max(0.1, rt60);
 
-    const numSamples = Math.floor(sampleRate * duration);
+    const numSamples = Math.floor(sampleRate * Math.min(duration, 4.0));
     const impulseBuffer = ctx.createBuffer(2, numSamples, sampleRate);
     const left = impulseBuffer.getChannelData(0);
     const right = impulseBuffer.getChannelData(1);
@@ -125,6 +125,12 @@ const EQ_ReverbMethods = {
     const bloomDuration = 0.025; // 25ms rise time for reflections to diffuse
     const bloomSamples = Math.floor(bloomDuration * sampleRate);
 
+    // Multiplicative exponential decay: decayEnvelope *= decayFactor each step
+    // is mathematically identical to Math.exp(-t*(6.91/duration)) but avoids a
+    // Math.exp() call per sample (~100k+ saved per IR synthesis).
+    const decayFactor = Math.exp(-(6.91 / duration) / sampleRate);
+    let decayEnvelope = 1.0;
+
     for (let i = 0; i < numSamples; i++) {
         if (i < preDelaySamples) {
             left[i] = 0;
@@ -132,10 +138,7 @@ const EQ_ReverbMethods = {
             continue;
         }
 
-        const t = (i - preDelaySamples) / sampleRate;
-
-        // Exponential decay envelope
-        const decayEnvelope = Math.exp(-t * (6.91 / duration));
+        decayEnvelope *= decayFactor;
 
         // Smooth onset bloom (using a smoothstep curve)
         let bloomEnvelope = 1.0;

@@ -1,5 +1,8 @@
 let gridPeaks = [];
 
+let _gridAccent = null;
+let _gridRgb = null;
+
 EQ_Module.customEffects.eq_grid = function(fctx, dataArray, timeDomain, w, h, themeAccent, bassIntensity, midrange, treble) {
     fctx.fillStyle = "rgba(0, 0, 0, 0.2)";
     fctx.fillRect(0, 0, w, h);
@@ -9,7 +12,8 @@ EQ_Module.customEffects.eq_grid = function(fctx, dataArray, timeDomain, w, h, th
     const colWidth = w / colCount;
     const rowHeight = h / rowCount;
     const gap = 2;
-    const rgb = PEQDB_Module.hexToRgb(themeAccent);
+    if (themeAccent !== _gridAccent) { _gridAccent = themeAccent; _gridRgb = PEQDB_Module.hexToRgb(themeAccent); }
+    const rgb = _gridRgb;
 
     if (gridPeaks.length !== colCount) gridPeaks = new Array(colCount).fill(0);
 

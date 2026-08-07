@@ -64,16 +64,17 @@ const EQ_SmartImportMethods = {
                 }
                 
                 // Detect any multiline parametric EQ configuration format (Peace, APO, REW, Qudelix, raw numbers)
-                var hasParametricLines = text.split('\n').some(line => {
+                var lines = text.split(/\r?\n/);
+                var cleanLines = lines.filter(line => line.trim() !== '').slice(0, 15);
+                var hasParametricLines = lines.some(line => {
                     var clean = line.trim().toLowerCase();
                     return clean.includes("preamp") || clean.includes("fc") || clean.includes("filter") || clean.includes("peak") || clean.includes("pk");
-                }) || text.split('\n').filter(line => line.trim() !== '').slice(0, 15).some(line => line.split(/[\s,;\t]+/).filter(Boolean).length >= 3);
+                }) || cleanLines.some(line => line.split(/[\s,;\t]+/).filter(Boolean).length >= 3);
 
                 if (hasParametricLines) {
                     EQ.parsePeaceFormat(text); EQ.closeSmartImportModal(); return;
                 }
                 
-                var lines = text.split(/\r?\n/);
                 var dataCoords = [];
                 lines.forEach(function(line) {
                     var clean = line.trim();

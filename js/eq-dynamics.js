@@ -47,6 +47,17 @@ const EQ_DynamicsMethods = {
         
         if (!this.compressorActive) {
             SharedAudio.compressor.ratio.value = 1.0;
+            // Also neutralise make-up gain and the pre-filter, which stay engaged
+            // even with ratio=1 and would keep boosting/shaping the signal after
+            // the compressor is switched off.
+            if (SharedAudio.compressorGain) {
+                setAudioParamSmooth(SharedAudio.compressorGain.gain, 1.0, 0.015);
+            }
+            if (SharedAudio.compressorFilter) {
+                setAudioParamSmooth(SharedAudio.compressorFilter.frequency, 1000, 0.015);
+            }
+            const gainSlider = document.getElementById('comp-gain-slider');
+            if (gainSlider) gainSlider.value = 0;
             if (btn) btn.classList.remove('is-on');
             if (lbl) lbl.textContent = "Comp: OFF";
             if (container) {

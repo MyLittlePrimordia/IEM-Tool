@@ -111,16 +111,43 @@ const EQ_VizFullscreenMethods = {
             }
         });
 
-        document.addEventListener('fullscreenchange', () => {
+        this._onFullscreenChangeHandler = () => {
             if (!document.fullscreenElement && !document.webkitFullscreenElement && this.isVizFullscreen) {
                 this.exitVisualizerFullscreen();
             }
-        });
+        };
+
+        document.addEventListener('fullscreenchange', this._onFullscreenChangeHandler);
     },
 
     clearVizAutoHideListeners: function() {
         clearTimeout(this.vizAutoHideTimer);
         this.isHoveringVizControls = false;
+        if (!this._vizAutoHideBound) return;
+
+        const pane = document.getElementById('pane-visualizer');
+        if (pane && this._onVizActivity) {
+            pane.removeEventListener('mousemove', this._onVizActivity);
+            pane.removeEventListener('click', this._onVizActivity);
+            pane.removeEventListener('touchstart', this._onVizActivity);
+        }
+
+        [document.getElementById('global-footer-bar'), document.getElementById('viz-controls-overlay')].forEach(el => {
+            if (el) {
+                el.removeEventListener('mouseenter', this._onControlEnter);
+                el.removeEventListener('mouseleave', this._onControlLeave);
+            }
+        });
+
+        if (this._onFullscreenChangeHandler) {
+            document.removeEventListener('fullscreenchange', this._onFullscreenChangeHandler);
+        }
+
+        this._vizAutoHideBound = false;
+        this._onVizActivity = null;
+        this._onControlEnter = null;
+        this._onControlLeave = null;
+        this._onFullscreenChangeHandler = null;
     },
 
     cycleVizEffect: function() {

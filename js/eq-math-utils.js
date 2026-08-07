@@ -1,8 +1,12 @@
 const EQ_MathUtilMethods = {
     // Helper to retrieve the current active font family stack for HTML5 canvas drawings
     getActiveCanvasFont: function(size, weight = '') {
-        const fontStack = document.documentElement.style.getPropertyValue('--font-family') || '"Comic Sans MS"';
-        return `${weight ? weight + ' ' : ''}${size}px ${fontStack}`;
+        const _now = Date.now();
+        if (this._fontStackTs === undefined || _now - this._fontStackTs > 120) {
+            this._fontStack = document.documentElement.style.getPropertyValue('--font-family') || '"Comic Sans MS"';
+            this._fontStackTs = _now;
+        }
+        return `${weight ? weight + ' ' : ''}${size}px ${this._fontStack}`;
     },
     // Linear-to-Logarithmic and Logarithmic-to-Linear conversion helpers
     logHzToSlider: function(hz) {

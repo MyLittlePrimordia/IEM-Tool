@@ -24,12 +24,6 @@
     "file": "spectrum_bars.js"
   },
   {
-    "id": "radial_burst",
-    "name": "Radial Burst",
-    "emoji": "☀️",
-    "file": "radial_burst.js"
-  },
-  {
     "id": "eq_grid",
     "name": "EQ Grid",
     "emoji": "🟩",

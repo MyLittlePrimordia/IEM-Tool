@@ -24,6 +24,27 @@ const MIME_TYPES = {
 let mainWindow;
 let server;
 
+function crashLogPath() {
+  return path.join(app.getPath('userData'), 'crash.log');
+}
+
+function logCrash(err) {
+  try {
+    const line = `${new Date().toISOString()} ${(err && err.stack) || err}\n`;
+    fs.appendFileSync(crashLogPath(), line);
+  } catch (_) {}
+}
+
+process.on('uncaughtException', (err) => {
+  logCrash(err);
+  console.error('[IEM Tool] Uncaught exception:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  logCrash(reason);
+  console.error('[IEM Tool] Unhandled rejection:', reason);
+});
+
 function serveFile(filePath, stats, req, res) {
   const ext = path.extname(filePath).toLowerCase();
   const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
@@ -31,9 +52,23 @@ function serveFile(filePath, stats, req, res) {
   const range = req.headers.range;
 
   if (range) {
-    const match = /bytes=(\d*)-(\d*)/.exec(range);
-    let start = match && match[1] ? parseInt(match[1], 10) : 0;
-    let end = match && match[2] ? parseInt(match[2], 10) : fileSize - 1;
+    // Single-range only per RFC 7233; suffix form bytes=-N returns the last N bytes.
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+    if (!match || (match[1] === '' && match[2] === '')) {
+      res.writeHead(416, { 'Content-Range': `bytes */${fileSize}`, 'Connection': 'close' });
+      res.end();
+      return;
+    }
+    let start = match[1] !== '' ? parseInt(match[1], 10) : null;
+    let end = match[2] !== '' ? parseInt(match[2], 10) : null;
+
+    if (start === null) {
+      const n = end !== null ? end : 0;
+      start = Math.max(0, fileSize - n);
+      end = fileSize - 1;
+    } else if (end === null) {
+      end = fileSize - 1;
+    }
 
     if (isNaN(start) || start < 0) start = 0;
     if (isNaN(end) || end > fileSize - 1) end = fileSize - 1;
@@ -81,9 +116,6 @@ function startLocalServer(rootDir) {
       try {
         const rawPath = decodeURIComponent(req.url.split('?')[0]);
         let filePath = path.normalize(path.join(rootDir, rawPath));
-
-        // DEBUG PRINT: Shows exactly what file path Node is searching for
-        console.log("👉 SERVER IS LOOKING FOR THIS FILE:", filePath);
 
         const relativePath = path.relative(rootDir, filePath);
         const isSafe = (relativePath === '') || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
@@ -140,6 +172,7 @@ async function createWindow() {
     minHeight: 360,
     autoHideMenuBar: true,
     show: false,
+    icon: path.join(__dirname, 'icon.png'),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -148,6 +181,13 @@ async function createWindow() {
   });
 
   mainWindow.loadURL(`http://127.0.0.1:${port}/index.html`);
+
+  // Lock the window to the local app only: deny popups and any navigation away
+  // from the local UI (prevents accidental trips to external web content).
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith(`http://127.0.0.1:${port}/`)) e.preventDefault();
+  });
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.maximize();
@@ -159,7 +199,24 @@ async function createWindow() {
   });
 }
 
-app.whenReady().then(createWindow);
+// Enforce a single running instance: re-launching just focuses the existing window.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+
+  app.whenReady().then(() => {
+    if (process.platform === 'darwin' && app.dock) {
+      try { app.dock.setIcon(path.join(__dirname, 'icon.png')); } catch (e) {}
+    }
+    createWindow();
+  });
+}
 
 app.on('window-all-closed', () => {
   if (server) server.close();

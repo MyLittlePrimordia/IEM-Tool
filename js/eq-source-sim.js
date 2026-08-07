@@ -59,6 +59,7 @@ const EQ_SourceSimMethods = {
         },
         applySimulationToFilters: function(filterArray, offsetIndex) {
             if (!filterArray || filterArray.length === 0) return;
+            if (!this.simState) return;
             const tip = this.simState.tip;
             
             const strengthEl = document.getElementById('sim-tip-strength');

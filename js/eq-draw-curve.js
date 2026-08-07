@@ -8,9 +8,12 @@ const EQ_DrawCurveMethods = {
         const isPlaying = this.audioEl && !this.audioEl.paused;
         const isDragging = this.isDragging;
         
-        // Smooth 60 FPS (16ms) limit during node dragging OR when the Spectrum Overlay is active.
+        // 60 FPS (16ms) only during node dragging (interaction needs max response).
+        // The Spectrum Overlay shows a live bar chart, but the response curve + grid
+        // behind it are static, so 40 FPS (24ms) keeps the bars smooth while cutting
+        // the per-second graph redraw cost ~40% on live sound.
         // Decays to 20 FPS (50ms) during static music playback when overlay is OFF.
-        const limit = (isDragging || this.showSpectrumOverlay) ? 16 : 50;
+        const limit = isDragging ? 16 : (this.showSpectrumOverlay ? 24 : 50);
         if (isPlaying && (now - this.lastDrawTime < limit)) {
             return;
         }
@@ -25,7 +28,12 @@ const EQ_DrawCurveMethods = {
 
     drawLargeResponse: function() {
         const numPoints = 150; 
-        const accentBlue = getComputedStyle(document.documentElement).getPropertyValue('--accent-blue').trim() || '#6488b0';
+        const _now = Date.now();
+        if (this._lfAccentTs === undefined || _now - this._lfAccentTs > 120) {
+            this._lfAccent = getComputedStyle(document.documentElement).getPropertyValue('--accent-blue').trim() || '#6488b0';
+            this._lfAccentTs = _now;
+        }
+        const accentBlue = this._lfAccent;
         
         if (!this.cachedResponseFreqs) {
             this.allocateResponseBuffers(numPoints);
@@ -44,12 +52,19 @@ const EQ_DrawCurveMethods = {
             const state = mainState[i];
             const f = this.mathFilters[i]; 
             if (f) {
+                // Mirror the DSP slope cascade (slope/12 identical sections). Shelves
+                // split their gain across sections so the total stays g dB; LP/HP
+                // cascades sharpen the roll-off to match the audible graph.
+                const cascadeCount = Math.max(1, Math.round((b.slope || 12) / 12));
+                const isShelf = (state.type === 'lowshelf' || state.type === 'highshelf');
                 f.type = state.type || 'peaking'; 
                 f.frequency.value = state.hz;
-                f.gain.value = state.g; 
+                f.gain.value = isShelf ? (state.g / cascadeCount) : state.g; 
                 f.Q.value = state.q;
                 f.getFrequencyResponse(freqs, magRes, phaseRes); 
-                for (let j = 0; j < numPoints; j++) filterMag[j] *= magRes[j];
+                for (let k = 0; k < cascadeCount; k++) {
+                    for (let j = 0; j < numPoints; j++) filterMag[j] *= magRes[j];
+                }
             }
         });
 
@@ -189,7 +204,8 @@ const EQ_DrawCurveMethods = {
         cc.fillRect(0, 0, w, h);
 
         const preLin = Math.pow(10, preVal / 20); 
-        const totalMag = new Float32Array(numPoints);
+        if (!this._largeTotalMag || this._largeTotalMag.length !== numPoints) this._largeTotalMag = new Float32Array(numPoints);
+        const totalMag = this._largeTotalMag;
         for (let j = 0; j < numPoints; j++) {
             totalMag[j] = filterMag[j] * preLin;
         }
@@ -256,7 +272,7 @@ const EQ_DrawCurveMethods = {
         cc.lineWidth = 2.5; 
         cc.lineJoin = "round";
         for (let i = 0; i < numPoints; i++) {
-            const magDB = 20 * Math.log10(totalMag[i]);
+            const magDB = 20 * Math.log10(Math.max(1e-10, totalMag[i]));
             const x = w * (Math.log10(freqs[i] / 20) / Math.log10(20000 / 20));
             const y = (h / 2) - (magDB / 15) * (h / 2);
             if (i === 0) cc.moveTo(x, y); 

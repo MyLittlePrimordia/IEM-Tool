@@ -323,6 +323,17 @@ class DspProcessor extends AudioWorkletProcessor {
         const numFilters = activeFilters.length;
         const numSims = activeSimFilters.length;
 
+        // Realtime-thread: hoist crossover helpers + gain reads OUT of the
+        // per-sample loop (they are constant across an audio block).
+        const appXo = this.xoEnabled;
+        const xoEdgeL = (f, x) => f.processSampleL(f.processSampleL(x, this.smoothingFactor, this.sampleRate), this.smoothingFactor, this.sampleRate);
+        const xoEdgeR = (f, x) => f.processSampleR(f.processSampleR(x));
+        const xoG0 = this.getGainSafe(0);
+        const xoG1 = this.getGainSafe(1);
+        const xoG2 = this.getGainSafe(2);
+        const xoG3 = this.getGainSafe(3);
+        const xoG4 = this.getGainSafe(4);
+
         for (let i = 0; i < bufferSize; i++) {
             this.preampGain += (this.targetPreampGain - this.preampGain) * this.smoothingFactor;
 
@@ -343,8 +354,12 @@ class DspProcessor extends AudioWorkletProcessor {
                 if (isStereo) sampleR = filter.processSampleR(sampleR);
             }
 
-            // 3. Active Crossover
-            if (this.xoEnabled) {
+            // 3. Active Crossover — Linkwitz-Riley 4th order. Every band edge is a
+            //    pair of cascaded Butterworth (Q=0.707) 2nd-order sections; each
+            //    section is run twice per sample so every band is -6dB at its split
+            //    points and adjacent bands sum flat in phase (a single in-phase
+            //    2nd-order LP+HP would otherwise null to 0 at every corner).
+            if (appXo) {
                 let summedL = 0.0;
                 let summedR = 0.0;
                 const type = this.xoType;
@@ -352,10 +367,10 @@ class DspProcessor extends AudioWorkletProcessor {
                 // Band 1 (Low)
                 let b1_L = sampleL, b1_R = sampleR;
                 if (this.xoFilters[0] && !this.xoFilters[0].bypassed) {
-                    b1_L = this.xoFilters[0].processSampleL(sampleL, this.smoothingFactor, this.sampleRate);
-                    if (isStereo) b1_R = this.xoFilters[0].processSampleR(sampleR);
+                    b1_L = xoEdgeL(this.xoFilters[0], sampleL);
+                    if (isStereo) b1_R = xoEdgeR(this.xoFilters[0], sampleR);
                 }
-                const g0 = this.getGainSafe(0);
+                const g0 = xoG0;
                 summedL += b1_L * g0;
                 summedR += b1_R * g0;
 
@@ -363,14 +378,14 @@ class DspProcessor extends AudioWorkletProcessor {
                 if (type === '5way') {
                     let b2_L = sampleL, b2_R = sampleR;
                     if (this.xoFilters[1] && !this.xoFilters[1].bypassed) {
-                        b2_L = this.xoFilters[1].processSampleL(sampleL, this.smoothingFactor, this.sampleRate);
-                        if (this.xoFilters[2]) b2_L = this.xoFilters[2].processSampleL(b2_L, this.smoothingFactor, this.sampleRate);
+                        b2_L = xoEdgeL(this.xoFilters[1], sampleL);
+                        if (this.xoFilters[2]) b2_L = xoEdgeL(this.xoFilters[2], b2_L);
                         if (isStereo) {
-                            b2_R = this.xoFilters[1].processSampleR(sampleR);
-                            if (this.xoFilters[2]) b2_R = this.xoFilters[2].processSampleR(b2_R);
+                            b2_R = xoEdgeR(this.xoFilters[1], sampleR);
+                            if (this.xoFilters[2]) b2_R = xoEdgeR(this.xoFilters[2], b2_R);
                         }
                     }
-                    const g1 = this.getGainSafe(1);
+                    const g1 = xoG1;
                     summedL += b2_L * g1;
                     summedR += b2_R * g1;
                 }
@@ -379,14 +394,16 @@ class DspProcessor extends AudioWorkletProcessor {
                 if (type === '3way' || type === '4way' || type === '5way') {
                     let b3_L = sampleL, b3_R = sampleR;
                     if (this.xoFilters[3] && !this.xoFilters[3].bypassed) {
-                        b3_L = this.xoFilters[3].processSampleL(sampleL, this.smoothingFactor, this.sampleRate);
-                        if (this.xoFilters[4]) b3_L = this.xoFilters[4].processSampleL(b3_L, this.smoothingFactor, this.sampleRate);
+                        b3_L = xoEdgeL(this.xoFilters[3], sampleL);
+                        if (this.xoFilters[4]) b3_L = xoEdgeL(this.xoFilters[4], b3_L);
                         if (isStereo) {
-                            b3_R = this.xoFilters[3].processSampleR(sampleR);
-                            if (this.xoFilters[4]) b3_R = this.xoFilters[4].processSampleR(b3_R);
+                            b3_R = xoEdgeR(this.xoFilters[3], sampleR);
+                            if (this.xoFilters[4]) b3_R = xoEdgeR(this.xoFilters[4], b3_R);
                         }
                     }
-                    const g2 = this.getGainSafe(type === '5way' ? 2 : 1);
+                    // Mid trim is always slot 2 while the mid band is active
+                    // (was reading slot 1 = low-mid trim, muting the mid driver).
+                    const g2 = xoG2;
                     summedL += b3_L * g2;
                     summedR += b3_R * g2;
                 }
@@ -395,26 +412,25 @@ class DspProcessor extends AudioWorkletProcessor {
                 if (type === '4way' || type === '5way') {
                     let b4_L = sampleL, b4_R = sampleR;
                     if (this.xoFilters[5] && !this.xoFilters[5].bypassed) {
-                        b4_L = this.xoFilters[5].processSampleL(sampleL, this.smoothingFactor, this.sampleRate);
-                        if (this.xoFilters[6]) b4_L = this.xoFilters[6].processSampleL(b4_L, this.smoothingFactor, this.sampleRate);
+                        b4_L = xoEdgeL(this.xoFilters[5], sampleL);
+                        if (this.xoFilters[6]) b4_L = xoEdgeL(this.xoFilters[6], b4_L);
                         if (isStereo) {
-                            b4_R = this.xoFilters[5].processSampleR(sampleR);
-                            if (this.xoFilters[6]) b4_R = this.xoFilters[6].processSampleR(b4_R);
+                            b4_R = xoEdgeR(this.xoFilters[5], sampleR);
+                            if (this.xoFilters[6]) b4_R = xoEdgeR(this.xoFilters[6], b4_R);
                         }
                     }
-                    const g3 = this.getGainSafe(type === '5way' ? 3 : 2);
+                    const g3 = xoG3;
                     summedL += b4_L * g3;
                     summedR += b4_R * g3;
                 }
 
-                // Band 5 (High)
+                // Band 5 (High) — high trim is always the last gain slot (4)
                 let b5_L = sampleL, b5_R = sampleR;
                 if (this.xoFilters[7] && !this.xoFilters[7].bypassed) {
-                    b5_L = this.xoFilters[7].processSampleL(sampleL, this.smoothingFactor, this.sampleRate);
-                    if (isStereo) b5_R = this.xoFilters[7].processSampleR(sampleR);
+                    b5_L = xoEdgeL(this.xoFilters[7], sampleL);
+                    if (isStereo) b5_R = xoEdgeR(this.xoFilters[7], sampleR);
                 }
-                const highGainIdx = (type === '2way') ? 1 : (type === '3way' ? 2 : (type === '4way' ? 3 : 4));
-                const g4 = this.getGainSafe(highGainIdx);
+                const g4 = xoG4;
                 summedL += b5_L * g4;
                 summedR += b5_R * g4;
 

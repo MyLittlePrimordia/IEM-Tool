@@ -1,10 +1,11 @@
 const CurveUtils = {
     generateLogGrid: function(numPoints = 500) {
-        const grid = new Float32Array(numPoints);
+        const n = Math.max(2, Math.floor(numPoints) || 500);
+        const grid = new Float32Array(n);
         const minF = 20;
         const maxF = 20000;
-        for (let i = 0; i < numPoints; i++) {
-            grid[i] = minF * Math.pow(maxF / minF, i / (numPoints - 1));
+        for (let i = 0; i < n; i++) {
+            grid[i] = minF * Math.pow(maxF / minF, i / (n - 1));
         }
         return grid;
     },
@@ -129,15 +130,21 @@ const CurveUtils = {
 
         const sigma = octaveBandwidth * Math.log10(2);
         const factor = -1 / (2 * sigma * sigma);
+        const cutoff = 3 * sigma;
 
+        // logFreqs is monotonically increasing, so the gaussian kernel is
+        // band-limited: only points within 3 sigma in log-frequency matter.
+        // Slide [jStart, jEnd) along with i instead of rescanning the full
+        // array every row (was O(n^2), now O(n * windowWidth)).
+        let jStart = 0, jEnd = 0;
         for (let i = 0; i < n; i++) {
+            while (jEnd < n && logFreqs[jEnd] <= logFreqs[i] + cutoff) jEnd++;
+            while (logFreqs[jStart] < logFreqs[i] - cutoff) jStart++;
             let weightSum = 0;
             let valueSum = 0;
-            for (let j = 0; j < n; j++) {
+            for (let j = jStart; j < jEnd; j++) {
                 const diff = logFreqs[i] - logFreqs[j];
-                const distSq = diff * diff;
-                if (distSq > 9 * sigma * sigma) continue;
-                const w = Math.exp(distSq * factor);
+                const w = Math.exp(diff * diff * factor);
                 valueSum += values[j] * w;
                 weightSum += w;
             }
