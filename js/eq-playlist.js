@@ -6,6 +6,102 @@ const EQ_PlaylistMethods = {
         _shuffleOrder: null,
         _shufflePos: -1,
 
+        // ===== Playback Loudness Matcher (under-the-hood) =====
+        // Automatically matches the loudness of every playlist track so song-to-song
+        // jumps don't blast your ears. Computes a per-track RMS loudness offset
+        // offline (decodeAudioData) when a track loads, caches it keyed by
+        // `{name}-{size}-{lastModified}`, and applies a clamped gain trim on top of
+        // the user's music volume node. No UI. Toggle optional via
+        // localStorage key "settings_loudness_match" ("0" to disable).
+        _loudnessGains: {},      // key -> linear gain factor (1 = no change)
+        _activeKey: null,        // key of the currently loaded/playing track
+        _targetTrackKey: null,
+        _activeLoudnessGain: 1,
+        _trackKey: null,
+        _loudnessInFlight: false,
+
+        settingsLoudnessMatchEnabled: function() {
+            return localStorage.getItem('settings_loudness_match') !== '0';
+        },
+
+        // Analyze the currently loaded audio element (decodeAudioData offline) and
+        // cache its loudness factor. Fallback: no change (1.0). Never throws.
+        _analyzeCurrentLoudness: function() {
+            if (!this.audioEl || !this.audioEl.src || !this.audioEl.canPlayType) return;
+            if (!this.settingsLoudnessMatchEnabled()) { this._activeLoudnessGain = 1.0; }
+            if (this._loudnessInFlight) return;
+            
+            const el = this.audioEl;
+            const key = this._targetTrackKey || String(el.src);
+            const cached = this._loudnessGains[key];
+            if (cached !== undefined) {
+                this._activeLoudnessGain = cached;
+                return;
+            }
+
+            this._loudnessInFlight = true;
+            this._decodeAndMeasureLoudness(el.currentSrc || el.src).then(gain => {
+                this._loudnessGains[key] = (gain === null ? 1 : gain);
+                if (this._targetTrackKey === key || this._targetTrackKey === null) {
+                    this._activeLoudnessGain = this._loudnessGains[key];
+                    this.fadeMusicVolume(document.getElementById('eq-musicVolumeSlider') ?
+                        parseFloat(document.getElementById('eq-musicVolumeSlider').value) / 100 : 0.5, 0.1);
+                }
+            }).catch(() => {
+                this._loudnessGains[key] = 1;
+            }).finally(() => {
+                this._loudnessInFlight = false;
+            });
+        },
+
+        // Resolves a linear gain factor that brings track loudness to a matched
+        // target (~-18 dBFS channel RMS). Clamped to +/- 12 dB. Returns 1 on error.
+        _decodeAndMeasureLoudness: async function(url) {
+            try {
+                if (!url) return 1;
+                const res = await fetch(url);
+                if (!res.ok) return 1;
+                const arrayBuffer = await res.arrayBuffer();
+                const audioBuffer = await new Promise((resolve, reject) => {
+                    const Ctx = (window.OfflineAudioContext || window.webkitOfflineAudioContext);
+                    if (!Ctx) { reject(new Error("No OfflineAudioContext")); return; }
+                    const ctx = new Ctx(1, 1, 44100);
+                    ctx.decodeAudioData(arrayBuffer, (buffer) => resolve(buffer),
+                        (err) => reject(err));
+                });
+
+                // Average RMS across channels (power mean).
+                const n = audioBuffer.length;
+                const channelCount = audioBuffer.numberOfChannels;
+                let sumSq = 0;
+                for (let ch = 0; ch < channelCount; ch++) {
+                    const chData = audioBuffer.getChannelData(ch);
+                    let chSum = 0;
+                    for (let i = 0; i < n; i++) chSum += chData[i] * chData[i];
+                    sumSq += chSum;
+                }
+                const total = (sumSq / (channelCount * n)) || 0;
+                const rms = Math.max(1e-9, Math.sqrt(total));
+                const dbfs = 20 * Math.log10(rms);
+
+                const targetLoudness = -23; // dBFS matched target
+                let gainDb = targetLoudness - dbfs;
+                gainDb = Math.max(-12, Math.min(12, gainDb));
+
+                return Math.pow(10, gainDb / 20);
+            } catch (e) {
+                console.warn("[Playlist] Loudness measurement failed, using unity gain:", e);
+                return 1;
+            }
+        },
+
+        // Pick a stability-robust key for the current track so caches survive.
+        _deriveTrackKey: function(track) {
+            if (!track) return null;
+            if (track.key) return track.key;
+            return track.url || (track.name + '-' + (track.file ? track.file.size : ''));
+        },
+
         /**
          * Fisher-Yates shuffle of an array of indices.
          * Optionally keep `excludeIndex` out of the first slot so the same track
@@ -115,6 +211,11 @@ const EQ_PlaylistMethods = {
                         this.audioEl.src = track.url;
                         this.audioEl.load();
                         
+                        this._targetTrackKey = this._deriveTrackKey(track);
+                        this._activeKey = this._targetTrackKey;
+                        this._activeLoudnessGain = 1;
+                        this._analyzeCurrentLoudness();
+                        
                         const infoText = document.getElementById("playlist-track-info");
                         if (infoText) infoText.textContent = `(${startIndex + 1}/${this.playlist.length}) ${track.name}`;
                         const mobInfoText = document.getElementById("mobile-track-info");
@@ -132,7 +233,8 @@ const EQ_PlaylistMethods = {
         fadeMusicVolume: function(targetVal, duration = 0.015) {
             if (this.graphBuilt && this.musicVolumeNode && SharedAudio.ctx) {
                 const now = SharedAudio.ctx.currentTime;
-                this.musicVolumeNode.gain.setTargetAtTime(targetVal, now, duration);
+                const loudGain = (this.settingsLoudnessMatchEnabled && this.settingsLoudnessMatchEnabled()) ? (this._activeLoudnessGain || 1) : 1;
+                this.musicVolumeNode.gain.setTargetAtTime(Math.max(0, Math.min(1, targetVal * loudGain)), now, duration);
             }
         },
         fadeMasterGain: function(targetVal, duration = 0.015) {
@@ -157,6 +259,10 @@ const EQ_PlaylistMethods = {
             // Smoothly fade out current music track before swapping sources to eliminate popping
             this.fadeMusicVolume(0, 0.015); // 15ms fade-out
             
+            this._targetTrackKey = this._deriveTrackKey(track);
+            this._activeKey = this._targetTrackKey;
+            this._activeLoudnessGain = 1;
+            
             setTimeout(() => {
                 if (this.audioEl) {
                     this.audioEl.src = track.url;
@@ -167,6 +273,7 @@ const EQ_PlaylistMethods = {
                             const slider = document.getElementById("eq-musicVolumeSlider");
                             const vol = slider ? parseFloat(slider.value) / 100 : 0.5;
                             this.fadeMusicVolume(vol, 0.08); // 80ms safety fade-in completely masks browser buffer pops!
+                            this._analyzeCurrentLoudness();
                         })
                         .catch(e => {
                             console.log("Play interrupted: ", e);
@@ -199,6 +306,10 @@ const EQ_PlaylistMethods = {
             this.playlistIndex = 0;
             this._shuffleOrder = null;
             this._shufflePos = -1;
+            this._loudnessGains = {};
+            this._activeKey = null;
+            this._targetTrackKey = null;
+            this._activeLoudnessGain = 1;
             
             const infoText = document.getElementById("playlist-track-info");
             if (infoText) infoText.textContent = "No tracks Loaded";
@@ -364,7 +475,8 @@ this.fadeMusicVolume(vol, 0.015);
                 this.audioEl.volume = 1.0; // Lock browser stream at maximum to prevent unsynced thread-stepping clicks
             }
             if (this.graphBuilt && this.musicVolumeNode) {
-                setAudioParamSmooth(this.musicVolumeNode.gain, vol, 0.05);
+                const loudGain = (this.settingsLoudnessMatchEnabled && this.settingsLoudnessMatchEnabled()) ? (this._activeLoudnessGain || 1) : 1;
+                setAudioParamSmooth(this.musicVolumeNode.gain, Math.max(0, Math.min(1, vol * loudGain)), 0.05);
             }
 
             this.updateLoudnessDSP(); // Recalculate and apply loudness filters on volume slider movement
