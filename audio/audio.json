@@ -4,6 +4,10 @@
     "file": "Between The Lines.mp3"
   },
   {
+    "name": "Biochemical",
+    "file": "Biochemical.mp3"
+  },
+  {
     "name": "Bored",
     "file": "Bored.mp3"
   },
@@ -12,20 +16,32 @@
     "file": "Burning.mp3"
   },
   {
+    "name": "Circles",
+    "file": "Circles.mp3"
+  },
+  {
+    "name": "Country",
+    "file": "Country.mp3"
+  },
+  {
     "name": "Evasion",
     "file": "Evasion.mp3"
   },
   {
     "name": "Hackers",
-    "file": "Hackers.opus"
+    "file": "Hackers.mp3"
   },
   {
-    "name": "Hiraeth",
-    "file": "Hiraeth.mp3"
+    "name": "Heartbreaker",
+    "file": "Heartbreaker.mp3"
   },
   {
-    "name": "Last Stop",
-    "file": "Last Stop.opus"
+    "name": "Lots of Sun",
+    "file": "Lots of Sun.mp3"
+  },
+  {
+    "name": "Magnetz",
+    "file": "Magnetz.mp3"
   },
   {
     "name": "Moose",
@@ -36,15 +52,19 @@
     "file": "My My Side.mp3"
   },
   {
-    "name": "Paradise Dreaming",
-    "file": "Paradise Dreaming.mp3"
+    "name": "Never Heard",
+    "file": "Never Heard.mp3"
+  },
+  {
+    "name": "New Soul",
+    "file": "New Soul.mp3"
+  },
+  {
+    "name": "Siesta",
+    "file": "Siesta.mp3"
   },
   {
     "name": "Starship",
     "file": "Starship.mp3"
-  },
-  {
-    "name": "Vice Versa",
-    "file": "Vice Versa.mp3"
   }
 ]

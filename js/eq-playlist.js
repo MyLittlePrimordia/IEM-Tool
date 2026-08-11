@@ -231,10 +231,13 @@ const EQ_PlaylistMethods = {
         },
 
         fadeMusicVolume: function(targetVal, duration = 0.015) {
-            if (this.graphBuilt && this.musicVolumeNode && SharedAudio.ctx) {
+            if (this.connected && this.graphBuilt && this.musicVolumeNode && SharedAudio.ctx) {
                 const now = SharedAudio.ctx.currentTime;
                 const loudGain = (this.settingsLoudnessMatchEnabled && this.settingsLoudnessMatchEnabled()) ? (this._activeLoudnessGain || 1) : 1;
                 this.musicVolumeNode.gain.setTargetAtTime(Math.max(0, Math.min(1, targetVal * loudGain)), now, duration);
+            } else if (this.audioEl) {
+                // Graph absent — mirror the fade on the element attribute directly.
+                this.audioEl.volume = Math.max(0, Math.min(1, targetVal));
             }
         },
         fadeMasterGain: function(targetVal, duration = 0.015) {
@@ -407,6 +410,13 @@ await ctx.resume();
             const modalPlayBtn = document.getElementById('modal-play-btn');
             
             const mobBtn = document.getElementById("mobile-play-btn");
+            const noSrc = !this.audioEl || !(this.audioEl.currentSrc || this.audioEl.getAttribute('src'));
+            if (noSrc && this.playlistIndex >= 0 && this.playlist[this.playlistIndex]) {
+                // Boot-loaded queue (footer fill) never touched the <audio> element —
+                // load the current track and start it before attempting to play.
+                this.playPlaylistIndex(this.playlistIndex);
+                return;
+            }
             if (this.audioEl.paused) {
                 // Fade-in play
                 if (this.audioEl) {
@@ -471,12 +481,16 @@ this.fadeMusicVolume(vol, 0.015);
                 Mascot.triggerTemporaryExpression('deaf', 2000);
             }
             this._lastVolPct = parseFloat(val);
-            if (this.audioEl) {
-                this.audioEl.volume = 1.0; // Lock browser stream at maximum to prevent unsynced thread-stepping clicks
-            }
-            if (this.graphBuilt && this.musicVolumeNode) {
+            if (this.connected && this.graphBuilt && this.musicVolumeNode) {
+                if (this.audioEl) {
+                    this.audioEl.volume = 1.0; // Lock browser stream at maximum to prevent unsynced thread-stepping clicks
+                }
                 const loudGain = (this.settingsLoudnessMatchEnabled && this.settingsLoudnessMatchEnabled()) ? (this._activeLoudnessGain || 1) : 1;
                 setAudioParamSmooth(this.musicVolumeNode.gain, Math.max(0, Math.min(1, vol * loudGain)), 0.05);
+            } else if (this.audioEl) {
+                // DSP graph not built yet — fall back to the element volume so the
+                // slider always affects what you hear.
+                this.audioEl.volume = Math.max(0, Math.min(1, vol));
             }
 
             this.updateLoudnessDSP(); // Recalculate and apply loudness filters on volume slider movement

@@ -798,24 +798,60 @@ function getBandEnergy(dataArray, startBin, endBin) {
         }
     }
 
-    function showToast(message, icon = "ℹ️") {
-        const toast = document.getElementById('toast-notification');
-        const msgNode = document.getElementById('toast-message');
-        const iconNode = document.getElementById('toast-icon');
-        if (!toast || !msgNode || !iconNode) return;
+    function showToast(message, icon = "ℹ️", opts) {
+        opts = opts || {};
+        const stack = document.getElementById('toast-stack');
+        if (!stack) return;
 
-        msgNode.textContent = message;
-        iconNode.textContent = icon;
-        toast.classList.add('active');
-        toast.style.opacity = "1";
-        toast.style.pointerEvents = "auto";
+        // Cap the number of visible toasts — evict the oldest first.
+        while (stack.children.length >= 6) {
+            const first = stack.firstElementChild;
+            if (first) { clearTimeout(first.timeoutId); first.remove(); }
+        }
 
-        clearTimeout(toast.timeoutId);
-        toast.timeoutId = setTimeout(() => {
-            toast.classList.remove('active');
-            toast.style.opacity = "0";
-            toast.style.pointerEvents = "none";
-        }, 2200);
+        const item = document.createElement('div');
+        item.className = 'toast-item pointer-events-auto flex items-start gap-2.5 px-3 py-2.5 rounded-md border-2 border-black bg-[var(--bg-card)] text-[var(--text-main)] shadow-[4px_4px_0_0_#000] text-xs font-bold select-none';
+        item.style.animation = 'toast-in .18s ease-out';
+
+        const action = opts.action;
+        let html = '<span class="toast-icon flex-shrink-0 leading-none">' + esc(icon || 'ℹ️') + '</span>';
+        html += '<div class="min-w-0 flex-1 leading-snug break-words">' + esc(String(message == null ? '' : message)) + '</div>';
+        if (action && action.label) {
+            html += '<button class="toast-act flex-shrink-0 px-2 py-1 border-2 border-black bg-[var(--accent-blue)] text-white text-[10px] font-black rounded-sm cursor-pointer hover:brightness-110">' + esc(action.label) + '</button>';
+        }
+        html += '<button class="toast-x flex-shrink-0 text-zinc-500 hover:text-red-400 text-[10px] leading-none cursor-pointer">✕</button>';
+        item.innerHTML = html;
+
+        const dismiss = (el, immediate) => {
+            clearTimeout(el.timeoutId);
+            if (immediate || !el.parentNode) { el.remove(); return; }
+            el.style.transition = 'opacity .25s ease, transform .25s ease';
+            el.style.opacity = '0';
+            el.style.transform = 'translateY(-6px)';
+            setTimeout(() => { if (el.parentNode) el.remove(); }, 260);
+        };
+
+        const actBtn = item.querySelector('.toast-act');
+        if (actBtn && action) {
+            actBtn.onclick = (ev) => {
+                ev.stopPropagation();
+                dismiss(item);
+                if (typeof action.onClick === 'function') {
+                    try { action.onClick(); } catch (e) { console.error('toast action', e); }
+                }
+            };
+        }
+        const xBtn = item.querySelector('.toast-x');
+        if (xBtn) xBtn.onclick = (ev) => { ev.stopPropagation(); dismiss(item); };
+
+        item.addEventListener('click', (ev) => {
+            if (ev.target.closest && ev.target.closest('.toast-act, .toast-x')) return;
+            dismiss(item);
+        });
+
+        stack.appendChild(item);
+        const duration = action ? (opts.duration || 6000) : (opts.duration || 2600);
+        item.timeoutId = setTimeout(() => dismiss(item), duration);
     }
 
     window.toggleAudioMode = function() {
@@ -1073,7 +1109,7 @@ window.updateExpandedAutoHide = function() {
                 const iemWrapper = document.getElementById('pane-iem-outer-wrapper');
                 if (iemWrapper) iemWrapper.classList.toggle('hidden', tabId !== 'iem');
 
-                ['iem', 'eq', 'testlab', 'visualizer', 'settings', 'find'].forEach(id => {
+                ['iem', 'eq', 'testlab', 'visualizer', 'settings', 'find', 'music'].forEach(id => {
                     const pane = document.getElementById(`pane-${id}`);
                     if (pane) pane.classList.add('hidden');
                     const btn = document.getElementById(`tab-${id}-btn`);
@@ -1132,6 +1168,10 @@ window.updateExpandedAutoHide = function() {
 
                     EQ_Module.vizLoopRunning = false;
                     EQ_Module.startVisualizer();
+                }
+                if (tabId === 'music' && window.MusicPlayer) {
+                    MusicPlayer.render();
+                    MusicPlayer.updateGenreFilter();
                 }
 
                 if (window.TestLab) {
@@ -1243,7 +1283,7 @@ window.updateExpandedAutoHide = function() {
                 const expThemeSelector = document.getElementById('export-theme-selector');
                 if (expThemeSelector) expThemeSelector.value = themeId;
 
-            ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings'].forEach(id => {
+            ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings', 'music'].forEach(id => {
                 const b = document.getElementById(`tab-${id}-btn`);
                 if (b) {
                     b.style.backgroundColor = '';
@@ -1252,7 +1292,7 @@ window.updateExpandedAutoHide = function() {
                     b.style.transform = '';
                 }
             });
-            const activeTabId = ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings'].find(id => {
+            const activeTabId = ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings', 'music'].find(id => {
                 const pane = document.getElementById(`pane-${id}`);
                 return pane && !pane.classList.contains('hidden');
             }) || 'find';
@@ -2654,7 +2694,7 @@ renderIemDbSearch: function(query) {
                     'detailed': '💎', 'detail': '💎', 'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️',
                     'soundstage': '🏟️', 'good-imaging': '🎯', 'imaging': '🎯', 'smooth': '🧈', 'reference': '🎯',
                     'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮', 'competitive-gaming': '🏆',
-                    'vocal-focused': '🎤', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
+                    'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
                     'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📻'
                 };
                 return emojiMap[cleanKey] || '🏷️';
@@ -6760,10 +6800,17 @@ vizModalActive: false,
                     if (SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
                         await SharedAudio.ctx.resume();
                     }
+                    // On the normal path the MediaElementSource is created once in
+                    // ensureDSPGraph() before any playback starts (that's what fixes
+                    // the boot-mute). This branch is only a safety net for the rare
+                    // case where the graph was built without the element present.
                     if(!this.connected) {
                         await this.ensureDSPGraph();
-                        this.source = SharedAudio.ctx.createMediaElementSource(this.audioEl);
-                        this.source.connect(this.inputGainNode);
+                        if (!this.source && this.audioEl) {
+                            this.source = SharedAudio.ctx.createMediaElementSource(this.audioEl);
+                            this.source.connect(this.inputGainNode);
+                        }
+                        if (this.audioEl) this.audioEl.volume = 1.0;
                         this.connected = true;
                     }
 
@@ -6888,7 +6935,6 @@ vizModalActive: false,
             }
 
         this.buildEQ();
-        this.setupPlaylist();
 
         this.togglePersonalityMode('simple');
         this.switchGraphViewport('squig');
@@ -8352,7 +8398,13 @@ this.advancedBands.forEach((b, i) => {
             const textContainer = document.getElementById('music-match-genre-text');
 
             if (emojiContainer) {
-                emojiContainer.innerHTML = `<span class="vibrant-emoji ${animClass}" style="display: inline-block; transform-origin: center;">${emoji}</span>`;
+                const fx = (FindEngine.pickFx || {})[label] || '';
+                const replay = fx && fx !== this._musicFxKey;
+                this._musicFxKey = fx;
+                emojiContainer.innerHTML = `<span class="fx-play ${animClass}" data-fx="${fx}" style="display: inline-block; position: relative; transform-origin: center;"><span class="emoji-font vibrant-emoji leading-none" style="display: inline-block; transform-origin: center;">${emoji}</span></span>`;
+                if (fx && !replay) {
+                    emojiContainer.firstElementChild.classList.remove('fx-play');
+                }
             }
             if (textContainer) {
                 textContainer.textContent = label;
@@ -8366,7 +8418,13 @@ this.advancedBands.forEach((b, i) => {
             const textContainer = document.getElementById('game-match-genre-text');
 
             if (emojiContainer) {
-                emojiContainer.innerHTML = `<span class="vibrant-emoji ${animClass}" style="display: inline-block; transform-origin: center;">${emoji}</span>`;
+                const fx = (FindEngine.pickFx || {})[label] || '';
+                const replay = fx && fx !== this._gameFxKey;
+                this._gameFxKey = fx;
+                emojiContainer.innerHTML = `<span class="fx-play ${animClass}" data-fx="${fx}" style="display: inline-block; position: relative; transform-origin: center;"><span class="emoji-font vibrant-emoji leading-none" style="display: inline-block; transform-origin: center;">${emoji}</span></span>`;
+                if (fx && !replay) {
+                    emojiContainer.firstElementChild.classList.remove('fx-play');
+                }
             }
             if (textContainer) {
                 textContainer.textContent = label;
@@ -9393,6 +9451,21 @@ if (diffR > 0.4) {
 
             SharedAudio.crossfeedMerger.connect(this.musicVolumeNode);
             this.musicVolumeNode.connect(SharedAudio.masterGain);
+
+            // Route the <audio> element through the DSP graph EXACTLY once, now,
+            // while playback hasn't begun. Creating the MediaElementSource lazily
+            // inside the element's onplay handler was the startup-mute bug: by the
+            // time onplay fired, audio was already playing, and re-routing a playing
+            // element strands the stream (or throws), so 'connected' never took and
+            // the only working volume control became the raw audioEl.volume — which
+            // the boot-path fade had already set to 0. Locking it here guarantees the
+            // graph owns volume from the very first millisecond of playback.
+            if (this.audioEl && !this.source) {
+                this.source = ctx.createMediaElementSource(this.audioEl);
+                this.source.connect(this.inputGainNode);
+                this.audioEl.volume = 1.0;
+                this.connected = true;
+            }
 
             this.graphBuilt = true;
             this.updateAudioConnections();
@@ -11607,7 +11680,7 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
                         'detailed': '💎', 'detail': '💎', 'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️',
                         'soundstage': '🏟️', 'good-imaging': '🎯', 'imaging': '🎯', 'smooth': '🧈', 'reference': '🎯',
                         'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮', 'competitive-gaming': '🏆',
-                        'vocal-focused': '🎤', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
+                        'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
                         'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📻'
                     };
                     return emojiMap[cleanKey] || '🏷️';
@@ -13663,25 +13736,6 @@ toggleSearchMode: function(mode) {
                         this.updateABMarquee();
                     }
                 });
-            }
-
-            this.preloadSampleAB();
-        },
-        preloadSampleAB: function() {
-            const audioA = document.getElementById('ab-audio-a');
-            const audioB = document.getElementById('ab-audio-b');
-            const labelA = document.getElementById('ab-file-name-a');
-            const labelB = document.getElementById('ab-file-name-b');
-
-            if (audioA && !audioA.src) {
-                audioA.src = './audio/Sample A.flac';
-                audioA.load();
-                if (labelA) labelA.textContent = 'Sample A.flac';
-            }
-            if (audioB && !audioB.src) {
-                audioB.src = './audio/Sample B.mp3';
-                audioB.load();
-                if (labelB) labelB.textContent = 'Sample B.mp3';
             }
 
             this.updateABMarquee();
@@ -16445,7 +16499,8 @@ loadSoundLibrary: async function() {
             ['Tone_Module', Tone_Module],
             ['TestLab_Module', TestLab_Module],
             ['Accessibility', Accessibility],
-            ['FindEngine', FindEngine]
+            ['FindEngine', FindEngine],
+            ['MusicPlayer', MusicPlayer]
         ];
 
         for (const [name, mod] of bootModules) {
@@ -16550,7 +16605,7 @@ loadSoundLibrary: async function() {
                     "Basshead": "💥", "Sub-Bass": "🌊", "Punchy Bass": "🥊", "Warm": "🌿", "Neutral": "⚖️", "V-Shaped": "🔺", "Balanced": "☯️",
                     "Bright": "✨", "Dark": "🌑", "Detailed": "💎", "Resolving": "🔍", "Technical": "🔬", "Wide-Stage": "🏟️", "Good-Imaging": "🎯",
                     "Smooth": "🧈", "Reference": "📐", "Analytical": "🧠", "Fun": "🔥", "Relaxed": "😌", "Gaming": "🎮", "Competitive-Gaming": "🏆",
-                    "Vocal-Focused": "🎤", "Budget": "💰", "Mid-Tier": "🪙", "Premium": "👑", "Flagship": "🥇", "Collab": "🤝", "Limited-Edition": "🌟",
+                    "Vocal-Focused": "🗣️", "Budget": "💰", "Mid-Tier": "🪙", "Premium": "👑", "Flagship": "🥇", "Collab": "🤝", "Limited-Edition": "🌟",
                     "Vintage": "📻"
                 },
 
@@ -16676,11 +16731,22 @@ loadSoundLibrary: async function() {
                 },
 
                 _pickGroupList: function() {
-                    return [
-                        { title: 'Tags', kind: 'meta', items: (this.approvedTagsList || []).map(tag => ({ kind: 'meta', value: tag, emoji: this.tagEmojis[tag] || '🏷️' })) },
-                        { title: 'Music Genres', kind: 'music', items: (this.genreFamilies || []).map(f => { const v = f.musicVariants[0]; return v ? { kind: 'music', value: v.name, emoji: v.emoji } : null; }).filter(Boolean) },
-                        { title: 'Gaming Genres', kind: 'game', items: (this.genreFamilies || []).map(f => { const v = f.gameVariants[0]; return v ? { kind: 'game', value: v.name, emoji: v.emoji } : null; }).filter(Boolean) }
+                    const tags = this.approvedTagsList || [];
+                    const tagOf = (name) => ({ kind: 'meta', value: name, emoji: this.tagEmojis[name] || '🏷️' });
+                    const soundTuning = ['Basshead', 'Sub-Bass', 'Punchy Bass', 'Warm', 'Neutral', 'V-Shaped', 'Balanced', 'Bright', 'Dark', 'Detailed', 'Resolving', 'Technical', 'Wide-Stage', 'Good-Imaging', 'Smooth', 'Reference', 'Analytical', 'Fun', 'Relaxed', 'Vocal-Focused'];
+                    const special = ['Budget', 'Mid-Tier', 'Premium', 'Flagship', 'Collab', 'Limited-Edition'];
+                    const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
+                    const known = new Set([...soundTuning, ...special, ...gamingAttrs]);
+                    const leftover = tags.filter(t => !known.has(t));
+                    const musicItems = (this.genreFamilies || []).map(f => { const v = f.musicVariants[0]; return v ? { kind: 'music', value: v.name, emoji: v.emoji } : null; }).filter(Boolean);
+                    const gameItems = (this.genreFamilies || []).map(f => { const v = f.gameVariants[0]; return v ? { kind: 'game', value: v.name, emoji: v.emoji } : null; }).filter(Boolean);
+                    const groups = [
+                        { title: 'Tuning Tags', emoji: '🎛️', cls: 'text-sky-400', kind: 'meta', items: soundTuning.filter(t => tags.includes(t)).map(tagOf) },
+                        { title: 'Music Tags', emoji: '🎵', cls: 'text-cyan-400', kind: 'music', items: musicItems },
+                        { title: 'Gaming Tags', emoji: '🎮', cls: 'text-amber-500', kind: 'game', items: [...gameItems, ...gamingAttrs.filter(t => tags.includes(t)).map(tagOf)] },
+                        { title: 'Other Tags', emoji: '✨', cls: 'text-violet-400', kind: 'meta', items: [...special.filter(t => tags.includes(t)).map(tagOf), ...leftover.map(tagOf)] }
                     ];
+                    return groups;
                 },
 
                 _pickEmojiFor: function(kind, value) {
@@ -16689,36 +16755,71 @@ loadSoundLibrary: async function() {
                     return emoji;
                 },
 
-                togglePickMenu: function() {
-                    const menu = document.getElementById('find-pick-menu');
-                    if (!menu) return;
-                    if (menu.classList.contains('hidden')) {
-                        this.renderPickMenu();
-                        menu.classList.remove('hidden');
-                    } else {
-                        menu.classList.add('hidden');
-                    }
+                pickFx: {
+                    'Basshead': 'basshead', 'Sub-Bass': 'subbass', 'Punchy Bass': 'punch', 'Warm': 'warm',
+                    'Neutral': 'neutral', 'V-Shaped': 'vshape', 'Balanced': 'balanced', 'Bright': 'bright',
+                    'Dark': 'dark', 'Detailed': 'detailed', 'Resolving': 'resolving', 'Technical': 'technical',
+                    'Wide-Stage': 'widestage', 'Good-Imaging': 'imaging', 'Smooth': 'smooth', 'Reference': 'reference',
+                    'Analytical': 'analytical', 'Fun': 'fun', 'Relaxed': 'relaxed', 'Vocal-Focused': 'vocal',
+                    'Hip-Hop': 'hiphop', 'EDM': 'edm', 'Reggae': 'reggae', 'Pop': 'pop', 'Disco': 'disco',
+                    'Techno': 'techno', 'Synthwave': 'synthwave', 'Rock': 'rock', 'Jazz': 'jazz', 'World': 'world',
+                    'Classical': 'classical', 'Folk': 'folk', 'Indie': 'indie', 'Lo-Fi': 'lofi', 'ASMR': 'asmr',
+                    'Cinematic': 'cinematic', 'Zombie': 'zombie', 'Racing': 'racing', 'Adventure': 'adventure',
+                    'RPG': 'rpg', 'Roguelike': 'roguelike', 'Sci-Fi': 'scifi', 'Tactical': 'tactical',
+                    'Action': 'action', 'MMO': 'mmo', 'Sports': 'sports', 'Strategy': 'strategy', 'Cozy': 'cozy',
+                    'Horror': 'horror', 'Puzzle': 'puzzle', 'Arcade': 'arcade', 'FPS': 'fps',
+                    'Gaming': 'gaming', 'Competitive-Gaming': 'compgaming',
+                    'Budget': 'budget', 'Mid-Tier': 'midtier', 'Premium': 'premium', 'Flagship': 'flagship',
+                    'Collab': 'collab', 'Limited-Edition': 'limited', 'Vintage': 'vintage'
                 },
 
-                renderPickMenu: function() {
-                    const menu = document.getElementById('find-pick-menu');
-                    if (!menu) return;
+                renderPickGrid: function() {
+                    const grid = document.getElementById('find-pick-grid');
+                    if (!grid) return;
                     const selected = this.selectedPicks || [];
                     const isSel = p => selected.some(s => s.kind === p.kind && s.value === p.value);
                     let html = '';
                     this._pickGroupList().forEach(group => {
                         if (!group.items.length) return;
-                        html += `<div class="px-2 pt-1.5 pb-0.5 text-[9px] font-black uppercase tracking-wider text-zinc-500 border-b border-black/30 bg-black/20 sticky top-0">${group.title}</div>`;
+                        html += `<div class="pick-group">
+                            <span class="pick-group-label ${group.cls || 'text-zinc-400'}">${group.emoji} ${group.title}</span>
+                            <div class="pick-group-grid">`;
                         group.items.forEach(p => {
                             const on = isSel(p);
-                            html += `<button type="button" onclick="FindEngine.togglePick('${p.kind}','${p.value.replace(/'/g, "\\'")}')" class="w-full flex items-center gap-2 px-2 py-1 text-left text-xs font-bold text-[var(--text-main)] hover:bg-black/30 cursor-pointer" ${on ? 'style="background: color-mix(in srgb, var(--accent-blue) 18%, transparent); border-left: 4px solid var(--accent-blue);"' : ''}>
-                                <span class="emoji-font vibrant-emoji text-lg w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none">${p.emoji}</span>
-                                <span class="truncate flex-1">${p.value}</span>
-                                <span class="w-4 h-4 flex-shrink-0 flex items-center justify-center border-2 border-black text-[10px] font-black ${on ? 'bg-[var(--accent-blue)] text-white' : ''}">${on ? '✓' : ''}</span>
+                            const fx = this.pickFx[p.value] || '';
+                            const playing = on && p.value === this._lastFx ? ' fx-play' : '';
+                            html += `<button type="button" onclick="FindEngine.togglePick('${p.kind}','${p.value.replace(/'/g, "\\'")}')" data-tooltip="${p.value}" data-value="${p.value}" data-fx="${fx}" class="no-tactile find-pick-badge ${on ? 'on' : ''}${playing}" aria-pressed="${on}">
+                                <span class="emoji-font vibrant-emoji leading-none pointer-events-none">${p.emoji}</span>
                             </button>`;
                         });
+                        html += `</div></div>`;
                     });
-                    menu.innerHTML = html;
+                    grid.innerHTML = html;
+                    this._lastFx = null;
+                    this.fitPickGrid();
+                },
+
+                fitPickGrid: function() {
+                    const grid = document.getElementById('find-pick-grid');
+                    const pickSection = document.getElementById('find-pick-section');
+                    if (!grid || !pickSection || pickSection.classList.contains('hidden')) return;
+                    const sec = document.querySelector('#find-col-prefs .section-card');
+                    const scroller = document.getElementById('find-scroll-area');
+                    if (!sec || !scroller) return;
+                    const top = sec.firstElementChild;
+                    const btn = sec.lastElementChild;
+                    if (!top || !btn) return;
+                    const filterControls = document.getElementById('find-filter-controls');
+                    const filterH = (filterControls && !filterControls.classList.contains('hidden')) ? filterControls.offsetHeight : 0;
+                    const avail = sec.clientHeight - top.offsetHeight - btn.offsetHeight - 24 - filterH - 12;
+                    let emojiSize = Math.floor((avail - 14) / 11.17);
+                    emojiSize = Math.max(14, Math.min(28, emojiSize));
+                    const apply = (e) => grid.style.setProperty('--pick-emoji', e + 'px');
+                    apply(emojiSize);
+                    for (let i = 0; i < 6 && emojiSize > 13 && scroller.scrollHeight > scroller.clientHeight + 1; i++) {
+                        emojiSize -= 1;
+                        apply(emojiSize);
+                    }
                 },
 
                 togglePick: function(kind, value) {
@@ -16726,49 +16827,35 @@ loadSoundLibrary: async function() {
                     const idx = picks.findIndex(p => p.kind === kind && p.value === value);
                     if (idx === -1) {
                         picks.push({ kind, value, emoji: this._pickEmojiFor(kind, value) });
+                        this._lastFx = value;
                     } else {
                         picks.splice(idx, 1);
+                        this._lastFx = null;
                     }
                     this.selectedPicks = picks;
                     this.updatePickUI();
-                    this.renderPickMenu();
                 },
 
                 removePick: function(kind, value) {
                     this.selectedPicks = (this.selectedPicks || []).filter(p => !(p.kind === kind && p.value === value));
                     this.updatePickUI();
-                    this.renderPickMenu();
                 },
 
                 clearPicks: function() {
                     this.selectedPicks = [];
                     this.updatePickUI();
-                    this.renderPickMenu();
                 },
 
                 updatePickUI: function() {
                     const hidden = document.getElementById('find-filter-picks');
                     if (hidden) hidden.value = JSON.stringify(this.selectedPicks || []);
-                    const chipsBox = document.getElementById('find-pick-chips');
                     const count = document.getElementById('find-pick-count');
                     const picks = this.selectedPicks || [];
                     if (count) {
                         count.textContent = String(picks.length);
                         count.classList.toggle('hidden', picks.length === 0);
                     }
-                    if (!chipsBox) return;
-                    if (picks.length === 0) {
-                        chipsBox.classList.add('hidden');
-                        chipsBox.innerHTML = '';
-                        return;
-                    }
-                    chipsBox.classList.remove('hidden');
-                    chipsBox.innerHTML = picks.map(p =>
-                        `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 border-[3px] border-black bg-[var(--bg-input)] text-[var(--text-main)] text-[10px] font-bold w-full">
-                            <span class="emoji-font vibrant-emoji text-sm leading-none flex-shrink-0">${p.emoji}</span>
-                            <span class="truncate flex-1">${p.value}</span>
-                            <button type="button" onclick="FindEngine.removePick('${p.kind}','${p.value.replace(/'/g, "\\'")}')" class="text-zinc-500 hover:text-rose-400 font-black leading-none cursor-pointer flex-shrink-0" title="Remove ${p.value.replace(/"/g, '&quot;')}">✕</button>
-                        </span>`).join('');
+                    this.renderPickGrid();
                 },
 
                 countPickMatches: function(item, dbEntry, picks) {
@@ -16841,7 +16928,7 @@ loadSoundLibrary: async function() {
                         'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️', 'soundstage': '🏟️',
                         'good-imaging': '🎯', 'imaging': '🎯', 'smooth': '🧈', 'reference': '📐',
                         'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮',
-                        'competitive-gaming': '🏆', 'vocal-focused': '🎤', 'vocal': '🎤', 'budget': '💰',
+                        'competitive-gaming': '🏆', 'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰',
                         'mid-tier': '🪙', 'premium': '👑', 'flagship': '🥇', 'collab': '🤝',
                         'limited-edition': '🌟', 'vintage': '📻'
                     };
@@ -16874,6 +16961,8 @@ loadSoundLibrary: async function() {
                     }
 
                     this.loadSavedTasteFavorites();
+                    this.renderPickGrid();
+                    window.addEventListener('resize', () => this.fitPickGrid());
 
                     setTimeout(() => {
                         this.drawTargetVisualization();
@@ -16890,9 +16979,9 @@ loadSoundLibrary: async function() {
                         const saved = localStorage.getItem('find_taste_favorites');
                         if (saved) {
                             this.tasteFavorites = JSON.parse(saved);
-                            this.renderTasteChips();
                         }
                     } catch(e) {}
+                    this.renderTasteChips();
                 },
 
                 saveTasteFavorites: function() {
@@ -17076,6 +17165,7 @@ loadSoundLibrary: async function() {
                     const tuningControls = document.getElementById('find-tuning-controls');
                     const filterControls = document.getElementById('find-filter-controls');
                     const targetCurveBlock = document.getElementById('find-target-curve-block');
+                    const pickSection = document.getElementById('find-pick-section');
 
                     if (mode === 'filters') {
                         if (tuningBtn) tuningBtn.classList.remove('active');
@@ -17083,12 +17173,15 @@ loadSoundLibrary: async function() {
                         tuningControls.classList.add('hidden');
                         filterControls.classList.remove('hidden');
                         if (targetCurveBlock) targetCurveBlock.classList.add('hidden');
+                        if (pickSection) pickSection.classList.remove('hidden');
+                        this.fitPickGrid();
                     } else {
                         if (filtersBtn) filtersBtn.classList.remove('active');
                         if (tuningBtn) tuningBtn.classList.add('active');
                         filterControls.classList.add('hidden');
                         tuningControls.classList.remove('hidden');
                         if (targetCurveBlock) targetCurveBlock.classList.remove('hidden');
+                        if (pickSection) pickSection.classList.add('hidden');
                     }
 
                     const stepperLabel = document.getElementById('find-mode-stepper-label');

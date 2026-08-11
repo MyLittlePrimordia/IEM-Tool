@@ -82,6 +82,9 @@
             <button onclick="App.switchTab('find'); App.toggleMobileDrawer();" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
                 <span class="text-[18px]">🔍</span> <span>Find</span>
             </button>
+            <button onclick="App.switchTab('music'); App.toggleMobileDrawer();" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
+                <span class="text-[18px]">🎵</span> <span>Music</span>
+            </button>
             <button onclick="App.switchTab('settings'); App.toggleMobileDrawer();" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
                 <span class="text-[18px]">⚙️</span> <span>Settings</span>
             </button>
@@ -128,6 +131,9 @@
             <button onclick="App.switchTab('visualizer')" id="tab-visualizer-btn" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
                 <span class="text-[21px] leading-none">📊</span>
             </button>
+            <button onclick="App.switchTab('music')" id="tab-music-btn" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
+                <span class="text-[21px] leading-none">🎵</span>
+            </button>
             <button onclick="App.switchTab('settings')" id="tab-settings-btn" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
                 <span class="text-[21px] leading-none">⚙️</span>
             </button>
@@ -148,7 +154,7 @@
                     <button onclick="App.cycleMobileSection('iem', 1)" class="w-9 h-9 bg-[var(--bg-card)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-[var(--text-main)] font-black text-sm flex items-center justify-center cursor-pointer select-none flex-shrink-0 focus:outline-none">▶</button>
                 </div>
 
-                <div id="iem-col-specs" class="w-full responsive-w-96 responsive-border-r border-zinc-800 bg-transparent p-2.5 flex flex-col h-full overflow-hidden flex-shrink-0">
+                <div id="iem-col-specs" class="w-full responsive-w-96 responsive-border-r border-[var(--border-color)] bg-transparent p-2.5 flex flex-col h-full overflow-hidden flex-shrink-0">
                     <div class="section-card p-3 flex flex-col h-full flex-1 justify-between overflow-hidden">
 
                         <div class="flex items-center gap-1.5 w-full mb-2.5 flex-shrink-0">
@@ -369,7 +375,7 @@
                     </div>
                 </div>
 
-                <div id="iem-col-sliders" class="w-full responsive-w-96 responsive-border-l border-zinc-800 p-2.5 bg-transparent flex flex-col h-full overflow-hidden flex-shrink-0">
+                <div id="iem-col-sliders" class="w-full responsive-w-96 responsive-border-l border-[var(--border-color)] p-2.5 bg-transparent flex flex-col h-full overflow-hidden flex-shrink-0">
                     <div class="section-card p-3 flex flex-col h-full flex-1 overflow-hidden" style="justify-content: flex-start !important; gap: 8px !important;">
 
                         <div class="flex items-center gap-1.5 w-full mb-1 flex-shrink-0">
@@ -703,7 +709,7 @@
                     <button onclick="App.cycleMobileSection('find', 1)" class="w-9 h-9 bg-[var(--bg-card)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-[var(--text-main)] font-black text-sm flex items-center justify-center cursor-pointer select-none flex-shrink-0 focus:outline-none">▶</button>
                 </div>
 
-                <div id="find-col-prefs" class="w-full responsive-w-96 responsive-border-r border-zinc-800 bg-transparent p-2.5 flex flex-col h-full overflow-hidden flex-shrink-0 select-none">
+                <div id="find-col-prefs" class="w-full responsive-w-96 responsive-border-r border-[var(--border-color)] bg-transparent p-2.5 flex flex-col h-full overflow-hidden flex-shrink-0 select-none">
                     <div class="section-card p-3 flex flex-col h-full flex-1 justify-between overflow-hidden">
 
                         <div class="flex flex-col gap-1.5 flex-shrink-0">
@@ -719,15 +725,15 @@
                             </div>
 
                             <div id="find-target-curve-block" class="flex flex-col flex-shrink-0 mb-1">
-                                <div class="w-full h-12 relative bg-black/60 border border-white/[0.05] rounded-none overflow-hidden">
+                                <div class="w-full h-10 relative bg-black/60 border border-white/[0.05] rounded-none overflow-hidden">
                                     <canvas id="find-target-canvas" class="w-full h-full block"></canvas>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="flex-1 min-h-0 overflow-y-auto pr-1 space-y-1" style="scrollbar-width: thin;">
+                        <div id="find-scroll-area" class="flex-1 min-h-0 overflow-y-auto pr-1 space-y-1" style="scrollbar-width: thin;">
 
-                            <div id="find-filter-controls" class="space-y-1.5 hidden">
+                            <div id="find-filter-controls" class="space-y-1 hidden">
 
                                 <div class="space-y-1 flex-shrink-0">
                                     <span class="text-xs font-black text-amber-500 uppercase tracking-wider block">1. Search Brand / Model</span>
@@ -741,7 +747,7 @@
                                 <div class="space-y-1.5 flex-shrink-0">
                                     <span class="text-xs font-black text-rose-400 uppercase tracking-wider block mb-1">2. Pick Your Specs</span>
 
-                                    <div id="find-filter-drawer" class="space-y-2">
+                                    <div id="find-filter-drawer" class="space-y-1">
 
                                         <input type="hidden" id="find-filter-formfactor" value="any">
                                         <div class="flex items-center gap-1.5 w-full">
@@ -791,20 +797,6 @@
                                             <input type="range" id="find-filter-price-min" min="0" max="3000" step="25" value="0" class="dual-range dual-range-min" oninput="FindEngine.syncDualRange('price')">
                                             <input type="range" id="find-filter-price-max" min="0" max="3000" step="25" value="3000" class="dual-range dual-range-max" oninput="FindEngine.syncDualRange('price')">
                                         </div>
-                                    </div>
-
-                                    <div class="space-y-1">
-                                        <input type="hidden" id="find-filter-picks" value="[]">
-                                        <button type="button" onclick="FindEngine.togglePickMenu()" class="w-full h-9 bg-[var(--bg-input)] text-[var(--text-main)] font-bold text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none shadow-none">
-                                            <span class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-bold">
-                                                <span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🏷️</span>
-                                                <span>Pick Tags & Badges</span>
-                                                <span id="find-pick-count" class="hidden text-[10px] bg-black/40 px-1.5 py-0.5 rounded-full text-[var(--accent-blue)] font-black flex-shrink-0">0</span>
-                                                <span class="ml-auto text-zinc-500 font-black flex-shrink-0">▾</span>
-                                            </span>
-                                        </button>
-                                        <div id="find-pick-menu" class="hidden border-[3px] border-black bg-[var(--bg-input)] max-h-56 overflow-y-auto"></div>
-                                        <div id="find-pick-chips" class="hidden border-[3px] border-black bg-[var(--bg-input)] p-1.5 max-h-24 overflow-y-auto space-y-1"></div>
                                     </div>
                                 </div>
                             </div>
@@ -866,6 +858,11 @@
                             </div>
                         </div>
 
+                        <div id="find-pick-section" class="hidden flex-shrink-0 pt-2.5 space-y-1">
+                            <input type="hidden" id="find-filter-picks" value="[]">
+                            <div id="find-pick-grid" class="w-full"></div>
+                        </div>
+
                         <div class="flex flex-col gap-1.5 pt-1.5 flex-shrink-0">
                             <button onclick="FindEngine.scanAndMatch()" class="w-full h-10 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black text-xs shadow transition-transform cursor-pointer flex items-center justify-center gap-2 border-2 border-black">
                                 <span>🔍</span> FIND MATCHES
@@ -910,7 +907,7 @@
                     </div>
                 </div>
 
-                <div id="find-col-tools" class="w-full responsive-w-96 responsive-border-l border-zinc-800 p-2.5 bg-transparent flex flex-col h-full overflow-hidden flex-shrink-0 select-none">
+                <div id="find-col-tools" class="w-full responsive-w-96 responsive-border-l border-[var(--border-color)] p-2.5 bg-transparent flex flex-col h-full overflow-hidden flex-shrink-0 select-none">
                     <div id="find-taste-card" class="section-card p-3 flex flex-col h-full flex-1 justify-between overflow-hidden">
 
                         <div class="flex items-center gap-1.5 w-full mb-2 flex-shrink-0">
@@ -1116,7 +1113,7 @@
                     <button onclick="App.cycleMobileSection('eq', 1)" class="w-9 h-9 bg-[var(--bg-card)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-[var(--text-main)] font-black text-sm flex items-center justify-center cursor-pointer select-none flex-shrink-0 focus:outline-none">▶</button>
                 </div>
 
-                <div id="eq-col-db" class="w-full responsive-w-96 responsive-border-r border-zinc-800 bg-transparent p-2.5 flex flex-col h-full overflow-hidden flex-shrink-0">
+                <div id="eq-col-db" class="w-full responsive-w-96 responsive-border-r border-[var(--border-color)] bg-transparent p-2.5 flex flex-col h-full overflow-hidden flex-shrink-0">
 <div class="section-card p-3 flex flex-col h-full flex-1 justify-between overflow-hidden">
 
                         <div class="flex flex-col flex-1 min-h-0 space-y-1.5 mb-1.5">
@@ -1158,7 +1155,7 @@
                                     </button>
                                     <button type="button" onclick="PEQDB_Module.cycleTargetDirection(1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-[3px] border-black text-[var(--text-main)] font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
                                 </div>
-                                <button id="target-edit-btn" onclick="PEQDB_Module.toggleTargetSculptor()" class="w-9 h-9 aspect-square rounded-none bg-[var(--bg-input)] border-[3px] border-black text-zinc-300 hover:border-zinc-700 transition-all font-bold shadow-none cursor-pointer flex items-center justify-center flex-shrink-0 focus:outline-none" title="Open the Target Sculptor">
+                                <button id="target-edit-btn" onclick="PEQDB_Module.toggleTargetSculptor()" class="w-9 h-9 aspect-square rounded-none bg-[var(--bg-input)] border-[3px] border-black text-zinc-300 hover:border-[var(--border-color)] transition-all font-bold shadow-none cursor-pointer flex items-center justify-center flex-shrink-0 focus:outline-none" title="Open the Target Sculptor">
                                     <span class="text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none">✏️</span>
                                 </button>
                             </div>
@@ -1285,21 +1282,21 @@
 
                             <div id="base-slot-wrapper" class="flex flex-col gap-1 w-[205px] h-full flex-shrink-0">
                                 <span class="text-[10px] font-black text-amber-500 uppercase tracking-wider flex items-center gap-1">🔒 Base Slot</span>
-                                <div id="base-slot" class="flex-1 border-2 border-dashed border-zinc-700/80 bg-zinc-950/40 p-1.5 flex items-center justify-center transition-all hover:border-amber-500/60 overflow-hidden" ondragover="event.preventDefault(); this.style.borderColor='rgba(245, 158, 11, 0.8)'" ondragleave="this.style.borderColor=''" ondrop="this.style.borderColor=''; PEQDB_Module.handleDrop(event, 'base')">
+                                <div id="base-slot" class="flex-1 border-2 border-dashed border-[var(--border-color)] bg-zinc-950/40 p-1.5 flex items-center justify-center transition-all hover:border-amber-500/60 overflow-hidden" ondragover="event.preventDefault(); this.style.borderColor='rgba(245, 158, 11, 0.8)'" ondragleave="this.style.borderColor=''" ondrop="this.style.borderColor=''; PEQDB_Module.handleDrop(event, 'base')">
 
                                 </div>
                             </div>
 
                             <div id="target-slot-wrapper" class="flex flex-col gap-1 w-[205px] h-full flex-shrink-0">
                                 <span class="text-[10px] font-black text-blue-500 uppercase tracking-wider flex items-center gap-1">🎯 Target Slot</span>
-                                <div id="target-slot" class="flex-1 border-2 border-dashed border-zinc-700/80 bg-zinc-950/40 p-1.5 flex items-center justify-center transition-all hover:border-blue-500/60 overflow-hidden" ondragover="event.preventDefault(); this.style.borderColor='rgba(59, 130, 246, 0.8)'" ondragleave="this.style.borderColor=''" ondrop="this.style.borderColor=''; PEQDB_Module.handleDrop(event, 'target')">
+                                <div id="target-slot" class="flex-1 border-2 border-dashed border-[var(--border-color)] bg-zinc-950/40 p-1.5 flex items-center justify-center transition-all hover:border-blue-500/60 overflow-hidden" ondragover="event.preventDefault(); this.style.borderColor='rgba(59, 130, 246, 0.8)'" ondragleave="this.style.borderColor=''" ondrop="this.style.borderColor=''; PEQDB_Module.handleDrop(event, 'target')">
 
                                 </div>
                             </div>
 
                             <div id="reference-slot-wrapper" class="flex flex-col gap-1 flex-1 min-w-[400px] h-full flex-shrink-0">
                                 <span class="text-[10px] font-black text-zinc-400 tracking-wider uppercase flex items-center gap-1">🆚 Reference Slot</span>
-                                <div id="reference-pile" class="flex-1 border-2 border-dashed border-zinc-700/80 bg-zinc-950/40 p-1.5 flex flex-row items-center gap-2.5 overflow-x-auto transition-all hover:border-white/40" ondragover="event.preventDefault(); this.style.borderColor='rgba(255, 255, 255, 0.6)'" ondragleave="this.style.borderColor=''" ondrop="this.style.borderColor=''; PEQDB_Module.handleDrop(event, 'reference')">
+                                <div id="reference-pile" class="flex-1 border-2 border-dashed border-[var(--border-color)] bg-zinc-950/40 p-1.5 flex flex-row items-center gap-2.5 overflow-x-auto transition-all hover:border-white/40" ondragover="event.preventDefault(); this.style.borderColor='rgba(255, 255, 255, 0.6)'" ondragleave="this.style.borderColor=''" ondrop="this.style.borderColor=''; PEQDB_Module.handleDrop(event, 'reference')">
 
                                 </div>
                             </div>
@@ -1308,7 +1305,7 @@
 
                 </div>
 
-                <div id="eq-col-console" class="w-full responsive-w-96 responsive-border-l border-zinc-800 p-2.5 bg-transparent flex flex-col h-full overflow-hidden flex-shrink-0">
+                <div id="eq-col-console" class="w-full responsive-w-96 responsive-border-l border-[var(--border-color)] p-2.5 bg-transparent flex flex-col h-full overflow-hidden flex-shrink-0">
 
                     <div class="section-card p-3 flex flex-col h-full flex-1 justify-between overflow-hidden">
 
@@ -1780,7 +1777,7 @@
                     <button onclick="App.cycleMobileSection('testlab', 1)" class="w-9 h-9 bg-[var(--bg-card)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-[var(--text-main)] font-black text-sm flex items-center justify-center cursor-pointer select-none flex-shrink-0 focus:outline-none">▶</button>
                 </div>
 
-                <div id="testlab-col-sweeps" class="w-full responsive-w-96 responsive-border-r border-zinc-800 bg-transparent p-2.5 flex flex-col h-full overflow-hidden flex-shrink-0">
+                <div id="testlab-col-sweeps" class="w-full responsive-w-96 responsive-border-r border-[var(--border-color)] bg-transparent p-2.5 flex flex-col h-full overflow-hidden flex-shrink-0">
                     <div class="section-card p-3 flex flex-col h-full flex-1 justify-between overflow-hidden">
 
                         <div class="flex items-center gap-1.5 w-full mb-2.5 flex-shrink-0">
@@ -1956,7 +1953,7 @@
                     </div>
                 </div>
 
-                <div id="testlab-col-generators" class="w-full responsive-w-96 responsive-border-l border-zinc-800 p-2.5 bg-transparent flex flex-col h-full overflow-hidden flex-shrink-0 select-none">
+                <div id="testlab-col-generators" class="w-full responsive-w-96 responsive-border-l border-[var(--border-color)] p-2.5 bg-transparent flex flex-col h-full overflow-hidden flex-shrink-0 select-none">
                     <div class="section-card p-3 flex flex-col h-full flex-1 justify-between overflow-hidden">
 
                         <div class="flex items-center gap-1.5 w-full mb-2.5 flex-shrink-0">
@@ -2142,6 +2139,127 @@
 
             </div>
 
+            <div id="pane-music" class="tab-pane hidden h-full flex flex-col responsive-row overflow-hidden">
+
+                <div class="xl:hidden flex items-center gap-1.5 bg-[var(--bg-input)] p-1.5 border-b-[3px] border-black w-full select-none flex-shrink-0 relative z-40">
+                    <button onclick="MusicPlayer.cycleMobileRegion(-1)" class="w-9 h-9 bg-[var(--bg-card)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-[var(--text-main)] font-black text-sm flex items-center justify-center cursor-pointer select-none flex-shrink-0 focus:outline-none">◀</button>
+                    <div id="music-mobile-section-label" class="flex-1 text-center text-xs font-black uppercase tracking-widest border-[3px] border-black bg-[var(--bg-card)] h-9 flex items-center justify-center truncate px-2">📚 Library</div>
+                    <button onclick="MusicPlayer.cycleMobileRegion(1)" class="w-9 h-9 bg-[var(--bg-card)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-[var(--text-main)] font-black text-sm flex items-center justify-center cursor-pointer select-none flex-shrink-0 focus:outline-none">▶</button>
+                </div>
+
+                <!-- LEFT: library sidebar nav -->
+                <div id="music-col-left" class="w-full responsive-w-96 responsive-border-r border-[var(--border-color)] bg-transparent p-2.5 flex flex-col h-full overflow-hidden flex-shrink-0 select-none">
+                    <div class="section-card p-3 flex flex-col h-full flex-1 justify-between overflow-hidden">
+
+                        <div class="flex items-center gap-1.5 w-full mb-2 flex-shrink-0">
+                            <span class="text-[10px] font-black uppercase tracking-widest text-[var(--text-main)] flex-1 truncate">📚 Library</span>
+                            <button id="music-left-rescan" onclick="MusicPlayer.refreshLibrary()" class="w-7 h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[3px] border-black text-[var(--text-main)] font-black text-[11px] flex items-center justify-center cursor-pointer select-none" title="Rescan library">⟳</button>
+                            <button id="music-left-add" onclick="MusicPlayer.addFolders()" class="w-7 h-7 bg-[var(--accent-blue)] hover:brightness-110 border-[3px] border-black text-white font-black text-[12px] flex items-center justify-center cursor-pointer select-none" title="Add music folder">＋</button>
+                        </div>
+
+                        <nav id="music-left-nav" class="flex flex-col gap-0.5 flex-shrink-0">
+                            <button data-left="all" onclick="MusicPlayer.setLeft('all')" class="music-nav-btn active flex items-center gap-2 w-full h-8 px-2 text-left text-[10px] font-black uppercase tracking-wider text-[var(--text-secondary)] hover:text-white cursor-pointer rounded">🏠 <span>All Music</span></button>
+                            <button data-left="artists" onclick="MusicPlayer.setLeft('artists')" class="music-nav-btn flex items-center gap-2 w-full h-8 px-2 text-left text-[10px] font-black uppercase tracking-wider text-[var(--text-secondary)] hover:text-white cursor-pointer rounded">👤 <span>Artists</span></button>
+                            <button data-left="albums" onclick="MusicPlayer.setLeft('albums')" class="music-nav-btn flex items-center gap-2 w-full h-8 px-2 text-left text-[10px] font-black uppercase tracking-wider text-[var(--text-secondary)] hover:text-white cursor-pointer rounded">💿 <span>Albums</span></button>
+                            <button data-left="genres" onclick="MusicPlayer.setLeft('genres')" class="music-nav-btn flex items-center gap-2 w-full h-8 px-2 text-left text-[10px] font-black uppercase tracking-wider text-[var(--text-secondary)] hover:text-white cursor-pointer rounded">🎼 <span>Genres</span></button>
+                            <button data-left="favorites" onclick="MusicPlayer.setLeft('favorites')" class="music-nav-btn flex items-center gap-2 w-full h-8 px-2 text-left text-[10px] font-black uppercase tracking-wider text-[var(--text-secondary)] hover:text-white cursor-pointer rounded">⭐ <span>Favorites</span></button>
+                            <button data-left="recent" onclick="MusicPlayer.setLeft('recent')" class="music-nav-btn flex items-center gap-2 w-full h-8 px-2 text-left text-[10px] font-black uppercase tracking-wider text-[var(--text-secondary)] hover:text-white cursor-pointer rounded">🕘 <span>Recent</span></button>
+                        </nav>
+
+                        <div class="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-zinc-500 mt-3 mb-1 flex-shrink-0">
+                            <span>Playlists</span>
+                            <button id="music-left-new-playlist" onclick="MusicPlayer.createPlaylist()" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-zinc-800 border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="New playlist">＋</button>
+                        </div>
+                        <div id="music-left-playlists" class="flex flex-col gap-0.5 flex-1 min-h-0 overflow-y-auto pr-1" style="scrollbar-width: thin;"></div>
+
+                        <div class="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-zinc-500 mt-3 mb-1 flex-shrink-0">
+                            <span>Folders</span>
+                            <button onclick="MusicPlayer.addFolders()" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-zinc-800 border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Add music folder">＋</button>
+                        </div>
+                        <div id="music-left-folders-list" class="flex flex-col gap-0.5 max-h-36 min-h-0 overflow-y-auto pr-1" style="scrollbar-width: thin;"></div>
+
+                        <div id="music-left-stats" class="flex flex-col gap-0.5 text-[9px] font-bold text-zinc-500 leading-none mt-2 pt-2 border-t-2 border-black flex-shrink-0">
+                            <div class="flex justify-between"><span>Library</span><span id="music-stats-count" class="text-[var(--accent-blue)]">0 tracks</span></div>
+                            <div class="flex justify-between"><span>Albums</span><span id="music-stats-albums" class="text-[var(--accent-blue)]">0</span></div>
+                            <div class="flex justify-between"><span>Genres</span><span id="music-stats-genres" class="text-[var(--accent-blue)]">0</span></div>
+                            <div class="flex justify-between"><span>Length</span><span id="music-stats-duration" class="text-[var(--accent-blue)]">0m</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="music-divider-left" class="music-pane-divider"></div>
+
+                <!-- CENTER: library view -->
+                <div id="music-col-center" class="flex-1 bg-transparent p-2.5 flex flex-col h-full overflow-hidden flex-shrink-0">
+                    <div class="section-card p-3 flex flex-col h-full flex-1 overflow-hidden relative">
+
+                        <div class="flex flex-wrap items-center gap-2 pb-2 flex-shrink-0">
+                            <div class="relative flex-1 min-w-[160px]">
+                                <span class="absolute left-2.5 top-2 text-xs z-10">🔍</span>
+                                <input type="text" id="music-search" placeholder="Search songs, artists, albums…" autocomplete="off" class="w-full input-bg-fix pl-8 pr-2.5 py-1.5 font-bold outline-none h-9 text-xs border-[3px] border-black bg-[var(--bg-input)] text-[var(--text-main)]">
+                            </div>
+                            <button id="music-undo-btn" onclick="MusicPlayer.undoTagEdits()" title="Undo last tag edit" class="h-9 px-2.5 flex items-center gap-1.5 border-[3px] border-black bg-[var(--bg-input)] text-[var(--text-main)] text-[10px] font-black cursor-pointer opacity-30 pointer-events-none select-none">↩ Undo</button>
+                        </div>
+
+                        <div id="music-center-heading" class="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-zinc-400 pb-2 flex-shrink-0">
+                            <span id="music-center-title">🏠 All Music</span>
+                            <span id="music-center-sub" class="text-[var(--accent-blue)]"></span>
+                        </div>
+
+                        <div id="music-center-body" class="flex-1 min-h-0 overflow-y-auto pr-1 relative" style="scrollbar-width: thin;">
+                            <div id="music-library-view" class="pb-2"></div>
+                        </div>
+
+                        <div id="music-scan-overlay" class="hidden fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div class="flex flex-col items-center gap-4 select-none">
+                                <div class="relative w-36 h-36">
+                                    <svg class="absolute inset-0 -rotate-90" width="144" height="144" viewBox="0 0 144 144">
+                                        <circle cx="72" cy="72" r="64" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="8"/>
+                                        <circle id="music-scan-ring" cx="72" cy="72" r="64" fill="none" stroke="var(--accent-blue)" stroke-width="8" stroke-linecap="round" stroke-dasharray="402.12" stroke-dashoffset="402.12" style="transition: stroke-dashoffset .25s linear;"/>
+                                    </svg>
+                                    <div class="absolute inset-0 flex items-center justify-center">
+                                        <div class="relative w-24 h-24 rounded-full border-2 border-black shadow-[5px_5px_0_0_#000] flex items-center justify-center" style="background: radial-gradient(circle, #2c2c36 0%, #131318 55%, #000 100%); animation: scan-spin 2.2s linear infinite;">
+                                            <div class="w-16 h-16 rounded-full" style="background: repeating-radial-gradient(circle, rgba(255,255,255,0.10) 0px, rgba(255,255,255,0.10) 1px, transparent 1px, transparent 5px);"></div>
+                                            <div class="absolute w-3 h-3 rounded-full border border-black" style="top:50%;left:50%;transform:translate(-50%,-50%); background: var(--accent-blue);"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="music-scan-title" class="text-sm font-black text-[var(--text-main)] text-center">Scanning folders…</div>
+                                <div id="music-scan-label" class="text-[10px] font-mono text-zinc-500 min-h-[14px] text-center"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="music-divider-right" class="music-pane-divider"></div>
+
+                <!-- RIGHT: now playing / details -->
+                <div id="music-col-right" class="w-full responsive-w-96 responsive-border-l border-[var(--border-color)] p-2.5 bg-transparent flex flex-col h-full overflow-hidden flex-shrink-0 select-none">
+                    <div class="section-card p-3 flex flex-col h-full flex-1 justify-between overflow-hidden">
+
+                        <div class="flex items-center gap-1.5 w-full mb-2 flex-shrink-0">
+                            <button onclick="MusicPlayer.cycleRight(-1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
+                            <button id="music-right-mode" onclick="MusicPlayer.cycleRight(1)" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none" title="Change panel">
+                                <span id="music-right-title" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-black uppercase tracking-wider">🎧 Now Playing</span>
+                            </button>
+                            <button onclick="MusicPlayer.cycleRight(1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">▶</button>
+                        </div>
+
+                        <div id="music-right-body" class="flex-1 min-h-0 overflow-y-auto pr-1 relative" style="scrollbar-width: thin;">
+                        </div>
+
+                        <div id="music-resume-banner" class="hidden mt-2 p-2 border-2 border-black bg-[var(--bg-input)] flex flex-col gap-1.5 flex-shrink-0">
+                            <span class="text-[9px] font-black uppercase tracking-widest text-zinc-400">⏸ Last session</span>
+                            <span id="music-resume-label" class="text-[9px] font-bold text-[var(--text-main)] leading-snug"></span>
+                            <div class="flex gap-1.5">
+                                <button id="music-resume-btn" class="flex-1 py-1 text-[9px] font-black bg-[var(--accent-blue)] text-white border-2 border-black cursor-pointer hover:brightness-110">▶ Resume</button>
+                                <button id="music-resume-dismiss" class="px-2 py-1 text-[9px] font-black text-zinc-400 hover:text-white border-2 border-black bg-[var(--bg-input)] cursor-pointer">✕</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div id="pane-visualizer" class="tab-pane hidden h-full flex flex-col p-2.5 text-[var(--text-main)] overflow-hidden select-none">
                 <div class="w-full h-full flex flex-col overflow-hidden">
                     <div class="section-card p-3 flex flex-col h-full flex-1 justify-between overflow-hidden">
@@ -2154,10 +2272,10 @@
                             <canvas id="fullscreen-viz-canvas" onclick="EQ.cycleVizEffect()" class="absolute inset-0 w-full h-full block cursor-pointer" ></canvas>
 
                                 <div id="viz-controls-overlay" class="absolute top-4 right-4 flex items-center gap-2 bg-[#0a0a0f]/90 border-[3px] border-black px-2.5 py-1.5 shadow-2xl z-10 transition-all duration-300 opacity-100">
-                                    <button onclick="EQ.cycleVizEffect()" id="viz-effect-btn" class="px-3 h-8 bg-zinc-900/60 hover:bg-zinc-800/80 border border-zinc-800 text-stone-200 text-xs font-bold rounded transition-all cursor-pointer flex items-center justify-center">
+                                    <button onclick="EQ.cycleVizEffect()" id="viz-effect-btn" class="px-3 h-8 bg-zinc-900/60 hover:bg-zinc-800/80 border border-[var(--border-color)] text-stone-200 text-xs font-bold rounded transition-all cursor-pointer flex items-center justify-center">
                                         🎨 Effect: Waveform
                                     </button>
-                                    <button onclick="EQ.toggleVisualizerFullscreen()" id="viz-fullscreen-btn" class="px-3 h-8 bg-zinc-900/60 hover:bg-zinc-800/80 border border-zinc-800 text-stone-200 text-xs font-bold rounded transition-all cursor-pointer flex items-center justify-center" >
+                                    <button onclick="EQ.toggleVisualizerFullscreen()" id="viz-fullscreen-btn" class="px-3 h-8 bg-zinc-900/60 hover:bg-zinc-800/80 border border-[var(--border-color)] text-stone-200 text-xs font-bold rounded transition-all cursor-pointer flex items-center justify-center" >
                                         ⛶ Fullscreen
                                     </button>
                                 </div>
@@ -2181,13 +2299,13 @@
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                                     <div>
                                         <label class="block text-xs uppercase text-zinc-400 font-bold mb-1">Theme Color</label>
-                                        <button id="theme-cycle-btn" onclick="App.cycleTheme()" class="w-full h-8 bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-zinc-800 transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer">
+                                        <button id="theme-cycle-btn" onclick="App.cycleTheme()" class="w-full h-8 bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer">
                                             📜 Sandpaper
                                         </button>
                                     </div>
                                     <div>
                                         <label class="block text-xs uppercase text-zinc-400 font-bold mb-1">Font Style</label>
-                                        <button id="font-cycle-btn" onclick="App.cycleFont()" class="w-full h-8 bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-zinc-800 transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer">
+                                        <button id="font-cycle-btn" onclick="App.cycleFont()" class="w-full h-8 bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer">
                                             𔤤 Font
                                         </button>
                                     </div>
@@ -2208,13 +2326,13 @@
                                 <div class="grid grid-cols-2 gap-3">
                                     <div>
                                         <label class="block text-xs uppercase text-zinc-400 font-bold mb-1">Audio Channel</label>
-                                        <button id="a11y-audio-btn" onclick="toggleAudioMode()" class="w-full h-8 bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-zinc-800 transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer">
+                                        <button id="a11y-audio-btn" onclick="toggleAudioMode()" class="w-full h-8 bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer">
                                             🔊 Stereo
                                         </button>
                                     </div>
                                     <div>
                                         <label class="block text-xs uppercase text-zinc-400 font-bold mb-1">Blue Light Filter</label>
-                                        <button id="a11y-bluelight-btn" onclick="Accessibility.toggleBlueLightFilter()" class="w-full h-8 bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-zinc-800 transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer">
+                                        <button id="a11y-bluelight-btn" onclick="Accessibility.toggleBlueLightFilter()" class="w-full h-8 bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer">
                                             🌙 Filter: Off
                                         </button>
                                     </div>
@@ -2257,10 +2375,18 @@
 
             <div id="footer-left-group" class="flex items-center justify-between gap-2 px-2.5 py-1 w-full max-w-[460px] flex-1 h-8 min-w-[340px]">
 
-                <div class="flex items-center gap-2 w-[180px] flex-shrink-0 overflow-hidden relative pl-1">
-                    <span class="text-xs animate-pulse flex-shrink-0">🎵</span>
-                    <div class="overflow-hidden flex-1 relative flex items-center h-full">
-                        <div id="playlist-track-info" class="text-[10px] text-[var(--text-main)] font-black whitespace-nowrap leading-none">No tracks Loaded</div>
+                <div class="flex items-center gap-2 w-[200px] flex-shrink-0 overflow-hidden relative pl-1">
+                    <img id="music-now-art" alt="" class="hidden w-7 h-7 object-cover border-2 border-black flex-shrink-0" style="opacity: 0.18;">
+                    <div id="music-now-info" class="hidden flex-1 min-w-0 overflow-hidden">
+                        <div class="overflow-hidden relative flex items-center">
+                            <div id="music-now-title" class="text-[10px] text-[var(--text-main)] font-black whitespace-nowrap leading-none"></div>
+                        </div>
+                    </div>
+                    <div id="music-now-legacy" class="flex items-center gap-2 w-full overflow-hidden">
+                        <span class="text-xs animate-pulse flex-shrink-0">🎵</span>
+                        <div class="overflow-hidden flex-1 relative flex items-center h-full">
+                            <div id="playlist-track-info" class="text-[10px] text-[var(--text-main)] font-black whitespace-nowrap leading-none">No tracks Loaded</div>
+                        </div>
                     </div>
                 </div>
 
@@ -2331,8 +2457,14 @@
 
             <div class="flex items-center justify-between w-full h-8 gap-3">
 
-                <div class="flex-1 min-w-0 flex items-center h-full">
-                    <div class="overflow-hidden relative flex items-center w-full">
+                <div class="flex-1 min-w-0 flex items-center h-full gap-2">
+                    <img id="music-now-art-mobile" alt="" class="hidden w-7 h-7 object-cover border-2 border-black flex-shrink-0" style="opacity: 0.18;">
+                    <div id="music-now-info-mobile" class="hidden flex-1 min-w-0 overflow-hidden">
+                        <div class="overflow-hidden relative flex items-center">
+                            <div id="music-now-title-mobile" class="text-[10px] text-[var(--text-main)] font-black whitespace-nowrap leading-none"></div>
+                        </div>
+                    </div>
+                    <div id="music-now-legacy-mobile" class="overflow-hidden relative flex items-center w-full">
                         <div id="mobile-track-info" class="text-[10px] text-[var(--text-main)] font-black whitespace-nowrap leading-none truncate">No tracks Loaded</div>
                     </div>
                 </div>
@@ -2393,6 +2525,9 @@
                 <button onclick="EQ.clearPlaylist()" class="btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center text-red-500 hover:text-red-400 cursor-pointer" >
                     <span class="text-[13px] leading-none">✕</span>
                 </button>
+                <span id="mobile-music-go-btn" onclick="App.switchTab('music')" class="btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center cursor-pointer hidden" title="Music library">
+                    <span class="text-[13px] leading-none">🎵</span>
+                </span>
             </div>
         </div>
     </div>
@@ -2405,13 +2540,178 @@
         <button onclick="FindEngine.compareSelected()" class="px-3 py-1 bg-[var(--accent-blue)] hover:brightness-110 text-white font-black text-xs border-2 border-black cursor-pointer">Compare Now</button>
     </div>
 
-    <div id="toast-notification" class="fixed top-6 left-1/2 transform -translate-x-1/2 z-[200] bg-zinc-950/95 border border-[var(--border-color)] text-[var(--text-main)] px-4 py-2.5 rounded-lg shadow-2xl flex items-center gap-2 opacity-0 pointer-events-none select-none text-xs font-semibold">
-        <span id="toast-icon">ℹ️</span>
-        <span id="toast-message">Message</span>
+    <div id="toast-stack" class="fixed top-5 right-4 z-[500] flex flex-col gap-2 items-end pointer-events-none max-w-[min(90vw,380px)]"></div>
+
+    <div id="music-tag-editor" class="hidden fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-[var(--bg-card)] border-2 border-black w-full max-w-2xl max-h-[90vh] rounded-lg shadow-2xl flex flex-col overflow-hidden select-none" style="box-shadow: 6px 6px 0px 0px #000; max-height: 90vh;">
+            <div class="flex justify-between items-center px-4 py-3 border-b-2 border-black bg-[var(--bg-window)]">
+                <span class="text-xs font-black uppercase tracking-wider text-[var(--text-main)]">✏️ Edit Tags</span>
+                <button id="music-tag-editor-close" class="text-zinc-500 hover:text-red-500 text-xs cursor-pointer">❌</button>
+            </div>
+            <div class="flex gap-3 p-4 overflow-hidden flex-1 min-h-0">
+                <div class="w-36 sm:w-40 flex-shrink-0 flex flex-col gap-2">
+                    <div id="tag-art-preview" class="border-2 border-black bg-[var(--bg-input)] flex items-center justify-center overflow-hidden" style="width:144px;height:144px;flex-shrink:0;"></div>
+                    <button onclick="MusicPlayer.chooseArtFile()" class="px-2 py-1.5 text-[9px] font-black border-2 border-black bg-[var(--bg-input)] text-zinc-300 hover:text-white cursor-pointer">🖼️ Change Art</button>
+                    <button onclick="MusicPlayer.removeArt()" class="px-2 py-1.5 text-[9px] font-black border-2 border-black bg-[var(--bg-input)] text-rose-300 hover:text-rose-200 cursor-pointer">🗑️ Remove Art</button>
+                    <input type="file" id="tag-art-file" accept="image/*" class="hidden" onchange="MusicPlayer.onArtChosen(this)">
+                    <div id="tag-file-label" class="text-[9px] text-zinc-500 truncate" title=""></div>
+                    <div id="tag-write-hint" class="text-[9px] font-black text-amber-400">Read-only preview</div>
+                </div>
+                <div class="flex-1 min-w-0 overflow-y-auto grid grid-cols-2 gap-2 pr-1" style="scrollbar-width: thin;">
+                    <div class="col-span-1 flex flex-col gap-1"><label class="text-[9px] font-black uppercase tracking-wider text-zinc-500">Title</label><input id="tag-title" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none"></div>
+                    <div class="col-span-1 flex flex-col gap-1"><label class="text-[9px] font-black uppercase tracking-wider text-zinc-500">Artist</label><input id="tag-artist" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none"></div>
+                    <div class="col-span-1 flex flex-col gap-1"><label class="text-[9px] font-black uppercase tracking-wider text-zinc-500">Album</label><input id="tag-album" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none"></div>
+                    <div class="col-span-1 flex flex-col gap-1"><label class="text-[9px] font-black uppercase tracking-wider text-zinc-500">Album Artist</label><input id="tag-albumartist" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none"></div>
+                    <div class="col-span-1 flex flex-col gap-1"><label class="text-[9px] font-black uppercase tracking-wider text-zinc-500">Genre</label><input id="tag-genre" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none"></div>
+                    <div class="col-span-1 flex flex-col gap-1"><label class="text-[9px] font-black uppercase tracking-wider text-zinc-500">Year</label><input id="tag-year" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none"></div>
+                    <div class="col-span-1 flex flex-col gap-1"><label class="text-[9px] font-black uppercase tracking-wider text-zinc-500">Track #</label><input id="tag-track" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none"></div>
+                    <div class="col-span-1 flex flex-col gap-1"><label class="text-[9px] font-black uppercase tracking-wider text-zinc-500">Total Tracks</label><input id="tag-tracktotal" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none"></div>
+                    <div class="col-span-1 flex flex-col gap-1"><label class="text-[9px] font-black uppercase tracking-wider text-zinc-500">Disc #</label><input id="tag-disc" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none"></div>
+                    <div class="col-span-1 flex flex-col gap-1"><label class="text-[9px] font-black uppercase tracking-wider text-zinc-500">Composer</label><input id="tag-composer" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none"></div>
+                    <div class="col-span-2 flex flex-col gap-1"><label class="text-[9px] font-black uppercase tracking-wider text-zinc-500">Comment</label><textarea id="tag-comment" rows="2" class="px-2 py-1 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none resize-none"></textarea></div>
+                    <div class="col-span-2 flex flex-col gap-1"><label class="text-[9px] font-black uppercase tracking-wider text-zinc-500">Lyrics (unsynced)</label><textarea id="tag-lyrics" rows="3" class="px-2 py-1 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none resize-none font-mono"></textarea></div>
+                    <div class="col-span-2 flex flex-col gap-1"><label class="text-[9px] font-black uppercase tracking-wider text-zinc-500">Synced Lyrics (LRC format: [mm:ss.xx] line)</label><textarea id="tag-synced" rows="4" class="px-2 py-1 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none resize-none font-mono"></textarea></div>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 px-4 py-3 border-t-2 border-black bg-[var(--bg-window)]">
+                <button onclick="MusicPlayer.closeTagEditor()" class="px-4 py-1.5 text-xs font-black text-zinc-300 border border-[var(--border-color)] rounded cursor-pointer">Cancel</button>
+                <button id="tag-save-btn" onclick="MusicPlayer.saveTagEditor()" class="px-4 py-1.5 text-xs font-black bg-[var(--accent-blue)] text-white hover:brightness-110 rounded cursor-pointer">💾 Save Tags</button>
+            </div>
+        </div>
     </div>
 
+    <div id="music-batch-tag-editor" class="hidden fixed inset-0 bg-black/85 backdrop-blur-sm z-[260] flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-[var(--bg-card)] border-2 border-black w-full max-w-2xl max-h-[90vh] rounded-lg shadow-2xl flex flex-col overflow-hidden select-none" style="box-shadow: 6px 6px 0px 0px #000; max-height: 90vh;">
+            <div class="flex justify-between items-center px-4 py-3 border-b-2 border-black bg-[var(--bg-window)]">
+                <span id="batch-tag-title" class="text-xs font-black uppercase tracking-wider text-[var(--text-main)]">✏️ Edit Tags</span>
+                <button id="music-batch-tag-editor-close" class="text-zinc-500 hover:text-red-500 text-xs cursor-pointer">❌</button>
+            </div>
+            <div class="p-4 overflow-y-auto flex-1 min-h-0" style="scrollbar-width: thin;">
+                <div class="text-[10px] text-zinc-400 font-bold mb-3 leading-relaxed">
+                    Type a value in any field to apply it to <span class="text-[var(--text-main)]">every selected track</span>.
+                    Tick <span class="text-rose-400 font-black">✖ erase</span> to blank that field across the selection.
+                    Fields left empty and unticked are never touched.
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="col-span-1 flex flex-col gap-1">
+                        <div class="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                            <span>Title</span>
+                            <span class="flex items-center gap-1 text-[8px] text-rose-400 cursor-pointer normal-case font-bold select-none"><input type="checkbox" data-key="title" class="w-3 h-3 accent-[var(--accent-blue)] cursor-pointer">✖ erase</span>
+                        </div>
+                        <input id="batch-title" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none" placeholder="Leave blank to keep">
+                    </div>
+                    <div class="col-span-1 flex flex-col gap-1">
+                        <div class="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                            <span>Artist</span>
+                            <span class="flex items-center gap-1 text-[8px] text-rose-400 cursor-pointer normal-case font-bold select-none"><input type="checkbox" data-key="artist" class="w-3 h-3 accent-[var(--accent-blue)] cursor-pointer">✖ erase</span>
+                        </div>
+                        <input id="batch-artist" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none" placeholder="Leave blank to keep">
+                    </div>
+                    <div class="col-span-1 flex flex-col gap-1">
+                        <div class="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                            <span>Album</span>
+                            <span class="flex items-center gap-1 text-[8px] text-rose-400 cursor-pointer normal-case font-bold select-none"><input type="checkbox" data-key="album" class="w-3 h-3 accent-[var(--accent-blue)] cursor-pointer">✖ erase</span>
+                        </div>
+                        <input id="batch-album" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none" placeholder="Leave blank to keep">
+                    </div>
+                    <div class="col-span-1 flex flex-col gap-1">
+                        <div class="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                            <span>Album Artist</span>
+                            <span class="flex items-center gap-1 text-[8px] text-rose-400 cursor-pointer normal-case font-bold select-none"><input type="checkbox" data-key="albumArtist" class="w-3 h-3 accent-[var(--accent-blue)] cursor-pointer">✖ erase</span>
+                        </div>
+                        <input id="batch-albumartist" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none" placeholder="Leave blank to keep">
+                    </div>
+                    <div class="col-span-1 flex flex-col gap-1">
+                        <div class="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                            <span>Genre</span>
+                            <span class="flex items-center gap-1 text-[8px] text-rose-400 cursor-pointer normal-case font-bold select-none"><input type="checkbox" data-key="genre" class="w-3 h-3 accent-[var(--accent-blue)] cursor-pointer">✖ erase</span>
+                        </div>
+                        <input id="batch-genre" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none" placeholder="Leave blank to keep">
+                    </div>
+                    <div class="col-span-1 flex flex-col gap-1">
+                        <div class="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                            <span>Year</span>
+                            <span class="flex items-center gap-1 text-[8px] text-rose-400 cursor-pointer normal-case font-bold select-none"><input type="checkbox" data-key="year" class="w-3 h-3 accent-[var(--accent-blue)] cursor-pointer">✖ erase</span>
+                        </div>
+                        <input id="batch-year" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none" placeholder="Leave blank to keep">
+                    </div>
+                    <div class="col-span-1 flex flex-col gap-1">
+                        <div class="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                            <span>Track #</span>
+                            <span class="flex items-center gap-1 text-[8px] text-rose-400 cursor-pointer normal-case font-bold select-none"><input type="checkbox" data-key="trackNo" class="w-3 h-3 accent-[var(--accent-blue)] cursor-pointer">✖ erase</span>
+                        </div>
+                        <input id="batch-track" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none" placeholder="Leave blank to keep">
+                    </div>
+                    <div class="col-span-1 flex flex-col gap-1">
+                        <div class="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                            <span>Total Tracks</span>
+                            <span class="flex items-center gap-1 text-[8px] text-rose-400 cursor-pointer normal-case font-bold select-none"><input type="checkbox" data-key="trackTotal" class="w-3 h-3 accent-[var(--accent-blue)] cursor-pointer">✖ erase</span>
+                        </div>
+                        <input id="batch-tracktotal" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none" placeholder="Leave blank to keep">
+                    </div>
+                    <div class="col-span-1 flex flex-col gap-1">
+                        <div class="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                            <span>Disc #</span>
+                            <span class="flex items-center gap-1 text-[8px] text-rose-400 cursor-pointer normal-case font-bold select-none"><input type="checkbox" data-key="discNo" class="w-3 h-3 accent-[var(--accent-blue)] cursor-pointer">✖ erase</span>
+                        </div>
+                        <input id="batch-disc" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none" placeholder="Leave blank to keep">
+                    </div>
+                    <div class="col-span-1 flex flex-col gap-1">
+                        <div class="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                            <span>Composer</span>
+                            <span class="flex items-center gap-1 text-[8px] text-rose-400 cursor-pointer normal-case font-bold select-none"><input type="checkbox" data-key="composer" class="w-3 h-3 accent-[var(--accent-blue)] cursor-pointer">✖ erase</span>
+                        </div>
+                        <input id="batch-composer" class="h-8 px-2 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none" placeholder="Leave blank to keep">
+                    </div>
+                    <div class="col-span-2 flex flex-col gap-1">
+                        <div class="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                            <span>Comment</span>
+                            <span class="flex items-center gap-1 text-[8px] text-rose-400 cursor-pointer normal-case font-bold select-none"><input type="checkbox" data-key="comment" class="w-3 h-3 accent-[var(--accent-blue)] cursor-pointer">✖ erase</span>
+                        </div>
+                        <textarea id="batch-comment" rows="2" class="px-2 py-1 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none resize-none" placeholder="Leave blank to keep"></textarea>
+                    </div>
+                    <div class="col-span-2 flex flex-col gap-1">
+                        <div class="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                            <span>Lyrics (unsynced)</span>
+                            <span class="flex items-center gap-1 text-[8px] text-rose-400 cursor-pointer normal-case font-bold select-none"><input type="checkbox" data-key="lyrics" class="w-3 h-3 accent-[var(--accent-blue)] cursor-pointer">✖ erase</span>
+                        </div>
+                        <textarea id="batch-lyrics" rows="3" class="px-2 py-1 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none resize-none font-mono" placeholder="Leave blank to keep"></textarea>
+                    </div>
+                    <div class="col-span-2 flex flex-col gap-1">
+                        <div class="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                            <span>Synced Lyrics (LRC format: [mm:ss.xx] line)</span>
+                            <span class="flex items-center gap-1 text-[8px] text-rose-400 cursor-pointer normal-case font-bold select-none"><input type="checkbox" data-key="syncedLyrics" class="w-3 h-3 accent-[var(--accent-blue)] cursor-pointer">✖ erase</span>
+                        </div>
+                        <textarea id="batch-synced" rows="4" class="px-2 py-1 rounded border border-[var(--border-color)] bg-[var(--bg-input)] text-[11px] font-bold text-[var(--text-main)] focus:outline-none resize-none font-mono" placeholder="Leave blank to keep"></textarea>
+                    </div>
+                </div>
+                <div class="mt-3 flex items-center gap-2 flex-wrap">
+                    <button onclick="MusicPlayer.chooseBatchArtFile()" class="px-2 py-1.5 text-[9px] font-black border-2 border-black bg-[var(--bg-input)] text-zinc-300 hover:text-white cursor-pointer">🖼️ Set Art on All</button>
+                    <button onclick="MusicPlayer.removeBatchArt()" class="px-2 py-1.5 text-[9px] font-black border-2 border-black bg-[var(--bg-input)] text-rose-300 hover:text-rose-200 cursor-pointer">🗑️ Remove Art from All</button>
+                    <input type="file" id="batch-tag-art-file" accept="image/*" class="hidden" onchange="MusicPlayer.onBatchArtChosen(this)">
+                    <span id="batch-tag-art-label" class="text-[9px] text-zinc-500"></span>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 px-4 py-3 border-t-2 border-black bg-[var(--bg-window)]">
+                <button onclick="MusicPlayer.closeBatchTagEditor()" class="px-4 py-1.5 text-xs font-black text-zinc-300 border border-[var(--border-color)] rounded cursor-pointer">Cancel</button>
+                <button onclick="MusicPlayer.saveBatchTagEditor()" class="px-4 py-1.5 text-xs font-black bg-[var(--accent-blue)] text-white hover:brightness-110 rounded cursor-pointer">💾 Apply to All</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="music-playlist-modal" class="hidden fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
+        <div class="bg-[var(--bg-card)] border-2 border-black w-full max-w-md rounded-lg shadow-2xl flex flex-col overflow-hidden select-none" style="box-shadow: 6px 6px 0px 0px #000; max-height: 88vh; max-width: min(28rem, 92vw);">
+            <div class="flex justify-between items-center px-4 py-3 border-b-2 border-black bg-[var(--bg-window)]">
+                <span id="music-playlist-modal-title" class="text-xs font-black uppercase tracking-wider text-[var(--text-main)]">📋 Playlists</span>
+                <button id="music-playlist-modal-close" class="text-zinc-500 hover:text-red-500 text-xs cursor-pointer">❌</button>
+            </div>
+            <div id="music-playlist-modal-body" class="p-4 flex flex-col gap-3 min-h-0 overflow-y-auto overflow-x-hidden" style="scrollbar-width: thin;"></div>
+        </div>
+    </div>
+
+
     <div id="library-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] hidden flex items-center justify-center p-4">
-        <div class="bg-[var(--bg-card)] border border-zinc-800 w-full max-w-4xl rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
+        <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-4xl rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
 
             <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
                 <span class="text-xs font-black text-amber-450 uppercase tracking-wider flex items-center gap-1.5">🏆 Saved IEM Inventory</span>
@@ -2419,11 +2719,11 @@
             </div>
 
             <div class="flex gap-2 mb-3 flex-shrink-0">
-                <input type="text" id="lib-search" placeholder="Search saved profiles..." class="flex-1 bg-[var(--bg-input)] border border-zinc-800 rounded px-3 py-1.5 text-xs outline-none focus:border-[var(--accent-blue)]" oninput="IEM.renderLibrary()">
+                <input type="text" id="lib-search" placeholder="Search saved profiles..." class="flex-1 bg-[var(--bg-input)] border border-[var(--border-color)] rounded px-3 py-1.5 text-xs outline-none focus:border-[var(--accent-blue)]" oninput="IEM.renderLibrary()">
                 <button onclick="IEM.compareSelected()" class="px-4 py-1.5 bg-[var(--accent-blue)] text-white hover:brightness-110 font-bold rounded text-xs transition-all cursor-pointer">📊 Compare Selected</button>
             </div>
 
-            <div class="flex-1 overflow-y-auto max-h-[350px] border border-zinc-800 bg-zinc-950/40 rounded p-1" id="library-table">
+            <div class="flex-1 overflow-y-auto max-h-[350px] border border-[var(--border-color)] bg-[var(--bg-input)] rounded p-1" id="library-table">
                 <table class="w-full text-left text-xs">
                     <thead>
                         <tr class="text-zinc-500 border-b border-[var(--border-color)]">
@@ -2444,7 +2744,7 @@
                 <div id="compare-grid" class="grid grid-cols-2 lg:grid-cols-4 gap-3 max-h-[500px] overflow-y-auto p-1">
 
                 </div>
-                <button onclick="IEM.closeCompare()" class="w-full py-2 bg-zinc-800 text-zinc-300 font-bold rounded text-xs border border-zinc-700 hover:bg-zinc-700 transition-all cursor-pointer">
+                <button onclick="IEM.closeCompare()" class="w-full py-2 bg-[var(--bg-input)] text-[var(--text-main)] font-bold rounded text-xs border border-[var(--border-color)] hover:brightness-110 transition-all cursor-pointer">
                     ⬅️ Back to Inventory List
                 </button>
             </div>
@@ -2452,7 +2752,7 @@
     </div>
 
     <div id="export-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] hidden flex items-center justify-center p-4">
-        <div class="export-card bg-[var(--bg-card)] border border-zinc-800 w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
+        <div class="export-card bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
             <div class="flex justify-between items-center mb-4 pb-2 border-b border-[var(--border-color)]">
                 <h3 class="text-xs font-black text-[var(--accent-amber)] uppercase tracking-wider">🎨 Customize Card Export</h3>
                 <button onclick="IEM.closeExportModal()" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
@@ -2462,21 +2762,21 @@
                 <div>
                     <label class="block text-[9px] uppercase text-zinc-500 font-bold mb-1">Step 1: Card Color Theme</label>
                     <div class="flex items-center gap-1 w-full h-8">
-                        <button type="button" onclick="IEM.cycleExportThemeDirection(-1)" class="w-8 h-full bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border border-zinc-800 text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◄</button>
-                        <button id="export-theme-cycle-btn" onclick="IEM.cycleExportThemeDirection(1)" class="flex-1 h-full bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-zinc-800 transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer truncate">
+                        <button type="button" onclick="IEM.cycleExportThemeDirection(-1)" class="w-8 h-full bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border border-[var(--border-color)] text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◄</button>
+                        <button id="export-theme-cycle-btn" onclick="IEM.cycleExportThemeDirection(1)" class="flex-1 h-full bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer truncate">
                             🎨 Select Theme...
                         </button>
-                        <button type="button" onclick="IEM.cycleExportThemeDirection(1)" class="w-8 h-full bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border border-zinc-800 text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">►</button>
+                        <button type="button" onclick="IEM.cycleExportThemeDirection(1)" class="w-8 h-full bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border border-[var(--border-color)] text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">►</button>
                     </div>
                 </div>
                 <div>
                     <label class="block text-[9px] uppercase text-zinc-500 font-bold mb-1">Step 2: Card Font</label>
                     <div class="flex items-center gap-1 w-full h-8">
-                        <button type="button" onclick="IEM.cycleExportFontDirection(-1)" class="w-8 h-full bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border border-zinc-800 text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◄</button>
-                        <button id="export-font-cycle-btn" onclick="IEM.cycleExportFontDirection(1)" class="flex-1 h-full bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-zinc-800 transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer truncate">
+                        <button type="button" onclick="IEM.cycleExportFontDirection(-1)" class="w-8 h-full bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border border-[var(--border-color)] text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◄</button>
+                        <button id="export-font-cycle-btn" onclick="IEM.cycleExportFontDirection(1)" class="flex-1 h-full bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer truncate">
                             ✏️ Select Font...
                         </button>
-                        <button type="button" onclick="IEM.cycleExportFontDirection(1)" class="w-8 h-full bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border border-zinc-800 text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">►</button>
+                        <button type="button" onclick="IEM.cycleExportFontDirection(1)" class="w-8 h-full bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border border-[var(--border-color)] text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">►</button>
                     </div>
                 </div>
                 <div>
@@ -2492,7 +2792,7 @@
                 </div>
             </div>
 
-            <button id="export-confirm-btn" onclick="IEM.confirmAndTriggerExport()" class="w-full py-2 bg-zinc-800 text-zinc-500 font-bold rounded-md text-xs transition-all text-center mb-3 cursor-not-allowed" disabled style="opacity: 0.5;">
+            <button id="export-confirm-btn" onclick="IEM.confirmAndTriggerExport()" class="w-full py-2 bg-[var(--bg-input)] text-zinc-500 font-bold rounded-md text-xs transition-all text-center mb-3 cursor-not-allowed" disabled style="opacity: 0.5;">
                 🖼️ Confirm & Export Card
             </button>
             <div class="text-center text-[10px] text-zinc-555 font-semibold">Generates High-DPI Symmetrical Infographic PNG</div>
@@ -2500,14 +2800,14 @@
     </div>
 
     <div id="rename-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] hidden flex items-center justify-center p-4">
-        <div class="bg-[var(--bg-card)] border border-zinc-800 w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
+        <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
             <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
                 <span class="text-xs font-black text-rose-400 uppercase tracking-wider flex items-center gap-1.5">📝 Rename Active Curve</span>
                 <button onclick="PEQDB_Module.closeRenameModal()" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
             </div>
 
             <p class="text-[10px] text-zinc-500 mb-3 leading-normal">Enter a custom, user-friendly label to identify this trace on the graph and active docks:</p>
-            <input type="text" id="rename-input" class="w-full input-bg-fix px-3 py-2 text-xs font-semibold outline-none border border-zinc-800 focus:border-[var(--accent-blue)] mb-4" placeholder="e.g. My Aria (Silicone Tips)">
+            <input type="text" id="rename-input" class="w-full input-bg-fix px-3 py-2 text-xs font-semibold outline-none border border-[var(--border-color)] focus:border-[var(--accent-blue)] mb-4" placeholder="e.g. My Aria (Silicone Tips)">
 
             <div class="grid grid-cols-2 gap-2">
                 <button onclick="PEQDB_Module.closeRenameModal()" class="py-2 text-xs font-bold rounded btn-clear cursor-pointer">Cancel</button>
@@ -2517,14 +2817,14 @@
     </div>
 
     <div id="save-preset-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] hidden flex items-center justify-center p-4">
-        <div class="bg-[var(--bg-card)] border border-zinc-800 w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
+        <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
             <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
                 <span class="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">⭐ Save Custom EQ Preset</span>
                 <button onclick="EQ.closeSavePresetModal()" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
             </div>
 
             <p class="text-[10px] text-zinc-500 mb-3 leading-normal">Enter a descriptive, user-friendly label to save and identify this EQ configuration:</p>
-            <input type="text" id="save-preset-input" class="w-full input-bg-fix px-3 py-2 text-xs font-semibold outline-none border border-zinc-800 focus:border-[var(--accent-blue)] mb-4" placeholder="e.g. Dynamic Harman (Late Night)">
+            <input type="text" id="save-preset-input" class="w-full input-bg-fix px-3 py-2 text-xs font-semibold outline-none border border-[var(--border-color)] focus:border-[var(--accent-blue)] mb-4" placeholder="e.g. Dynamic Harman (Late Night)">
 
             <div class="grid grid-cols-2 gap-2">
                 <button onclick="EQ.closeSavePresetModal()" class="py-2 text-xs font-bold rounded btn-clear cursor-pointer">Cancel</button>
@@ -2534,7 +2834,7 @@
     </div>
 
     <div id="smart-rf-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] hidden flex items-center justify-center p-4">
-        <div class="bg-[var(--bg-card)] border border-zinc-800 w-full max-w-md rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
+        <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-md rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
             <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
                 <span class="text-xs font-black text-sky-400 uppercase tracking-wider flex items-center gap-1.5">📥 Smart RF Import</span>
                 <button onclick="PEQDB_Module.closeSmartRFModal()" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
@@ -2546,7 +2846,7 @@
                 <input type="file" id="smart-rf-file" class="hidden" accept=".txt,.csv" multiple onchange="PEQDB_Module.handleSmartRFFile(event)">
             </p>
 
-            <textarea id="smart-rf-textarea" placeholder="20.00 81.191&#10;20.36 81.283&#10;...or drag & drop your raw .txt/.csv files here" class="w-full h-40 p-2 text-xs resize-none outline-none input-bg-fix border border-zinc-800 focus:border-[var(--accent-blue)] mb-3 transition-all" oninput="PEQDB_Module.handleSmartRFInput()"></textarea>
+            <textarea id="smart-rf-textarea" placeholder="20.00 81.191&#10;20.36 81.283&#10;...or drag & drop your raw .txt/.csv files here" class="w-full h-40 p-2 text-xs resize-none outline-none input-bg-fix border border-[var(--border-color)] focus:border-[var(--accent-blue)] mb-3 transition-all" oninput="PEQDB_Module.handleSmartRFInput()"></textarea>
 
             <div class="flex items-center gap-2 mb-3 px-1">
                 <input type="checkbox" id="smart-rf-auto-average" class="accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer" checked>
@@ -2572,13 +2872,13 @@
                 <button id="srf-clear-btn" onclick="PEQDB_Module.clearSmartRF()" class="py-2 text-[10px] font-bold rounded btn-clear cursor-pointer">🗑 Clear</button>
                 <button id="srf-paste-btn" onclick="PEQDB_Module.pasteSmartRF()" class="py-2 text-[10px] font-bold rounded btn-clear cursor-pointer">📋 Paste</button>
                 <button onclick="PEQDB_Module.closeSmartRFModal()" class="py-2 text-[10px] font-bold rounded btn-clear cursor-pointer">Cancel</button>
-                <button id="srf-import-btn" onclick="PEQDB_Module.confirmSmartRF()" class="py-2 text-[10px] font-bold rounded bg-zinc-800 text-zinc-500 cursor-not-allowed transition-all text-center" disabled>📥 Import</button>
+                <button id="srf-import-btn" onclick="PEQDB_Module.confirmSmartRF()" class="py-2 text-[10px] font-bold rounded bg-[var(--bg-input)] text-zinc-500 cursor-not-allowed transition-all text-center" disabled>📥 Import</button>
             </div>
         </div>
     </div>
 
     <div id="smart-import-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] hidden flex items-center justify-center p-4">
-        <div class="bg-[var(--bg-card)] border border-zinc-800 w-full max-w-lg rounded-lg shadow-2xl flex flex-col overflow-hidden p-5 select-none">
+        <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-lg rounded-lg shadow-2xl flex flex-col overflow-hidden p-5 select-none">
             <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
                 <span class="text-xs font-black text-[var(--accent-blue)] uppercase tracking-wider flex items-center gap-1.5">📥 Universal Smart Import</span>
                 <button onclick="EQ.closeSmartImportModal()" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
@@ -2586,7 +2886,7 @@
 
             <p class="text-[10px] text-zinc-500 mb-3 leading-normal">Paste an EQ profile (Peace/Wavelet), sound coordinate values, or drag and drop any compatible text/csv/json file here:</p>
 
-            <div id="smart-import-dropzone" class="w-full h-24 border border-dashed border-zinc-800 rounded-lg flex flex-col items-center justify-center bg-[var(--bg-input)] hover:bg-zinc-950/40 transition-all cursor-pointer mb-3 text-center p-4">
+            <div id="smart-import-dropzone" class="w-full h-24 border border-dashed border-[var(--border-color)] rounded-lg flex flex-col items-center justify-center bg-[var(--bg-input)] hover:brightness-90 transition-all cursor-pointer mb-3 text-center p-4">
                 <span class="text-lg">📂</span>
                 <span class="text-[10px] font-bold text-zinc-400 mt-1">Drag & Drop File Here</span>
                 <span class="text-[9px] text-zinc-650 mt-0.5">Supports .txt, .csv, .json</span>

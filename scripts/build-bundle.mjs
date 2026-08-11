@@ -16,7 +16,7 @@ const src = [
   'js/eq-playlist.js','js/eq-reverb.js','js/eq-crossfeed.js','js/eq-crossover.js','js/eq-dynamics.js',
   'js/eq-loudness.js','js/eq-tempo.js','js/eq-smart-import.js','js/eq-hearing-cal.js','js/eq-viz-fullscreen.js',
   'js/eq-source-sim.js','js/eq-presets.js','js/eq-band-handlers.js','js/eq-draw-curve.js','js/eq-squig-graph.js',
-  'js/eq-math-utils.js','js/app-core.js','js/app-init.js'
+  'js/eq-math-utils.js','js/app-core.js','js/music-browser.js','js/music-player.js','js/app-init.js'
 ];
 
 const parts = [];

@@ -1,7 +1,17 @@
-const { app, BrowserWindow, screen } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, protocol } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
+const MusicLibrary = require('./music-library');
+
+// Privileged scheme used to stream library audio files to the sandboxed
+// renderer with byte-range (seeking) support. Must be registered before ready.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'app-file',
+    privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true }
+  }
+]);
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -18,7 +28,22 @@ const MIME_TYPES = {
   '.woff2': 'font/woff2',
   '.ttf': 'font/ttf',
   '.mp3': 'audio/mpeg',
-  '.wav': 'audio/wav'
+  '.wav': 'audio/wav',
+  '.flac': 'audio/flac',
+  '.ogg': 'audio/ogg',
+  '.opus': 'audio/ogg',
+  '.oga': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.mp4': 'audio/mp4',
+  '.m4b': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.wma': 'audio/x-ms-wma',
+  '.aiff': 'audio/aiff',
+  '.aif': 'audio/aiff',
+  '.ape': 'audio/ape',
+  '.wv': 'audio/wavpack',
+  '.amr': 'audio/amr',
+  '.mka': 'audio/x-matroska'
 };
 
 let mainWindow;
@@ -110,6 +135,99 @@ function getAppRoot() {
   return app.getAppPath();
 }
 
+// Serve any absolute audio path over the app-file:// scheme with HTTP Range
+// support (seekable media), plus CORS so the renderer's <audio crossorigin>
+// element can route into WebAudio. Returns a web Response for protocol.handle.
+function streamAudioFile(filePath, rangeHeader) {
+  try {
+    const stats = fs.statSync(filePath);
+    if (!stats.isFile()) return new Response('Not found', { status: 404 });
+
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = MIME_TYPES[ext] || 'application/octet-stream';
+    const headers = {
+      'Content-Type': mime,
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*'
+    };
+
+    let status = 200;
+    let start = 0;
+    let end = stats.size - 1;
+
+    if (rangeHeader) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(String(rangeHeader).trim());
+      if (match && (match[1] !== '' || match[2] !== '')) {
+        if (match[1] === '') {
+          const n = parseInt(match[2], 10);
+          start = Math.max(0, stats.size - (isNaN(n) ? 0 : n));
+        } else {
+          start = parseInt(match[1], 10);
+          if (match[2] !== '') end = parseInt(match[2], 10);
+        }
+        if (isNaN(start) || start < 0) start = 0;
+        if (isNaN(end) || end > stats.size - 1) end = stats.size - 1;
+        if (start > end || start >= stats.size) {
+          return new Response(null, {
+            status: 416,
+            headers: { 'Content-Range': `bytes */${stats.size}`, 'Access-Control-Allow-Origin': '*' }
+          });
+        }
+        status = 206;
+      }
+    }
+
+    headers['Content-Length'] = String(end - start + 1);
+    if (status === 206) headers['Content-Range'] = `bytes ${start}-${end}/${stats.size}`;
+
+    const stream = fs.createReadStream(filePath, { start, end });
+    stream.on('error', () => {});
+    return new Response(stream, { status, headers });
+  } catch (_) {
+    return new Response('Not found', { status: 404 });
+  }
+}
+
+function setupProtocol() {
+  protocol.handle('app-file', (request) => {
+    try {
+      const url = new URL(request.url);
+      const encoded = url.pathname.replace(/^\//, '');
+      const filePath = decodeURIComponent(encoded);
+      if (!path.isAbsolute(filePath)) return new Response('Bad Request', { status: 400 });
+      return streamAudioFile(filePath, request.headers.get('range'));
+    } catch (_) {
+      return new Response('Bad Request', { status: 400 });
+    }
+  });
+}
+
+// Whitelisted IPC surface for the Music tab (see preload.js → window.MusicAPI).
+function setupMusicIpc() {
+  const handle = (channel, fn) => {
+    ipcMain.handle(channel, (event, ...args) => {
+      try {
+        return fn(event, ...args);
+      } catch (err) {
+        console.error(`[Music IPC] ${channel} failed:`, err);
+        return { ok: false, reason: err.message };
+      }
+    });
+  };
+
+  handle('music:getConfig', () => MusicLibrary.getConfig());
+  handle('music:setConfig', (e, cfg) => MusicLibrary.setConfig(cfg));
+  handle('music:saveSession', (e, session) => MusicLibrary.saveSession(session));
+  handle('music:pickFolders', () => MusicLibrary.pickFolders(mainWindow));
+  handle('music:scan', (e, folders) => MusicLibrary.scan(folders || []));
+  handle('music:readTags', async (e, filePath) => MusicLibrary.readTags(filePath));
+  handle('music:writeTags', async (e, filePath, patch) => MusicLibrary.writeTags(filePath, patch));
+  handle('music:readText', (e, filePath) => MusicLibrary.readText(filePath));
+  handle('music:writeText', (e, filePath, content) => MusicLibrary.writeText(filePath, content));
+  handle('music:savePlaylist', (e, defaultName, content) => MusicLibrary.savePlaylist(mainWindow, defaultName, content));
+}
+
 function startLocalServer(rootDir) {
   return new Promise((resolve, reject) => {
     server = http.createServer((req, res) => {
@@ -176,7 +294,8 @@ async function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      preload: path.join(__dirname, 'preload.js')
     }
   });
 
@@ -214,6 +333,8 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform === 'darwin' && app.dock) {
       try { app.dock.setIcon(path.join(__dirname, 'icon.png')); } catch (e) {}
     }
+    setupProtocol();
+    setupMusicIpc();
     createWindow();
   });
 }
