@@ -2907,6 +2907,9 @@
 
         <canvas id="global-spores-canvas" style="position: fixed; inset: 0; pointer-events: none; z-index: 99999; display: none;"></canvas>
 
-        <script src="js/app.bundle.js"></script>
+        <script>
+          // Packaged builds serve the minified bundle via ?packaged=1.
+          document.write('<script src="js/app.bundle' + (location.search.indexOf('packaged') !== -1 ? '.min' : '') + '.js"><\/script>');
+        </script>
     </body>
     </html>

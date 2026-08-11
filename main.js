@@ -221,7 +221,7 @@ function setupMusicIpc() {
   handle('music:saveSession', (e, session) => MusicLibrary.saveSession(session));
   handle('music:pickFolders', () => MusicLibrary.pickFolders(mainWindow));
   handle('music:scan', (e, folders) => MusicLibrary.scan(folders || []));
-  handle('music:readTags', async (e, filePath) => MusicLibrary.readTags(filePath));
+  handle('music:readTags', async (e, filePath, opts) => MusicLibrary.readTags(filePath, opts || {}));
   handle('music:writeTags', async (e, filePath, patch) => MusicLibrary.writeTags(filePath, patch));
   handle('music:readText', (e, filePath) => MusicLibrary.readText(filePath));
   handle('music:writeText', (e, filePath, content) => MusicLibrary.writeText(filePath, content));
@@ -299,7 +299,7 @@ async function createWindow() {
     }
   });
 
-  mainWindow.loadURL(`http://127.0.0.1:${port}/index.html`);
+  mainWindow.loadURL(`http://127.0.0.1:${port}/index.html${app.isPackaged ? '?packaged=1' : ''}`);
 
   // Lock the window to the local app only: deny popups and any navigation away
   // from the local UI (prevents accidental trips to external web content).

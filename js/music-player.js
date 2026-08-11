@@ -212,6 +212,32 @@ const MusicPlayer = {
     });
   },
 
+  _dbPutMany: function(store, values) {
+    return new Promise((resolve) => {
+      if (!this.db || !values || !values.length) { resolve(); return; }
+      try {
+        const tx = this.db.transaction(store, 'readwrite');
+        const os = tx.objectStore(store);
+        for (const v of values) os.put(v);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+        tx.onabort = () => resolve();
+      } catch (_) { resolve(); }
+    });
+  },
+  _dbDeleteMany: function(store, keys) {
+    return new Promise((resolve) => {
+      if (!this.db || !keys || !keys.length) { resolve(); return; }
+      try {
+        const tx = this.db.transaction(store, 'readwrite');
+        const os = tx.objectStore(store);
+        for (const k of keys) os.delete(k);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+        tx.onabort = () => resolve();
+      } catch (_) { resolve(); }
+    });
+  },
   _dbPut: function(store, value) {
     return new Promise((resolve) => {
       if (!this.db) { resolve(); return; }
@@ -279,8 +305,7 @@ const MusicPlayer = {
       this.folders = res.folders || [];
       await this._setMeta('folders', this.folders);
 
-      const byPath = {};
-      for (const t of this.tracks) byPath[t.path] = t;
+      const trackIdx = new Map(this.tracks.map((t, i) => [t.path, i]));
 
       // --- playlists + lrc sidecars from this scan ---
       this.detectedPlaylists = (res.playlists || []).map((p, i) => ({ ...p, id: 'dp_' + i }));
@@ -299,7 +324,7 @@ const MusicPlayer = {
       const livePaths = new Set();
       for (const f of res.audio) {
         livePaths.add(f.path);
-        const prev = byPath[f.path];
+        const prev = trackIdx.has(f.path) ? this.tracks[trackIdx.get(f.path)] : null;
         if (prev && prev.size === f.size && prev.mtimeMs === f.mtimeMs) {
           if (prev.lrcPath == null) {
             const base = f.name.replace(/\.[^.]+$/i, '').toLowerCase();
@@ -313,7 +338,7 @@ const MusicPlayer = {
 
       // delete tracks no longer present
       const removed = this.tracks.filter(t => !livePaths.has(t.path));
-      for (const r of removed) await this._dbDelete('tracks', r.path);
+      await this._dbDeleteMany('tracks', removed.map(r => r.path));
       if (removed.length) {
         this.tracks = this.tracks.filter(t => livePaths.has(t.path));
       }
@@ -322,27 +347,40 @@ const MusicPlayer = {
         const total = toParse.length;
         let done = 0;
         const CONCURRENCY = 4;
+        const pending = [];
+        let flushing = Promise.resolve();
+        const flushPending = () => {
+          flushing = flushing.then(async () => {
+            while (pending.length) {
+              await this._dbPutMany('tracks', pending.splice(0, 20));
+            }
+          });
+          return flushing;
+        };
         const queue = [...toParse];
         const workers = Array.from({ length: CONCURRENCY }, async () => {
           while (queue.length) {
             const f = queue.shift();
-            const tag = await window.MusicAPI.readTags(f.path);
+            const tag = await window.MusicAPI.readTags(f.path, { skipSynced: true });
             done++;
             if (done % 4 === 0 || done === total) {
               this.scanProgress = { done, total, label: `Reading tags ${done}/${total}` };
               this._updateScanOverlay();
             }
             const rec = this._mergeScanRecord(f, tag);
-            await this._dbPut('tracks', rec);
-            const idx = this.tracks.findIndex(t => t.path === rec.path);
-            if (idx >= 0) this.tracks[idx] = rec; else this.tracks.push(rec);
+            pending.push(rec);
+            if (pending.length >= 20) await flushPending();
+            const idx = trackIdx.get(rec.path);
+            if (idx != null) this.tracks[idx] = rec; else { this.tracks.push(rec); trackIdx.set(rec.path, this.tracks.length - 1); }
           }
         });
         await Promise.all(workers);
+        await flushPending();
       }
 
       this._hideScanOverlay();
       this.scanning = false;
+      this._plIdx = null;
       this._lyricCache = {};
       this._lyricRowEls = null;
       const n = this.tracks.length;
@@ -667,7 +705,7 @@ const MusicPlayer = {
     const prev = root.querySelector('.music-row-playing');
     if (prev) prev.classList.remove('music-row-playing');
     if (path) {
-      const row = root.querySelector('.music-row[data-path="' + (window.esc ? esc(path) : path.replace(/"/g, '&quot;')) + '"], .music-card[data-path="' + (window.esc ? esc(path) : path.replace(/"/g, '&quot;')) + '"]');
+      const row = Array.from(root.querySelectorAll('.music-row, .music-card')).find(el => el.dataset && el.dataset.path === path);
       if (row) {
         row.classList.add('music-row-playing');
         if (row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
@@ -842,6 +880,22 @@ const MusicPlayer = {
         }
       }
       this._lyricCache[track.path] = norm || null;
+    }
+    // MP3 SYLT is skipped during scans (a full node-id3 parse per track is
+    // wasted on files without synced lyrics). On playback we re-read the file
+    // once so embedded synced lyrics still surface.
+    if (String(track.path || '').toLowerCase().endsWith('.mp3') && !(norm && norm.synced && norm.synced.length)) {
+      const tried = this._syncedTried || (this._syncedTried = new Set());
+      if (!tried.has(track.path)) {
+        tried.add(track.path);
+        try {
+          const fresh = await window.MusicAPI.readTags(track.path);
+          if (fresh && fresh.lyrics && fresh.lyrics.synced && fresh.lyrics.synced.length) {
+            norm = { ...norm, synced: fresh.lyrics.synced, format: fresh.lyrics.format };
+            this._lyricCache[track.path] = norm;
+          }
+        } catch (_) {}
+      }
     }
     this.lyricState.track = track;
     this.lyricState.data = norm;
@@ -1196,7 +1250,8 @@ const MusicPlayer = {
     reader.onload = () => {
       const result = String(reader.result || '');
       const base64 = result.replace(/^data:image\/(png|jpeg|jpg|webp|gif);base64,/, '');
-      const mime = (result.match(/^data:image\/(png|jpeg|jpg|webp|gif)/) || ['', 'image/jpeg'])[0];
+      const mimeMatch = result.match(/^data:image\/(png|jpeg|jpg|webp|gif)/);
+      const mime = mimeMatch ? ('image/' + (mimeMatch[1] === 'jpg' ? 'jpeg' : mimeMatch[1])) : 'image/jpeg';
       this._tagArtPatch = { mime, base64 };
       const box = document.getElementById('tag-art-preview');
       if (box) box.innerHTML = '<img src="' + result + '" style="width:100%;height:100%;object-fit:cover;display:block;">';
@@ -1327,7 +1382,8 @@ const MusicPlayer = {
     reader.onload = () => {
       const result = String(reader.result || '');
       const base64 = result.replace(/^data:image\/(png|jpeg|jpg|webp|gif);base64,/, '');
-      const mime = (result.match(/^data:image\/(png|jpeg|jpg|webp|gif)/) || ['', 'image/jpeg'])[0];
+      const mimeMatch = result.match(/^data:image\/(png|jpeg|jpg|webp|gif)/);
+      const mime = mimeMatch ? ('image/' + (mimeMatch[1] === 'jpg' ? 'jpeg' : mimeMatch[1])) : 'image/jpeg';
       this._batchTagArtPatch = { mime, base64 };
       const label = document.getElementById('batch-tag-art-label');
       if (label) label.textContent = 'Art set: ' + (file.name || 'image');
@@ -1609,16 +1665,28 @@ const MusicPlayer = {
   },
 
   _resolvePlaylistEntries: function(entries) {
+    const tracks = this.tracks;
+    if (!this._plIdx || this._plIdx.tracks !== tracks) {
+      const byPath = new Map();
+      const byLower = new Map();
+      const byName = new Map();
+      for (const t of tracks) {
+        byPath.set(t.path, t.path);
+        byLower.set(t.path.toLowerCase(), t.path);
+        if (!byName.has(t.name.toLowerCase())) byName.set(t.name.toLowerCase(), t.path);
+      }
+      this._plIdx = { tracks, byPath, byLower, byName };
+    }
+    const idx = this._plIdx;
     const out = [];
     for (const e of entries) {
-      if (this.tracks.some(t => t.path === e)) { out.push(e); continue; }
-      const lower = e.toLowerCase();
-      const found = this.tracks.find(t => t.path.toLowerCase() === lower);
-      if (found) { out.push(found.path); continue; }
+      if (idx.byPath.has(e)) { out.push(e); continue; }
+      const byLower = idx.byLower.get(e.toLowerCase());
+      if (byLower) { out.push(byLower); continue; }
       // bare filename match
       const base = e.split(/[\\/]/).pop().toLowerCase();
-      const hit = this.tracks.find(t => t.name.toLowerCase() === base);
-      if (hit) { out.push(hit.path); continue; }
+      const byName = idx.byName.get(base);
+      if (byName) { out.push(byName); continue; }
       out.push(e);
     }
     return out;

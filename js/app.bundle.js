@@ -1610,7 +1610,14 @@ const EQ_ReverbMethods = {
 
         // Update Convolver Buffer seamlessly
             if (SharedAudio.ctx && SharedAudio.reverbNode) {
-                SharedAudio.reverbNode.buffer = this.createImpulseResponse(SharedAudio.ctx, preset);
+                const key = this.reverbPresetSelected + '@' + (SharedAudio.ctx.sampleRate || 48000);
+                this._irCache = this._irCache || {};
+                let ir = this._irCache[key];
+                if (!ir) {
+                    ir = this.createImpulseResponse(SharedAudio.ctx, preset);
+                    this._irCache[key] = ir;
+                }
+                SharedAudio.reverbNode.buffer = ir;
             }
 
             this.updateReverbDSP();
@@ -7556,10 +7563,10 @@ renderIemDbSearch: function(query) {
                     'basshead': '💥', 'sub-bass': '🌊', 'punchy-bass': '🥊', 'warm': '🌿', 'warm-tilt': '🌿',
                     'neutral': '⚖️', 'v-shaped': '🔺', 'balanced': '⚖️', 'bright': '✨', 'dark': '🌑',
                     'detailed': '💎', 'detail': '💎', 'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️',
-                    'soundstage': '🏟️', 'good-imaging': '🎯', 'imaging': '🎯', 'smooth': '🧈', 'reference': '🎯',
-                    'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮', 'competitive-gaming': '🏆',
-                    'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
-                    'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📻'
+                        'soundstage': '🏟️', 'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '🎯',
+                        'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮', 'competitive-gaming': '🏆',
+                        'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
+                        'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📼'
                 };
                 return emojiMap[cleanKey] || '🏷️';
             };
@@ -8312,7 +8319,7 @@ renderIemDbSearch: function(query) {
         },
 
         allReviewTags: [
-            "⚖️ Neutral", "💥 Basshead", "🌊 Sub-Bass", "🥊 Punchy Bass", "🌿 Warm", "🔺 V-Shaped", "☯️ Balanced", "✨ Bright", "🌑 Dark", "💎 Detailed", "🔍 Resolving", "🔬 Technical", "🏟️ Wide-Stage", "🎯 Good-Imaging", "🧈 Smooth", "📐 Reference", "🧠 Analytical", "🔥 Fun", "😌 Relaxed", "🎮 Gaming", "🏆 Competitive-Gaming", "🎤 Vocal-Focused", "💰 Budget", "🪙 Mid-Tier", "👑 Premium", "🥇 Flagship", "🤝 Collab", "🌟 Limited-Edition"
+            "⚖️ Neutral", "💥 Basshead", "🌊 Sub-Bass", "🥊 Punchy Bass", "🌿 Warm", "🔺 V-Shaped", "☯️ Balanced", "✨ Bright", "🌑 Dark", "💎 Detailed", "🔍 Resolving", "🔬 Technical", "🏟️ Wide-Stage", "🔭 Good-Imaging", "🧈 Smooth", "📐 Reference", "🧠 Analytical", "🔥 Fun", "😌 Relaxed", "🎮 Gaming", "🏆 Competitive-Gaming", "🎤 Vocal-Focused", "💰 Budget", "🪙 Mid-Tier", "👑 Premium", "🥇 Flagship", "🤝 Collab", "🌟 Limited-Edition"
         ],
         currentReviewTagIndex: 0,
 
@@ -13263,11 +13270,17 @@ this.advancedBands.forEach((b, i) => {
 
             if (emojiContainer) {
                 const fx = (FindEngine.pickFx || {})[label] || '';
-                const replay = fx && fx !== this._musicFxKey;
+                const prevFx = this._musicFxKey;
                 this._musicFxKey = fx;
                 emojiContainer.innerHTML = `<span class="fx-play ${animClass}" data-fx="${fx}" style="display: inline-block; position: relative; transform-origin: center;"><span class="emoji-font vibrant-emoji leading-none" style="display: inline-block; transform-origin: center;">${emoji}</span></span>`;
-                if (fx && !replay) {
-                    emojiContainer.firstElementChild.classList.remove('fx-play');
+                const fxEl = emojiContainer.firstElementChild;
+                if (fx && fxEl) {
+                    if (fx === prevFx) {
+                        fxEl.classList.remove('fx-play');
+                    } else {
+                        const ms = (parseFloat(getComputedStyle(fxEl).animationDuration) || 0) * 1000 + 80;
+                        setTimeout(() => { if (fxEl.isConnected) fxEl.classList.remove('fx-play'); }, ms);
+                    }
                 }
             }
             if (textContainer) {
@@ -13283,11 +13296,17 @@ this.advancedBands.forEach((b, i) => {
 
             if (emojiContainer) {
                 const fx = (FindEngine.pickFx || {})[label] || '';
-                const replay = fx && fx !== this._gameFxKey;
+                const prevFx = this._gameFxKey;
                 this._gameFxKey = fx;
                 emojiContainer.innerHTML = `<span class="fx-play ${animClass}" data-fx="${fx}" style="display: inline-block; position: relative; transform-origin: center;"><span class="emoji-font vibrant-emoji leading-none" style="display: inline-block; transform-origin: center;">${emoji}</span></span>`;
-                if (fx && !replay) {
-                    emojiContainer.firstElementChild.classList.remove('fx-play');
+                const fxEl = emojiContainer.firstElementChild;
+                if (fx && fxEl) {
+                    if (fx === prevFx) {
+                        fxEl.classList.remove('fx-play');
+                    } else {
+                        const ms = (parseFloat(getComputedStyle(fxEl).animationDuration) || 0) * 1000 + 80;
+                        setTimeout(() => { if (fxEl.isConnected) fxEl.classList.remove('fx-play'); }, ms);
+                    }
                 }
             }
             if (textContainer) {
@@ -16542,10 +16561,10 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
                         'basshead': '💥', 'sub-bass': '🌊', 'punchy-bass': '🥊', 'warm': '🌿', 'warm-tilt': '🌿',
                         'neutral': '⚖️', 'v-shaped': '🔺', 'balanced': '⚖️', 'bright': '✨', 'dark': '🌑',
                         'detailed': '💎', 'detail': '💎', 'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️',
-                        'soundstage': '🏟️', 'good-imaging': '🎯', 'imaging': '🎯', 'smooth': '🧈', 'reference': '🎯',
+                        'soundstage': '🏟️', 'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '🎯',
                         'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮', 'competitive-gaming': '🏆',
                         'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
-                        'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📻'
+                        'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📼'
                     };
                     return emojiMap[cleanKey] || '🏷️';
                 };
@@ -21467,10 +21486,10 @@ loadSoundLibrary: async function() {
                 ],
                 tagEmojis: {
                     "Basshead": "💥", "Sub-Bass": "🌊", "Punchy Bass": "🥊", "Warm": "🌿", "Neutral": "⚖️", "V-Shaped": "🔺", "Balanced": "☯️",
-                    "Bright": "✨", "Dark": "🌑", "Detailed": "💎", "Resolving": "🔍", "Technical": "🔬", "Wide-Stage": "🏟️", "Good-Imaging": "🎯",
+                    "Bright": "✨", "Dark": "🌑", "Detailed": "💎", "Resolving": "🔍", "Technical": "🔬", "Wide-Stage": "🏟️", "Good-Imaging": "🔭",
                     "Smooth": "🧈", "Reference": "📐", "Analytical": "🧠", "Fun": "🔥", "Relaxed": "😌", "Gaming": "🎮", "Competitive-Gaming": "🏆",
                     "Vocal-Focused": "🗣️", "Budget": "💰", "Mid-Tier": "🪙", "Premium": "👑", "Flagship": "🥇", "Collab": "🤝", "Limited-Edition": "🌟",
-                    "Vintage": "📻"
+                    "Vintage": "📼"
                 },
 
                 _toggleCustomMenuPrefixed: function(prefix, keys, key) {
@@ -21790,11 +21809,11 @@ loadSoundLibrary: async function() {
                         'warm': '🌿', 'warm-tilt': '🌿', 'neutral': '⚖️', 'v-shaped': '🔺', 'v-shape': '🔺',
                         'balanced': '☯️', 'bright': '✨', 'dark': '🌑', 'detailed': '💎', 'detail': '💎',
                         'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️', 'soundstage': '🏟️',
-                        'good-imaging': '🎯', 'imaging': '🎯', 'smooth': '🧈', 'reference': '📐',
+                        'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '📐',
                         'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮',
                         'competitive-gaming': '🏆', 'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰',
                         'mid-tier': '🪙', 'premium': '👑', 'flagship': '🥇', 'collab': '🤝',
-                        'limited-edition': '🌟', 'vintage': '📻'
+                        'limited-edition': '🌟', 'vintage': '📼'
                     };
                     return emojiMap[cleanKey] || '🏷️';
                 },
@@ -23613,11 +23632,11 @@ getDriveabilityStatus: function(impedance, sensitivity) {
 
             { profile: [8.1, 5.8, 7.6, 7.2, 1.7], // Bright, detailed — largest cluster (Simgot EA1000)
                 musicVariants: [ { emoji: '🎸', name: 'Rock' } ],
-                gameVariants: [ { emoji: '💥', name: 'Action' } ] },
+                gameVariants: [ { emoji: '🧨', name: 'Action' } ] },
 
             { profile: [5.7, 5.0, 2.6, 5.1, -7.8], // Premium/reference, moderate (Sony IER-Z1R)
                 musicVariants: [ { emoji: '🎷', name: 'Jazz' } ],
-                gameVariants: [ { emoji: '🎮', name: 'MMO' } ] },
+                gameVariants: [ { emoji: '🕹️', name: 'MMO' } ] },
 
             { profile: [-1.1, 1.3, 8.8, 6.1, -4.4], // Flat bass, bright/analytical (HiFiMan Ananda)
                 musicVariants: [ { emoji: '🌍', name: 'World' } ],
@@ -23669,8 +23688,8 @@ getDriveabilityStatus: function(impedance, sensitivity) {
             { profile: [1.0, 3.0, 11.0, 7.0, -2.0], gameVariants: [ { emoji: '🏹', name: 'Roguelike' } ] },
             { profile: [12.0, 1.0, -3.0, 12.0, 4.0], gameVariants: [ { emoji: '🚀', name: 'Sci-Fi' } ] },
             { profile: [-1.0, 1.0, 8.0, 8.0, -1.0], gameVariants: [ { emoji: '🎯', name: 'Tactical' } ] },
-            { profile: [8.0, 4.0, 8.0, 9.0, -1.0], gameVariants: [ { emoji: '💥', name: 'Action' } ] },
-            { profile: [3.0, 5.0, 6.0, 4.0, -4.0], gameVariants: [ { emoji: '🎮', name: 'MMO' } ] },
+            { profile: [8.0, 4.0, 8.0, 9.0, -1.0], gameVariants: [ { emoji: '🧨', name: 'Action' } ] },
+            { profile: [3.0, 5.0, 6.0, 4.0, -4.0], gameVariants: [ { emoji: '🕹️', name: 'MMO' } ] },
             { profile: [4.0, 1.0, 5.0, 9.0, 2.0], gameVariants: [ { emoji: '🏀', name: 'Sports' } ] },
             { profile: [-1.0, 1.0, 5.0, 6.0, -1.0], gameVariants: [ { emoji: '♟️', name: 'Strategy' } ] },
             { profile: [3.0, 6.0, 3.0, -3.0, -9.0], gameVariants: [ { emoji: '🌱', name: 'Cozy' } ] },
@@ -27385,6 +27404,32 @@ const MusicPlayer = {
     });
   },
 
+  _dbPutMany: function(store, values) {
+    return new Promise((resolve) => {
+      if (!this.db || !values || !values.length) { resolve(); return; }
+      try {
+        const tx = this.db.transaction(store, 'readwrite');
+        const os = tx.objectStore(store);
+        for (const v of values) os.put(v);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+        tx.onabort = () => resolve();
+      } catch (_) { resolve(); }
+    });
+  },
+  _dbDeleteMany: function(store, keys) {
+    return new Promise((resolve) => {
+      if (!this.db || !keys || !keys.length) { resolve(); return; }
+      try {
+        const tx = this.db.transaction(store, 'readwrite');
+        const os = tx.objectStore(store);
+        for (const k of keys) os.delete(k);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+        tx.onabort = () => resolve();
+      } catch (_) { resolve(); }
+    });
+  },
   _dbPut: function(store, value) {
     return new Promise((resolve) => {
       if (!this.db) { resolve(); return; }
@@ -27452,8 +27497,7 @@ const MusicPlayer = {
       this.folders = res.folders || [];
       await this._setMeta('folders', this.folders);
 
-      const byPath = {};
-      for (const t of this.tracks) byPath[t.path] = t;
+      const trackIdx = new Map(this.tracks.map((t, i) => [t.path, i]));
 
       // --- playlists + lrc sidecars from this scan ---
       this.detectedPlaylists = (res.playlists || []).map((p, i) => ({ ...p, id: 'dp_' + i }));
@@ -27472,7 +27516,7 @@ const MusicPlayer = {
       const livePaths = new Set();
       for (const f of res.audio) {
         livePaths.add(f.path);
-        const prev = byPath[f.path];
+        const prev = trackIdx.has(f.path) ? this.tracks[trackIdx.get(f.path)] : null;
         if (prev && prev.size === f.size && prev.mtimeMs === f.mtimeMs) {
           if (prev.lrcPath == null) {
             const base = f.name.replace(/\.[^.]+$/i, '').toLowerCase();
@@ -27486,7 +27530,7 @@ const MusicPlayer = {
 
       // delete tracks no longer present
       const removed = this.tracks.filter(t => !livePaths.has(t.path));
-      for (const r of removed) await this._dbDelete('tracks', r.path);
+      await this._dbDeleteMany('tracks', removed.map(r => r.path));
       if (removed.length) {
         this.tracks = this.tracks.filter(t => livePaths.has(t.path));
       }
@@ -27495,27 +27539,40 @@ const MusicPlayer = {
         const total = toParse.length;
         let done = 0;
         const CONCURRENCY = 4;
+        const pending = [];
+        let flushing = Promise.resolve();
+        const flushPending = () => {
+          flushing = flushing.then(async () => {
+            while (pending.length) {
+              await this._dbPutMany('tracks', pending.splice(0, 20));
+            }
+          });
+          return flushing;
+        };
         const queue = [...toParse];
         const workers = Array.from({ length: CONCURRENCY }, async () => {
           while (queue.length) {
             const f = queue.shift();
-            const tag = await window.MusicAPI.readTags(f.path);
+            const tag = await window.MusicAPI.readTags(f.path, { skipSynced: true });
             done++;
             if (done % 4 === 0 || done === total) {
               this.scanProgress = { done, total, label: `Reading tags ${done}/${total}` };
               this._updateScanOverlay();
             }
             const rec = this._mergeScanRecord(f, tag);
-            await this._dbPut('tracks', rec);
-            const idx = this.tracks.findIndex(t => t.path === rec.path);
-            if (idx >= 0) this.tracks[idx] = rec; else this.tracks.push(rec);
+            pending.push(rec);
+            if (pending.length >= 20) await flushPending();
+            const idx = trackIdx.get(rec.path);
+            if (idx != null) this.tracks[idx] = rec; else { this.tracks.push(rec); trackIdx.set(rec.path, this.tracks.length - 1); }
           }
         });
         await Promise.all(workers);
+        await flushPending();
       }
 
       this._hideScanOverlay();
       this.scanning = false;
+      this._plIdx = null;
       this._lyricCache = {};
       this._lyricRowEls = null;
       const n = this.tracks.length;
@@ -27840,7 +27897,7 @@ const MusicPlayer = {
     const prev = root.querySelector('.music-row-playing');
     if (prev) prev.classList.remove('music-row-playing');
     if (path) {
-      const row = root.querySelector('.music-row[data-path="' + (window.esc ? esc(path) : path.replace(/"/g, '&quot;')) + '"], .music-card[data-path="' + (window.esc ? esc(path) : path.replace(/"/g, '&quot;')) + '"]');
+      const row = Array.from(root.querySelectorAll('.music-row, .music-card')).find(el => el.dataset && el.dataset.path === path);
       if (row) {
         row.classList.add('music-row-playing');
         if (row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
@@ -28015,6 +28072,22 @@ const MusicPlayer = {
         }
       }
       this._lyricCache[track.path] = norm || null;
+    }
+    // MP3 SYLT is skipped during scans (a full node-id3 parse per track is
+    // wasted on files without synced lyrics). On playback we re-read the file
+    // once so embedded synced lyrics still surface.
+    if (String(track.path || '').toLowerCase().endsWith('.mp3') && !(norm && norm.synced && norm.synced.length)) {
+      const tried = this._syncedTried || (this._syncedTried = new Set());
+      if (!tried.has(track.path)) {
+        tried.add(track.path);
+        try {
+          const fresh = await window.MusicAPI.readTags(track.path);
+          if (fresh && fresh.lyrics && fresh.lyrics.synced && fresh.lyrics.synced.length) {
+            norm = { ...norm, synced: fresh.lyrics.synced, format: fresh.lyrics.format };
+            this._lyricCache[track.path] = norm;
+          }
+        } catch (_) {}
+      }
     }
     this.lyricState.track = track;
     this.lyricState.data = norm;
@@ -28369,7 +28442,8 @@ const MusicPlayer = {
     reader.onload = () => {
       const result = String(reader.result || '');
       const base64 = result.replace(/^data:image\/(png|jpeg|jpg|webp|gif);base64,/, '');
-      const mime = (result.match(/^data:image\/(png|jpeg|jpg|webp|gif)/) || ['', 'image/jpeg'])[0];
+      const mimeMatch = result.match(/^data:image\/(png|jpeg|jpg|webp|gif)/);
+      const mime = mimeMatch ? ('image/' + (mimeMatch[1] === 'jpg' ? 'jpeg' : mimeMatch[1])) : 'image/jpeg';
       this._tagArtPatch = { mime, base64 };
       const box = document.getElementById('tag-art-preview');
       if (box) box.innerHTML = '<img src="' + result + '" style="width:100%;height:100%;object-fit:cover;display:block;">';
@@ -28500,7 +28574,8 @@ const MusicPlayer = {
     reader.onload = () => {
       const result = String(reader.result || '');
       const base64 = result.replace(/^data:image\/(png|jpeg|jpg|webp|gif);base64,/, '');
-      const mime = (result.match(/^data:image\/(png|jpeg|jpg|webp|gif)/) || ['', 'image/jpeg'])[0];
+      const mimeMatch = result.match(/^data:image\/(png|jpeg|jpg|webp|gif)/);
+      const mime = mimeMatch ? ('image/' + (mimeMatch[1] === 'jpg' ? 'jpeg' : mimeMatch[1])) : 'image/jpeg';
       this._batchTagArtPatch = { mime, base64 };
       const label = document.getElementById('batch-tag-art-label');
       if (label) label.textContent = 'Art set: ' + (file.name || 'image');
@@ -28782,16 +28857,28 @@ const MusicPlayer = {
   },
 
   _resolvePlaylistEntries: function(entries) {
+    const tracks = this.tracks;
+    if (!this._plIdx || this._plIdx.tracks !== tracks) {
+      const byPath = new Map();
+      const byLower = new Map();
+      const byName = new Map();
+      for (const t of tracks) {
+        byPath.set(t.path, t.path);
+        byLower.set(t.path.toLowerCase(), t.path);
+        if (!byName.has(t.name.toLowerCase())) byName.set(t.name.toLowerCase(), t.path);
+      }
+      this._plIdx = { tracks, byPath, byLower, byName };
+    }
+    const idx = this._plIdx;
     const out = [];
     for (const e of entries) {
-      if (this.tracks.some(t => t.path === e)) { out.push(e); continue; }
-      const lower = e.toLowerCase();
-      const found = this.tracks.find(t => t.path.toLowerCase() === lower);
-      if (found) { out.push(found.path); continue; }
+      if (idx.byPath.has(e)) { out.push(e); continue; }
+      const byLower = idx.byLower.get(e.toLowerCase());
+      if (byLower) { out.push(byLower); continue; }
       // bare filename match
       const base = e.split(/[\\/]/).pop().toLowerCase();
-      const hit = this.tracks.find(t => t.name.toLowerCase() === base);
-      if (hit) { out.push(hit.path); continue; }
+      const byName = idx.byName.get(base);
+      if (byName) { out.push(byName); continue; }
       out.push(e);
     }
     return out;

@@ -66,7 +66,14 @@ const EQ_ReverbMethods = {
 
         // Update Convolver Buffer seamlessly
             if (SharedAudio.ctx && SharedAudio.reverbNode) {
-                SharedAudio.reverbNode.buffer = this.createImpulseResponse(SharedAudio.ctx, preset);
+                const key = this.reverbPresetSelected + '@' + (SharedAudio.ctx.sampleRate || 48000);
+                this._irCache = this._irCache || {};
+                let ir = this._irCache[key];
+                if (!ir) {
+                    ir = this.createImpulseResponse(SharedAudio.ctx, preset);
+                    this._irCache[key] = ir;
+                }
+                SharedAudio.reverbNode.buffer = ir;
             }
 
             this.updateReverbDSP();

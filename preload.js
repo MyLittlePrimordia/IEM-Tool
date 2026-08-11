@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('MusicAPI', {
   saveSession: (session) => ipcRenderer.invoke('music:saveSession', session),
   pickFolders: () => ipcRenderer.invoke('music:pickFolders'),
   scan: (folders) => ipcRenderer.invoke('music:scan', folders),
-  readTags: (filePath) => ipcRenderer.invoke('music:readTags', filePath),
+  readTags: (filePath, opts) => ipcRenderer.invoke('music:readTags', filePath, opts),
   writeTags: (filePath, patch) => ipcRenderer.invoke('music:writeTags', filePath, patch),
   readText: (filePath) => ipcRenderer.invoke('music:readText', filePath),
   writeText: (filePath, content) => ipcRenderer.invoke('music:writeText', filePath, content),

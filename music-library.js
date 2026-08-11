@@ -4,7 +4,7 @@
 // Vorbis/MP4 writers), and playlist/LRC file I/O. The renderer talks to this
 // through the whitelisted MusicAPI bridge in preload.js.
 
-const { app, dialog } = require('electron');
+const { app, dialog, nativeImage } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -24,6 +24,39 @@ const SKIP_DIR_NAMES = new Set([
 ]);
 
 const MAX_ART_BYTES = 4 * 1024 * 1024; // don't ship multi-MB embedded covers over IPC
+const MAX_ART_DIM = 160; // library art is only ever shown at thumbnail size
+
+// Embedded covers can be several MB; the renderer never displays them bigger
+// than a thumbnail. Decode once here (main process) and ship a small JPEG over
+// IPC instead of megabytes of base64 per track. Returns { buf, mime } or null.
+function downscaleArt(data, format) {
+  if (!data || !data.length) return null;
+  const fallbackMime = (format && format !== '-->') ? format : 'image/jpeg';
+  try {
+    const img = nativeImage.createFromBuffer(Buffer.from(data));
+    if (img.isEmpty()) {
+      const buf = Buffer.from(data);
+      return buf.length <= 64 * 1024 ? { buf, mime: fallbackMime } : null;
+    }
+    const size = img.getSize();
+    const maxDim = Math.max(size.width || 0, size.height || 0);
+    if (maxDim > MAX_ART_DIM) {
+      const scale = MAX_ART_DIM / maxDim;
+      const resized = img.resize({
+        width: Math.max(1, Math.round(size.width * scale)),
+        height: Math.max(1, Math.round(size.height * scale))
+      });
+      const out = resized.toJPEG(85);
+      if (out && out.length) return { buf: out, mime: 'image/jpeg' };
+    } else if (data.length > 64 * 1024) {
+      const out = img.toJPEG(85);
+      if (out && out.length) return { buf: out, mime: 'image/jpeg' };
+    }
+    return { buf: Buffer.from(data), mime: fallbackMime };
+  } catch (_) {
+    return { buf: Buffer.from(data), mime: fallbackMime };
+  }
+}
 
 let _mm = null;
 function metadata() {
@@ -127,15 +160,19 @@ async function walkDir(dir, onFile, depth, maxDepth) {
   } catch (_) {
     return;
   }
+  // Recurse into sibling directories in parallel so deep trees don't stall
+  // the main process on a long sequential readdir chain.
+  const tasks = [];
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (SKIP_DIR_NAMES.has(entry.name.toLowerCase())) continue;
-      await walkDir(full, onFile, depth + 1, maxDepth);
+      tasks.push(walkDir(full, onFile, depth + 1, maxDepth));
     } else if (entry.isFile()) {
       onFile(full, entry.name);
     }
   }
+  await Promise.all(tasks);
 }
 
 // Recursively collect audio / playlist / lrc files across all given folders.
@@ -156,16 +193,16 @@ async function scan(folders) {
       const ext = path.extname(name).slice(1).toLowerCase();
       const rel = path.relative(folder, full).split(path.sep).join('/');
       if (AUDIO_EXTS.has(ext)) {
-        let size = 0, mtimeMs = 0;
-        try {
-          const st = fs.statSync(full);
-          size = st.size;
-          mtimeMs = Math.round(st.mtimeMs);
-        } catch (_) {}
-        folderFiles.push({
+        // stat is async here; a sync stat per file blocks the main process for
+        // the whole scan and tens of thousands of tracks add up quickly.
+        folderFiles.push(fs.promises.stat(full).then((st) => ({
           folder, rel, path: full, name, ext,
-          size, mtimeMs
-        });
+          size: st.size,
+          mtimeMs: Math.round(st.mtimeMs)
+        })).catch(() => ({
+          folder, rel, path: full, name, ext,
+          size: 0, mtimeMs: 0
+        })));
       } else if (PLAYLIST_EXTS.has(ext)) {
         playlists.push({ folder, rel, path: full, name, ext });
       } else if (LRC_EXTS.has(ext)) {
@@ -173,10 +210,12 @@ async function scan(folders) {
       }
     }, 0);
 
+    const resolved = await Promise.all(folderFiles);
+
     // Stable sort by relative path so library ordering is consistent.
-    folderFiles.sort((a, b) => a.rel.localeCompare(b.rel));
-    audio.push(...folderFiles);
-    folderList.push({ path: folder, name: path.basename(folder) || folder, trackCount: folderFiles.length });
+    resolved.sort((a, b) => a.rel.localeCompare(b.rel));
+    audio.push(...resolved);
+    folderList.push({ path: folder, name: path.basename(folder) || folder, trackCount: resolved.length });
   }
 
   return {
@@ -254,7 +293,7 @@ function extractSyncedMp3(filePath) {
 }
 
 // Full metadata for a single audio file. Never throws; returns null on failure.
-async function readTags(filePath) {
+async function readTags(filePath, opts) {
   let meta;
   try {
     meta = await metadata().parseFile(filePath, { duration: true, skipCovers: false });
@@ -268,12 +307,11 @@ async function readTags(filePath) {
 
   let art = null;
   const pic = (common.picture && common.picture[0]) || null;
-  if (pic && pic.data && pic.data.length && pic.data.length <= MAX_ART_BYTES) {
-    let mime = pic.format || 'image/jpeg';
-    if (mime === '-->') mime = 'image/jpeg';
+  const thumb = pic && pic.data && pic.data.length ? downscaleArt(pic.data, pic.format) : null;
+  if (thumb) {
     art = {
-      mime,
-      base64: Buffer.from(pic.data).toString('base64')
+      mime: thumb.mime || 'image/jpeg',
+      base64: thumb.buf.toString('base64')
     };
   }
 
@@ -292,7 +330,7 @@ async function readTags(filePath) {
       }
     }
   }
-  const synced = path.extname(filePath).toLowerCase() === '.mp3' ? extractSyncedMp3(filePath) : null;
+  const synced = (!(opts && opts.skipSynced) && path.extname(filePath).toLowerCase() === '.mp3') ? extractSyncedMp3(filePath) : null;
   if (synced || unsynced) {
     lyrics = { unsynced, synced: synced ? synced.lines : null, format: synced ? synced.format : 'USLT' };
   }

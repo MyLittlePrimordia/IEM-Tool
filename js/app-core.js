@@ -2692,10 +2692,10 @@ renderIemDbSearch: function(query) {
                     'basshead': '💥', 'sub-bass': '🌊', 'punchy-bass': '🥊', 'warm': '🌿', 'warm-tilt': '🌿',
                     'neutral': '⚖️', 'v-shaped': '🔺', 'balanced': '⚖️', 'bright': '✨', 'dark': '🌑',
                     'detailed': '💎', 'detail': '💎', 'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️',
-                    'soundstage': '🏟️', 'good-imaging': '🎯', 'imaging': '🎯', 'smooth': '🧈', 'reference': '🎯',
-                    'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮', 'competitive-gaming': '🏆',
-                    'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
-                    'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📻'
+                        'soundstage': '🏟️', 'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '🎯',
+                        'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮', 'competitive-gaming': '🏆',
+                        'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
+                        'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📼'
                 };
                 return emojiMap[cleanKey] || '🏷️';
             };
@@ -3448,7 +3448,7 @@ renderIemDbSearch: function(query) {
         },
 
         allReviewTags: [
-            "⚖️ Neutral", "💥 Basshead", "🌊 Sub-Bass", "🥊 Punchy Bass", "🌿 Warm", "🔺 V-Shaped", "☯️ Balanced", "✨ Bright", "🌑 Dark", "💎 Detailed", "🔍 Resolving", "🔬 Technical", "🏟️ Wide-Stage", "🎯 Good-Imaging", "🧈 Smooth", "📐 Reference", "🧠 Analytical", "🔥 Fun", "😌 Relaxed", "🎮 Gaming", "🏆 Competitive-Gaming", "🎤 Vocal-Focused", "💰 Budget", "🪙 Mid-Tier", "👑 Premium", "🥇 Flagship", "🤝 Collab", "🌟 Limited-Edition"
+            "⚖️ Neutral", "💥 Basshead", "🌊 Sub-Bass", "🥊 Punchy Bass", "🌿 Warm", "🔺 V-Shaped", "☯️ Balanced", "✨ Bright", "🌑 Dark", "💎 Detailed", "🔍 Resolving", "🔬 Technical", "🏟️ Wide-Stage", "🔭 Good-Imaging", "🧈 Smooth", "📐 Reference", "🧠 Analytical", "🔥 Fun", "😌 Relaxed", "🎮 Gaming", "🏆 Competitive-Gaming", "🎤 Vocal-Focused", "💰 Budget", "🪙 Mid-Tier", "👑 Premium", "🥇 Flagship", "🤝 Collab", "🌟 Limited-Edition"
         ],
         currentReviewTagIndex: 0,
 
@@ -8399,11 +8399,17 @@ this.advancedBands.forEach((b, i) => {
 
             if (emojiContainer) {
                 const fx = (FindEngine.pickFx || {})[label] || '';
-                const replay = fx && fx !== this._musicFxKey;
+                const prevFx = this._musicFxKey;
                 this._musicFxKey = fx;
                 emojiContainer.innerHTML = `<span class="fx-play ${animClass}" data-fx="${fx}" style="display: inline-block; position: relative; transform-origin: center;"><span class="emoji-font vibrant-emoji leading-none" style="display: inline-block; transform-origin: center;">${emoji}</span></span>`;
-                if (fx && !replay) {
-                    emojiContainer.firstElementChild.classList.remove('fx-play');
+                const fxEl = emojiContainer.firstElementChild;
+                if (fx && fxEl) {
+                    if (fx === prevFx) {
+                        fxEl.classList.remove('fx-play');
+                    } else {
+                        const ms = (parseFloat(getComputedStyle(fxEl).animationDuration) || 0) * 1000 + 80;
+                        setTimeout(() => { if (fxEl.isConnected) fxEl.classList.remove('fx-play'); }, ms);
+                    }
                 }
             }
             if (textContainer) {
@@ -8419,11 +8425,17 @@ this.advancedBands.forEach((b, i) => {
 
             if (emojiContainer) {
                 const fx = (FindEngine.pickFx || {})[label] || '';
-                const replay = fx && fx !== this._gameFxKey;
+                const prevFx = this._gameFxKey;
                 this._gameFxKey = fx;
                 emojiContainer.innerHTML = `<span class="fx-play ${animClass}" data-fx="${fx}" style="display: inline-block; position: relative; transform-origin: center;"><span class="emoji-font vibrant-emoji leading-none" style="display: inline-block; transform-origin: center;">${emoji}</span></span>`;
-                if (fx && !replay) {
-                    emojiContainer.firstElementChild.classList.remove('fx-play');
+                const fxEl = emojiContainer.firstElementChild;
+                if (fx && fxEl) {
+                    if (fx === prevFx) {
+                        fxEl.classList.remove('fx-play');
+                    } else {
+                        const ms = (parseFloat(getComputedStyle(fxEl).animationDuration) || 0) * 1000 + 80;
+                        setTimeout(() => { if (fxEl.isConnected) fxEl.classList.remove('fx-play'); }, ms);
+                    }
                 }
             }
             if (textContainer) {
@@ -11678,10 +11690,10 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
                         'basshead': '💥', 'sub-bass': '🌊', 'punchy-bass': '🥊', 'warm': '🌿', 'warm-tilt': '🌿',
                         'neutral': '⚖️', 'v-shaped': '🔺', 'balanced': '⚖️', 'bright': '✨', 'dark': '🌑',
                         'detailed': '💎', 'detail': '💎', 'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️',
-                        'soundstage': '🏟️', 'good-imaging': '🎯', 'imaging': '🎯', 'smooth': '🧈', 'reference': '🎯',
+                        'soundstage': '🏟️', 'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '🎯',
                         'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮', 'competitive-gaming': '🏆',
                         'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
-                        'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📻'
+                        'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📼'
                     };
                     return emojiMap[cleanKey] || '🏷️';
                 };
@@ -16603,10 +16615,10 @@ loadSoundLibrary: async function() {
                 ],
                 tagEmojis: {
                     "Basshead": "💥", "Sub-Bass": "🌊", "Punchy Bass": "🥊", "Warm": "🌿", "Neutral": "⚖️", "V-Shaped": "🔺", "Balanced": "☯️",
-                    "Bright": "✨", "Dark": "🌑", "Detailed": "💎", "Resolving": "🔍", "Technical": "🔬", "Wide-Stage": "🏟️", "Good-Imaging": "🎯",
+                    "Bright": "✨", "Dark": "🌑", "Detailed": "💎", "Resolving": "🔍", "Technical": "🔬", "Wide-Stage": "🏟️", "Good-Imaging": "🔭",
                     "Smooth": "🧈", "Reference": "📐", "Analytical": "🧠", "Fun": "🔥", "Relaxed": "😌", "Gaming": "🎮", "Competitive-Gaming": "🏆",
                     "Vocal-Focused": "🗣️", "Budget": "💰", "Mid-Tier": "🪙", "Premium": "👑", "Flagship": "🥇", "Collab": "🤝", "Limited-Edition": "🌟",
-                    "Vintage": "📻"
+                    "Vintage": "📼"
                 },
 
                 _toggleCustomMenuPrefixed: function(prefix, keys, key) {
@@ -16926,11 +16938,11 @@ loadSoundLibrary: async function() {
                         'warm': '🌿', 'warm-tilt': '🌿', 'neutral': '⚖️', 'v-shaped': '🔺', 'v-shape': '🔺',
                         'balanced': '☯️', 'bright': '✨', 'dark': '🌑', 'detailed': '💎', 'detail': '💎',
                         'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️', 'soundstage': '🏟️',
-                        'good-imaging': '🎯', 'imaging': '🎯', 'smooth': '🧈', 'reference': '📐',
+                        'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '📐',
                         'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮',
                         'competitive-gaming': '🏆', 'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰',
                         'mid-tier': '🪙', 'premium': '👑', 'flagship': '🥇', 'collab': '🤝',
-                        'limited-edition': '🌟', 'vintage': '📻'
+                        'limited-edition': '🌟', 'vintage': '📼'
                     };
                     return emojiMap[cleanKey] || '🏷️';
                 },
@@ -18749,11 +18761,11 @@ getDriveabilityStatus: function(impedance, sensitivity) {
 
             { profile: [8.1, 5.8, 7.6, 7.2, 1.7], // Bright, detailed — largest cluster (Simgot EA1000)
                 musicVariants: [ { emoji: '🎸', name: 'Rock' } ],
-                gameVariants: [ { emoji: '💥', name: 'Action' } ] },
+                gameVariants: [ { emoji: '🧨', name: 'Action' } ] },
 
             { profile: [5.7, 5.0, 2.6, 5.1, -7.8], // Premium/reference, moderate (Sony IER-Z1R)
                 musicVariants: [ { emoji: '🎷', name: 'Jazz' } ],
-                gameVariants: [ { emoji: '🎮', name: 'MMO' } ] },
+                gameVariants: [ { emoji: '🕹️', name: 'MMO' } ] },
 
             { profile: [-1.1, 1.3, 8.8, 6.1, -4.4], // Flat bass, bright/analytical (HiFiMan Ananda)
                 musicVariants: [ { emoji: '🌍', name: 'World' } ],
@@ -18805,8 +18817,8 @@ getDriveabilityStatus: function(impedance, sensitivity) {
             { profile: [1.0, 3.0, 11.0, 7.0, -2.0], gameVariants: [ { emoji: '🏹', name: 'Roguelike' } ] },
             { profile: [12.0, 1.0, -3.0, 12.0, 4.0], gameVariants: [ { emoji: '🚀', name: 'Sci-Fi' } ] },
             { profile: [-1.0, 1.0, 8.0, 8.0, -1.0], gameVariants: [ { emoji: '🎯', name: 'Tactical' } ] },
-            { profile: [8.0, 4.0, 8.0, 9.0, -1.0], gameVariants: [ { emoji: '💥', name: 'Action' } ] },
-            { profile: [3.0, 5.0, 6.0, 4.0, -4.0], gameVariants: [ { emoji: '🎮', name: 'MMO' } ] },
+            { profile: [8.0, 4.0, 8.0, 9.0, -1.0], gameVariants: [ { emoji: '🧨', name: 'Action' } ] },
+            { profile: [3.0, 5.0, 6.0, 4.0, -4.0], gameVariants: [ { emoji: '🕹️', name: 'MMO' } ] },
             { profile: [4.0, 1.0, 5.0, 9.0, 2.0], gameVariants: [ { emoji: '🏀', name: 'Sports' } ] },
             { profile: [-1.0, 1.0, 5.0, 6.0, -1.0], gameVariants: [ { emoji: '♟️', name: 'Strategy' } ] },
             { profile: [3.0, 6.0, 3.0, -3.0, -9.0], gameVariants: [ { emoji: '🌱', name: 'Cozy' } ] },
