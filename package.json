@@ -1,0 +1,72 @@
+{
+  "name": "iem-tool",
+  "version": "2.0.0",
+  "description": "🎧 IEM Tool - Parametric EQ & Frequency Response Analyzer",
+  "main": "main.js",
+  "author": "🍄 MyLittlePrimordia",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never",
+    "dist-win": "electron-builder --win --publish never",
+    "dist-mac": "electron-builder --mac --publish never",
+    "dist-linux": "electron-builder --linux --publish never",
+    "build:js": "node scripts/build-bundle.mjs",
+    "check:js": "node scripts/check-js.mjs",
+    "build:css": "tailwindcss -c twbuild/tailwind.config.js -i twbuild/input.css -o css/tailwind.output.css --minify"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "tailwindcss": "^3.4.0",
+    "terser": "^5.31.0"
+  },
+  "build": {
+    "appId": "com.mylittleprimordia.iemtool",
+    "productName": "IEM Tool",
+    "asar": false,
+    "files": [
+      "**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "IEM Tool"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "icon.icns",
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        {
+          "target": "tar.gz",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon.png",
+      "category": "Utility"
+    }
+  }
+}

@@ -1,0 +1,38 @@
+[
+  {
+    "id": "neon_stars",
+    "name": "Neon Stars",
+    "emoji": "✨",
+    "file": "neon_stars.js"
+  },
+  {
+    "id": "liquid_fiber",
+    "name": "Liquid Fiber Wave",
+    "emoji": "🌊",
+    "file": "liquid_fiber.js"
+  },
+  {
+    "id": "cosmic_vortex",
+    "name": "Cosmic Vortex",
+    "emoji": "🌀",
+    "file": "cosmic_vortex.js"
+  },
+  {
+    "id": "spectrum_bars",
+    "name": "Spectrum Bars",
+    "emoji": "📊",
+    "file": "spectrum_bars.js"
+  },
+  {
+    "id": "eq_grid",
+    "name": "EQ Grid",
+    "emoji": "🟩",
+    "file": "eq_grid.js"
+  },
+  {
+    "id": "aurora_ribbons",
+    "name": "Aurora Ribbons",
+    "emoji": "🌈",
+    "file": "aurora_ribbons.js"
+  }
+]
