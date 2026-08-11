@@ -1109,7 +1109,7 @@ window.updateExpandedAutoHide = function() {
                 const iemWrapper = document.getElementById('pane-iem-outer-wrapper');
                 if (iemWrapper) iemWrapper.classList.toggle('hidden', tabId !== 'iem');
 
-                ['iem', 'eq', 'testlab', 'visualizer', 'settings', 'find', 'music'].forEach(id => {
+                ['iem', 'eq', 'testlab', 'visualizer', 'settings', 'find'].forEach(id => {
                     const pane = document.getElementById(`pane-${id}`);
                     if (pane) pane.classList.add('hidden');
                     const btn = document.getElementById(`tab-${id}-btn`);
@@ -1169,11 +1169,6 @@ window.updateExpandedAutoHide = function() {
                     EQ_Module.vizLoopRunning = false;
                     EQ_Module.startVisualizer();
                 }
-                if (tabId === 'music' && window.MusicPlayer) {
-                    MusicPlayer.render();
-                    MusicPlayer.updateGenreFilter();
-                }
-
                 if (window.TestLab) {
                     if (tabId === 'testlab') {
                         if (TestLab.spatialOrbitActive) {
@@ -1283,7 +1278,7 @@ window.updateExpandedAutoHide = function() {
                 const expThemeSelector = document.getElementById('export-theme-selector');
                 if (expThemeSelector) expThemeSelector.value = themeId;
 
-            ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings', 'music'].forEach(id => {
+            ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings'].forEach(id => {
                 const b = document.getElementById(`tab-${id}-btn`);
                 if (b) {
                     b.style.backgroundColor = '';
@@ -1292,7 +1287,7 @@ window.updateExpandedAutoHide = function() {
                     b.style.transform = '';
                 }
             });
-            const activeTabId = ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings', 'music'].find(id => {
+            const activeTabId = ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings'].find(id => {
                 const pane = document.getElementById(`pane-${id}`);
                 return pane && !pane.classList.contains('hidden');
             }) || 'find';
@@ -6793,7 +6788,7 @@ vizModalActive: false,
                     const btn = document.getElementById("playlist-play-btn");
                     const mobBtn = document.getElementById("mobile-play-btn");
                     if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
-                    if(mobBtn) mobBtn.innerHTML = "<span class=\"text-xs\">⏸</span>";
+                    if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
                     const modalBtn = document.getElementById("modal-play-btn");
                     if(modalBtn) modalBtn.innerHTML = "<span>⏸</span><span>Pause</span>";
 
@@ -8793,21 +8788,26 @@ if (diffR > 0.4) {
                 for (let i = 0; i < clippingTexts.length; i++) {
                     const el = clippingTexts[i];
 
+                    // Only swap the state classes — never replace className, or the
+                    // fixed width (w-16 / min-w-[64px]) gets stripped and the footer
+                    // right group reflows (scrub + peak meter jump right).
+                    el.classList.remove('text-emerald-400', 'text-amber-500', 'text-rose-500', 'animate-pulse', 'cursor-pointer');
+
                     if (isAttenuationActive) {
                         el.textContent = `${reductionDb.toFixed(1)} dB`;
-                        el.className = "vu-meter-clipping-text text-[7px] font-black text-amber-500 animate-pulse cursor-pointer";
+                        el.classList.add('text-amber-500', 'animate-pulse', 'cursor-pointer');
                         el.title = "Anti-Clip AGC active. Automatically maintaining headroom.";
                     } else {
                         el.title = "";
                         if (this.meterCurrentL > 94 || this.meterCurrentR > 94) {
                             el.textContent = "⚡ Clipping";
-                            el.className = "vu-meter-clipping-text text-[7px] font-black text-rose-500 animate-pulse";
+                            el.classList.add('text-rose-500', 'animate-pulse');
                         } else if (this.meterCurrentL > 75 || this.meterCurrentR > 75) {
                             el.textContent = "⚠️ Warning";
-                            el.className = "vu-meter-clipping-text text-[7px] font-black text-amber-500";
+                            el.classList.add('text-amber-500');
                         } else {
                             el.textContent = "Stable";
-                            el.className = "vu-meter-clipping-text text-[7px] font-black text-emerald-400";
+                            el.classList.add('text-emerald-400');
                         }
                     }
                 }
@@ -16511,8 +16511,7 @@ loadSoundLibrary: async function() {
             ['Tone_Module', Tone_Module],
             ['TestLab_Module', TestLab_Module],
             ['Accessibility', Accessibility],
-            ['FindEngine', FindEngine],
-            ['MusicPlayer', MusicPlayer]
+            ['FindEngine', FindEngine]
         ];
 
         for (const [name, mod] of bootModules) {
@@ -16521,6 +16520,10 @@ loadSoundLibrary: async function() {
             } catch (err) {
                 console.error(`[Boot] ${name}.init() failed — continuing with remaining modules.`, err);
             }
+        }
+
+        if (window.EQ && EQ.setupPlaylist) {
+            try { EQ.setupPlaylist(); } catch (err) { console.error('[Boot] Playlist preload failed:', err); }
         }
 
         try { bootstrapAlphabetIndex(); } catch (err) { console.error('[Boot] Alphabet index init failed:', err); }

@@ -321,7 +321,9 @@ const EQ_PlaylistMethods = {
             this.updateMarquee();
             
             const playBtn = document.getElementById("playlist-play-btn");
-            if (playBtn) playBtn.innerHTML = "<span class=\"text-sm\">▶️</span>";
+            const mobPlayBtn = document.getElementById("mobile-play-btn");
+            if (playBtn) playBtn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
+            if (mobPlayBtn) mobPlayBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
             
             showToast("Playlist cleared and ghost memory buffers revoked.", "🗑️");
         },
@@ -428,8 +430,8 @@ await ctx.resume();
                         this.fadeMusicVolume(vol, 0.05); // Smooth 50ms fade-in
                     }).catch(e => console.log("Playback blocked or interrupted."));
                 }
-                if(btn) btn.innerHTML = "<span class=\"text-[18px]\">⏸</span>";
-                if(mobBtn) mobBtn.innerHTML = "<span class=\"text-xs\">⏸</span>";
+                if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
+                if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
                 if(modalPlayBtn) modalPlayBtn.innerHTML = "<span>⏸</span><span>Pause</span>";
             } else {
                                 // Fade-out pause
@@ -440,7 +442,7 @@ await ctx.resume();
                     }
                 }, 80); // Wait 80ms for the fade-out to complete before pausing
                 if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
-                if(mobBtn) mobBtn.innerHTML = "<span class=\"text-xs\">▶</span>";
+                if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
                 if(modalPlayBtn) modalPlayBtn.innerHTML = "<span>▶</span><span>Play</span>";
             }
         },

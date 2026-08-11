@@ -16,9 +16,9 @@ Built for audio enthusiasts, reviewers, and tuners who want an all-in-one offlin
 * 🎚️ **Parametric EQ & AutoEQ Solver:** 1-Click AutoEQ solver supporting 10 to 50 band resolutions with Anti-Clip Limiter and Auto-Gain Matching.
 * 🌌 **3D Soundstage & Spatial Simulator:** Interactive 3D spatial pad with HRTF positioning and room acoustic simulations.
 * 🔬 **Acoustic Test Lab:** Ear Canal Resonance Peak locking, Channel Imbalance detector, Burn-In Station, and 10 Diagnostic Sweeps.
+* 🎮 **Blind A/B & ABX Test Station:** Conduct blind listening tests with crossfading and statistical confidence scoring ($P$-value).
 * 📝 **Review Profile Suite:** Rate IEMs with radar spider charts, sound characteristic sliders, photo attachment background removal, and DAC power/driveability calculations.
 * 📊 **Real-time Audio Visualizers:** Spectrum Oscilloscope, OLED Bars, Spectrogram, 3D Waterfall, and Audio Mesh effects.
-* 🎵 **Offline Music Player & Library:** Fully featured local music player with tag editing, custom playlists, favorites, real-time synchronized LRC lyrics, and active queue management.
 * 🎨 **Custom 8-Bit Retro Themes & Fonts:** 9 retro skins (Parchment, Slate, Ember, Circuit, Byte, Cartridge, Arcade, Blush, Bit) with auto-scaled retro fonts.
 * 🚫 **100% Offline & Private:** Runs completely local in your browser without requiring server connections.
 
@@ -88,20 +88,7 @@ Built for audio enthusiasts, reviewers, and tuners who want an all-in-one offlin
 
 ---
 
-### 6. 🎵 Music (Library & Player)
-* **Local Music Library:** Play and organize your personal audio collection completely offline.
-* **Tag Editor:** View and update track metadata including Title, Artist, Album, Year, and Genre.
-* **Playlists & Favorites:** Create custom playlists and star tracks for quick access.
-* **Lyrics Viewer:** Support for both standard static lyrics and auto-scrolling time-synced (`.lrc`) lyrics.
-* **Queue Management:** Reorder tracks, add items to up-next, and manage dynamic listening queues.
-
-<p align="center">
-  <img src="screenshots/MUSIC.PNG" width="900" alt="Music Workspace">
-</p>
-
----
-
-### 7. ⚙️ Settings
+### 6. ⚙️ Settings
 * App customization, theme selector, font styling, reading size scaling, blue-light night shift filter, data dumping, and workspace resets.
 
 <p align="center">
