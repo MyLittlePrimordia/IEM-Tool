@@ -117,7 +117,7 @@ Customize your workstation interface with 9 built-in skins:
 
 ## 📂 Utilities & Executables
 
-### 1. 🔍 Database Audit (`Database Audit.exe`)
+### 1. 🔍 Audit Database  (`Audit Database.exe`)
 
 #### ❓ What does this tool do?
 The application relies on `database.json` to index available measurement curves in your library. When new measurement files are added, removed, or renamed in the `data` folder, `database.json` must reflect those changes.
@@ -125,8 +125,8 @@ The application relies on `database.json` to index available measurement curves 
 This utility scans for missing or unlinked measurement files and generates a clean text summary (`audit_report.txt`).
 
 #### 🚀 How to use it:
-1. Place **`Database Audit.exe`** in the same folder as your `data` directory and **`database.json`**.
-2. Run **`Database Audit.exe`**.
+1. Place **`Audit Database.exe`** in the same folder as your `data` directory and **`database.json`**.
+2. Run **`Audit Database.exe`**.
 3. It will scan your directory and write a report detailing:
    * **Missing Files:** Listed in `database.json` but missing from the `data/` folder.
    * **Unlinked Files:** Existing in the `data/` folder but missing from `database.json`.

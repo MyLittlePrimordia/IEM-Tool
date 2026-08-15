@@ -10967,6 +10967,58 @@
     ]
   },
   {
+    "id": "audio_technica_ath_ad900x",
+    "brand": "Audio-Technica",
+    "model": "ATH-AD900X",
+    "variant": "",
+    "year": 2012,
+    "price_usd": 300,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 38,
+    "sensitivity": 100,
+    "connector": "Fixed Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Mid-Tier",
+      "Bright",
+      "Treblehead",
+      "Detailed",
+      "Wide-Stage",
+      "Gaming",
+      "Good-Imaging"
+    ],
+    "files": [
+	"data/HANGOUT.AUDIO/ATH-AD900X.txt"
+	]
+  },
+  {
+    "id": "audio_technica_ath_ad1000x",
+    "brand": "Audio-Technica",
+    "model": "ATH-AD1000X",
+    "variant": "",
+    "year": 2012,
+    "price_usd": 600,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 40,
+    "sensitivity": 102,
+    "connector": "Fixed Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Premium",
+      "Bright",
+      "Vocal-Focused",
+      "Detailed",
+      "Resolving",
+      "Wide-Stage",
+      "Good-Imaging"
+    ],
+    "files": [
+	"data/HANGOUT.AUDIO/ATH-AD1000X.txt"
+	]
+  },
+  {
     "id": "audio_technica_ath_adx3000",
     "brand": "Audio-Technica",
     "model": "ATH-ADX3000",
@@ -15516,6 +15568,30 @@
     ]
   },
   {
+    "id": "beyerdynamic_custom_studio",
+    "brand": "Beyerdynamic",
+    "model": "Custom Studio",
+    "variant": "",
+    "year": 2014,
+    "price_usd": 200,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 80,
+    "sensitivity": 96,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Mid-Tier",
+      "Studio-Monitoring",
+      "Punchy Bass",
+      "Detailed",
+      "Analytical"
+    ],
+    "files": [
+	"data/EARPHONES ARCHIVE/BEYERDYNAMIC CUSTOM STUDIO.txt"
+	]
+  },
+  {
     "id": "beyerdynamic_aventho_300",
     "brand": "beyerdynamic",
     "model": "Aventho 300",
@@ -16590,6 +16666,84 @@
       "data/ORATORY1990/BEYERDYNAMIC T1.txt",
       "data/RTINGS/BEYERDYNAMIC T1.txt"
     ]
+  },
+   {
+    "id": "beyerdynamic_t1_gen_2",
+    "brand": "Beyerdynamic",
+    "model": "T1",
+    "variant": "2nd Generation",
+    "year": 2015,
+    "price_usd": 1100,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 600,
+    "sensitivity": 102,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Premium",
+      "Bright",
+      "Detailed",
+      "Resolving",
+      "Wide-Stage",
+      "Good-Imaging",
+      "Technical",
+      "Reference"
+    ],
+    "files": [
+	"data/UNHEARD LAB/BEYERDYNAMIC T1 GEN 2.txt"
+	]
+  },
+  {
+    "id": "beyerdynamic_t1_gen_3",
+    "brand": "Beyerdynamic",
+    "model": "T1",
+    "variant": "3rd Generation",
+    "year": 2020,
+    "price_usd": 1000,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 100,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Premium",
+      "Warm",
+      "Punchy Bass",
+      "Dark",
+      "Smooth",
+      "Wide-Stage",
+      "Relaxed"
+    ],
+    "files": [
+	"data/UNHEARD LAB/BEYERDYNAMIC T1 GEN 3.txt"
+	]
+  },
+  {
+    "id": "beyerdynamic_t5_gen_3",
+    "brand": "Beyerdynamic",
+    "model": "T5",
+    "variant": "3rd Generation",
+    "year": 2020,
+    "price_usd": 1000,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 100,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Premium",
+      "Warm",
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Punchy Bass"
+    ],
+    "files": [
+	"data/HANGOUT.AUDIO/BEYERDYNAMIC T5 GEN 3.txt"
+	]
   },
   {
     "id": "beyerdynamic_t50p",
@@ -27207,6 +27361,32 @@
     "files": [
       "data/ORATORY1990/DALI IO 6.txt"
     ]
+  },
+  {
+    "id": "dan_clark_audio_corina",
+    "brand": "Dan Clark Audio",
+    "model": "Corina",
+    "variant": "",
+    "year": 2023,
+    "price_usd": 4500,
+    "driver_type": "EST",
+    "driver_config": "1EST",
+    "impedance": 0,
+    "sensitivity": 0,
+    "connector": "Electrostatic",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Flagship",
+      "Reference",
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Smooth"
+    ],
+    "files": [
+	"data/VSG/DAN CLARK AUDIO CORINA.txt"
+	]
   },
   {
     "id": "dan_clark_audio_aeon_2_closed",
@@ -38857,6 +39037,32 @@
     "files": [
       "data/ORATORY1990/FINAL AUDIO D8000 PRO EDITION.txt"
     ]
+  },
+  {
+    "id": "final_audio_d8000",
+    "brand": "Final Audio",
+    "model": "D8000",
+    "variant": "",
+    "year": 2017,
+    "price_usd": 3800,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 60,
+    "sensitivity": 98,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Flagship",
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Good-Imaging",
+      "Punchy Bass"
+    ],
+    "files": [
+	"data/HANGOUT.AUDIO/FINAL AUDIO D8000.txt"
+	]
   },
   {
     "id": "final_audio_e1000",
@@ -89587,6 +89793,55 @@
     ]
   },
   {
+    "id": "sennheiser_hd_579",
+    "brand": "Sennheiser",
+    "model": "HD 579",
+    "variant": "",
+    "year": 2016,
+    "price_usd": 200,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 50,
+    "sensitivity": 106,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Mid-Tier",
+      "Warm",
+      "Balanced",
+      "Smooth",
+      "Relaxed",
+      "Wide-Stage"
+    ],
+    "files": [
+	"data/HANGOUT.AUDIO/SENNHEISER HD579.txt"
+	]
+  },
+  {
+    "id": "sennheiser_hd_400s",
+    "brand": "Sennheiser",
+    "model": "HD 400S",
+    "variant": "",
+    "year": 2019,
+    "price_usd": 70,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 18,
+    "sensitivity": 120,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Budget",
+      "Warm",
+      "Punchy Bass",
+      "Smooth",
+      "V-Shaped"
+    ],
+    "files": [
+	"data/HANGOUT.AUDIO/SENNHEISER HD400S.txt"
+	]
+  },
+  {
     "id": "sennheiser_hd_200_pro",
     "brand": "Sennheiser",
     "model": "HD 200 Pro",
@@ -90414,13 +90669,61 @@
     ],
     "files": [
       "data/HEADPHONE.COM LEGACY/SENNHEISER HD 25 1.txt",
-      "data/INNERFIDELITY/SENNHEISER HD 25 1.txt",
-      "data/RTINGS/SENNHEISER HD 25.txt",
-      "data/INNERFIDELITY/SENNHEISER HD 25 1 II.txt",
-      "data/ORATORY1990/SENNHEISER HD25 1 II.txt",
-      "data/INNERFIDELITY/SENNHEISER HD 25 1 II B.txt"
+      "data/INNERFIDELITY/SENNHEISER HD 25 1.txt"
     ]
   },
+  {
+  "id": "sennheiser_hd_25_1_ii",
+  "brand": "Sennheiser",
+  "model": "HD 25",
+  "variant": "1 II",
+  "year": 2007,
+  "price_usd": 250,
+  "driver_type": "DD",
+  "driver_config": "1DD",
+  "impedance": 70,
+  "sensitivity": 120,
+  "connector": "Detachable Cable",
+  "form_factor": "Over-Ear Headphones (Wired)",
+  "tags": [
+    "Mid-Tier",
+    "Studio-Monitoring",
+    "Reference",
+    "Neutral",
+    "Detailed",
+    "Punchy Bass"
+  ],
+  "files": [
+    "data/INNERFIDELITY/SENNHEISER HD 25 1 II.txt",
+    "data/ORATORY1990/SENNHEISER HD25 1 II.txt",
+    "data/INNERFIDELITY/SENNHEISER HD 25 1 II B.txt"
+  ]
+},
+{
+  "id": "sennheiser_hd_25",
+  "brand": "Sennheiser",
+  "model": "HD 25",
+  "variant": "",
+  "year": 2016,
+  "price_usd": 150,
+  "driver_type": "DD",
+  "driver_config": "1DD",
+  "impedance": 70,
+  "sensitivity": 120,
+  "connector": "Detachable Cable",
+  "form_factor": "Over-Ear Headphones (Wired)",
+  "tags": [
+    "Mid-Tier",
+    "Studio-Monitoring",
+    "Reference",
+    "Punchy Bass",
+    "Detailed",
+    "Good-Imaging"
+  ],
+  "files": [
+    "data/RTINGS/SENNHEISER HD 25.txt"
+  ]
+},
   {
     "id": "sennheiser_hd_25_aluminum",
     "brand": "Sennheiser",
@@ -94540,6 +94843,30 @@
       "data/HANGOUT.AUDIO/SHOZY V33.txt",
       "data/HI END PORTABLE/SHOZY V33.txt"
     ]
+  },
+  {
+    "id": "shure_srh240a",
+    "brand": "Shure",
+    "model": "SRH240A",
+    "variant": "",
+    "year": 2011,
+    "price_usd": 60,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 38,
+    "sensitivity": 102,
+    "connector": "Fixed Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Budget",
+      "Studio-Monitoring",
+      "Neutral",
+      "Detailed",
+      "Reference"
+    ],
+    "files": [
+	"data/HANGOUT.AUDIO/SHURE SRH240A.txt"
+	]
   },
   {
     "id": "shure_aonic_3",
@@ -98783,6 +99110,31 @@
       "data/ORATORY1990/SONY MDR 1000X.txt",
       "data/RTINGS/SONY MDR 1000X.txt"
     ]
+  },
+  {
+    "id": "sony_mdr_7510",
+    "brand": "Sony",
+    "model": "MDR-7510",
+    "variant": "",
+    "year": 2011,
+    "price_usd": 130,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 24,
+    "sensitivity": 108,
+    "connector": "Fixed Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Mid-Tier",
+      "Neutral",
+      "Studio-Monitoring",
+      "Detailed",
+      "Reference",
+      "Balanced"
+    ],
+    "files": [
+	"data/HANGOUT.AUDIO/SONY MDR 7510.txt"
+	]
   },
   {
     "id": "sony_mdr_1am2",
