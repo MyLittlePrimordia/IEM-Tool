@@ -68,5 +68,8 @@
       "icon": "icon.png",
       "category": "Utility"
     }
+  },
+  "allowScripts": {
+    "electron@43.4.0": true
   }
 }

@@ -13209,6 +13209,7 @@ getLiveFiltersState: function() {
 
                 for (let k = 0; k < cascadeNodesCount; k++) {
                     const f = this.mathFilters[i];
+                    if (!f) return filterMag;
                     f.type = activeType;
                     f.frequency.value = state.hz;
 
@@ -13228,6 +13229,7 @@ getLiveFiltersState: function() {
 this.advancedBands.forEach((b, i) => {
                 const state = advState[i];
                 const f = this.mathFilters[10 + i];
+                if (!f) return;
                 f.type = state.type || 'peaking';
                 f.frequency.value = state.hz;
                 f.gain.value = state.g;
@@ -21888,7 +21890,7 @@ loadSoundLibrary: async function() {
             }, true);
         })();
 
-    window.addEventListener('DOMContentLoaded', async () => {
+    const bootApp = async () => {
         const bootModules = [
             ['App', App],
             ['IEM_Module', IEM_Module],
@@ -21984,7 +21986,15 @@ loadSoundLibrary: async function() {
                 } catch (err) {
                     console.error('[Boot] startVisualizer failed:', err);
                 }
-            });
+            };
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', bootApp);
+            } else {
+                // Defer past the end of this script so every top-level const/let
+                // (FindEngine etc.) is fully initialized before boot reads them.
+                setTimeout(bootApp, 0);
+            }
 
             const FindEngine = {
                 canonicalCache: {},
