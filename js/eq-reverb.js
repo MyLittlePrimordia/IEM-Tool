@@ -92,8 +92,11 @@ const EQ_ReverbMethods = {
     // Map Room Size and Decay parameter cleanly to an RT60 range (0.4s to 4.5s)
     const rt60 = 0.4 + (preset.size * 1.6) + (preset.fade * 2.5);
     const duration = Math.max(0.1, rt60);
+    // IR is capped at 4 s - the decay envelope must use the same cap so a long
+    // preset doesn't get truncated mid-decay (audible cutoff click).
+    const effectiveDuration = Math.min(duration, 4.0);
 
-    const numSamples = Math.floor(sampleRate * Math.min(duration, 4.0));
+    const numSamples = Math.floor(sampleRate * effectiveDuration);
     const impulseBuffer = ctx.createBuffer(2, numSamples, sampleRate);
     const left = impulseBuffer.getChannelData(0);
     const right = impulseBuffer.getChannelData(1);
@@ -135,7 +138,7 @@ const EQ_ReverbMethods = {
     // Multiplicative exponential decay: decayEnvelope *= decayFactor each step
     // is mathematically identical to Math.exp(-t*(6.91/duration)) but avoids a
     // Math.exp() call per sample (~100k+ saved per IR synthesis).
-    const decayFactor = Math.exp(-(6.91 / duration) / sampleRate);
+    const decayFactor = Math.exp(-(6.91 / effectiveDuration) / sampleRate);
     let decayEnvelope = 1.0;
 
     for (let i = 0; i < numSamples; i++) {
@@ -161,8 +164,9 @@ const EQ_ReverbMethods = {
         const noiseL = Math.random() * 2 - 1;
         const noiseR = Math.random() * 2 - 1;
 
-        // Dynamic Damping: high frequencies decay faster as time progresses
-        const currentDamping = Math.min(0.997, damping * 0.72 + (t / duration) * 0.25);
+        // Dynamic Damping: high frequencies decay faster as time progresses.
+        // Time in seconds is i / sampleRate (the loop counter is `i`).
+        const currentDamping = Math.min(0.997, damping * 0.72 + (i / sampleRate / duration) * 0.25);
         const alpha = 1.0 - currentDamping;
 
         // Apply low-pass damping
@@ -209,9 +213,10 @@ const EQ_ReverbMethods = {
             if (!SharedAudio.ctx || !SharedAudio.dryGainNode || !SharedAudio.wetGainNode) return;
             
             const now = SharedAudio.ctx.currentTime;
-            // Stop lingering: Set wet gain to 0 if the audio player is paused
-            const isPlaying = this.audioEl && !this.audioEl.paused;
-            const mix = (this.reverbActive && isPlaying) ? this.reverbParams.mix : 0;
+            // Keep the wet gain at the user's mix while paused so the reverb
+            // tail rings out naturally instead of snapping to silence on every
+            // pause/seek (with the source muted the finite IR fades on its own).
+            const mix = this.reverbActive ? this.reverbParams.mix : 0;
             
             setAudioParamSmooth(SharedAudio.dryGainNode.gain, 1.0 - (mix * 0.35), 0.015);
             setAudioParamSmooth(SharedAudio.wetGainNode.gain, mix, 0.015);

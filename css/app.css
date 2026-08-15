@@ -2300,21 +2300,21 @@
         #find-pick-grid {
             display: flex;
             flex-direction: column;
-            gap: calc(var(--pick-emoji, 20px) / 5);
+            gap: 4px;
             width: 100%;
             --pick-emoji: 20px;
         }
         .pick-group {
             display: flex;
             flex-direction: column;
-            gap: calc(var(--pick-emoji, 20px) / 6);
+            gap: 2px;
             min-width: 0;
         }
         .pick-group-label {
             display: inline-flex;
             align-items: center;
-            gap: calc(var(--pick-emoji, 20px) / 5);
-            font-size: calc(var(--pick-emoji, 20px) * 0.72);
+            gap: 4px;
+            font-size: 9.5px;
             font-weight: 900;
             text-transform: uppercase;
             letter-spacing: 0.05em;
@@ -2326,8 +2326,8 @@
         }
         .pick-group-grid {
             display: grid;
-            grid-template-columns: repeat(10, 1fr);
-            gap: calc(var(--pick-emoji, 20px) / 6);
+            grid-template-columns: repeat(12, 1fr);
+            gap: 3px;
             width: 100%;
         }
         .find-pick-badge {
@@ -2588,6 +2588,61 @@
         .fx-play[data-fx="vocal"]::after { width: calc(var(--pick-emoji,20px) * 1.9); height: calc(var(--pick-emoji,20px) * 1.9); animation: fx-voicewave .5s ease-out .12s; }
         @keyframes fx-vocal { 0% { transform: translateY(0); } 30% { transform: translateY(-65%) scale(1.1); } 55% { transform: translateY(12%) scale(.95); } 100% { transform: translateY(0) scale(1); } }
         @keyframes fx-voicewave { 0% { opacity:0; transform: translate(-50%,-50%) scale(.4); } 35% { opacity:.9; transform: translate(-30%,-50%) scale(.8); } 100% { opacity:0; transform: translate(45%,-50%) scale(1.4); } }
+
+        /* Treble-Head — electric zap crackle */
+        .fx-play[data-fx="treblehead"] { animation: fx-treblehead .45s cubic-bezier(.36,.07,.19,.97); }
+        .fx-play[data-fx="treblehead"]::after {
+            width: calc(var(--pick-emoji,20px) * 2); height: calc(var(--pick-emoji,20px) * 2);
+            background: radial-gradient(circle, rgba(255,255,150,.9), rgba(150,220,255,.5) 45%, transparent 70%);
+            border-radius: 50%;
+            animation: fx-zap-flash .45s ease-out;
+        }
+        @keyframes fx-treblehead {
+            0% { transform: translate(0,0) scale(1); filter: brightness(1); }
+            12% { transform: translate(-2px,-3px) scale(1.15); filter: brightness(2.2); }
+            24% { transform: translate(3px,2px) scale(.95); }
+            36% { transform: translate(-3px,1px) scale(1.1); filter: brightness(1.8); }
+            48% { transform: translate(2px,-2px) scale(.98); }
+            62% { transform: translate(-1px,2px) scale(1.04); filter: brightness(1.3); }
+            100% { transform: translate(0,0) scale(1); filter: none; }
+        }
+        @keyframes fx-zap-flash { 0% { opacity:0; transform: translate(-50%,-50%) scale(.2); } 30% { opacity:1; transform: translate(-50%,-50%) scale(1); } 100% { opacity:0; transform: translate(-50%,-50%) scale(1.4); } }
+
+        /* U-Shaped — magnetic pull + smile-curve dip */
+        .fx-play[data-fx="ushape"] { animation: fx-ushape .55s cubic-bezier(.34,1.56,.64,1); }
+        .fx-play[data-fx="ushape"]::before,
+        .fx-play[data-fx="ushape"]::after {
+            width: calc(var(--pick-emoji,20px) * .35); height: calc(var(--pick-emoji,20px) * .35);
+            background: radial-gradient(circle, rgba(255,80,140,.95), transparent 70%);
+            border-radius: 50%;
+        }
+        .fx-play[data-fx="ushape"]::before { left: -10%; animation: fx-magnet-pull-l .55s ease-in; }
+        .fx-play[data-fx="ushape"]::after { left: 110%; animation: fx-magnet-pull-r .55s ease-in; }
+        @keyframes fx-ushape {
+            0% { transform: translateY(0) scale(1); }
+            35% { transform: translateY(45%) scale(.92,1.1); }
+            60% { transform: translateY(-15%) scale(1.08,.95); }
+            100% { transform: translateY(0) scale(1); }
+        }
+        @keyframes fx-magnet-pull-l { 0% { opacity:0; transform: translate(-50%,-50%) translateX(-160%); } 40% { opacity:1; } 100% { opacity:0; transform: translate(-50%,-50%) translateX(-10%) scale(.3); } }
+        @keyframes fx-magnet-pull-r { 0% { opacity:0; transform: translate(-50%,-50%) translateX(160%); } 40% { opacity:1; } 100% { opacity:0; transform: translate(-50%,-50%) translateX(10%) scale(.3); } }
+
+        /* Studio-Monitoring — calibration scan sweep */
+        .fx-play[data-fx="studiomonitor"] { animation: fx-studiomonitor .6s cubic-bezier(.25,.1,.25,1); }
+        .fx-play[data-fx="studiomonitor"]::after {
+            left: -40%; top: 50%; width: 30%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(120,255,200,.95), transparent);
+            transform: translateY(-50%);
+            animation: fx-cal-scan .6s linear;
+        }
+        @keyframes fx-studiomonitor {
+            0% { transform: scale(.8) rotate(0); filter: brightness(1); }
+            30% { transform: scale(1.1) rotate(-4deg); filter: brightness(1.4); }
+            55% { transform: scale(.97) rotate(3deg); }
+            75% { transform: scale(1.03) rotate(-1deg); }
+            100% { transform: scale(1) rotate(0); filter: none; }
+        }
+        @keyframes fx-cal-scan { 0% { opacity:0; left:-40%; } 15% { opacity:.9; } 85% { opacity:.7; } 100% { opacity:0; left:130%; } }
 
         /* Hip-Hop — beat drop */
         .fx-play[data-fx="hiphop"] .emoji-font { animation: fx-hiphop .55s cubic-bezier(.28,.84,.42,1); }

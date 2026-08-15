@@ -799,7 +799,7 @@
                                 <div>
                                     <label class="block text-xs uppercase text-zinc-400 font-black mb-0.5">Starting Baseline Target</label>
                                     <button id="find-baseline-btn" onclick="FindEngine.cycleBaseline()" class="w-full h-8 bg-[var(--bg-input)] hover:bg-zinc-800 border-2 border-black rounded text-xs font-bold text-stone-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
-                                        🎯 Baseline: Harman IE 2019
+                                        🎯 Harman IE 2019
                                     </button>
                                 </div>
 
@@ -834,16 +834,6 @@
                                     </div>
                                 </div>
 
-                                <div>
-                                    <div class="flex items-center gap-1.5 w-full">
-                                        <button type="button" onclick="FindEngine.cycleTuningPreset(-1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                                        <button id="find-preset-cycle-btn" onclick="FindEngine.cycleTuningPreset(1)" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none shadow-none" >
-                                            <span class="emoji-font vibrant-emoji text-xl w-6 h-6 inline-flex items-center justify-center leading-none mr-1.5 anim-toggle-pop">🎼</span> Preset: Neutral
-                                        </button>
-                                        <button type="button" onclick="FindEngine.cycleTuningPreset(1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">▶</button>
-                                    </div>
-                                </div>
-
                                 <div class="space-y-0.5">
                                     <button id="find-tune-specs-toggle-btn" onclick="FindEngine.toggleTuneWithSpecs()" class="w-full retro-switch-btn font-black text-xs h-8 flex items-center justify-center cursor-pointer truncate" title="ON: your Specs also filter the Find Matches search">
                                         <span id="find-tune-specs-toggle-label">🔒 FILTER BY SPECS: OFF</span>
@@ -852,7 +842,7 @@
                             </div>
                         </div>
 
-                        <div id="find-pick-section" class="hidden flex-shrink-0 pt-2.5 space-y-1">
+                        <div id="find-pick-section" class="hidden flex-shrink-0 pt-1 space-y-0.5">
                             <input type="hidden" id="find-filter-picks" value="[]">
                             <div id="find-pick-grid" class="w-full"></div>
                         </div>
@@ -2598,9 +2588,17 @@
 
         <canvas id="global-spores-canvas" style="position: fixed; inset: 0; pointer-events: none; z-index: 99999; display: none;"></canvas>
 
+        <script src="js/bundle-version.js?v=1"></script>
         <script>
           // Packaged builds serve the minified bundle via ?packaged=1.
-          document.write('<script src="js/app.bundle' + (location.search.indexOf('packaged') !== -1 ? '.min' : '') + '.js"><\/script>');
+          // Cache-bust with the content hash written by scripts/build-bundle.mjs
+          // (js/bundle-version.js) rather than Date.now(), so the ~1MB bundle
+          // stays cached across reloads until the source actually changes.
+          var isPackaged = location.search.indexOf('packaged') !== -1;
+          var bundleVersion = (typeof window.BUNDLE_VERSION === 'string' && window.BUNDLE_VERSION) || String(Date.now());
+          var bundleScript = document.createElement('script');
+          bundleScript.src = 'js/app.bundle' + (isPackaged ? '.min' : '') + '.js?v=' + bundleVersion;
+          document.body.appendChild(bundleScript);
         </script>
     </body>
     </html>

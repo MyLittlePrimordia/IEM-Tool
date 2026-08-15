@@ -1,12 +1,14 @@
 // Reproducible JS bundle builder.
 // Concats the app's source scripts (in load order) into js/app.bundle.js and a
-// minified js/app.bundle.min.js. Order MUST match the original <script src>
-// sequence. chart.js and tailwindcss.js are intentionally NOT included (chart.js
-// is injected at runtime via injectScriptAsync; tailwindcss.js is unused at rt).
+// minified js/app.bundle.min.js, and writes js/bundle-version.js with a content
+// hash so index.html can cache-bust on actual changes instead of Date.now().
+// Order MUST match the original <script src> sequence. chart.js and
+// tailwindcss.js are intentionally NOT included (chart.js is injected at
+// runtime via injectScriptAsync; tailwindcss.js is unused at rt).
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { minify } from 'terser';
+import { createHash } from 'node:crypto';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -30,10 +32,31 @@ const raw = parts.join('\n');
 
 writeFileSync(join(root, 'js', 'app.bundle.js'), raw);
 
-const out = await minify(raw, { compress: true, mangle: true, toplevel: false, keep_fnames: false });
-if (!out.code) throw new Error('minify failed');
-writeFileSync(join(root, 'js', 'app.bundle.min.js'), out.code);
+// Content-hash version marker, consumed by index.html as the `?v=` cache-bust
+// for both app.bundle.js and app.bundle.min.js. Only changes when the
+// concatenated source actually changes, so the browser can cache the bundle
+// across reloads instead of re-fetching it on every page load.
+const version = createHash('sha256').update(raw).digest('hex').slice(0, 12);
+writeFileSync(join(root, 'js', 'bundle-version.js'), `window.BUNDLE_VERSION = ${JSON.stringify(version)};\n`);
 
 console.log('built ' + src.length + ' files');
-console.log('app.bundle.js     :', Buffer.byteLength(raw, 'utf8'), 'bytes');
-console.log('app.bundle.min.js :', Buffer.byteLength(out.code, 'utf8'), 'bytes');
+console.log('app.bundle.js      :', Buffer.byteLength(raw, 'utf8'), 'bytes');
+console.log('bundle-version.js  :', version);
+
+// terser is an optional devDependency used only for the minified/packaged
+// build. If it isn't installed (e.g. `npm install` hasn't been run yet, or
+// this is running somewhere without registry access), skip minification
+// instead of failing the whole build - app.bundle.js + bundle-version.js are
+// still produced and the unpackaged app still runs.
+try {
+  const { minify } = await import('terser');
+  const out = await minify(raw, { compress: true, mangle: true, toplevel: false, keep_fnames: false });
+  if (!out.code) throw new Error('minify failed');
+  writeFileSync(join(root, 'js', 'app.bundle.min.js'), out.code);
+  console.log('app.bundle.min.js  :', Buffer.byteLength(out.code, 'utf8'), 'bytes');
+} catch (e) {
+  console.warn('\n[build-bundle] Skipped minified build (terser unavailable): ' + e.message);
+  console.warn('[build-bundle] Run `npm install` (terser is already listed as a devDependency)');
+  console.warn('[build-bundle] then re-run this script to refresh app.bundle.min.js.');
+  console.warn('[build-bundle] app.bundle.js and bundle-version.js were still rebuilt.\n');
+}

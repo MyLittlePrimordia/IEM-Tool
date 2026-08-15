@@ -122,6 +122,155 @@ const CurveUtils = {
         return results;
     },
 
+    // ---- Shared perceptual model -------------------------------------------------
+    // One frequency->importance table feeds the classifier axis weights, the
+    // similar-curve ranking and the auto-EQ solve weights, so every feature
+    // agrees on which bands matter most (mid/vocal heavy, air & sub noisy).
+    PERCEPTUAL_WEIGHTS: [
+        [20, 0.30], [31, 0.45], [62, 0.70], [125, 0.90], [250, 1.00], [500, 1.10],
+        [1000, 1.20], [2000, 1.35], [3000, 1.30], [4000, 1.20], [6000, 1.00],
+        [8000, 0.90], [10000, 0.80], [12000, 0.65], [14000, 0.50], [16000, 0.40],
+        [20000, 0.30]
+    ],
+
+    weightFor: function(freq) {
+        const f = parseFloat(freq) || 1000;
+        const table = this.PERCEPTUAL_WEIGHTS;
+        if (f <= table[0][0]) return table[0][1];
+        if (f >= table[table.length - 1][0]) return table[table.length - 1][1];
+        let lo = 0;
+        while (lo < table.length - 2 && table[lo + 1][0] < f) lo++;
+        const x0 = table[lo][0], x1 = table[lo + 1][0];
+        const t = (x1 > x0) ? Math.log(f / x0) / Math.log(x1 / x0) : 0;
+        return table[lo][1] + (table[lo + 1][1] - table[lo][1]) * t;
+    },
+
+    // Tonal anchor band used for level-offset correction (constant dB removed
+    // before scoring) so same-shape curves differing only in average level
+    // still rank as matches.
+    MID_MEAN_BAND: [300, 3000],
+
+    // Canonical log-spaced probes for similarity ranking (20 Hz - 16 kHz).
+    SIM_PROBE_FREQS: [20, 31, 62, 125, 250, 500, 1000, 2000, 3000, 4000, 6000,
+        8000, 10000, 12000, 14000, 16000],
+
+    // Map probe freqs to nearest indices of a monotonic log grid.
+    probeIndices: function(gridFreqs, probeFreqs) {
+        const list = probeFreqs || this.SIM_PROBE_FREQS;
+        const n = gridFreqs.length;
+        return list.map(f => {
+            if (f <= gridFreqs[0]) return 0;
+            if (f >= gridFreqs[n - 1]) return n - 1;
+            let lo = 0, hi = n - 1;
+            while (lo + 1 < hi) {
+                const mid = (lo + hi) >> 1;
+                if (gridFreqs[mid] < f) lo = mid; else hi = mid;
+            }
+            return (f - gridFreqs[lo]) <= (gridFreqs[hi] - f) ? lo : hi;
+        });
+    },
+
+    // 5-axis classification bands: average a small log-window around each
+    // reference instead of reading one fragile sample. Order matches the
+    // [subBoost, warmth, vocal, treble, air] axes used by the genre families.
+    AXIS_BANDS: [
+        { center: 30, lo: 25, hi: 45 },
+        { center: 100, lo: 85, hi: 160 },
+        { center: 500, lo: 400, hi: 650 },
+        { center: 2500, lo: 2000, hi: 3200 },
+        { center: 8000, lo: 6500, hi: 9500 },
+        { center: 14000, lo: 11500, hi: 16500 }
+    ],
+
+    // Average the curve's spline over each band (9 log-spaced samples per band).
+    bandAverages: function(points, bands) {
+        const out = [];
+        // cubicSplineInterpolate rebuilds the whole tridiagonal solve on every
+        // call, so evaluating it once per sample (54 calls across 6 bands x 9
+        // samples) was 54 full spline solves per curve. Build every sample
+        // frequency across all bands up front and do a single solve, then
+        // slice the results back out per band - same output, one spline build.
+        const samplesPerBand = 9;
+        const allFreqs = new Array(bands.length * samplesPerBand);
+        let idx = 0;
+        for (let b = 0; b < bands.length; b++) {
+            const lo = bands[b].lo, hi = bands[b].hi;
+            for (let k = 0; k <= 8; k++) {
+                allFreqs[idx++] = lo * Math.pow(hi / lo, k / 8);
+            }
+        }
+        const allInterp = this.cubicSplineInterpolate(points, allFreqs);
+        for (let b = 0; b < bands.length; b++) {
+            let sum = 0, count = 0;
+            const base = b * samplesPerBand;
+            for (let k = 0; k < samplesPerBand; k++) {
+                sum += allInterp[base + k];
+                count++;
+            }
+            out.push(count > 0 ? sum / count : 0);
+        }
+        return out;
+    },
+
+    // Average a dense dB response (parallel freq/dB arrays) over each band.
+    responseBandMeans: function(freqsData, respData, bands) {
+        const out = [];
+        for (let b = 0; b < bands.length; b++) {
+            const lo = bands[b].lo, hi = bands[b].hi;
+            let sum = 0, count = 0;
+            for (let j = 0; j < freqsData.length; j++) {
+                const f = freqsData[j];
+                if (f >= lo && f <= hi) { sum += respData[j]; count++; }
+            }
+            out.push(count > 0 ? sum / count : 0);
+        }
+        return out;
+    },
+
+    // Per-axis weights derived from PERCEPTUAL_WEIGHTS [sub, warmth, vocal,
+    // treble, air] - axes 0,1,3,4,5 of AXIS_BANDS (index 2 is the mids ref).
+    axisScoreWeights: function() {
+        const bands = this.AXIS_BANDS;
+        const axes = [0, 1, 3, 4, 5];
+        return axes.map(bi => {
+            const b = bands[bi];
+            let sum = 0, count = 0;
+            for (let k = 0; k <= 8; k++) {
+                const f = b.lo * Math.pow(b.hi / b.lo, k / 8);
+                sum += this.weightFor(f);
+                count++;
+            }
+            return count > 0 ? sum / count : 1.0;
+        });
+    },
+
+    // Level-offset-corrected, perceptually weighted MAE between two curves
+    // indexed through `probes` (grid indices). Returns similarity % in [0,100].
+    similarityScore: function(targetInterp, candInterp, probes, weights, midMask, threshold) {
+        const n = probes.length;
+        let wSum = 0, wErr = 0, wMid = 0, wMidW = 0;
+        for (let i = 0; i < n; i++) {
+            const d = targetInterp[probes[i]] - candInterp[probes[i]];
+            const w = weights[i];
+            wSum += w;
+            wErr += w * Math.abs(d);
+            if (midMask[i]) { wMid += w * d; wMidW += w; }
+        }
+        const offset = wMidW > 0 ? wMid / wMidW : 0;
+        let adjErr = 0, adjW = 0;
+        for (let i = 0; i < n; i++) {
+            const d = targetInterp[probes[i]] - candInterp[probes[i]];
+            adjErr += weights[i] * Math.abs(d - offset);
+            adjW += weights[i];
+        }
+        const mae = adjW > 0 ? adjErr / adjW : 0;
+        return {
+            mae: mae,
+            similarity: Math.max(0, Math.min(100, 100 * (1 - (mae / (threshold || 8))))),
+            offset: offset
+        };
+    },
+
     gaussianSmooth: function(freqs, values, octaveBandwidth = 0.08) {
         const n = freqs.length;
         const smoothed = new Float32Array(n);

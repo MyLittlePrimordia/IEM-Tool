@@ -11,7 +11,10 @@ const EQ_MathUtilMethods = {
     // Linear-to-Logarithmic and Logarithmic-to-Linear conversion helpers
     logHzToSlider: function(hz) {
         const minF = 20, maxF = 20000;
-        return Math.round(((Math.log10(hz) - Math.log10(minF)) / (Math.log10(maxF) - Math.log10(minF))) * 1000);
+        // Guard against corrupt/edge inputs (0, negative, NaN) that would log
+        // straight to -Infinity and poison the slider fill.
+        const safeHz = Number.isFinite(hz) ? Math.min(maxF, Math.max(minF, hz)) : minF;
+        return Math.round(((Math.log10(safeHz) - Math.log10(minF)) / (Math.log10(maxF) - Math.log10(minF))) * 1000);
     },
     sliderToLogHz: function(val) {
         const minF = 20, maxF = 20000;

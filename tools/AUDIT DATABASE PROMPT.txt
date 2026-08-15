@@ -84,7 +84,7 @@ SECTIONAL BATCH PROCESSING RULE (STRICT – 10 TO 25 ENTRIES PER BATCH)
 CRITICAL: Process entries in controlled sections of 10 to 25 entries at a time to guarantee thorough web research while maintaining maximum speed.
 
 Rules:
-1. Divide the provided input/chunk into sections containing **AT LEAST 10 entries** and **UP TO 25 entries** per turn.
+1. Divide the provided input/chunk into sections containing AT LEAST 10 entries and UP TO 25 entries per turn.
    - Aim for 25 entries if the search load allows, but NEVER process fewer than 10 entries per section (unless fewer than 10 entries remain in the entire input).
 2. Process strictly one section (10–25 entries) at a time.
 3. Perform full mandatory web search verification for all 10–25 entries in the active section before outputting changes.
@@ -107,26 +107,14 @@ Reviewer/source filenames are unreliable evidence.
 KEEP MERGED (DO NOT CREATE SEPARATE ENTRIES)
 ==================================================
 Do NOT create separate products for:
-- Eartip changes:
-  - Foam
-  - Silicone
-  - Final tips
+- Eartip changes: Foam, Silicone, Final tips
 - Tape mods
 - Filter/nozzle modifications
 - Cable swaps
-- Impedance adapters:
-  - 15ohm
-  - 30ohm
-  - 75ohm
+- Impedance adapters: 15ohm, 30ohm, 75ohm
 - DSP presets
-- Hardware switch positions:
-  - 0000
-  - 1111
-  - ON/OFF
-  - Bass/Vocal modes
-- Reviewer naming differences:
-  - Sample 1
-  - Sample 2
+- Hardware switch positions: 0000, 1111, ON/OFF, Bass/Vocal modes
+- Reviewer naming differences: Sample 1, Sample 2
 These belong inside the original product entry.
 
 ==================================================
@@ -134,23 +122,11 @@ SEPARATE & CREATE NEW ENTRY ONLY IF VERIFIED
 ==================================================
 Create separate entries ONLY when the manufacturer officially released a distinct product/version.
 Examples:
-Moondrop Aria
-vs
-Moondrop Aria Snow Edition
-Bose QuietComfort 35
-vs
-Bose QuietComfort 35 II
-DUNU SA6
-vs
-DUNU SA6 Ultra
-vs
-DUNU SA6 MKII
-Elysian Pilgrim
-vs
-Elysian Pilgrim Noir
-Empire Ears Bravado
-vs
-Empire Ears Bravado MKII
+Moondrop Aria vs Moondrop Aria Snow Edition
+Bose QuietComfort 35 vs Bose QuietComfort 35 II
+DUNU SA6 vs DUNU SA6 Ultra vs DUNU SA6 MKII
+Elysian Pilgrim vs Elysian Pilgrim Noir
+Empire Ears Bravado vs Empire Ears Bravado MKII
 
 ==================================================
 FILE ALLOCATION AUDIT RULES
@@ -158,42 +134,13 @@ FILE ALLOCATION AUDIT RULES
 Enforce these file matching rules:
 1. GENERATION MISMATCH:
 Earlier/later hardware generations MUST NOT share files.
-Example:
-Incorrect:
-moondrop_chu_ii:
-"Chu.txt"
-Correct:
-moondrop_chu:
-"Chu.txt"
-moondrop_chu_ii:
-"Chu_II.txt"
 2. OFFICIAL RETUNE / VARIANT MISMATCH:
-Official retunes must have their own entries.
-Example:
-Incorrect:
-kz_castor:
-"KZ_Castor_Bass.txt"
-Correct:
-kz_castor_bass:
-"KZ_Castor_Bass.txt"
+Official retunes must have their own entries (e.g., kz_castor vs kz_castor_bass).
 3. COLORWAYS AND MARKETING NAMES:
-Colorways of the exact same tuning remain merged.
-Example:
-Keep:
-Truthear_Zero_Blue.txt
-inside:
-truthear_zero
-Only separate if the tuning/hardware differs.
-Example:
-Truthear Zero Red:
-Separate entry.
+Colorways of the exact same tuning remain merged (e.g., Truthear_Zero_Blue.txt inside truthear_zero).
+Only separate if the hardware or tuning differs (e.g., Truthear Zero Red is separate).
 4. MEASUREMENT CONDITIONS:
-Keep these merged:
-- switch states
-- impedance adapters
-- eartips
-- foam
-- nozzle filters
+Keep switch states, impedance adapters, eartips, foam, and nozzle filters merged.
 
 ==================================================
 CROSS-CHUNK FILE EXTRACTION RULE
@@ -209,22 +156,10 @@ If a misplaced file belongs to a product NOT present in the current chunk:
 MODEL / VARIANT NORMALIZATION RULES
 ==================================================
 model:
-- Base product name only.
-Examples:
-"Aria"
-"QuietComfort 35"
-"SA6"
-"Pilgrim"
+- Base product name only (e.g., "Aria", "QuietComfort 35", "SA6", "Pilgrim").
 variant:
-- Official edition, revision, retune, or special version only.
-Examples:
-"Snow Edition"
-"II"
-"MKII"
-"Noir"
-"Ultra"
-If no variant exists:
-""
+- Official edition, revision, retune, or special version only (e.g., "Snow Edition", "II", "MKII", "Noir", "Ultra").
+- If no variant exists → ""
 
 ==================================================
 DATABASE STRUCTURE
@@ -250,40 +185,19 @@ Every entry must keep this exact structure:
 ==================================================
 DRIVER VALIDATION RULES
 ==================================================
-
 driver_type represents the COMPLETE driver system.
-
-Do NOT select only:
-- the primary driver
-- the largest driver
-- the most advertised driver
-- the first driver listed by a retailer
-
+Do NOT select only the primary or most advertised driver.
 driver_config must contain EVERY confirmed driver technology.
-
 driver_type must ALWAYS be derived from the verified driver_config.
 
 Allowed values ONLY:
-
-DD
-BA
-BC
-Planar
-Hybrid
-Tribrid
-EST
-MEMS
-PZT
-
+DD, BA, BC, Planar, Hybrid, Tribrid, EST, MEMS, PZT
 
 ==================================================
 MANDATORY SECONDARY DRIVER AUDIT CHECK
 ==================================================
-
 Before approving or correcting driver_type and driver_config, perform a dedicated secondary technology search.
-
 For EVERY product, search specifically for:
-
 - "[product name] bone conduction"
 - "[product name] BC driver"
 - "[product name] bone conduction driver"
@@ -295,330 +209,101 @@ For EVERY product, search specifically for:
 - "[product name] MEMS driver"
 - "[product name] driver configuration"
 
-
-IMPORTANT:
-
-Existing database values are NOT trusted.
-
-An entry currently showing:
-
-{
-"driver_type": "DD",
-"driver_config": "1DD"
-}
-
-must NOT be accepted until secondary driver technologies have been checked.
-
-
-Example:
-
-Existing entry:
-
-{
-"driver_type": "DD",
-"driver_config": "1DD"
-}
-
-Research finds:
-
-"10mm Dynamic Driver + Bone Conduction Driver"
-
-Correction:
-
-{
-"driver_type": "Hybrid",
-"driver_config": "1DD+1BC"
-}
-
+IMPORTANT: Existing database values are NOT trusted until secondary driver technologies have been verified.
 
 ==================================================
 BONE CONDUCTION AUDIT RULE
 ==================================================
-
 Bone conduction drivers are REAL audio transducers.
+They MUST appear inside driver_config and affect driver_type classification.
 
-They:
-
-- MUST appear inside driver_config.
-- MUST affect driver_type classification.
-- MUST NOT be ignored because a DD is also present.
-
-
-Incorrect:
-
-{
-"driver_type": "DD",
-"driver_config": "1DD+1BC"
-}
-
-
-Correct:
-
-{
-"driver_type": "Hybrid",
-"driver_config": "1DD+1BC"
-}
-
-
-Do NOT classify these as BC unless verified:
-
-- haptic vibration motors
-- bass vibration systems
-- rumble motors
-- resonance chambers
-- marketing vibration features
-
-
-Only classify BC when supported by:
-
-- manufacturer specifications
-- official technical documentation
-- reliable technical sources
-
-
-If a product uses unclear wording:
-
-Examples:
-
-- vibration unit
-- vibration driver
-- low frequency vibration module
-- enhanced bass vibration
-
-You MUST verify whether it is:
-
-A) A true bone conduction audio driver
-
-OR
-
-B) A non-audio vibration/haptic system
-
-
-Only option A counts as BC.
-
+Do NOT classify haptic vibration motors, bass rumble motors, or resonance chambers as BC.
+Only classify BC when supported by official technical documentation confirming a true bone conduction audio transducer.
 
 ==================================================
 DRIVER CLASSIFICATION RULES
 ==================================================
-
 SINGLE DRIVER SYSTEMS:
-
-1DD:
-driver_type = DD
-
-1BA:
-driver_type = BA
-
-1BC:
-driver_type = BC
-
-1Planar:
-driver_type = Planar
-
-1EST:
-driver_type = EST
-
-1MEMS:
-driver_type = MEMS
-
-1PZT:
-driver_type = PZT
-
+- 1DD     → driver_type = DD
+- 1BA     → driver_type = BA
+- 1BC     → driver_type = BC
+- 1Planar → driver_type = Planar
+- 1EST    → driver_type = EST
+- 1MEMS   → driver_type = MEMS
+- 1PZT    → driver_type = PZT
 
 MULTI DRIVER SYSTEMS:
-
-Exactly 2 different driver technologies:
-
-driver_type = Hybrid
-
-
-Examples:
-
-1DD + 1BA:
-Hybrid
-
-1DD + 1BC:
-Hybrid
-
-1DD + 1Planar:
-Hybrid
-
-1DD + 1EST:
-Hybrid
-
-
-3 or more different driver technologies:
-
-driver_type = Tribrid
-
-
-Examples:
-
-1DD + 4BA + 2EST:
-Tribrid
-
-1DD + 1BA + 1BC:
-Tribrid
-
-1DD + 1BA + 1PZT:
-Tribrid
-
+- Exactly 2 different driver technologies → driver_type = Hybrid
+  (e.g., 1DD + 1BA, 1DD + 1BC, 1DD + 1Planar, 1DD + 1EST)
+- 3 or more different driver technologies → driver_type = Tribrid
+  (e.g., 1DD + 4BA + 2EST, 1DD + 1BA + 1BC, 1DD + 1BA + 1PZT)
 
 ==================================================
 FINAL DRIVER CONSISTENCY AUDIT
 ==================================================
-
 Before approving any entry, verify:
-
 1. Does driver_config include every confirmed driver technology?
 2. Was a secondary driver search performed?
 3. Was BC specifically checked?
 4. Does driver_type match the COMPLETE driver system?
 5. Does Hybrid/Tribrid classification follow the technology count rules?
 
-
-If driver_type and driver_config conflict:
-
-The entry MUST be repaired.
-
-Example:
-
-Wrong:
-
-"driver_type": "DD",
-"driver_config": "1DD+1BC"
-
-
-Correct:
-
-"driver_type": "Hybrid",
-"driver_config": "1DD+1BC"
-
-==================================================
-DRIVER CONFIG VALIDATION
-==================================================
-driver_config must contain every actual driver technology.
-Examples:
-"1DD"
-"2DD"
-"1DD+4BA"
-"1DD+1BC"
-"1DD+1BA+2EST"
-"2DD+4BA+1BC"
-If driver_type and driver_config conflict:
-Fix the entry.
-Example:
-Wrong:
-driver_type:
-"DD"
-driver_config:
-"1DD+1BC"
-Correct:
-driver_type:
-"Hybrid"
-driver_config:
-"1DD+1BC"
-
 ==================================================
 FIELD RULES
 ==================================================
 id:
-- Lowercase.
-- Format:
-brand_model_variant
-- Underscores only.
+- Lowercase only. Format: brand_model_variant (underscores only).
 price_usd:
-- Original launch MSRP only.
-- USD only.
-- Never use sale prices.
-- Never use current retailer pricing.
-- Integer only.
-- Round MSRP to the nearest $5.
-Examples:
-12 -> 15
-13 -> 15
-17 -> 15
-18 -> 20
-99 -> 100
-149.99 -> 150
-199.99 -> 200
+- Original launch MSRP only (USD, integer only).
+- Round MSRP to the nearest $5 (e.g., 12 -> 15, 99 -> 100, 149.99 -> 150).
 year:
-- Original release year.
-impedance:
-- Integer only.
-sensitivity:
+- Original release year (integer only).
+impedance & sensitivity:
 - Integer only.
 connector:
-Allowed values:
-Bluetooth
-2-pin
-QDC
-MMCX
-A2DC
-Fixed Cable
-Detachable Cable
-3.5mm
-4.4mm
-6.35mm
-XLR
-Electrostatic
-Unknown
+- Allowed values: Bluetooth, 2-pin, QDC, MMCX, A2DC, Fixed Cable, Detachable Cable, 3.5mm, 4.4mm, 6.35mm, XLR, Electrostatic, Unknown
 form_factor:
-Allowed values:
-IEM
-Wireless Earbuds (TWS)
-Earbuds (Wired)
-Wireless Over-Ear Headphones
-Over-Ear Headphones (Wired)
-tags:
-Use only approved tags:
-Basshead
-Sub-Bass
-Punchy Bass
-Warm
-Neutral
-V-Shaped
-Balanced
-Bright
-Dark
-Detailed
-Resolving
-Technical
-Wide-Stage
-Good-Imaging
-Smooth
-Reference
-Analytical
-Fun
-Relaxed
-Gaming
-Competitive-Gaming
-Vocal-Focused
-Budget
-Mid-Tier
-Premium
-Flagship
-Collab
-Limited-Edition
-Rules:
-- Every entry must contain at least 4 approved tags.
-- Maximum 12 tags.
+- Allowed values: IEM, Wireless Earbuds (TWS), Earbuds (Wired), Wireless Over-Ear Headphones, Over-Ear Headphones (Wired)
+
+==================================================
+TAGS RULES & APPROVED TAGS LIST
+==================================================
+Use ONLY these 31 approved tags:
+
+Tonal Profiles & Sound Signature:
+Basshead, Sub-Bass, Punchy Bass, Warm, Neutral, V-Shaped, U-Shaped, Balanced, Bright, Treblehead, Dark, Vocal-Focused
+
+Technicalities & Presentation:
+Detailed, Resolving, Technical, Wide-Stage, Good-Imaging, Smooth, Reference, Analytical, Fun, Relaxed
+
+Use Cases:
+Gaming, Competitive-Gaming, Studio-Monitoring
+
+Price Tiers:
+Budget, Mid-Tier, Premium, Flagship
+
+Release Types:
+Collab, Limited-Edition
+
+Tag Rules:
+- Minimum 4, maximum 12 tags per entry.
+- Every entry MUST contain EXACTLY ONE mandatory price tier tag derived strictly from price_usd:
+  - Budget:        $0 to $99
+  - Mid-Tier:      $100 to $499
+  - Premium:       $500 to $1,499
+  - Flagship:      $1,500+ (or the verified halo/flagship model for that brand)
+- Do NOT omit the price tier tag. Do NOT assign multiple price tier tags to one entry.
 - Verify every assigned tag using measurements, specifications, and reputable reviews.
-- Remove incorrect tags.
-- Add missing approved tags when supported by reliable evidence.
+- Remove incorrect tags. Add missing approved tags when supported by reliable evidence.
 - Do not invent new tags.
 
 ==================================================
 FILES FIELD & FILE INTEGRITY RULES
 ==================================================
 - Preserve exact file paths.
-- NEVER rename files.
-- NEVER edit capitalization.
-- NEVER change folder paths.
+- NEVER rename files, edit capitalization, or change folder paths.
 - NEVER duplicate the same measurement file across multiple entries.
-When extracting a file:
-- Remove it from the original entry.
-- Add it only to the correct entry.
+- When extracting a file: remove it from the original entry and place it in the correct target entry.
 
 ==================================================
 MANDATORY METADATA VERIFICATION (CRITICAL)
@@ -626,32 +311,7 @@ MANDATORY METADATA VERIFICATION (CRITICAL)
 For EVERY database entry, independently verify ALL metadata fields using web search before deciding whether changes are required.
 Do NOT assume existing values are correct.
 Verify every field against official manufacturer specifications whenever possible.
-If official specifications are unavailable, verify using multiple reliable sources such as:
-- Official manufacturer websites
-- Official brand stores
-- Authorized retailers
-- Linsoul
-- HiFiGo
-- Head-Fi
-- Squiglink
-- Trusted measurement databases
-- Reputable technical reviews
-The following fields MUST be verified for every entry:
-- brand
-- model
-- variant
-- year
-- price_usd
-- driver_type
-- driver_config
-- impedance
-- sensitivity
-- connector
-- form_factor
-- tags
-Only modify values that can be confidently verified.
-Never guess.
-If information cannot be verified from reliable sources, leave the existing value unchanged.
+If official specifications are unavailable, verify using multiple reliable sources (official brand stores, authorized retailers, Linsoul, HiFiGo, Head-Fi, Squiglink, reputable technical reviews).
 
 ==================================================
 MANDATORY VERIFICATION PROCESS (DO NOT SKIP)
@@ -662,12 +322,10 @@ For EVERY entry in the active section, in this exact order:
 3. Preferred source order:
    a. Official manufacturer product page / specification sheet
    b. Official brand store or authorized distributor
-   c. Multiple independent reliable sources (Linsoul, HiFiGo, Head-Fi measurements, Squiglink with confirmed product match, reputable reviews)
+   c. Multiple independent reliable sources
 4. Only after gathering evidence, compare against the existing fields.
 5. Change a field ONLY when you have clear, consistent evidence it is wrong.
 6. If sources conflict or information is missing, leave the field unchanged.
-
-You must treat every entry as potentially incorrect. Do not assume any existing value is right.
 
 ==================================================
 EVIDENCE REQUIREMENT FOR CHANGES
@@ -675,6 +333,7 @@ EVIDENCE REQUIREMENT FOR CHANGES
 When you change any metadata field, briefly note the key evidence in a comment above the SEARCH/REPLACE block, e.g.:
 // Changed price_usd 79 → 99 based on official Moondrop product page launch MSRP
 // Changed driver_config "1DD" → "1DD+2BA" based on manufacturer specifications
+// Added mandatory price tier tag "Budget" and added "U-Shaped" based on frequency response measurements
 
 ==================================================
 FINAL RULE

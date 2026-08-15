@@ -66,7 +66,7 @@ const EQ_PresetMethods = {
                 const btn = document.createElement('button');
                 btn.id = 'preset-btn-' + id;
                 btn.className = 'w-full text-center text-[10px] px-1 py-1 rounded bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate h-7 flex items-center justify-center gap-1';
-                btn.innerHTML = `<span>🧪 ${p.name}</span>`;
+                btn.textContent = '🧪 ' + (p.name || 'Preset');
                 btn.onclick = () => { this.applyCustomPreset(id); };
 
                 const delBtn = document.createElement('button');
@@ -250,6 +250,7 @@ const EQ_PresetMethods = {
                 }
                 
                 this.drawCurve();
+                if (window.syncGlobalSliders) window.syncGlobalSliders();
                 
                 if (PEQDB_Module.searchMode === 'similar') {
                     PEQDB_Module.findSimilarCurves();

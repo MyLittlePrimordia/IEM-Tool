@@ -769,14 +769,23 @@ const EQ_SquigGraphMethods = {
                         return;
                     }
 
-                    if (!c.cachedSpline || c._splineSourceData !== c.data) {
+                    if (c._splineSourceData !== c.data) {
                         c.cachedNormalized = PEQDB_Module.getNormalizedData(c.data, c.name);
                         c.cachedSpline = PEQDB_Module.Spline.build(c.cachedNormalized);
                         c._splineSourceData = c.data;
+                        c._splineValidated = false;
+                        c._splineFailed = false;
+                    } else if (!c.cachedSpline && !c._splineFailed) {
+                        c.cachedNormalized = PEQDB_Module.getNormalizedData(c.data, c.name);
+                        c.cachedSpline = PEQDB_Module.Spline.build(c.cachedNormalized);
+                        c._splineValidated = false;
                     }
                     const spline = c.cachedSpline;
                     if (!spline) {
-                        console.warn(`[Graph] "${c.name}" (${c.id || c.uid}) failed to build a spline from its data - skipping line render.`, c.cachedNormalized);
+                        if (!c._splineFailed) {
+                            c._splineFailed = true;
+                            console.warn(`[Graph] "${c.name}" (${c.id || c.uid}) failed to build a spline from its data - skipping line render.`, c.cachedNormalized);
+                        }
                         return;
                     }
 
@@ -790,8 +799,11 @@ const EQ_SquigGraphMethods = {
                     const t1 = PEQDB_Module.Spline.evaluate(spline, testF1);
                     const t2 = PEQDB_Module.Spline.evaluate(spline, testF2);
                     if (!Number.isFinite(t1) || !Number.isFinite(t2)) {
-                        console.warn(`[Graph] "${c.name}" (${c.id || c.uid}) produced a non-finite value and was skipped. Raw data may contain duplicate/malformed rows.`, c.data);
-                        c.cachedSpline = null;
+                        if (!c._splineFailed) {
+                            c._splineFailed = true;
+                            console.warn(`[Graph] "${c.name}" (${c.id || c.uid}) produced a non-finite value and was skipped. Raw data may contain duplicate/malformed rows.`, c.data);
+                        }
+                        c._splineValidated = true;
                         return;
                     }
                     const visMin = (typeof PEQDB_Module.squigYMin === 'number') ? PEQDB_Module.squigYMin : 60;

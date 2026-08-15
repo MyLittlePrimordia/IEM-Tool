@@ -1,22 +1,31 @@
+const localStorageBackup = window.localStorage;
+
 const SafeStorage = {
     memoryStorage: {},
     isSupported: function() {
         try {
-            localStorage.setItem('__storage_test__', 'test');
-            localStorage.removeItem('__storage_test__');
+            localStorageBackup.setItem('__storage_test__', 'test');
+            localStorageBackup.removeItem('__storage_test__');
             return true;
         } catch (e) {
             return false;
         }
     }(),
     getItem: function(key) {
-        if (this.isSupported) return localStorage.getItem(key);
+        if (this.isSupported) {
+            try {
+                return localStorageBackup.getItem(key);
+            } catch (e) {
+                console.warn("[SafeStorage] Read failed; falling back to memory.", e);
+                return this.memoryStorage.hasOwnProperty(key) ? this.memoryStorage[key] : null;
+            }
+        }
         return this.memoryStorage.hasOwnProperty(key) ? this.memoryStorage[key] : null;
     },
     setItem: function(key, value) {
         if (this.isSupported) {
             try {
-                localStorage.setItem(key, value);
+                localStorageBackup.setItem(key, value);
             } catch (e) {
                 // Quota/private-mode failures: keep the value in memory so a
                 // later read still returns it for this session instead of the
@@ -31,18 +40,36 @@ const SafeStorage = {
         }
     },
     removeItem: function(key) {
-        if (this.isSupported) localStorage.removeItem(key);
-        else delete this.memoryStorage[key];
+        if (this.isSupported) {
+            try {
+                localStorageBackup.removeItem(key);
+            } catch (e) {
+                console.warn("[SafeStorage] Remove failed.", e);
+            }
+        }
+        delete this.memoryStorage[key];
     },
     clear: function() {
-        if (this.isSupported) localStorage.clear();
-        else this.memoryStorage = {};
+        if (this.isSupported) {
+            try {
+                localStorageBackup.clear();
+            } catch (e) {
+                console.warn("[SafeStorage] Clear failed.", e);
+            }
+        }
+        this.memoryStorage = {};
     }
 };
 
-const localStorageBackup = window.localStorage;
+// Route the global `localStorage` through SafeStorage everywhere, not just
+// when the browser lacks storage support. Every existing call site in the
+// app (theme/font settings, taste-matcher favorites, canonical-profile
+// cache, etc.) uses the bare global `localStorage.getItem/setItem`, so this
+// is what actually makes SafeStorage's quota/private-mode fallback reach
+// those call sites instead of protecting only code that explicitly calls
+// `SafeStorage.*` directly.
 Object.defineProperty(window, 'localStorage', {
     get: function() {
-        return SafeStorage.isSupported ? localStorageBackup : SafeStorage;
+        return SafeStorage;
     }
 });

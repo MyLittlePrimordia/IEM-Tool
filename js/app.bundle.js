@@ -123,6 +123,155 @@ const CurveUtils = {
         return results;
     },
 
+    // ---- Shared perceptual model -------------------------------------------------
+    // One frequency->importance table feeds the classifier axis weights, the
+    // similar-curve ranking and the auto-EQ solve weights, so every feature
+    // agrees on which bands matter most (mid/vocal heavy, air & sub noisy).
+    PERCEPTUAL_WEIGHTS: [
+        [20, 0.30], [31, 0.45], [62, 0.70], [125, 0.90], [250, 1.00], [500, 1.10],
+        [1000, 1.20], [2000, 1.35], [3000, 1.30], [4000, 1.20], [6000, 1.00],
+        [8000, 0.90], [10000, 0.80], [12000, 0.65], [14000, 0.50], [16000, 0.40],
+        [20000, 0.30]
+    ],
+
+    weightFor: function(freq) {
+        const f = parseFloat(freq) || 1000;
+        const table = this.PERCEPTUAL_WEIGHTS;
+        if (f <= table[0][0]) return table[0][1];
+        if (f >= table[table.length - 1][0]) return table[table.length - 1][1];
+        let lo = 0;
+        while (lo < table.length - 2 && table[lo + 1][0] < f) lo++;
+        const x0 = table[lo][0], x1 = table[lo + 1][0];
+        const t = (x1 > x0) ? Math.log(f / x0) / Math.log(x1 / x0) : 0;
+        return table[lo][1] + (table[lo + 1][1] - table[lo][1]) * t;
+    },
+
+    // Tonal anchor band used for level-offset correction (constant dB removed
+    // before scoring) so same-shape curves differing only in average level
+    // still rank as matches.
+    MID_MEAN_BAND: [300, 3000],
+
+    // Canonical log-spaced probes for similarity ranking (20 Hz - 16 kHz).
+    SIM_PROBE_FREQS: [20, 31, 62, 125, 250, 500, 1000, 2000, 3000, 4000, 6000,
+        8000, 10000, 12000, 14000, 16000],
+
+    // Map probe freqs to nearest indices of a monotonic log grid.
+    probeIndices: function(gridFreqs, probeFreqs) {
+        const list = probeFreqs || this.SIM_PROBE_FREQS;
+        const n = gridFreqs.length;
+        return list.map(f => {
+            if (f <= gridFreqs[0]) return 0;
+            if (f >= gridFreqs[n - 1]) return n - 1;
+            let lo = 0, hi = n - 1;
+            while (lo + 1 < hi) {
+                const mid = (lo + hi) >> 1;
+                if (gridFreqs[mid] < f) lo = mid; else hi = mid;
+            }
+            return (f - gridFreqs[lo]) <= (gridFreqs[hi] - f) ? lo : hi;
+        });
+    },
+
+    // 5-axis classification bands: average a small log-window around each
+    // reference instead of reading one fragile sample. Order matches the
+    // [subBoost, warmth, vocal, treble, air] axes used by the genre families.
+    AXIS_BANDS: [
+        { center: 30, lo: 25, hi: 45 },
+        { center: 100, lo: 85, hi: 160 },
+        { center: 500, lo: 400, hi: 650 },
+        { center: 2500, lo: 2000, hi: 3200 },
+        { center: 8000, lo: 6500, hi: 9500 },
+        { center: 14000, lo: 11500, hi: 16500 }
+    ],
+
+    // Average the curve's spline over each band (9 log-spaced samples per band).
+    bandAverages: function(points, bands) {
+        const out = [];
+        // cubicSplineInterpolate rebuilds the whole tridiagonal solve on every
+        // call, so evaluating it once per sample (54 calls across 6 bands x 9
+        // samples) was 54 full spline solves per curve. Build every sample
+        // frequency across all bands up front and do a single solve, then
+        // slice the results back out per band - same output, one spline build.
+        const samplesPerBand = 9;
+        const allFreqs = new Array(bands.length * samplesPerBand);
+        let idx = 0;
+        for (let b = 0; b < bands.length; b++) {
+            const lo = bands[b].lo, hi = bands[b].hi;
+            for (let k = 0; k <= 8; k++) {
+                allFreqs[idx++] = lo * Math.pow(hi / lo, k / 8);
+            }
+        }
+        const allInterp = this.cubicSplineInterpolate(points, allFreqs);
+        for (let b = 0; b < bands.length; b++) {
+            let sum = 0, count = 0;
+            const base = b * samplesPerBand;
+            for (let k = 0; k < samplesPerBand; k++) {
+                sum += allInterp[base + k];
+                count++;
+            }
+            out.push(count > 0 ? sum / count : 0);
+        }
+        return out;
+    },
+
+    // Average a dense dB response (parallel freq/dB arrays) over each band.
+    responseBandMeans: function(freqsData, respData, bands) {
+        const out = [];
+        for (let b = 0; b < bands.length; b++) {
+            const lo = bands[b].lo, hi = bands[b].hi;
+            let sum = 0, count = 0;
+            for (let j = 0; j < freqsData.length; j++) {
+                const f = freqsData[j];
+                if (f >= lo && f <= hi) { sum += respData[j]; count++; }
+            }
+            out.push(count > 0 ? sum / count : 0);
+        }
+        return out;
+    },
+
+    // Per-axis weights derived from PERCEPTUAL_WEIGHTS [sub, warmth, vocal,
+    // treble, air] - axes 0,1,3,4,5 of AXIS_BANDS (index 2 is the mids ref).
+    axisScoreWeights: function() {
+        const bands = this.AXIS_BANDS;
+        const axes = [0, 1, 3, 4, 5];
+        return axes.map(bi => {
+            const b = bands[bi];
+            let sum = 0, count = 0;
+            for (let k = 0; k <= 8; k++) {
+                const f = b.lo * Math.pow(b.hi / b.lo, k / 8);
+                sum += this.weightFor(f);
+                count++;
+            }
+            return count > 0 ? sum / count : 1.0;
+        });
+    },
+
+    // Level-offset-corrected, perceptually weighted MAE between two curves
+    // indexed through `probes` (grid indices). Returns similarity % in [0,100].
+    similarityScore: function(targetInterp, candInterp, probes, weights, midMask, threshold) {
+        const n = probes.length;
+        let wSum = 0, wErr = 0, wMid = 0, wMidW = 0;
+        for (let i = 0; i < n; i++) {
+            const d = targetInterp[probes[i]] - candInterp[probes[i]];
+            const w = weights[i];
+            wSum += w;
+            wErr += w * Math.abs(d);
+            if (midMask[i]) { wMid += w * d; wMidW += w; }
+        }
+        const offset = wMidW > 0 ? wMid / wMidW : 0;
+        let adjErr = 0, adjW = 0;
+        for (let i = 0; i < n; i++) {
+            const d = targetInterp[probes[i]] - candInterp[probes[i]];
+            adjErr += weights[i] * Math.abs(d - offset);
+            adjW += weights[i];
+        }
+        const mae = adjW > 0 ? adjErr / adjW : 0;
+        return {
+            mae: mae,
+            similarity: Math.max(0, Math.min(100, 100 * (1 - (mae / (threshold || 8))))),
+            offset: offset
+        };
+    },
+
     gaussianSmooth: function(freqs, values, octaveBandwidth = 0.08) {
         const n = freqs.length;
         const smoothed = new Float32Array(n);
@@ -343,25 +492,34 @@ const SharedAudio = {
     }
 };
 /* ===== js/safe-storage.js ===== */
+const localStorageBackup = window.localStorage;
+
 const SafeStorage = {
     memoryStorage: {},
     isSupported: function() {
         try {
-            localStorage.setItem('__storage_test__', 'test');
-            localStorage.removeItem('__storage_test__');
+            localStorageBackup.setItem('__storage_test__', 'test');
+            localStorageBackup.removeItem('__storage_test__');
             return true;
         } catch (e) {
             return false;
         }
     }(),
     getItem: function(key) {
-        if (this.isSupported) return localStorage.getItem(key);
+        if (this.isSupported) {
+            try {
+                return localStorageBackup.getItem(key);
+            } catch (e) {
+                console.warn("[SafeStorage] Read failed; falling back to memory.", e);
+                return this.memoryStorage.hasOwnProperty(key) ? this.memoryStorage[key] : null;
+            }
+        }
         return this.memoryStorage.hasOwnProperty(key) ? this.memoryStorage[key] : null;
     },
     setItem: function(key, value) {
         if (this.isSupported) {
             try {
-                localStorage.setItem(key, value);
+                localStorageBackup.setItem(key, value);
             } catch (e) {
                 // Quota/private-mode failures: keep the value in memory so a
                 // later read still returns it for this session instead of the
@@ -376,19 +534,37 @@ const SafeStorage = {
         }
     },
     removeItem: function(key) {
-        if (this.isSupported) localStorage.removeItem(key);
-        else delete this.memoryStorage[key];
+        if (this.isSupported) {
+            try {
+                localStorageBackup.removeItem(key);
+            } catch (e) {
+                console.warn("[SafeStorage] Remove failed.", e);
+            }
+        }
+        delete this.memoryStorage[key];
     },
     clear: function() {
-        if (this.isSupported) localStorage.clear();
-        else this.memoryStorage = {};
+        if (this.isSupported) {
+            try {
+                localStorageBackup.clear();
+            } catch (e) {
+                console.warn("[SafeStorage] Clear failed.", e);
+            }
+        }
+        this.memoryStorage = {};
     }
 };
 
-const localStorageBackup = window.localStorage;
+// Route the global `localStorage` through SafeStorage everywhere, not just
+// when the browser lacks storage support. Every existing call site in the
+// app (theme/font settings, taste-matcher favorites, canonical-profile
+// cache, etc.) uses the bare global `localStorage.getItem/setItem`, so this
+// is what actually makes SafeStorage's quota/private-mode fallback reach
+// those call sites instead of protecting only code that explicitly calls
+// `SafeStorage.*` directly.
 Object.defineProperty(window, 'localStorage', {
     get: function() {
-        return SafeStorage.isSupported ? localStorageBackup : SafeStorage;
+        return SafeStorage;
     }
 });
 
@@ -1024,7 +1200,12 @@ const EQ_PlaylistMethods = {
         // cache its loudness factor. Fallback: no change (1.0). Never throws.
         _analyzeCurrentLoudness: function() {
             if (!this.audioEl || !this.audioEl.src || !this.audioEl.canPlayType) return;
-            if (!this.settingsLoudnessMatchEnabled()) { this._activeLoudnessGain = 1.0; }
+            if (!this.settingsLoudnessMatchEnabled()) {
+                // Feature off - don't fetch + fully decode the track, the gain
+                // nodes are gated by the setting anyway. Just reset to unity.
+                this._activeLoudnessGain = 1.0;
+                return;
+            }
             if (this._loudnessInFlight) return;
             
             const el = this.audioEl;
@@ -1051,7 +1232,7 @@ const EQ_PlaylistMethods = {
         },
 
         // Resolves a linear gain factor that brings track loudness to a matched
-        // target (~-18 dBFS channel RMS). Clamped to +/- 12 dB. Returns 1 on error.
+        // target (-23 dBFS channel RMS). Clamped to +/- 12 dB. Returns 1 on error.
         _decodeAndMeasureLoudness: async function(url) {
             try {
                 if (!url) return 1;
@@ -1638,8 +1819,11 @@ const EQ_ReverbMethods = {
     // Map Room Size and Decay parameter cleanly to an RT60 range (0.4s to 4.5s)
     const rt60 = 0.4 + (preset.size * 1.6) + (preset.fade * 2.5);
     const duration = Math.max(0.1, rt60);
+    // IR is capped at 4 s - the decay envelope must use the same cap so a long
+    // preset doesn't get truncated mid-decay (audible cutoff click).
+    const effectiveDuration = Math.min(duration, 4.0);
 
-    const numSamples = Math.floor(sampleRate * Math.min(duration, 4.0));
+    const numSamples = Math.floor(sampleRate * effectiveDuration);
     const impulseBuffer = ctx.createBuffer(2, numSamples, sampleRate);
     const left = impulseBuffer.getChannelData(0);
     const right = impulseBuffer.getChannelData(1);
@@ -1681,7 +1865,7 @@ const EQ_ReverbMethods = {
     // Multiplicative exponential decay: decayEnvelope *= decayFactor each step
     // is mathematically identical to Math.exp(-t*(6.91/duration)) but avoids a
     // Math.exp() call per sample (~100k+ saved per IR synthesis).
-    const decayFactor = Math.exp(-(6.91 / duration) / sampleRate);
+    const decayFactor = Math.exp(-(6.91 / effectiveDuration) / sampleRate);
     let decayEnvelope = 1.0;
 
     for (let i = 0; i < numSamples; i++) {
@@ -1707,8 +1891,9 @@ const EQ_ReverbMethods = {
         const noiseL = Math.random() * 2 - 1;
         const noiseR = Math.random() * 2 - 1;
 
-        // Dynamic Damping: high frequencies decay faster as time progresses
-        const currentDamping = Math.min(0.997, damping * 0.72 + (t / duration) * 0.25);
+        // Dynamic Damping: high frequencies decay faster as time progresses.
+        // Time in seconds is i / sampleRate (the loop counter is `i`).
+        const currentDamping = Math.min(0.997, damping * 0.72 + (i / sampleRate / duration) * 0.25);
         const alpha = 1.0 - currentDamping;
 
         // Apply low-pass damping
@@ -1755,9 +1940,10 @@ const EQ_ReverbMethods = {
             if (!SharedAudio.ctx || !SharedAudio.dryGainNode || !SharedAudio.wetGainNode) return;
             
             const now = SharedAudio.ctx.currentTime;
-            // Stop lingering: Set wet gain to 0 if the audio player is paused
-            const isPlaying = this.audioEl && !this.audioEl.paused;
-            const mix = (this.reverbActive && isPlaying) ? this.reverbParams.mix : 0;
+            // Keep the wet gain at the user's mix while paused so the reverb
+            // tail rings out naturally instead of snapping to silence on every
+            // pause/seek (with the source muted the finite IR fades on its own).
+            const mix = this.reverbActive ? this.reverbParams.mix : 0;
             
             setAudioParamSmooth(SharedAudio.dryGainNode.gain, 1.0 - (mix * 0.35), 0.015);
             setAudioParamSmooth(SharedAudio.wetGainNode.gain, mix, 0.015);
@@ -2084,7 +2270,7 @@ const EQ_DynamicsMethods = {
         this.compressorActive = !this.compressorActive;
         
         if (!this.compressorActive) {
-            SharedAudio.compressor.ratio.value = 1.0;
+            setAudioParamSmooth(SharedAudio.compressor.ratio, 1.0, 0.015);
             // Also neutralise make-up gain and the pre-filter, which stay engaged
             // even with ratio=1 and would keep boosting/shaping the signal after
             // the compressor is switched off.
@@ -2105,7 +2291,7 @@ const EQ_DynamicsMethods = {
         } else {
             const ratioSlider = document.getElementById('comp-ratio-slider');
             const ratioVal = ratioSlider ? parseFloat(ratioSlider.value) / 10 : 4.0;
-            SharedAudio.compressor.ratio.value = Number.isFinite(ratioVal) ? ratioVal : 4.0;
+            setAudioParamSmooth(SharedAudio.compressor.ratio, Number.isFinite(ratioVal) ? ratioVal : 4.0, 0.015);
             
             if (btn) btn.classList.add('is-on');
             if (lbl) lbl.textContent = "Comp: ON";
@@ -2342,7 +2528,7 @@ const EQ_SmartImportMethods = {
                 }) || cleanLines.some(line => line.split(/[\s,;\t]+/).filter(Boolean).length >= 3);
 
                 if (hasParametricLines) {
-                    EQ.parsePeaceFormat(text); EQ.closeSmartImportModal(); return;
+                    if (EQ.parsePeaceFormat(text)) { EQ.closeSmartImportModal(); return; }
                 }
                 
                 var dataCoords = [];
@@ -2369,6 +2555,7 @@ const EQ_SmartImportMethods = {
             parsePeaceFormat: function(text) {
                 var lines = text.split(/\r?\n/);
                 var preamp = 0;
+                var mappedAny = false;
                 var mainVals = this.bands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
                 var advVals = this.advancedBands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
                 var self = this;
@@ -2386,6 +2573,7 @@ const EQ_SmartImportMethods = {
                     
                     // 2. Parse Standard parametric EQ filter parameters
                     var fc = null, gain = 0, q = 1.0;
+                    var filterType = self.detectFilterType(clean);
                     
                     // Check for standard Peace format: "Filter X: ON PK Fc 105 Hz Gain -3.0 dB Q 1.4"
                     var peaceMatch = clean.match(/Fc\s*([\d.]+)\s*Hz\s*Gain\s*([-\d.]+)\s*dB\s*Q\s*([\d.]+)/i);
@@ -2394,8 +2582,9 @@ const EQ_SmartImportMethods = {
                         gain = parseFloat(peaceMatch[2]);
                         q = parseFloat(peaceMatch[3]);
                     } 
-                    // Check for Qudelix-5K CSV format: "Filter 1,ON,PEAK,20,3.5,1.2"
-                    else if (clean.toLowerCase().includes('peak') || clean.toLowerCase().includes('pk') || clean.toLowerCase().includes('lshelf') || clean.toLowerCase().includes('hshelf')) {
+                    // Check for Qudelix-5K CSV format: "Filter 1,ON,PEAK,20,-3.5,1.2"
+                    // (also NOTCH / LSC / HSC / LPQ / HPQ types)
+                    else if (filterType) {
                         var csvParts = clean.split(/[,;\t\s]+/);
                         if (csvParts.length >= 6) {
                             var fVal = parseFloat(csvParts[csvParts.length - 3]);
@@ -2421,26 +2610,49 @@ const EQ_SmartImportMethods = {
                     }
                     
                     if (fc !== null) {
-                        self.mapSingleFilter(fc, gain, q, mainVals, advVals);
+                        mappedAny = true;
+                        self.mapSingleFilter(fc, gain, q, filterType, mainVals, advVals);
                     }
                 });
                 
+                // Nothing recognizably parametric was parsed (e.g. a pasted
+                // frequency-response table with an extra phase column, or a
+                // 3-column measurement block). Bail out before loadValues wipes
+                // the current EQ, so processSmartImport can fall through to the
+                // raw curve importer instead.
+                if (preamp === 0 && !mappedAny) return false;
+                
                 this.loadValues({ preVal: preamp, mainVals: mainVals, advVals: advVals });
                 showToast("Parametric EQ profile processed!", "🪄");
+                return true;
             },
-        mapSingleFilter: function(hz, g, q, mainVals, advVals) {
+        detectFilterType: function(raw) {
+            // Map common EQ export type tokens (Peace/APO, Qudelix, REW) to the
+            // app's band types so NOTCH / shelf / LP / HP filters stay their own
+            // type instead of silently becoming peaking filters.
+            var s = ' ' + String(raw || '').toLowerCase().replace(/[()]/g, ' ') + ' ';
+            if (/\bnotch\b|\bno\s[,;]/.test(s)) return 'notch';
+            if (/\blow\s*shelf\b|\blshelf\b|\blsc\b/.test(s)) return 'lowshelf';
+            if (/\bhigh\s*shelf\b|\bhshelf\b|\bhsc\b/.test(s)) return 'highshelf';
+            if (/\bhigh\s*pass\b|\bhipass\b|\bhighpass\b|\bhpq\b/.test(s)) return 'highpass';
+            if (/\blow\s*pass\b|\blowpass\b|\blpq\b/.test(s)) return 'lowpass';
+            if (/\bpeak\b|\bpk\b|\bpeq\b/.test(s)) return 'peaking';
+            return null;
+        },
+        mapSingleFilter: function(hz, g, q, type, mainVals, advVals) {
+            var filterType = type || 'peaking';
             var bestM = 0, bestMd = Infinity;
             mainVals.forEach(function(v, i) { var d = Math.abs(v.hz - hz); if (d < bestMd) { bestMd = d; bestM = i; } });
             var bestA = 0, bestAd = Infinity;
             advVals.forEach(function(v, i) { var d = Math.abs(v.hz - hz); if (d < bestAd) { bestAd = d; bestA = i; } });
-            if (bestMd <= bestAd) { mainVals[bestM].g = g; mainVals[bestM].q = q; mainVals[bestM].hz = hz; }
-            else { advVals[bestA].g = g; advVals[bestA].q = q; advVals[bestA].hz = hz; }
+            if (bestMd <= bestAd) { mainVals[bestM].g = g; mainVals[bestM].q = q; mainVals[bestM].hz = hz; mainVals[bestM].type = filterType; }
+            else { advVals[bestA].g = g; advVals[bestA].q = q; advVals[bestA].hz = hz; advVals[bestA].type = filterType; }
         },
         mapGraphicEQToSliders: function(coords) {
             var mainVals = this.bands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
             var advVals = this.advancedBands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
             var self = this;
-            coords.forEach(function(pt) { self.mapSingleFilter(pt.hz, pt.g, 1.0, mainVals, advVals); });
+            coords.forEach(function(pt) { self.mapSingleFilter(pt.hz, pt.g, 1.0, 'peaking', mainVals, advVals); });
             this.loadValues({ preVal: 0, mainVals: mainVals, advVals: advVals });
         },
 };
@@ -3170,7 +3382,7 @@ const EQ_PresetMethods = {
                 const btn = document.createElement('button');
                 btn.id = 'preset-btn-' + id;
                 btn.className = 'w-full text-center text-[10px] px-1 py-1 rounded bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate h-7 flex items-center justify-center gap-1';
-                btn.innerHTML = `<span>🧪 ${p.name}</span>`;
+                btn.textContent = '🧪 ' + (p.name || 'Preset');
                 btn.onclick = () => { this.applyCustomPreset(id); };
 
                 const delBtn = document.createElement('button');
@@ -3354,6 +3566,7 @@ const EQ_PresetMethods = {
                 }
                 
                 this.drawCurve();
+                if (window.syncGlobalSliders) window.syncGlobalSliders();
                 
                 if (PEQDB_Module.searchMode === 'similar') {
                     PEQDB_Module.findSimilarCurves();
@@ -4685,14 +4898,23 @@ const EQ_SquigGraphMethods = {
                         return;
                     }
 
-                    if (!c.cachedSpline || c._splineSourceData !== c.data) {
+                    if (c._splineSourceData !== c.data) {
                         c.cachedNormalized = PEQDB_Module.getNormalizedData(c.data, c.name);
                         c.cachedSpline = PEQDB_Module.Spline.build(c.cachedNormalized);
                         c._splineSourceData = c.data;
+                        c._splineValidated = false;
+                        c._splineFailed = false;
+                    } else if (!c.cachedSpline && !c._splineFailed) {
+                        c.cachedNormalized = PEQDB_Module.getNormalizedData(c.data, c.name);
+                        c.cachedSpline = PEQDB_Module.Spline.build(c.cachedNormalized);
+                        c._splineValidated = false;
                     }
                     const spline = c.cachedSpline;
                     if (!spline) {
-                        console.warn(`[Graph] "${c.name}" (${c.id || c.uid}) failed to build a spline from its data - skipping line render.`, c.cachedNormalized);
+                        if (!c._splineFailed) {
+                            c._splineFailed = true;
+                            console.warn(`[Graph] "${c.name}" (${c.id || c.uid}) failed to build a spline from its data - skipping line render.`, c.cachedNormalized);
+                        }
                         return;
                     }
 
@@ -4706,8 +4928,11 @@ const EQ_SquigGraphMethods = {
                     const t1 = PEQDB_Module.Spline.evaluate(spline, testF1);
                     const t2 = PEQDB_Module.Spline.evaluate(spline, testF2);
                     if (!Number.isFinite(t1) || !Number.isFinite(t2)) {
-                        console.warn(`[Graph] "${c.name}" (${c.id || c.uid}) produced a non-finite value and was skipped. Raw data may contain duplicate/malformed rows.`, c.data);
-                        c.cachedSpline = null;
+                        if (!c._splineFailed) {
+                            c._splineFailed = true;
+                            console.warn(`[Graph] "${c.name}" (${c.id || c.uid}) produced a non-finite value and was skipped. Raw data may contain duplicate/malformed rows.`, c.data);
+                        }
+                        c._splineValidated = true;
                         return;
                     }
                     const visMin = (typeof PEQDB_Module.squigYMin === 'number') ? PEQDB_Module.squigYMin : 60;
@@ -4862,7 +5087,10 @@ const EQ_MathUtilMethods = {
     // Linear-to-Logarithmic and Logarithmic-to-Linear conversion helpers
     logHzToSlider: function(hz) {
         const minF = 20, maxF = 20000;
-        return Math.round(((Math.log10(hz) - Math.log10(minF)) / (Math.log10(maxF) - Math.log10(minF))) * 1000);
+        // Guard against corrupt/edge inputs (0, negative, NaN) that would log
+        // straight to -Infinity and poison the slider fill.
+        const safeHz = Number.isFinite(hz) ? Math.min(maxF, Math.max(minF, hz)) : minF;
+        return Math.round(((Math.log10(safeHz) - Math.log10(minF)) / (Math.log10(maxF) - Math.log10(minF))) * 1000);
     },
     sliderToLogHz: function(val) {
         const minF = 20, maxF = 20000;
@@ -5025,16 +5253,55 @@ const SimilarCurvesCache = {
     results: null,
     targetHash: "",
     query: "",
+    // Cheap rolling hash over a curve's raw [f, dB] points. Captures content
+    // changes (sculpting, drawing, re-measuring) even when the id/name stay
+    // the same, which a bare id-based fingerprint would miss.
+    hashCurvePoints: function(data) {
+        if (!Array.isArray(data)) return '';
+        let h = 2166136261 >>> 0;
+        for (let i = 0; i < data.length; i++) {
+            const p = data[i];
+            if (Array.isArray(p) && p.length >= 2) {
+                h ^= Math.round((p[0] || 0) * 100);
+                h = Math.imul(h, 16777619) >>> 0;
+                h ^= Math.round((p[1] || 0) * 100);
+                h = Math.imul(h, 16777619) >>> 0;
+            }
+        }
+        h ^= data.length;
+        h = Math.imul(h, 16777619) >>> 0;
+        return h.toString(36);
+    },
+    hashString: function(str) {
+        let h = 2166136261 >>> 0;
+        for (let i = 0; i < str.length; i++) {
+            h ^= str.charCodeAt(i);
+            h = Math.imul(h, 16777619) >>> 0;
+        }
+        return h.toString(36);
+    },
     getTargetFingerprint: function() {
         try {
             const targetCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'target' && c.visible);
             const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
-            const activeId = targetCurve ? targetCurve.id : (baseCurve ? baseCurve.id : 'none');
+            const activeCurve = targetCurve || baseCurve;
+            const activeId = activeCurve ? activeCurve.id : 'none';
             const resEnabled = EQ_Module.resonanceCalEnabled ? '1' : '0';
             const resHz = PEQDB_Module.resonanceHz || '8000';
             const alignHz = PEQDB_Module.alignHz || 'mean';
             const alignDb = PEQDB_Module.alignDb || '75';
-            return `${activeId}-${resEnabled}-${resHz}-${alignHz}-${alignDb}`;
+
+            let contentHash = '';
+            if (activeCurve) {
+                contentHash = this.hashCurvePoints(activeCurve.data);
+            } else {
+                // No active curve: the target is the live EQ composite, so hash
+                // the filter values too or EQ edits would leave stale results.
+                const realValues = EQ_Module.getRealValues();
+                contentHash = this.hashString(JSON.stringify([realValues.preVal, realValues.mainVals, realValues.advVals]));
+            }
+
+            return `${activeId}-${contentHash}-${resEnabled}-${resHz}-${alignHz}-${alignDb}`;
         } catch(e) {
             return "";
         }
@@ -5639,6 +5906,44 @@ function getBandEnergy(dataArray, startBin, endBin) {
             const later = () => { clearTimeout(timeout); func(...args); };
             clearTimeout(timeout); timeout = setTimeout(later, wait);
         };
+    }
+
+    // Self-contained similarity scorer (no page globals) so it can be embedded
+    // in the blob worker string AND reused inline. Scores every candidate's
+    // `cachedInterp` against an already-interpolated target at `probes` (grid
+    // indices). A broadband level offset is removed using the mid-band mean so
+    // same-shape curves aren't punished for loudness, then a perceptually
+    // weighted MAE is mapped to a similarity %.
+    function computeSimilarityScores(targetInterp, dataset, probes, weights, midMask, threshold) {
+        const t = threshold || 8;
+        const matches = [];
+        for (let idx = 0; idx < dataset.length; idx++) {
+            const item = dataset[idx];
+            const cand = item.cachedInterp;
+            if (!cand) continue;
+            let wSum = 0, wErr = 0, wMid = 0, wMidW = 0;
+            for (let i = 0; i < probes.length; i++) {
+                const d = targetInterp[probes[i]] - cand[probes[i]];
+                const w = weights[i];
+                wSum += w;
+                wErr += w * Math.abs(d);
+                if (midMask[i]) { wMid += w * d; wMidW += w; }
+            }
+            const offset = wMidW > 0 ? wMid / wMidW : 0;
+            let adjErr = 0, adjW = 0;
+            for (let i = 0; i < probes.length; i++) {
+                const d = targetInterp[probes[i]] - cand[probes[i]];
+                adjErr += weights[i] * Math.abs(d - offset);
+                adjW += weights[i];
+            }
+            const mae = adjW > 0 ? adjErr / adjW : 0;
+            matches.push({
+                id: item.id, name: item.name, variant: item.variant, source: item.source,
+                similarity: Math.max(0, Math.min(100, 100 * (1 - (mae / t))))
+            });
+        }
+        matches.sort((a, b) => b.similarity - a.similarity);
+        return matches;
     }
 
     function rafThrottle(func) {
@@ -7555,19 +7860,26 @@ renderIemDbSearch: function(query) {
             `;
             const getTagEmoji = (tagStr) => {
                 if (!tagStr) return '🏷️';
+                const emojiMatch = tagStr.match(/^(\p{Extended_Pictographic}|\p{Emoji})/u);
+                if (emojiMatch) return emojiMatch[0];
                 const cleanKey = tagStr.toLowerCase().trim().replace(/[\s_]+/g, '-');
                 const emojiMap = {
-                    'basshead': '💥', 'sub-bass': '🌊', 'punchy-bass': '🥊', 'warm': '🌿', 'warm-tilt': '🌿',
-                    'neutral': '⚖️', 'v-shaped': '🔺', 'balanced': '⚖️', 'bright': '✨', 'dark': '🌑',
-                    'detailed': '💎', 'detail': '💎', 'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️',
-                        'soundstage': '🏟️', 'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '🎯',
-                        'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮', 'competitive-gaming': '🏆',
-                        'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
-                        'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📼'
+                    'basshead': '💥', 'treble-head': '⚡', 'treblehead': '⚡', 'treble-head': '⚡', 'treble head': '⚡',
+                    'sub-bass': '🌊', 'sub bass': '🌊', 'punchy-bass': '🥊', 'punchy bass': '🥊',
+                    'warm': '🌿', 'warm-tilt': '🌿', 'neutral': '⚖️', 'v-shaped': '🔺', 'v-shape': '🔺',
+                    'u-shaped': '🧲', 'u-shape': '🧲', 'ushaped': '🧲', 'ushape': '🧲', 'balanced': '☯️',
+                    'bright': '✨', 'dark': '🌑', 'detailed': '💎', 'detail': '💎', 'resolving': '🔍',
+                    'technical': '🔬', 'wide-stage': '🏟️', 'soundstage': '🏟️', 'good-imaging': '🔭',
+                    'imaging': '🔭', 'smooth': '🧈', 'reference': '📐', 'studio-monitoring': '🎛️',
+                    'studio monitoring': '🎛️', 'studiomonitoring': '🎛️', 'studio-monitor': '🎛️', 'studio monitor': '🎛️',
+                    'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮',
+                    'competitive-gaming': '🏆', 'competitive gaming': '🏆', 'vocal-focused': '🗣️', 'vocal': '🎤',
+                    'budget': '💰', 'mid-tier': '🪙', 'mid tier': '🪙', 'premium': '👑', 'flagship': '🥇',
+                    'collab': '🤝', 'limited-edition': '🌟', 'limited edition': '🌟'
                 };
                 return emojiMap[cleanKey] || '🏷️';
             };
-            const tagsHtml = (item.tags || []).slice(0, 4).map(t => `<span class="spec-icon-badge" data-tooltip="${esc(t)}">${getTagEmoji(t)}</span>`).join('');
+            const tagsHtml = (item.tags || []).slice(0, 12).map(t => `<span class="spec-icon-badge" data-tooltip="${esc(t)}">${getTagEmoji(t)}</span>`).join('');
 
             const isActive = (this._iemDbActiveId === item.id);
             const rowAccentColor = isActive ? 'var(--accent-blue)' : 'var(--border-color)';
@@ -8001,8 +8313,8 @@ renderIemDbSearch: function(query) {
             this.updateAll();
         },
         tonalityTags: [
-            {name: "⚖️ Neutral"}, {name: "✨ Bright"}, {name: "🌿 Warm"}, {name: "🌑 Dark"},
-            {name: "🔺 V-Shape"}, {name: "🪞 U-Shape"}, {name: "🎯 Mid-Forward"}, {name: "🌬️ Airy"},
+            {name: "⚖️ Neutral"}, {name: "✨ Bright"}, {name: "⚡ Treble-Head"}, {name: "🌿 Warm"}, {name: "🌑 Dark"},
+            {name: "🔺 V-Shaped"}, {name: "🧲 U-Shaped"}, {name: "🎛️ Studio-Monitoring"}, {name: "🎯 Mid-Forward"}, {name: "🌬️ Airy"},
             {name: "💎 Detailed"}, {name: "☁️ Smooth"}, {name: "🔥 Energetic"}, {name: "😌 Relaxed"}
         ],
         bassTags: [
@@ -8316,9 +8628,15 @@ renderIemDbSearch: function(query) {
         },
 
         allReviewTags: [
-            "⚖️ Neutral", "💥 Basshead", "🌊 Sub-Bass", "🥊 Punchy Bass", "🌿 Warm", "🔺 V-Shaped", "☯️ Balanced", "✨ Bright", "🌑 Dark", "💎 Detailed", "🔍 Resolving", "🔬 Technical", "🏟️ Wide-Stage", "🔭 Good-Imaging", "🧈 Smooth", "📐 Reference", "🧠 Analytical", "🔥 Fun", "😌 Relaxed", "🎮 Gaming", "🏆 Competitive-Gaming", "🎤 Vocal-Focused", "💰 Budget", "🪙 Mid-Tier", "👑 Premium", "🥇 Flagship", "🤝 Collab", "🌟 Limited-Edition"
-        ],
-        currentReviewTagIndex: 0,
+    "⚖️ Neutral", "💥 Basshead", "⚡ Treble-Head", "🌊 Sub-Bass", "🥊 Punchy Bass", 
+    "🌿 Warm", "🔺 V-Shaped", "🧲 U-Shaped", "☯️ Balanced", "✨ Bright", 
+    "🌑 Dark", "💎 Detailed", "🔍 Resolving", "🔬 Technical", "🏟️ Wide-Stage", 
+    "🔭 Good-Imaging", "🧈 Smooth", "📐 Reference", "🎛️ Studio-Monitoring", "🧠 Analytical", 
+    "🔥 Fun", "😌 Relaxed", "🎮 Gaming", "🏆 Competitive-Gaming", "🎤 Vocal-Focused", 
+    "💰 Budget", "🪙 Mid-Tier", "👑 Premium", "🥇 Flagship", "🤝 Collab", 
+    "🌟 Limited-Edition"
+],
+currentReviewTagIndex: 0,
 
         cycleReviewTag: function(dir) {
             const total = this.allReviewTags.length;
@@ -8378,13 +8696,6 @@ renderIemDbSearch: function(query) {
             this.renderReviewSelectedTags();
             this.updateAll();
         },
-        removeReviewTag: function(tagName) {
-            this.selectedTags.delete(tagName);
-            this.selectedBass.delete(tagName);
-            this.selectedGenres.delete(tagName);
-            this.renderReviewSelectedTags();
-            this.updateAll();
-        },
         getTagAnimationClass: function(tag) {
                     return 'anim-toggle-pop';
                 },
@@ -8418,10 +8729,10 @@ renderIemDbSearch: function(query) {
                     div.style.cssText = 'box-shadow: 2px 2px 0px 0px var(--border-color) !important;';
                     div.innerHTML = `
                         <div class="flex items-center gap-2 min-w-0 flex-1 overflow-visible">
-                            <span class="emoji-font vibrant-emoji ${animClass} text-2xl flex-shrink-0 leading-none" style="display: inline-block; transform-origin: center;">${emoji}</span>
-                            <span class="text-[9.5px] font-black text-[var(--text-main)] truncate leading-tight">${text}</span>
+                            <span class="emoji-font vibrant-emoji ${animClass} text-2xl flex-shrink-0 leading-none" style="display: inline-block; transform-origin: center;">${esc(emoji)}</span>
+                            <span class="text-[9.5px] font-black text-[var(--text-main)] truncate leading-tight">${esc(text)}</span>
                         </div>
-                        <button type="button" onclick="event.stopPropagation(); IEM.removeReviewTag('${tag}')" class="w-4 h-4 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[9px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${text}">✕</button>
+                        <button type="button" onclick="event.stopPropagation(); IEM.removeReviewTag('${escJs(tag)}')" class="w-4 h-4 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[9px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${esc(text)}">✕</button>
                     `;
                     container.appendChild(div);
                 } else {
@@ -8647,7 +8958,7 @@ renderIemDbSearch: function(query) {
             const groups = [
                 {
                     label: 'Tonality',
-                    tags: ['⚖️ Neutral', '✨ Bright', '🌿 Warm', '🌑 Dark', '🔺 V-Shape', '🪞 U-Shape', '🎯 Mid-Forward', '🌬️ Airy', '💎 Detailed', '☁️ Smooth', '🔥 Energetic', '😌 Relaxed']
+                    tags: ['⚖️ Neutral', '✨ Bright', '⚡ Treble-Head', '🌿 Warm', '🌑 Dark', '🔺 V-Shaped', '🧲 U-Shaped', '🎛️ Studio-Monitoring', '🎯 Mid-Forward', '🌬️ Airy', '💎 Detailed', '☁️ Smooth', '🔥 Energetic', '😌 Relaxed']
                 },
                 {
                     label: 'Bass',
@@ -9476,6 +9787,8 @@ if(this.radarChart) {
                 const safeImg = esc(imgPath);
                 const safeBrand = esc(item.brand);
                 const safeModel = esc(item.model);
+                const safePrice = esc(item.price);
+                const safeRefVolume = esc(item.refVolume);
 
                 tr.innerHTML = `
                     <td class="px-4 py-3"><input type="checkbox" class="compare-cb accent-blue-500 w-4 h-4 cursor-pointer" value="${safeId}"></td>
@@ -9484,13 +9797,13 @@ if(this.radarChart) {
                         ${imgPath ? `<img src="${safeImg}" class="w-8 h-8 object-cover rounded border border-[var(--border-color)] bg-[#111]">` : '<div class="w-8 h-8 rounded border border-[var(--border-color)] bg-[#111] flex items-center justify-center text-zinc-650">🎧</div>'}
                         <div>
                             <div class="text-xs">${safeBrand} <span class="text-[var(--accent-blue)]">${safeModel}</span></div>
-                            <div class="text-xs text-[var(--text-secondary)] font-normal mt-0.5">$${item.price || '---'} • Vol: ${item.refVolume || 'N/A'}</div>
+                            <div class="text-xs text-[var(--text-secondary)] font-normal mt-0.5">$${safePrice || '---'} • Vol: ${safeRefVolume || 'N/A'}</div>
                         </div>
                     </td>
                     <td class="px-4 py-3 font-black text-md text-center text-[var(--accent-blue)]">${(item.score || 5.0).toFixed(1)}</td>
                     <td class="px-4 py-3 text-right">
-                        <button onclick="IEM.loadFromLibrary('${item.id}')" class="px-3 py-1 bg-zinc-800 text-stone-200 rounded text-xs font-bold hover:bg-zinc-700 transition-colors shadow-sm">Load</button>
-                        <button onclick="IEM.deleteFromLibrary('${item.id}')" class="ml-2.5 text-red-500 hover:text-red-400 cursor-pointer text-[8px]">❌</button>
+                        <button onclick="IEM.loadFromLibrary('${escJs(item.id)}')" class="px-3 py-1 bg-zinc-800 text-stone-200 rounded text-xs font-bold hover:bg-zinc-700 transition-colors shadow-sm">Load</button>
+                        <button onclick="IEM.deleteFromLibrary('${escJs(item.id)}')" class="ml-2.5 text-red-500 hover:text-red-400 cursor-pointer text-[8px]">❌</button>
                     </td>`;
                 fragment.appendChild(tr);
             });
@@ -9558,8 +9871,14 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
 
                 const esc = (str) => String(str || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
                 const safeImg = esc(imgPath);
+                const safeBrand = esc(item.brand);
+                const safeModel = esc(item.model);
+                const safePrice = esc(item.price);
+                const safeScore = (item.score != null && !isNaN(item.score)) ? esc(Number(item.score).toFixed(1)) : '--';
+                const radar = (Array.isArray(item.radarData) && item.radarData.length) ? item.radarData : [];
+                const radarVal = (i) => (radar[i] != null && !isNaN(radar[i])) ? esc(Number(radar[i]).toFixed(1)) : '--';
 
-                _compHtml += `<div class="bg-[var(--bg-input)] border border-[var(--border-color)] rounded p-4 flex flex-col items-center shadow relative"><div class="absolute top-2 left-2 text-xs text-[var(--text-secondary)] font-mono border border-[var(--border-color)] px-1.5 rounded">$${item.price || '--'}</div>${imgPath ? `<img src="${safeImg}" class="h-20 object-contain mb-3 rounded bg-[#111] p-1 border border-[var(--border-color)]">` : `<div class="h-20 w-20 bg-[#111] rounded flex items-center justify-center mb-3 text-zinc-650 border border-[var(--border-color)]">🎧</div>`}<h3 class="font-bold text-xs text-center leading-tight">${item.brand}<br><span class="text-[var(--accent-blue)] text-sm">${item.model}</span></h3><div class="text-3xl font-black mt-2 text-[var(--text-main)] tracking-tighter">${item.score.toFixed(1)}</div><div class="w-full mt-4 space-y-1 text-xs font-semibold"><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Bass</span><span class="text-[var(--text-main)]">${item.radarData[0].toFixed(1)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Mids</span><span class="text-[var(--text-main)]">${item.radarData[1].toFixed(1)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Treble</span><span class="text-[var(--text-main)]">${item.radarData[2].toFixed(1)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Detail</span><span class="text-[var(--text-main)]">${item.radarData[3].toFixed(1)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Stage</span><span class="text-[var(--text-main)]">${item.radarData[4].toFixed(1)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Imaging</span><span class="text-[var(--text-main)]">${item.radarData[5].toFixed(1)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Dynamics</span><span class="text-[var(--text-main)]">${item.radarData[6].toFixed(1)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Tonality</span><span class="text-[var(--text-main)]">${item.radarData[7].toFixed(1)}</span></div><div class="flex justify-between"><span class="text-zinc-500">Technical</span><span class="text-[var(--text-main)]">${item.radarData[8].toFixed(1)}</span></div></div></div>`;
+                _compHtml += `<div class="bg-[var(--bg-input)] border border-[var(--border-color)] rounded p-4 flex flex-col items-center shadow relative"><div class="absolute top-2 left-2 text-xs text-[var(--text-secondary)] font-mono border border-[var(--border-color)] px-1.5 rounded">$${safePrice || '--'}</div>${imgPath ? `<img src="${safeImg}" class="h-20 object-contain mb-3 rounded bg-[#111] p-1 border border-[var(--border-color)]">` : `<div class="h-20 w-20 bg-[#111] rounded flex items-center justify-center mb-3 text-zinc-650 border border-[var(--border-color)]">🎧</div>`}<h3 class="font-bold text-xs text-center leading-tight">${safeBrand}<br><span class="text-[var(--accent-blue)] text-sm">${safeModel}</span></h3><div class="text-3xl font-black mt-2 text-[var(--text-main)] tracking-tighter">${safeScore}</div><div class="w-full mt-4 space-y-1 text-xs font-semibold"><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Bass</span><span class="text-[var(--text-main)]">${radarVal(0)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Mids</span><span class="text-[var(--text-main)]">${radarVal(1)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Treble</span><span class="text-[var(--text-main)]">${radarVal(2)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Detail</span><span class="text-[var(--text-main)]">${radarVal(3)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Stage</span><span class="text-[var(--text-main)]">${radarVal(4)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Imaging</span><span class="text-[var(--text-main)]">${radarVal(5)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Dynamics</span><span class="text-[var(--text-main)]">${radarVal(6)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Tonality</span><span class="text-[var(--text-main)]">${radarVal(7)}</span></div><div class="flex justify-between"><span class="text-zinc-500">Technical</span><span class="text-[var(--text-main)]">${radarVal(8)}</span></div></div></div>`;
             });
             compGrid.innerHTML = _compHtml;
             compView.classList.remove('hidden'); compView.classList.add('flex');
@@ -9570,9 +9889,13 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
 
             const preservedKeys = ['iem_library_v2', 'settings_theme_id', 'settings_font_id', 'settings_align_hz', 'settings_align_db'];
             const preserved = {};
-            preservedKeys.forEach(k => { preserved[k] = localStorage.getItem(k); });
-            localStorage.clear();
-            preservedKeys.forEach(k => { if (preserved[k]) localStorage.setItem(k, preserved[k]); });
+            try {
+                preservedKeys.forEach(k => { preserved[k] = localStorage.getItem(k); });
+                localStorage.clear();
+                preservedKeys.forEach(k => { if (preserved[k]) localStorage.setItem(k, preserved[k]); });
+            } catch (e) {
+                console.warn("Reset: failed to preserve/restore settings.", e);
+            }
 
             this.sliderNodes.forEach(n => { n.element.value = 0.0; });
             document.getElementById('review-notes').value = '';
@@ -11519,7 +11842,25 @@ vizModalActive: false,
 
         init: function() {
             const self = this;
-            this.eqPresets = JSON.parse('{"balanced":{"p":0,"m":[0,0,0,0,0,0,0,0,0,0],"a":[0,0,0,0,0,0,0,0,0,0]},"warm":{"p":-1,"m":[0,1.5,3,2,0,0,-1,-1.5,-2,0],"a":[1,2,3.5,2.5,0,0,0,-1,-2,0]},"vshape":{"p":-6.0,"m":[4,4.5,2,-1.5,-2,-1,1.5,3.5,4.5,2],"a":[5,4,1.5,-1,-2,-1,2,4,3,1]},"harman":{"p":-5.0,"m":[2,4.5,3,1,-0.5,-1,1.5,4.5,3.5,-1],"a":[3,4.5,2.5,0.5,-0.5,-1,1,3.5,3,0]},"rock":{"p":-3.0,"m":[3,2.5,1.5,-1,0.5,1,2,2.5,1.5,0],"a":[2,3,1.5,0,0.5,1,1.5,2,1.5,0]},"edm":{"p":-6.5,"m":[5,4,2.5,-1,-1.5,-0.5,1.5,3.5,4,2],"a":[6,4,1.5,-1,-1.5,0,2,3,3.5,1]},"hiphop":{"p":-2.5,"m":[2,4.5,3,1,-0.5,-1,1.5,4.5,3.5,-1],"a":[3,4.5,2.5,0.5,-0.5,-1,1,3.5,3,0]},"classical":{"p":-1.5,"m":[-1.5,-1,0.5,1,1.5,2,2.5,3,2.5,1.5],"a":[-2,-1,0.5,1.5,2,1.5,2,2.5,2,1]},"acoustic":{"p":-1.5,"m":[0.5,1,1.5,2.5,3,2.5,2,1.5,1,0.5],"a":[0,1,2,3,2.5,2,1.5,1,0.5,0]},"orchestra":{"p":-1.5,"m":[-1,-0.5,1,2,2.5,2.5,3,2.5,2,1],"a":[-1,0,1.5,2,2.5,2,2.5,2,1.5,0.5]},"relaxed":{"p":1,"m":[1.5,1.5,1,0,-1.5,-2,-2.5,-3,-2,-1],"a":[2,1.5,0.5,-0.5,-1.5,-2,-2,-2,-1,0]},"party":{"p":-2.5,"m":[4.5,4,2,-0.5,-1,0.5,2.5,4,3,1.5],"a":[5,4,1.5,0,-0.5,1,2,3,2.5,1]},"fps":{"p":-2,"m":[-4,-4,-2,0,0,1,2,3,1.5,0],"a":[-5,-3,0,0,1,1.5,4,2,1,0]},"competitive":{"p":-2.5,"m":[-5,-3,-1,1.5,2,2.5,3.5,4.5,2,0.5],"a":[-6,-4,0,1,2,3,4,3,1.5,0]},"footsteps":{"p":-2,"m":[-6,-4,-1,2.5,3.5,4,2.5,1,0,0],"a":[-7,-5,0,2.5,4,3,2,0.5,0,0]},"immersive":{"p":-2,"m":[4,3.5,1.5,0,-1,0,1,2,3,4],"a":[5,4,2,0,-1,0,1.5,2,2.5,3]},"gaming_imaging":{"p":-1.5,"m":[-2,-1,0,1.5,2,2.5,3,2.5,1.5,1],"a":[-2,-1,0,1,2,2.5,3,2,1,0.5]},"precision":{"p":-2,"m":[-3,-2,0,1.5,2.5,3,3.5,2.5,1.5,1],"a":[-3,-1,0.5,1.5,2.5,2.5,3,2,1,0.5]},"storymode":{"p":-2,"m":[3,3,1.5,0,0.5,1,1.5,2.5,3,2],"a":[4,3,1,0,0.5,1,2,2.5,2,1]},"casualgaming":{"p":-1,"m":[1.5,1.5,1,0.5,0.5,1,1.5,2,1.5,1],"a":[2,1.5,1,0.5,0.5,1,1.5,1.5,1,0.5]},"cinema":{"p":-2.5,"m":[4.5,3.5,1.5,-0.5,-1,0.5,2,3.5,4,2.5],"a":[5,3.5,1,-0.5,-1,1,2.5,3,3,2]},"dialogue":{"p":0,"m":[-6,-4,-2,1.5,3,3.5,2,0,-2,-5],"a":[-8,-5,-2,2,3.5,3,1.5,0,-1.5,-4]},"tvshows":{"p":-1,"m":[-2,-1,0.5,1,2,2,1.5,1,0.5,0],"a":[-2,-1,0.5,1.5,2,1.5,1,0.5,0,0]},"podcast":{"p":0,"m":[-5,-3,-1,1.5,3,3,1.5,0.5,-1,-3],"a":[-6,-4,-1,2,3,2.5,1,0.5,-0.5,-2]},"audiobook":{"p":0,"m":[-6,-4,-1,2,3.5,3,1,0.5,-2,-4],"a":[-7,-5,-1,2.5,3.5,2.5,1,0.5,-1,-3]},"streaming":{"p":-1.5,"m":[2,2,1,0.5,0.5,1,1.5,2.5,3,1.5],"a":[3,2,1,0.5,0.5,1,1.5,2,2,1]},"movienight":{"p":-2,"m":[4,3,1,0,-0.5,0.5,1.5,3,3,1.5],"a":[5,3.5,1,0,-0.5,0.5,2,2.5,2,1]},"analytical":{"p":0,"m":[-1.5,-1,-0.5,0,0.5,1,1.5,2,1,0.5],"a":[-2,-1,-0.5,0,0.5,1,1.5,1.5,1,0.5]},"detail":{"p":-1,"m":[0,0,0,0,0,1,2.5,3.5,2,0],"a":[0,0,0,0,0,1.5,4,2,2,1]},"airy":{"p":-1.5,"m":[0,0,0,0,0,0.5,1.5,3,4.5,3.5],"a":[0,0,0,0,0,0,1,3,4,2.5]},"soundstage":{"p":-2,"m":[1,1,0.5,0,-0.5,0.5,1.5,3.5,4,5],"a":[1,1,0.5,0,-0.5,0.5,1.5,3,3.5,4.5]},"audiophile_imaging":{"p":-1.5,"m":[-1,-0.5,0,1,1.5,2,2.5,3,2,1],"a":[-1,-0.5,0,1,1.5,2,2,2,1.5,1]},"reference":{"p":0,"m":[0,0,0,0,0,0.5,0.5,0,0,0],"a":[0,0,0,0,0,0,0,0,0,0]},"natural":{"p":-1,"m":[1,1,1.5,1.5,1,0.5,1,1.5,1,0.5],"a":[1,1,1,1.5,1,0.5,0.5,1,0.5,0]},"timbre":{"p":-1,"m":[0.5,1,1.5,1,0.5,1,1.5,2,1,0.5],"a":[0.5,1,1,1,0.5,1,1,1.5,1,0.5]},"transparent":{"p":-1,"m":[-1,-0.5,0.5,1,1.5,2,2.5,3,2,1.5],"a":[-1,-0.5,0.5,1,1.5,1.5,2,2.5,1.5,1]},"critlistening":{"p":-0.5,"m":[0,0,0,0.5,0.5,0.5,1,1,0.5,0],"a":[0,0,0,0.5,0.5,0.5,0.5,0.5,0.5,0]},"bass":{"p":-5.5,"m":[9.0,8.5,6.0,2.5,0,-1,-1.5,-1,-0.5,0],"a":[10.0,8.0,4.5,1.5,0,0,0,0,0,0]},"subbass":{"p":-3,"m":[6,5.5,3.5,1,0,0,0,0,0,0],"a":[7,5.5,2,0,0,0,0,0,0,0]},"punchy":{"p":-2,"m":[2,4.5,5.5,3.5,1,0,0,0,0,0],"a":[3,5,4,1.5,0,0,0,0,0,0]},"caraudio":{"p":-3.5,"m":[6.5,5.5,4,2,0.5,-0.5,1,2.5,3.5,1.5],"a":[7,6,3,1.5,0,-0.5,1,2,2.5,1]},"bass_party":{"p":-3,"m":[5.5,5,3.5,1,-0.5,0.5,2,3,3,1],"a":[6,5,3,1,-0.5,0.5,1.5,2,2,0.5]},"slam":{"p":-3,"m":[4,5.5,6,4,1.5,0.5,1.5,3,3.5,1.5],"a":[4.5,6,4.5,2,1,0.5,1,2,2.5,1]},"extremebass":{"p":-5,"m":[9,8.5,6.5,4,1.5,0,0,0.5,1.5,1],"a":[10,8.5,5,2.5,1,0,0,0,1,1]},"club":{"p":-3,"m":[5,5,4.5,2.5,1,0.5,1.5,2.5,2,1],"a":[5,5,4.5,2.5,1,0.5,1.5,2.5,2,1]},"bassboost":{"p":-2.5,"m":[4.5,3.5,1.5,0,0,0,0,0,0,0],"a":[5.0,3.0,0.5,0,0,0,0,0,0,0]},"deeprumble":{"p":-2,"m":[5.5,4.0,2.0,0.5,0,0,0,0,0,0],"a":[6,4,1.5,0,0,0,0,0,0,0]},"rpg":{"p":-1.5,"m":[1.5,1,0.5,0,0.5,1.5,2,2.5,2,1],"a":[2,1.5,0.5,0,0.5,1,1.5,2,1.5,1]},"racing":{"p":-2,"m":[3,3.5,2,0.5,-1,-0.5,1,2.5,2,1],"a":[3,3.5,1.5,0,-0.5,0.5,1.5,2,1.5,1]},"retro":{"p":-1,"m":[-2,-1,0.5,2,2.5,2,1.5,1,0.5,-1],"a":[-3,-1,1,2,2.5,2,1.5,1,0,-2]},"stealth":{"p":-2,"m":[-4,-3,-1,1.5,2,2.5,3.5,4,2.5,1],"a":[-5,-3,0,1,2.5,3,3.5,2.5,1.5,0.5]},"chill":{"p":-1,"m":[2,2.5,1.5,0.5,-0.5,-1,-1.5,-2,-1,0],"a":[3,2.5,1,0,-0.5,-1,-1,-1.5,-1,0]},"sports":{"p":-1.5,"m":[1,2,2.5,1,0,0.5,1.5,2,1,0],"a":[1,2,2,0.5,0,0.5,1,1.5,1,0]},"vintage":{"p":-1,"m":[0.5,1.5,2,2.5,2,1.5,1,0,-2,-4],"a":[1,2,2,2.5,1.5,1,0.5,0,-1,-3]},"documentary":{"p":0,"m":[-3,-1,0.5,1.5,2.5,3,2,1,0,-2],"a":[-4,-2,0,1,2,2.5,1.5,1,0,-1]},"anime":{"p":-1.5,"m":[1,2.5,2,0.5,1,2,2.5,3,2,1],"a":[1,2.5,1.5,0.5,1,1.5,2,2.5,1.5,0.5]},"vocals":{"p":-1,"m":[-2,-1,0.5,1.5,2.5,3.5,3,2,1,0.5],"a":[-2,-1,0.5,2,3,3,2,1.5,1,0.5]},"flat":{"p":0,"m":[0,0,0,0,0,0,0,0,0,0],"a":[0,0,0,0,0,0,0,0,0,0]},"bass_cannon":{"p":-4,"m":[7,7,5.5,3,1,0,0,0,0,0],"a":[8,7,4.5,2,0.5,0,0,0,0,0]},"shaker":{"p":-3.5,"m":[5,6,4.5,2,0.5,0,0,0,1,2],"a":[6,6,3.5,1.5,0,0,0,0,1,1.5]}}');
+            this.eqPresets = {
+            "relaxed": {"p":1,"m":[1.5,1.5,1,0,-1.5,-2,-2.5,-3,-2,-1],"a":[2,1.5,0.5,-0.5,-1.5,-2,-2,-2,-1,0]},
+            "party": {"p":-2.5,"m":[4.5,4,2,-0.5,-1,0.5,2.5,4,3,1.5],"a":[5,4,1.5,0,-0.5,1,2,3,2.5,1]},
+            "precision": {"p":-2,"m":[-3,-2,0,1.5,2.5,3,3.5,2.5,1.5,1],"a":[-3,-1,0.5,1.5,2.5,2.5,3,2,1,0.5]},
+            "storymode": {"p":-2,"m":[3,3,1.5,0,0.5,1,1.5,2.5,3,2],"a":[4,3,1,0,0.5,1,2,2.5,2,1]},
+            "casualgaming": {"p":-1,"m":[1.5,1.5,1,0.5,0.5,1,1.5,2,1.5,1],"a":[2,1.5,1,0.5,0.5,1,1.5,1.5,1,0.5]},
+            "tvshows": {"p":-1,"m":[-2,-1,0.5,1,2,2,1.5,1,0.5,0],"a":[-2,-1,0.5,1.5,2,1.5,1,0.5,0,0]},
+            "movienight": {"p":-2,"m":[4,3,1,0,-0.5,0.5,1.5,3,3,1.5],"a":[5,3.5,1,0,-0.5,0.5,2,2.5,2,1]},
+            "audiophile_imaging": {"p":-1.5,"m":[-1,-0.5,0,1,1.5,2,2.5,3,2,1],"a":[-1,-0.5,0,1,1.5,2,2,2,1.5,1]},
+            "timbre": {"p":-1,"m":[0.5,1,1.5,1,0.5,1,1.5,2,1,0.5],"a":[0.5,1,1,1,0.5,1,1,1.5,1,0.5]},
+            "caraudio": {"p":-3.5,"m":[6.5,5.5,4,2,0.5,-0.5,1,2.5,3.5,1.5],"a":[7,6,3,1.5,0,-0.5,1,2,2.5,1]},
+            "bass_party": {"p":-3,"m":[5.5,5,3.5,1,-0.5,0.5,2,3,3,1],"a":[6,5,3,1,-0.5,0.5,1.5,2,2,0.5]},
+            "bassboost": {"p":-2.5,"m":[4.5,3.5,1.5,0,0,0,0,0,0,0],"a":[5,3,0.5,0,0,0,0,0,0,0]},
+            "deeprumble": {"p":-2,"m":[5.5,4,2,0.5,0,0,0,0,0,0],"a":[6,4,1.5,0,0,0,0,0,0,0]},
+            "chill": {"p":-1,"m":[2,2.5,1.5,0.5,-0.5,-1,-1.5,-2,-1,0],"a":[3,2.5,1,0,-0.5,-1,-1,-1.5,-1,0]},
+            "vocals": {"p":-1,"m":[-2,-1,0.5,1.5,2.5,3.5,3,2,1,0.5],"a":[-2,-1,0.5,2,3,3,2,1.5,1,0.5]},
+            "bass_cannon": {"p":-4,"m":[7,7,5.5,3,1,0,0,0,0,0],"a":[8,7,4.5,2,0.5,0,0,0,0,0]},
+            "shaker": {"p":-3.5,"m":[5,6,4.5,2,0.5,0,0,0,1,2],"a":[6,6,3.5,1.5,0,0,0,0,1,1.5]}
+        };
 
             const curatedPresets = {
 
@@ -12768,7 +13109,8 @@ getLiveFiltersState: function() {
                     hz: fEl ? parseFloat(fEl.value) : b.hz,
                     g: (isBypassed || !sEl) ? 0 : parseFloat(sEl.value),
                     q: qEl ? parseFloat(qEl.value) : b.defaultQ,
-                    type: b.type || 'peaking'
+                    type: b.type || 'peaking',
+                    slope: b.slope
                 };
             });
             return { main };
@@ -12829,10 +13171,19 @@ getLiveFiltersState: function() {
                 this.tapeModState ? JSON.stringify(this.tapeModState) : 'n',
                 this.virtualBands ? this.virtualBands.length : -1].join('|');
 
+            // freqs is a log-spaced array whose range changes when the graph is
+            // zoomed (viewMinF/viewMaxF). Its endpoints uniquely identify the
+            // scale, so include them in the key to keep zoom from reusing
+            // magnitudes computed for the previous range.
+            const freqKey = (numPoints > 0 && freqs && freqs.length >= numPoints)
+                ? `${freqs[0]}-${freqs[numPoints - 1]}`
+                : 'none';
+
             if (this._magCacheNumPoints === numPoints
                 && this._magCacheVersion === this._magFiltersVersion
                 && this._magCacheBypass === bypassSize
-                && this._magCacheCheap === cheapKey) {
+                && this._magCacheCheap === cheapKey
+                && this._magCacheFreqKey === freqKey) {
                 return filterMag;
             }
 
@@ -12840,6 +13191,7 @@ getLiveFiltersState: function() {
             this._magCacheBypass = bypassSize;
             this._magCacheCheap = cheapKey;
             this._magCacheNumPoints = numPoints;
+            this._magCacheFreqKey = freqKey;
 
             const { main: mainState } = this.getLiveFiltersState();
             const advState = this.getLiveAdvancedFiltersState();
@@ -13083,6 +13435,17 @@ this.advancedBands.forEach((b, i) => {
                             typeBtn.textContent = labelMap[type] || 'PK';
                         }
 
+                        // Restore a shelf/HP/LP steepness if the source carried one
+                        // (mirrors the custom-preset round-trip).
+                        const slopeBtn = document.getElementById(`eq-sl_m${i}`);
+                        if (v.slope !== undefined && slopeBtn) {
+                            b.slope = v.slope;
+                            slopeBtn.textContent = v.slope + 'dB';
+                            if (['lowshelf', 'highshelf', 'lowpass', 'highpass'].includes(type)) {
+                                slopeBtn.classList.remove('hidden');
+                            }
+                        }
+
                         if (this.filters[i]) {
                             this.filters[i].type = type;
                             setAudioParamSmooth(this.filters[i].frequency, hz);
@@ -13246,19 +13609,35 @@ this.advancedBands.forEach((b, i) => {
         },
 
         updateMusicMatch: function() {
-            const faders = [];
-            for (let i = 0; i < 10; i++) {
-                const el = document.getElementById('eq-s' + i);
-                faders.push(el ? parseFloat(el.value) : 0.0);
+            const resp = FindEngine.getLiveResponseDbs();
+            let maxDb = 0;
+            if (resp) {
+                for (let j = 0; j < resp.length; j++) {
+                    const a = Math.abs(resp[j]);
+                    if (a > maxDb) maxDb = a;
+                }
+            } else {
+                const faders = [];
+                for (let i = 0; i < 10; i++) {
+                    const el = document.getElementById('eq-s' + i);
+                    faders.push(el ? parseFloat(el.value) : 0.0);
+                }
+                maxDb = faders.reduce((sum, v) => sum + Math.abs(v), 0);
+                if (maxDb < 1.5) {
+                    this.setMusicMatchUI("🚫", "No Match", "text-zinc-500", "anim-match-breath");
+                    return;
+                }
+                const bestMatch = FindEngine.determineLiveMusicGenreMatch(faders, this.activePreset);
+                this.setMusicMatchUI(bestMatch.emoji, bestMatch.name, bestMatch.colorClass, bestMatch.animClass);
+                return;
             }
 
-            const totalAbs = faders.reduce((sum, v) => sum + Math.abs(v), 0);
-            if (totalAbs < 1.5) {
+            if (maxDb < 1.5) {
                 this.setMusicMatchUI("🚫", "No Match", "text-zinc-500", "anim-match-breath");
                 return;
             }
 
-            const bestMatch = FindEngine.determineLiveMusicGenreMatch(faders, this.activePreset);
+            const bestMatch = FindEngine.determineLiveMusicGenreMatch(resp, this.activePreset);
             this.setMusicMatchUI(bestMatch.emoji, bestMatch.name, bestMatch.colorClass, bestMatch.animClass);
         },
         setMusicMatchUI: function(emoji, label, colorClass, animClass) {
@@ -13314,19 +13693,35 @@ this.advancedBands.forEach((b, i) => {
             }
         },
         updateGameMatch: function() {
-            const faders = [];
-            for (let i = 0; i < 10; i++) {
-                const el = document.getElementById('eq-s' + i);
-                faders.push(el ? parseFloat(el.value) : 0.0);
+            const resp = FindEngine.getLiveResponseDbs();
+            let maxDb = 0;
+            if (resp) {
+                for (let j = 0; j < resp.length; j++) {
+                    const a = Math.abs(resp[j]);
+                    if (a > maxDb) maxDb = a;
+                }
+            } else {
+                const faders = [];
+                for (let i = 0; i < 10; i++) {
+                    const el = document.getElementById('eq-s' + i);
+                    faders.push(el ? parseFloat(el.value) : 0.0);
+                }
+                maxDb = faders.reduce((sum, v) => sum + Math.abs(v), 0);
+                if (maxDb < 1.5) {
+                    this.setGameMatchUI("🚫", "No Match", "text-zinc-500", "anim-match-breath");
+                    return;
+                }
+                const bestMatch = FindEngine.determineLiveGameGenreMatch(faders, this.activePreset);
+                this.setGameMatchUI(bestMatch.emoji, bestMatch.name, bestMatch.colorClass, bestMatch.animClass);
+                return;
             }
 
-            const totalAbs = faders.reduce((sum, v) => sum + Math.abs(v), 0);
-            if (totalAbs < 1.5) {
+            if (maxDb < 1.5) {
                 this.setGameMatchUI("🚫", "No Match", "text-zinc-500", "anim-match-breath");
                 return;
             }
 
-            const bestMatch = FindEngine.determineLiveGameGenreMatch(faders, this.activePreset);
+            const bestMatch = FindEngine.determineLiveGameGenreMatch(resp, this.activePreset);
             this.setGameMatchUI(bestMatch.emoji, bestMatch.name, bestMatch.colorClass, bestMatch.animClass);
         },
 
@@ -14503,14 +14898,6 @@ if (diffR > 0.4) {
                 }
             });
 
-            if (this.virtualFilters && this.virtualBands) {
-                this.virtualFilters.forEach((f, i) => {
-                    const b = this.virtualBands[i];
-                    const targetGain = (this.eqEnabled && b) ? (b.g || 0) : 0;
-                    setAudioParamSmooth(f.gain, targetGain, 0.01);
-                });
-            }
-
             this.drawCurve();
         },
 
@@ -14746,11 +15133,6 @@ switchCategory: function(catId) {
             });
 
             this.virtualBands = [];
-            if (this.virtualFilters) {
-                this.virtualFilters.forEach(f => {
-                    setAudioParamSmooth(f.gain, 0);
-                });
-            }
 
             const preSlider = document.getElementById("eq-preampSlider");
             if (preSlider) preSlider.value = "0.0";
@@ -15109,29 +15491,44 @@ const DBCache = {
 
                 _loadCatalog: async function() {
                     try {
+                        // Prefer the compressed catalog, but fall back to the plain
+                        // JSON on ANY failure (missing, corrupt, or unreadable .gz)
+                        // so a bad gzip can never silently leave an empty database.
+                        let list = null;
 
-                        let res = await fetch('./database.json.gz');
-
-                        if (!res.ok) {
-                            console.warn("database.json.gz not found, trying database.json...");
-                            res = await fetch('./database.json');
-                            if (!res.ok) throw new Error("Database file missing");
-                            const list = await res.json();
-                            this.catalog = Array.isArray(list) ? list : [];
-                            this.updateCatalogProgressUI(100, 0, 0, true);
-                            return;
+                        try {
+                            const gzRes = await fetch('./database.json.gz');
+                            if (gzRes.ok) {
+                                const decompressedStream = gzRes.body.pipeThrough(new DecompressionStream('gzip'));
+                                const parsed = await new Response(decompressedStream).json();
+                                list = Array.isArray(parsed) ? parsed : null;
+                            }
+                        } catch (gzErr) {
+                            console.warn("[CurveIndexer] database.json.gz failed, trying database.json...", gzErr);
                         }
 
-                        const decompressedStream = res.body.pipeThrough(new DecompressionStream('gzip'));
-                        const response = new Response(decompressedStream);
+                        if (list === null) {
+                            const res = await fetch('./database.json');
+                            if (!res.ok) throw new Error("Database file missing");
+                            const parsed = await res.json();
+                            list = Array.isArray(parsed) ? parsed : [];
+                        }
 
-                        const list = await response.json();
-                        this.catalog = Array.isArray(list) ? list : [];
+                        this.catalog = list;
                         this.updateCatalogProgressUI(100, 0, 0, true);
                     } catch (e) {
-                        console.warn("[CurveIndexer] Could not load catalog:", e);
+                        console.error("[CurveIndexer] Could not load catalog from .gz or .json:", e);
                         this.catalog = [];
-                        this.updateCatalogProgressUI(100, 0, 0, true);
+                        // Do NOT paint "DB Ready" here - the catalog is genuinely
+                        // unavailable. Surface a persistent visible error instead
+                        // so the empty fallback dataset isn't mistaken for success.
+                        const headerBadge = document.getElementById('db-download-progress');
+                        if (headerBadge) {
+                            headerBadge.classList.remove('hidden');
+                            headerBadge.classList.add('flex');
+                            headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-red-500/10 border border-red-500/30 rounded text-[9px] font-mono font-bold text-red-400 select-none ml-1.5 whitespace-nowrap flex-shrink-0";
+                            headerBadge.innerHTML = "<span class=\"whitespace-nowrap\">\u26a0 DB Load Failed</span>";
+                        }
                     }
                 },
 
@@ -15255,12 +15652,55 @@ const DBCache = {
                 _bgRunning: false,
                 startBackgroundWarmup: function(dataset) {
 
-                    PEQDB_Module.databaseFullyLoaded = true;
-                    localStorage.setItem('squig_db_indexed', 'true');
-                    const indicator = document.getElementById('peqdb-indexing-indicator');
-                    if (indicator) indicator.classList.add('hidden');
-                    const progressContainer = document.getElementById('find-progress-container');
-                    if (progressContainer) progressContainer.classList.add('hidden');
+                    if (this.warming || PEQDB_Module.databaseFullyLoaded) return;
+                    if (!dataset || dataset.length === 0) {
+                        PEQDB_Module.databaseFullyLoaded = true;
+                        localStorage.setItem('squig_db_indexed', 'true');
+                        if (window.FindEngine && FindEngine.updateIndexingProgressBar) {
+                            FindEngine.updateIndexingProgressBar();
+                        }
+                        return;
+                    }
+                    this.warming = true;
+                    const pending = dataset.filter(item => !(item.data && Array.isArray(item.data) && item.data.length >= 2));
+                    const CONCURRENCY = 6;
+                    let cursor = 0;
+                    let lastPercent = -1;
+                    const self = this;
+                    const tick = () => {
+                        if (!self.warming) return;
+                        const batch = [];
+                        while (batch.length < CONCURRENCY && cursor < pending.length) {
+                            batch.push(pending[cursor++]);
+                        }
+                        if (batch.length === 0) {
+                            self.warming = false;
+                            PEQDB_Module.databaseFullyLoaded = true;
+                            localStorage.setItem('squig_db_indexed', 'true');
+                            const indicator = document.getElementById('peqdb-indexing-indicator');
+                            if (indicator) indicator.classList.add('hidden');
+                            const progressContainer = document.getElementById('find-progress-container');
+                            if (progressContainer) progressContainer.classList.add('hidden');
+                            if (window.FindEngine && FindEngine.updateIndexingProgressBar) {
+                                FindEngine.updateIndexingProgressBar();
+                            }
+                            return;
+                        }
+                        Promise.all(batch.map(item => self.loadCurve(item).catch(() => false))).then(() => {
+                            if (window.FindEngine && FindEngine.updateIndexingProgressBar) {
+                                const datasetRef = PEQDB_Module.STATE.dataset;
+                                const totalCount = datasetRef ? datasetRef.length : 0;
+                                const indexedCount = datasetRef ? datasetRef.filter(item => item.data !== null).length : 0;
+                                const percent = totalCount ? Math.round((indexedCount / totalCount) * 100) : 100;
+                                if (percent !== lastPercent || percent >= 100) {
+                                    lastPercent = percent;
+                                    FindEngine.updateIndexingProgressBar();
+                                }
+                            }
+                            setTimeout(tick, 0);
+                        });
+                    };
+                    setTimeout(tick, 0);
                 }
             };
 
@@ -15669,28 +16109,11 @@ const DBCache = {
         initSimilarityWorker: function() {
                 if (typeof Worker === 'undefined') return;
                 const workerCode = `
+                    const fn = ${computeSimilarityScores.toString()};
                     self.onmessage = function(e) {
-                        const { dataset, targetInterp, freqs, threshold } = e.data;
-                        const matches = [];
-                        for (let idx = 0; idx < dataset.length; idx++) {
-                            const item = dataset[idx];
-                            if (!item.cachedInterp) continue;
-                            let totalDiff = 0;
-                            let count = 0;
-                            for (let i = 0; i < freqs.length; i += 8) {
-                                const f = freqs[i];
-                                if (f > 10000) break;
-                                totalDiff += Math.abs(targetInterp[i] - item.cachedInterp[i]);
-                                count++;
-                            }
-                            const mae = totalDiff / count;
-                            const similarity = Math.max(0, 100 * (1 - (mae / threshold)));
-                            matches.push({
-                                id: item.id, name: item.name, variant: item.variant, source: item.source, similarity: similarity
-                            });
-                        }
-                        matches.sort((a, b) => b.similarity - a.similarity);
-                        self.postMessage({ matches });
+                        const { dataset, targetInterp, probes, weights, midMask, threshold, token } = e.data;
+                        const matches = fn(targetInterp, dataset, probes, weights, midMask, threshold);
+                        self.postMessage({ token: token, matches: matches });
                     };
                 `;
                 try {
@@ -15699,7 +16122,11 @@ const DBCache = {
                     this.similarityWorker = new Worker(blobUrl);
                     URL.revokeObjectURL(blobUrl);
                     this.similarityWorker.onmessage = (e) => {
-                        this.handleSimilarityResults(e.data.matches);
+                        // Ignore stale responses that no longer match the newest
+                        // in-flight search so an old result can't overwrite the
+                        // cache (and its post-time fingerprint).
+                        if (e.data.token !== this._similarSearchToken) return;
+                        this.handleSimilarityResults(e.data.matches, this._similarPostFp);
                     };
                 } catch (err) {
                     console.warn("Similarity Web Worker creation restricted on local files. Running inline.");
@@ -16557,19 +16984,26 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
                 `;
 
                 const getTagEmoji = (tagStr) => {
-                    if (!tagStr) return '🏷️';
-                    const cleanKey = tagStr.toLowerCase().trim().replace(/[\s_]+/g, '-');
-                    const emojiMap = {
-                        'basshead': '💥', 'sub-bass': '🌊', 'punchy-bass': '🥊', 'warm': '🌿', 'warm-tilt': '🌿',
-                        'neutral': '⚖️', 'v-shaped': '🔺', 'balanced': '⚖️', 'bright': '✨', 'dark': '🌑',
-                        'detailed': '💎', 'detail': '💎', 'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️',
-                        'soundstage': '🏟️', 'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '🎯',
-                        'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮', 'competitive-gaming': '🏆',
-                        'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
-                        'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📼'
-                    };
-                    return emojiMap[cleanKey] || '🏷️';
+                if (!tagStr) return '🏷️';
+                const emojiMatch = tagStr.match(/^(\p{Extended_Pictographic}|\p{Emoji})/u);
+                if (emojiMatch) return emojiMatch[0];
+                const cleanKey = tagStr.toLowerCase().trim().replace(/[\s_]+/g, '-');
+                const emojiMap = {
+                    'basshead': '💥', 'treble-head': '⚡', 'treblehead': '⚡', 'treble-head': '⚡', 'treble head': '⚡',
+                    'sub-bass': '🌊', 'sub bass': '🌊', 'punchy-bass': '🥊', 'punchy bass': '🥊',
+                    'warm': '🌿', 'warm-tilt': '🌿', 'neutral': '⚖️', 'v-shaped': '🔺', 'v-shape': '🔺',
+                    'u-shaped': '🧲', 'u-shape': '🧲', 'ushaped': '🧲', 'ushape': '🧲', 'balanced': '☯️',
+                    'bright': '✨', 'dark': '🌑', 'detailed': '💎', 'detail': '💎', 'resolving': '🔍',
+                    'technical': '🔬', 'wide-stage': '🏟️', 'soundstage': '🏟️', 'good-imaging': '🔭',
+                    'imaging': '🔭', 'smooth': '🧈', 'reference': '📐', 'studio-monitoring': '🎛️',
+                    'studio monitoring': '🎛️', 'studiomonitoring': '🎛️', 'studio-monitor': '🎛️', 'studio monitor': '🎛️',
+                    'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮',
+                    'competitive-gaming': '🏆', 'competitive gaming': '🏆', 'vocal-focused': '🗣️', 'vocal': '🎤',
+                    'budget': '💰', 'mid-tier': '🪙', 'mid tier': '🪙', 'premium': '👑', 'flagship': '🥇',
+                    'collab': '🤝', 'limited-edition': '🌟', 'limited edition': '🌟'
                 };
+                return emojiMap[cleanKey] || '🏷️';
+            };
                 const tagsHtml = (item.tags || []).map(t => `<span class="spec-icon-badge" data-tooltip="${esc(t)}">${getTagEmoji(t)}</span>`).join('');
 
                 let fileRowHtml;
@@ -16854,11 +17288,6 @@ generateLeastSquaresAutoEQ: function() {
             }
 
             EQ_Module.virtualBands = [];
-            if (EQ_Module.virtualFilters) {
-                EQ_Module.virtualFilters.forEach(f => {
-                    setAudioParamSmooth(f.gain, 0);
-                });
-            }
 
             EQ_Module.isProgrammaticSliderUpdate = false;
 
@@ -16871,6 +17300,34 @@ generateLeastSquaresAutoEQ: function() {
             for (let j = 0; j < points; j++) {
                 targetCorrection[j] = targetInterp[j] - baseInterp[j];
             }
+
+            // Align the pair to the same mid-band mean (curves were normalized
+            // against the global Align setting, which pins one point/band to
+            // 75 dB). Removing the mid-band constant here means whichever Align
+            // mode is active, the solver never chases a broadband flat offset
+            // that peaking bands physically can't reproduce.
+            let midSum = 0, midWSum = 0;
+            for (let j = 0; j < points; j++) {
+                const f = freqs[j];
+                if (f >= CurveUtils.MID_MEAN_BAND[0] && f <= CurveUtils.MID_MEAN_BAND[1]) {
+                    const w = CurveUtils.weightFor(f);
+                    midSum += targetCorrection[j] * w;
+                    midWSum += w;
+                }
+            }
+            if (midWSum > 0) {
+                const midMean = midSum / midWSum;
+                for (let j = 0; j < points; j++) targetCorrection[j] -= midMean;
+            }
+
+            // Smooth the correction target before solving (the AutoEQ
+            // "smoothbins" behavior): measurement micro-ripples shouldn't be
+            // chased by peaking bands, especially at high resolution where
+            // boosts can carve into every tiny dip. Light octave-band gaussian
+            // over the log-freq grid, applied after the broadband offset is
+            // removed so the edges don't smear a DC term back in.
+            const smoothedTarget = CurveUtils.gaussianSmooth(freqs, targetCorrection, 0.05);
+            for (let j = 0; j < points; j++) targetCorrection[j] = smoothedTarget[j];
 
             const bandCount = PEQDB_Module.autoeqResolution || 10;
 
@@ -16896,7 +17353,7 @@ generateLeastSquaresAutoEQ: function() {
                 }
                 for (let i = 0; i < EQ_Module.advancedBands.length; i++) {
                     const b = EQ_Module.advancedBands[i];
-                    optimizedBands.push({ freq: b.hz, q: b.q !== undefined ? b.q : b.defaultQ, type: 'peaking', gain: 0.0, role: 'adv', index: i });
+                    optimizedBands.push({ freq: b.hz, q: b.q !== undefined ? b.q : b.defaultQ, type: b.type || 'peaking', gain: 0.0, role: 'adv', index: i });
                 }
             } else {
 
@@ -16910,8 +17367,23 @@ generateLeastSquaresAutoEQ: function() {
                 const proportionalQ = Math.min(4.5, Math.max(1.0, 1.44 / (9.96 / bandCount)));
 
                 targetFrequencies.forEach((hz, i) => {
-                    optimizedBands.push({ freq: hz, q: parseFloat(proportionalQ.toFixed(2)), type: 'peaking', gain: 0.0, role: 'virtual', index: i });
+                    const role = i < 10 ? 'main' : (i < 20 ? 'adv' : 'virtual');
+                    if (role === 'virtual' && optimizedBands.filter(b => b.role === 'virtual').length >= 28) return;
+                    optimizedBands.push({ freq: hz, q: parseFloat(proportionalQ.toFixed(2)), type: 'peaking', gain: 0.0, role: role, index: i });
                 });
+            }
+
+            // Peaking bands can barely move the sub (<100 Hz) or the top octave,
+            // so always give the solver a low shelf and a high shelf unless the
+            // band set already provides one. Shelf gains land in the virtual
+            // slots, so they reach the graph AND the audio worklet chain.
+            const hasLowShelf = optimizedBands.some(b => b.type === 'lowshelf');
+            const hasHighShelf = optimizedBands.some(b => b.type === 'highshelf');
+            if (!hasLowShelf) {
+                optimizedBands.push({ freq: 80, q: 0.7, type: 'lowshelf', gain: 0.0, role: 'virtual', index: optimizedBands.length });
+            }
+            if (!hasHighShelf) {
+                optimizedBands.push({ freq: 9000, q: 0.7, type: 'highshelf', gain: 0.0, role: 'virtual', index: optimizedBands.length });
             }
 
             const bandResponses = [];
@@ -16925,15 +17397,14 @@ generateLeastSquaresAutoEQ: function() {
 
             const weights = new Float32Array(points);
             for (let j = 0; j < points; j++) {
-                const f = freqs[j];
-                if (f < 40) weights[j] = 0.3;
-                else if (f < 100) weights[j] = 0.8;
-                else if (f < 3000) weights[j] = 1.5;
-                else if (f < 8000) weights[j] = 1.0;
-                else weights[j] = 0.2;
+                // Shared perceptual table (mid/vocal most important, sub & air
+                // de-emphasized) - scaled so the ~1 kHz emphasis matches the
+                // previous hard-coded band weights.
+                weights[j] = CurveUtils.weightFor(freqs[j]) * 1.25;
             }
 
             const iterations = 20;
+            const lambda = 0.35; // ridge - discourages gain-cancelling pairs
             for (let iter = 0; iter < iterations; iter++) {
                 for (let b = 0; b < optimizedBands.length; b++) {
                     let num = 0;
@@ -16952,19 +17423,59 @@ generateLeastSquaresAutoEQ: function() {
                         den += respB[j] * respB[j] * weights[j];
                     }
 
-                    if (den > 1e-6) {
-                        const idealGain = num / den;
+                    if (den + lambda > 1e-6) {
+                        const idealGain = num / (den + lambda);
                         optimizedBands[b].gain = Math.max(-12, Math.min(12, idealGain));
+                    }
+                }
+            }
+
+            // Newton-style refinement: the main pass is linear in the gain-1
+            // basis, which drifts from the true biquad response at large gains.
+            // Re-solve small delta steps around the TRUE cascade (central
+            // difference sensitivity) so the result converges toward the real
+            // response, and recompute the preamp from the true model.
+            const refineIterations = 8;
+            const trueResp = new Float32Array(points);
+            for (let iter = 0; iter < refineIterations; iter++) {
+                for (let j = 0; j < points; j++) {
+                    let prod = 1.0;
+                    for (let b = 0; b < optimizedBands.length; b++) {
+                        const band = optimizedBands[b];
+                        prod *= Math.max(1e-9, EQ_Module.getBiquadMagnitude(band.type, freqs[j], band.freq, band.q, band.gain));
+                    }
+                    trueResp[j] = 20 * Math.log10(prod);
+                }
+
+                for (let b = 0; b < optimizedBands.length; b++) {
+                    const band = optimizedBands[b];
+                    let num = 0, den = 0;
+                    for (let j = 0; j < points; j++) {
+                        const g0 = band.gain;
+                        const ga = Math.max(-12, Math.min(12, g0 + 0.5));
+                        const gb_ = Math.max(-12, Math.min(12, g0 - 0.5));
+                        const magA = Math.max(1e-9, EQ_Module.getBiquadMagnitude(band.type, freqs[j], band.freq, band.q, ga));
+                        const magB = Math.max(1e-9, EQ_Module.getBiquadMagnitude(band.type, freqs[j], band.freq, band.q, gb_));
+                        const sens = (ga !== gb_) ? (20 * Math.log10(magA / magB)) / (ga - gb_) : 0;
+                        const residual = targetCorrection[j] - trueResp[j];
+                        num += residual * sens * weights[j];
+                        den += sens * sens * weights[j];
+                    }
+                    if (den + lambda > 1e-6) {
+                        const delta = num / (den + lambda);
+                        band.gain = Math.max(-12, Math.min(12, band.gain + delta * 0.6));
                     }
                 }
             }
 
             let maxModelDb = 0;
             for (let j = 0; j < points; j++) {
-                let modelDb = 0;
+                let prod = 1.0;
                 for (let b = 0; b < optimizedBands.length; b++) {
-                    modelDb += bandResponses[b][j] * optimizedBands[b].gain;
+                    const band = optimizedBands[b];
+                    prod *= Math.max(1e-9, EQ_Module.getBiquadMagnitude(band.type, freqs[j], band.freq, band.q, band.gain));
                 }
+                const modelDb = 20 * Math.log10(prod);
                 if (modelDb > maxModelDb) {
                     maxModelDb = modelDb;
                 }
@@ -16976,89 +17487,63 @@ generateLeastSquaresAutoEQ: function() {
             EQ_Module.updatePreamp();
 
             EQ_Module.virtualBands = [];
-            if (EQ_Module.virtualFilters) {
-                EQ_Module.virtualFilters.forEach(f => {
-                    setAudioParamSmooth(f.gain, 0);
-                });
-            }
 
             EQ_Module.isProgrammaticSliderUpdate = true;
 
-            if (bandCount === 10 || bandCount === 20) {
-                optimizedBands.forEach((b) => {
-                    if (b.role === 'main') {
-                        const slider = document.getElementById("eq-s" + b.index);
-                        if (slider) slider.value = b.gain.toFixed(1);
-                        const numInput = document.getElementById(`eq-s${b.index}_num`);
-                        if (numInput) numInput.value = b.gain.toFixed(1);
-                        EQ_Module.updateSlider(b.index, 'main');
-                    } else if (b.role === 'adv') {
-                        const advBand = EQ_Module.advancedBands[b.index];
-                        if (advBand) advBand.g = parseFloat(b.gain.toFixed(1));
-                        EQ_Module.updateSlider(b.index, 'adv');
-                    }
-                });
-            } else {
+            const virtuals = [];
+            optimizedBands.forEach((b) => {
+                if (b.role === 'main') {
+                    const slider = document.getElementById("eq-s" + b.index);
+                    if (slider) slider.value = b.gain.toFixed(1);
+                    const numInput = document.getElementById(`eq-s${b.index}_num`);
+                    if (numInput) numInput.value = b.gain.toFixed(1);
 
-                const virtuals = [];
-                optimizedBands.forEach((b, idx) => {
-                    if (idx < 10) {
-
-                        const slider = document.getElementById("eq-s" + idx);
-                        if (slider) slider.value = b.gain.toFixed(1);
-                        const numInput = document.getElementById(`eq-s${idx}_num`);
-                        if (numInput) numInput.value = b.gain.toFixed(1);
-
-                        const fInput = document.getElementById("eq-f" + idx);
+                    if (b.freq !== undefined) {
+                        const fInput = document.getElementById("eq-f" + b.index);
                         if (fInput) fInput.value = b.freq;
-                        const fsSlider = document.getElementById(`eq-fs_m${idx}`);
+                        const fsSlider = document.getElementById(`eq-fs_m${b.index}`);
                         if (fsSlider) fsSlider.value = EQ_Module.logHzToSlider(b.freq);
-
-                        const qSlider = document.getElementById("eq-q_m" + idx);
+                    }
+                    if (b.q !== undefined) {
+                        const qSlider = document.getElementById("eq-q_m" + b.index);
                         if (qSlider) qSlider.value = b.q.toFixed(1);
-                        const qNum = document.getElementById(`eq-q_m${idx}_num`);
+                        const qNum = document.getElementById(`eq-q_m${b.index}_num`);
                         if (qNum) qNum.value = b.q.toFixed(2);
+                    }
 
-                        EQ_Module.updateSlider(idx, 'main');
-                    } else if (idx < 20) {
+                    EQ_Module.updateSlider(b.index, 'main');
+                } else if (b.role === 'adv') {
+                    const advIdx = b.index >= 10 ? b.index - 10 : b.index;
+                    const advBand = EQ_Module.advancedBands[advIdx];
+                    if (advBand) {
+                        if (b.freq !== undefined) advBand.hz = b.freq;
+                        advBand.g = parseFloat(b.gain.toFixed(1));
+                        if (b.q !== undefined) advBand.q = b.q;
+                    }
 
-                        const advIdx = idx - 10;
-                        const advBand = EQ_Module.advancedBands[advIdx];
-                        if (advBand) {
-                            advBand.hz = b.freq;
-                            advBand.g = parseFloat(b.gain.toFixed(1));
-                            advBand.q = b.q;
-                        }
-
+                    if (b.freq !== undefined) {
                         const afInput = document.getElementById("eq-af" + advIdx);
                         if (afInput) afInput.value = b.freq;
+                    }
 
-                        const aSlider = document.getElementById("eq-a" + advIdx);
-                        if (aSlider) aSlider.value = b.gain.toFixed(1);
-                        const aNum = document.getElementById(`eq-a${advIdx}_num`);
-                        if (aNum) aNum.value = b.gain.toFixed(1);
+                    const aSlider = document.getElementById("eq-a" + advIdx);
+                    if (aSlider) aSlider.value = b.gain.toFixed(1);
+                    const aNum = document.getElementById(`eq-a${advIdx}_num`);
+                    if (aNum) aNum.value = b.gain.toFixed(1);
 
+                    if (b.q !== undefined) {
                         const qSlider = document.getElementById("eq-q_a" + advIdx);
                         if (qSlider) qSlider.value = b.q.toFixed(1);
                         const qNum = document.getElementById(`eq-q_a${advIdx}_num`);
                         if (qNum) qNum.value = b.q.toFixed(2);
-
-                        EQ_Module.updateSlider(advIdx, 'adv');
-                    } else {
-
-                        const virtIdx = idx - 20;
-                        virtuals.push({ hz: b.freq, g: b.gain, q: b.q, type: 'peaking' });
-
-                        if (EQ_Module.virtualFilters && EQ_Module.virtualFilters[virtIdx]) {
-                            const f = EQ_Module.virtualFilters[virtIdx];
-                            setAudioParamSmooth(f.frequency, b.freq);
-                            setAudioParamSmooth(f.gain, EQ_Module.eqEnabled ? b.gain : 0);
-                            setAudioParamSmooth(f.Q, b.q);
-                        }
                     }
-                });
-                EQ_Module.virtualBands = virtuals;
-            }
+
+                    EQ_Module.updateSlider(advIdx, 'adv');
+                } else {
+                    virtuals.push({ hz: b.freq, g: b.gain, q: b.q, type: b.type || 'peaking' });
+                }
+            });
+            EQ_Module.virtualBands = virtuals;
 
             EQ_Module.isProgrammaticSliderUpdate = false;
             EQ_Module.eqEnabled = true;
@@ -17416,9 +17901,15 @@ border: 2px solid rgba(${r}, ${g}, ${b}, 0.95) !important;
 
             if (subBass - midBass > 3) tags.push('🌋 Sub Focus');
 
-            if (bassBoost > 3 && trebleBoost > 3 && mids < midReference - 1) tags.push('🔺 V-Shape');
+            if (bassBoost > 3 && trebleBoost > 3 && mids < midReference - 1) tags.push('🔺 V-Shaped');
 
-            if (bassBoost > 2 && trebleBoost > 2 && Math.abs(mids - midReference) < 2) tags.push('🪞 U-Shape');
+            if (bassBoost > 2 && trebleBoost > 2 && Math.abs(mids - midReference) < 2) tags.push('🧲 U-Shaped');
+
+            if (trebleBoost > 4.5 && bassBoost < 2.5) tags.push('⚡ Treble-Head');
+
+            if (Math.abs(bassBoost) < 1.5 && Math.abs(trebleBoost) < 1.5 && Math.abs(upperMidPresence) < 1.8) {
+                tags.push('🎛️ Studio-Monitoring');
+            }
 
             if (Math.abs(bassBoost) < 2 && Math.abs(trebleBoost) < 2 && Math.abs(upperMidPresence) < 2.5) {
                 tags.push('⚖️ Neutral');
@@ -17755,14 +18246,20 @@ toggleSearchMode: function(mode) {
                 }
             },
 
-        handleSimilarityResults: function(matches) {
+        handleSimilarityResults: function(matches, fingerprint) {
         this.similarDirty = false;
         this._similarCalculating = false;
         this._similarHasEverLoaded = true;
 
         this._lastMatches = matches;
         SimilarCurvesCache.results = matches;
-        SimilarCurvesCache.targetHash = SimilarCurvesCache.getTargetFingerprint();
+        // Use the fingerprint captured when the search was issued, never
+        // recompute at arrival time (the user may have changed the target
+        // while the worker was running). Cache-hit re-renders pass no
+        // fingerprint and preserve the stored hash.
+        if (fingerprint !== undefined) {
+            SimilarCurvesCache.targetHash = fingerprint;
+        }
         SimilarCurvesCache.query = document.getElementById('peqdb-search')?.value.trim().toLowerCase() || '';
         const targetCurve = this.STATE.activeCurves.find(c => c.role === 'target' && c.visible);
             const baseCurve = this.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
@@ -17884,37 +18381,53 @@ toggleSearchMode: function(mode) {
 
             if (!targetInterp) return;
 
-            const lightweightDs = this.STATE.dataset || [];
+            // Slim payload for the similarity search: the worker only reads
+            // id/name/variant/source/cachedInterp, so sending the whole dataset
+            // would structured-clone every curve's data[], files, sourcesCache,
+            // and searchKey on each search. Build fresh here so lazily-loaded or
+            // imported curves are never missed by a stale cached copy.
+            const lightweightDs = [];
+            const fullDs = this.STATE.dataset || [];
+            for (let i = 0; i < fullDs.length; i++) {
+                const item = fullDs[i];
+                if (!item.cachedInterp) continue;
+                lightweightDs.push({
+                    id: item.id,
+                    name: item.name,
+                    variant: item.variant,
+                    source: item.source,
+                    cachedInterp: item.cachedInterp
+                });
+            }
+
+            const probeFreqs = CurveUtils.SIM_PROBE_FREQS;
+            const probesIdx = CurveUtils.probeIndices(this.DSP.FREQS, probeFreqs);
+            const weights = probeFreqs.map(f => CurveUtils.weightFor(f));
+            const midMask = probeFreqs.map(f =>
+                (f >= CurveUtils.MID_MEAN_BAND[0] && f <= CurveUtils.MID_MEAN_BAND[1]) ? 1 : 0
+            );
 
             if (this.similarityWorker) {
+                // Capture the fingerprint NOW (before the async trip) and tag the
+                // request with a token so stale responses can be dropped and the
+                // cache keyed against the data this search actually used.
+                this._similarSearchToken = (this._similarSearchToken || 0) + 1;
+                this._similarPostFp = SimilarCurvesCache.getTargetFingerprint();
                 this.similarityWorker.postMessage({
                     dataset: lightweightDs,
                     targetInterp: Array.from(targetInterp),
-                    freqs: Array.from(this.DSP.FREQS),
-                    threshold: 8.0
+                    probes: Array.from(probesIdx),
+                    weights,
+                    midMask,
+                    threshold: 8.0,
+                    token: this._similarSearchToken
                 });
             } else {
-                const matches = [];
                 const threshold = 8.0;
-                lightweightDs.forEach(item => {
-                    if (!item.cachedInterp) return;
-                    let totalDiff = 0;
-                    let count = 0;
-                    for (let i = 0; i < this.DSP.FREQS.length; i += 8) {
-                        const f = this.DSP.FREQS[i];
-                        if (f > 10000) break;
-                        totalDiff += Math.abs(targetInterp[i] - item.cachedInterp[i]);
-                        count++;
-                    }
-                    const mae = totalDiff / count;
-                    const similarity = Math.max(0, 100 * (1 - (mae / threshold)));
-                    matches.push({
-                        id: item.id, name: item.name, variant: item.variant, source: item.source, similarity: similarity
-                    });
-                });
-                matches.sort((a, b) => b.similarity - a.similarity);
-                this.handleSimilarityResults(matches);
-
+                const matches = computeSimilarityScores(
+                    targetInterp, lightweightDs, probesIdx, weights, midMask, threshold
+                );
+                this.handleSimilarityResults(matches, SimilarCurvesCache.getTargetFingerprint());
             }
         },
 
@@ -17928,7 +18441,7 @@ toggleSearchMode: function(mode) {
             let html = `
                 <div class="text-[9px] text-zinc-555 font-bold uppercase tracking-wider mb-2 border-b border-[var(--border-color)] pb-1 flex justify-between items-center mr-3 select-none">
                     <span>Matches for:</span>
-                    <span class="text-[var(--accent-amber)] truncate max-w-[130px]" title="${refName}">${refName}</span>
+                    <span class="text-[var(--accent-amber)] truncate max-w-[130px]" title="${esc(refName)}">${esc(refName)}</span>
                 </div>
             `;
 
@@ -17948,7 +18461,7 @@ toggleSearchMode: function(mode) {
                                     <div class="flex items-center gap-1.5">
                                         <span class="text-[9px] font-mono text-[var(--text-secondary)]">#${idx+1}</span>
                                         <div class="overflow-hidden whitespace-nowrap max-w-[170px] w-full">
-                                            <span class="font-bold text-zinc-300 text-xs inline-block whitespace-nowrap">${group.baseName}</span>
+                                            <span class="font-bold text-zinc-300 text-xs inline-block whitespace-nowrap">${esc(group.baseName)}</span>
                                         </div>
                                     </div>
                                     <div class="text-[9px] text-[var(--accent-blue)] font-black uppercase tracking-wider mt-0.5">${group.items.length} Variations Available</div>
@@ -17973,9 +18486,9 @@ toggleSearchMode: function(mode) {
                                             <div class="flex items-center justify-between w-full pointer-events-none">
                                                 <div class="truncate pr-2 pl-3 border-l border-white/[0.03]">
                                                     <div class="overflow-hidden whitespace-nowrap max-w-[160px] w-full">
-                                                        <span id="marquee-sim-sub-${safeId}" class="font-semibold text-zinc-350 text-xs inline-block whitespace-nowrap">${item.name} <span class="text-[var(--accent-blue)] text-[9px] font-normal">(${item.variant})</span></span>
+                                                        <span id="marquee-sim-sub-${safeId}" class="font-semibold text-zinc-350 text-xs inline-block whitespace-nowrap">${esc(item.name)} <span class="text-[var(--accent-blue)] text-[9px] font-normal">(${esc(item.variant)})</span></span>
                                                     </div>
-                                                    <div class="text-[9px] text-zinc-500 font-semibold uppercase tracking-wider mt-0.5">${item.source}</div>
+                                                    <div class="text-[9px] text-zinc-500 font-semibold uppercase tracking-wider mt-0.5">${esc(item.source)}</div>
                                                     <div class="flex flex-wrap gap-0.5 mt-1 pointer-events-auto" id="sim-sig-tags-sub-${safeId}"></div>
                                                 </div>
                                                 <div class="flex flex-col items-end gap-1 flex-shrink-0">
@@ -21408,7 +21921,7 @@ loadSoundLibrary: async function() {
         setTimeout(() => {
             if (PEQDB_Module && PEQDB_Module.startBackgroundLoading) {
                 try {
-
+                    PEQDB_Module.startBackgroundLoading();
                 } catch (err) {
                     console.error('[Boot] startBackgroundLoading failed:', err);
                 }
@@ -21484,18 +21997,23 @@ loadSoundLibrary: async function() {
                 filterTags: new Set(),
                 selectedPicks: [],
                 approvedTagsList: [
-                    "Basshead", "Sub-Bass", "Punchy Bass", "Warm", "Neutral", "V-Shaped", "Balanced",
-                    "Bright", "Dark", "Detailed", "Resolving", "Technical", "Wide-Stage", "Good-Imaging",
-                    "Smooth", "Reference", "Analytical", "Fun", "Relaxed", "Gaming", "Competitive-Gaming",
-                    "Vocal-Focused", "Budget", "Mid-Tier", "Premium", "Flagship", "Collab", "Limited-Edition"
-                ],
-                tagEmojis: {
-                    "Basshead": "💥", "Sub-Bass": "🌊", "Punchy Bass": "🥊", "Warm": "🌿", "Neutral": "⚖️", "V-Shaped": "🔺", "Balanced": "☯️",
-                    "Bright": "✨", "Dark": "🌑", "Detailed": "💎", "Resolving": "🔍", "Technical": "🔬", "Wide-Stage": "🏟️", "Good-Imaging": "🔭",
-                    "Smooth": "🧈", "Reference": "📐", "Analytical": "🧠", "Fun": "🔥", "Relaxed": "😌", "Gaming": "🎮", "Competitive-Gaming": "🏆",
-                    "Vocal-Focused": "🗣️", "Budget": "💰", "Mid-Tier": "🪙", "Premium": "👑", "Flagship": "🥇", "Collab": "🤝", "Limited-Edition": "🌟",
-                    "Vintage": "📼"
-                },
+    "Basshead", "Treble-Head", "Sub-Bass", "Punchy Bass", "Warm", "Neutral", 
+    "V-Shaped", "U-Shaped", "Balanced", "Bright", "Dark", "Detailed", 
+    "Resolving", "Technical", "Wide-Stage", "Good-Imaging", "Smooth", 
+    "Reference", "Studio-Monitoring", "Analytical", "Fun", "Relaxed", 
+    "Gaming", "Competitive-Gaming", "Vocal-Focused", "Budget", "Mid-Tier", 
+    "Premium", "Flagship", "Collab", "Limited-Edition"
+],
+tagEmojis: {
+    "Basshead": "💥", "Treble-Head": "⚡", "Sub-Bass": "🌊", "Punchy Bass": "🥊", 
+    "Warm": "🌿", "Neutral": "⚖️", "V-Shaped": "🔺", "U-Shaped": "🧲", 
+    "Balanced": "☯️", "Bright": "✨", "Dark": "🌑", "Detailed": "💎", 
+    "Resolving": "🔍", "Technical": "🔬", "Wide-Stage": "🏟️", "Good-Imaging": "🔭", 
+    "Smooth": "🧈", "Reference": "📐", "Studio-Monitoring": "🎛️", "Analytical": "🧠", 
+    "Fun": "🔥", "Relaxed": "😌", "Gaming": "🎮", "Competitive-Gaming": "🏆", 
+    "Vocal-Focused": "🗣️", "Budget": "💰", "Mid-Tier": "🪙", "Premium": "👑", 
+    "Flagship": "🥇", "Collab": "🤝", "Limited-Edition": "🌟"
+},
 
                 _toggleCustomMenuPrefixed: function(prefix, keys, key) {
                     keys.forEach(k => {
@@ -21621,9 +22139,15 @@ loadSoundLibrary: async function() {
                 _pickGroupList: function() {
                     const tags = this.approvedTagsList || [];
                     const tagOf = (name) => ({ kind: 'meta', value: name, emoji: this.tagEmojis[name] || '🏷️' });
-                    const soundTuning = ['Basshead', 'Sub-Bass', 'Punchy Bass', 'Warm', 'Neutral', 'V-Shaped', 'Balanced', 'Bright', 'Dark', 'Detailed', 'Resolving', 'Technical', 'Wide-Stage', 'Good-Imaging', 'Smooth', 'Reference', 'Analytical', 'Fun', 'Relaxed', 'Vocal-Focused'];
-                    const special = ['Budget', 'Mid-Tier', 'Premium', 'Flagship', 'Collab', 'Limited-Edition'];
-                    const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
+                    const soundTuning = [
+    'Basshead', 'Treble-Head', 'Sub-Bass', 'Punchy Bass', 'Warm', 
+    'Neutral', 'V-Shaped', 'U-Shaped', 'Balanced', 'Bright', 
+    'Dark', 'Detailed', 'Resolving', 'Technical', 'Wide-Stage', 
+    'Good-Imaging', 'Smooth', 'Reference', 'Studio-Monitoring', 
+    'Analytical', 'Fun', 'Relaxed', 'Vocal-Focused'
+];
+const special = ['Budget', 'Mid-Tier', 'Premium', 'Flagship', 'Collab', 'Limited-Edition'];
+const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     const known = new Set([...soundTuning, ...special, ...gamingAttrs]);
                     const leftover = tags.filter(t => !known.has(t));
                     const musicItems = (this.genreFamilies || []).map(f => { const v = f.musicVariants[0]; return v ? { kind: 'music', value: v.name, emoji: v.emoji } : null; }).filter(Boolean);
@@ -21644,22 +22168,23 @@ loadSoundLibrary: async function() {
                 },
 
                 pickFx: {
-                    'Basshead': 'basshead', 'Sub-Bass': 'subbass', 'Punchy Bass': 'punch', 'Warm': 'warm',
-                    'Neutral': 'neutral', 'V-Shaped': 'vshape', 'Balanced': 'balanced', 'Bright': 'bright',
-                    'Dark': 'dark', 'Detailed': 'detailed', 'Resolving': 'resolving', 'Technical': 'technical',
-                    'Wide-Stage': 'widestage', 'Good-Imaging': 'imaging', 'Smooth': 'smooth', 'Reference': 'reference',
-                    'Analytical': 'analytical', 'Fun': 'fun', 'Relaxed': 'relaxed', 'Vocal-Focused': 'vocal',
-                    'Hip-Hop': 'hiphop', 'EDM': 'edm', 'Reggae': 'reggae', 'Pop': 'pop', 'Disco': 'disco',
-                    'Techno': 'techno', 'Synthwave': 'synthwave', 'Rock': 'rock', 'Jazz': 'jazz', 'World': 'world',
-                    'Classical': 'classical', 'Folk': 'folk', 'Indie': 'indie', 'Lo-Fi': 'lofi', 'ASMR': 'asmr',
-                    'Cinematic': 'cinematic', 'Zombie': 'zombie', 'Racing': 'racing', 'Adventure': 'adventure',
-                    'RPG': 'rpg', 'Roguelike': 'roguelike', 'Sci-Fi': 'scifi', 'Tactical': 'tactical',
-                    'Action': 'action', 'MMO': 'mmo', 'Sports': 'sports', 'Strategy': 'strategy', 'Cozy': 'cozy',
-                    'Horror': 'horror', 'Puzzle': 'puzzle', 'Arcade': 'arcade', 'FPS': 'fps',
-                    'Gaming': 'gaming', 'Competitive-Gaming': 'compgaming',
-                    'Budget': 'budget', 'Mid-Tier': 'midtier', 'Premium': 'premium', 'Flagship': 'flagship',
-                    'Collab': 'collab', 'Limited-Edition': 'limited', 'Vintage': 'vintage'
-                },
+    'Basshead': 'basshead', 'Treble-Head': 'treblehead', 'Sub-Bass': 'subbass', 'Punchy Bass': 'punch', 'Warm': 'warm',
+    'Neutral': 'neutral', 'V-Shaped': 'vshape', 'U-Shaped': 'ushape', 'Balanced': 'balanced', 'Bright': 'bright',
+    'Dark': 'dark', 'Detailed': 'detailed', 'Resolving': 'resolving', 'Technical': 'technical',
+    'Wide-Stage': 'widestage', 'Good-Imaging': 'imaging', 'Smooth': 'smooth', 'Reference': 'reference',
+    'Studio-Monitoring': 'studiomonitor', 'Analytical': 'analytical', 'Fun': 'fun', 'Relaxed': 'relaxed', 'Vocal-Focused': 'vocal',
+    'Hip-Hop': 'hiphop', 'EDM': 'edm', 'Reggae': 'reggae', 'Pop': 'pop', 'Disco': 'disco',
+    'Techno': 'techno', 'Synthwave': 'synthwave', 'Rock': 'rock', 'Jazz': 'jazz', 'World': 'world',
+    'Classical': 'classical', 'Folk': 'folk', 'Indie': 'indie', 'Lo-Fi': 'lofi', 'ASMR': 'asmr',
+    'Cinematic': 'cinematic', 'Zombie': 'zombie', 'Racing': 'racing', 'Adventure': 'adventure',
+    'RPG': 'rpg', 'Roguelike': 'roguelike', 'Sci-Fi': 'scifi', 'Tactical': 'tactical',
+    'Action': 'action', 'MMO': 'mmo', 'Sports': 'sports', 'Strategy': 'strategy', 'Cozy': 'cozy',
+    'Horror': 'horror', 'Puzzle': 'puzzle', 'Arcade': 'arcade', 'FPS': 'fps',
+    'Platformer': 'platformer',
+    'Gaming': 'gaming', 'Competitive-Gaming': 'compgaming',
+    'Budget': 'budget', 'Mid-Tier': 'midtier', 'Premium': 'premium', 'Flagship': 'flagship',
+    'Collab': 'collab', 'Limited-Edition': 'limited'
+},
 
                 renderPickGrid: function() {
                     const grid = document.getElementById('find-pick-grid');
@@ -21676,8 +22201,8 @@ loadSoundLibrary: async function() {
                             const on = isSel(p);
                             const fx = this.pickFx[p.value] || '';
                             const playing = on && p.value === this._lastFx ? ' fx-play' : '';
-                            html += `<button type="button" onclick="FindEngine.togglePick('${p.kind}','${p.value.replace(/'/g, "\\'")}')" data-tooltip="${p.value}" data-value="${p.value}" data-fx="${fx}" class="no-tactile find-pick-badge ${on ? 'on' : ''}${playing}" aria-pressed="${on}">
-                                <span class="emoji-font vibrant-emoji leading-none pointer-events-none">${p.emoji}</span>
+                            html += `<button type="button" onclick="FindEngine.togglePick('${escJs(p.kind)}','${escJs(p.value)}')" data-tooltip="${esc(p.value)}" data-value="${esc(p.value)}" data-fx="${esc(fx)}" class="no-tactile find-pick-badge ${on ? 'on' : ''}${playing}" aria-pressed="${on}">
+                                <span class="emoji-font vibrant-emoji leading-none pointer-events-none">${esc(p.emoji)}</span>
                             </button>`;
                         });
                         html += `</div></div>`;
@@ -21691,23 +22216,7 @@ loadSoundLibrary: async function() {
                     const grid = document.getElementById('find-pick-grid');
                     const pickSection = document.getElementById('find-pick-section');
                     if (!grid || !pickSection || pickSection.classList.contains('hidden')) return;
-                    const sec = document.querySelector('#find-col-prefs .section-card');
-                    const scroller = document.getElementById('find-scroll-area');
-                    if (!sec || !scroller) return;
-                    const top = sec.firstElementChild;
-                    const btn = sec.lastElementChild;
-                    if (!top || !btn) return;
-                    const filterControls = document.getElementById('find-filter-controls');
-                    const filterH = (filterControls && !filterControls.classList.contains('hidden')) ? filterControls.offsetHeight : 0;
-                    const avail = sec.clientHeight - top.offsetHeight - btn.offsetHeight - 24 - filterH - 12;
-                    let emojiSize = Math.floor((avail - 14) / 11.17);
-                    emojiSize = Math.max(14, Math.min(28, emojiSize));
-                    const apply = (e) => grid.style.setProperty('--pick-emoji', e + 'px');
-                    apply(emojiSize);
-                    for (let i = 0; i < 6 && emojiSize > 13 && scroller.scrollHeight > scroller.clientHeight + 1; i++) {
-                        emojiSize -= 1;
-                        apply(emojiSize);
-                    }
+                    grid.style.setProperty('--pick-emoji', '20px');
                 },
 
                 togglePick: function(kind, value) {
@@ -21807,18 +22316,21 @@ loadSoundLibrary: async function() {
                 getTagEmoji: function(tagStr) {
                     if (!tagStr) return '🏷️';
                     const emojiMatch = tagStr.match(/^(\p{Extended_Pictographic}|\p{Emoji})/u);
-                    if (emojiMatch) return '';
-                    const cleanKey = tagStr.toLowerCase().trim().replace(/_/g, '-');
+                    if (emojiMatch) return emojiMatch[0];
+                    const cleanKey = tagStr.toLowerCase().trim().replace(/[\s_]+/g, '-');
                     const emojiMap = {
-                        'basshead': '💥', 'sub-bass': '🌊', 'sub bass': '🌊', 'punchy-bass': '🥊', 'punchy bass': '🥊',
+                        'basshead': '💥', 'treble-head': '⚡', 'treblehead': '⚡', 'treble head': '⚡',
+                        'sub-bass': '🌊', 'sub bass': '🌊', 'punchy-bass': '🥊', 'punchy bass': '🥊',
                         'warm': '🌿', 'warm-tilt': '🌿', 'neutral': '⚖️', 'v-shaped': '🔺', 'v-shape': '🔺',
-                        'balanced': '☯️', 'bright': '✨', 'dark': '🌑', 'detailed': '💎', 'detail': '💎',
-                        'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️', 'soundstage': '🏟️',
-                        'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '📐',
+                        'u-shaped': '🧲', 'u-shape': '🧲', 'ushaped': '🧲', 'ushape': '🧲', 'balanced': '☯️',
+                        'bright': '✨', 'dark': '🌑', 'detailed': '💎', 'detail': '💎', 'resolving': '🔍',
+                        'technical': '🔬', 'wide-stage': '🏟️', 'soundstage': '🏟️', 'good-imaging': '🔭',
+                        'imaging': '🔭', 'smooth': '🧈', 'reference': '📐', 'studio-monitoring': '🎛️',
+                        'studio monitoring': '🎛️', 'studiomonitoring': '🎛️', 'studio-monitor': '🎛️', 'studio monitor': '🎛️',
                         'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮',
-                        'competitive-gaming': '🏆', 'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰',
-                        'mid-tier': '🪙', 'premium': '👑', 'flagship': '🥇', 'collab': '🤝',
-                        'limited-edition': '🌟', 'vintage': '📼'
+                        'competitive-gaming': '🏆', 'competitive gaming': '🏆', 'vocal-focused': '🗣️', 'vocal': '🎤',
+                        'budget': '💰', 'mid-tier': '🪙', 'mid tier': '🪙', 'premium': '👑', 'flagship': '🥇',
+                        'collab': '🤝', 'limited-edition': '🌟', 'limited edition': '🌟'
                     };
                     return emojiMap[cleanKey] || '🏷️';
                 },
@@ -21831,7 +22343,8 @@ loadSoundLibrary: async function() {
                     { id: 'basshead', label: 'Basshead', emoji: '💥' },
                     { id: 'vshape', label: 'V-Shape', emoji: '🔺' },
                     { id: 'gaming', label: 'Gaming', emoji: '🎮' },
-                    { id: 'flat', label: 'Flat Neutral', emoji: '📏' }
+                    { id: 'flat', label: 'Flat Neutral', emoji: '📏' },
+                    { id: 'custom', label: 'Custom', emoji: '🛠️' }
                 ],
 
                 init: async function() {
@@ -21845,7 +22358,7 @@ loadSoundLibrary: async function() {
                     const btn = document.getElementById('find-baseline-btn');
                     if (btn) {
                         const opt = this.baselineOptions[0];
-                        btn.textContent = `${opt.emoji} Baseline: ${opt.label}`;
+                        btn.textContent = `${opt.emoji} ${opt.label}`;
                     }
 
                     this.loadSavedTasteFavorites();
@@ -21879,13 +22392,10 @@ loadSoundLibrary: async function() {
                 },
 
                 _freqWeight: function(f) {
-                    if (f < 80) return 1.2;
-                    if (f < 250) return 1.1;
-                    if (f < 1000) return 1.0;
-                    if (f < 3500) return 1.5;
-                    if (f < 7000) return 1.0;
-                    if (f <= 10000) return 0.5;
-                    return 0.1;
+                    // Shared perceptual weight table (see CurveUtils), keeps
+                    // the Find tab's tuning/upgrade scoring consistent with
+                    // the similar-curve ranking and the genre classifier.
+                    return CurveUtils.weightFor(f);
                 },
 
                 _scoreInterp: function(interp, targetInterp, freqs, weighted = true) {
@@ -22084,12 +22594,12 @@ loadSoundLibrary: async function() {
                 getTagAnimationClass: function(tag) {
                     const t = tag.toLowerCase();
                     if (/bass|slam|punch|rumble/i.test(t)) return 'anim-match-punch';
-                    if (/bright|detail|sparkle|air|resolv|technical|analytical/i.test(t)) return 'anim-match-pulse';
-                    if (/rock|metal|energetic|fun|v-shaped/i.test(t)) return 'anim-match-rock';
+                    if (/bright|detail|sparkle|air|resolv|technical|analytical|treble/i.test(t)) return 'anim-match-pulse';
+                    if (/rock|metal|energetic|fun|v-shaped|u-shaped/i.test(t)) return 'anim-match-rock';
                     if (/vocal|presence|dialogue/i.test(t)) return 'anim-match-bounce';
                     if (/gaming|competitive|arcade/i.test(t)) return 'anim-match-snap';
                     if (/flagship|premium|limited|collab|gold/i.test(t)) return 'anim-match-spin';
-                    if (/neutral|warm|relaxed|smooth|balanced|reference/i.test(t)) return 'anim-match-breath';
+                    if (/neutral|warm|relaxed|smooth|balanced|reference|studio/i.test(t)) return 'anim-match-breath';
                     return 'anim-match-float';
                 },
 
@@ -22300,13 +22810,31 @@ loadSoundLibrary: async function() {
                     } else {
                         this.updateIndexingProgressBar();
 
-                        setTimeout(() => {
+                        let attempts = 0;
+                        const MAX_ATTEMPTS = 20;
+                        const check = () => {
+                            attempts++;
+                            if (PEQDB_Module.databaseFullyLoaded) {
+                                if (progressContainer) progressContainer.classList.add('hidden');
+                                return;
+                            }
+                            if (CurveIndexer.warming) {
+                                if (attempts >= MAX_ATTEMPTS) {
+                                    if (progressContainer) progressContainer.classList.add('hidden');
+                                    PEQDB_Module.databaseFullyLoaded = true;
+                                    console.warn("[FindEngine] Progress bar auto-hidden after warmup timeout.");
+                                } else {
+                                    setTimeout(check, 3000);
+                                }
+                                return;
+                            }
                             if (progressContainer && !progressContainer.classList.contains('hidden')) {
                                 progressContainer.classList.add('hidden');
                                 PEQDB_Module.databaseFullyLoaded = true;
                                 console.warn("[FindEngine] Progress bar auto-hidden via safety timer.");
                             }
-                        }, 3000);
+                        };
+                        setTimeout(check, 3000);
                     }
                 },
 
@@ -22316,6 +22844,18 @@ loadSoundLibrary: async function() {
                         blindChk.addEventListener('change', () => {
                             if (this._lastMatches) {
                                 this.renderMatches(this._lastMatches);
+                            }
+                        });
+                    }
+
+                    const targetCanvas = document.getElementById('find-target-canvas');
+                    if (targetCanvas) {
+                        targetCanvas.addEventListener('click', () => {
+                            const opt = this.baselineOptions[this.currentBaselineIndex];
+                            if (!opt || opt.id !== 'custom') return;
+                            const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
+                            if (!baseCurve || !baseCurve.data || baseCurve.data.length < 2) {
+                                App.switchTab('eq');
                             }
                         });
                     }
@@ -22370,7 +22910,7 @@ loadSoundLibrary: async function() {
                                     const btn = document.getElementById('find-baseline-btn');
                                     if (btn) {
                                         const opt = this.baselineOptions[this.currentBaselineIndex];
-                                        btn.textContent = `${opt.emoji} Baseline: ${opt.label}`;
+                                        btn.textContent = `${opt.emoji} ${opt.label}`;
                                     }
                                 }
                                 this.updateSliderUI(id);
@@ -22415,17 +22955,29 @@ loadSoundLibrary: async function() {
 
                     const btn = document.getElementById('find-baseline-btn');
                     if (btn) {
-                        btn.textContent = `${opt.emoji} Baseline: ${opt.label}`;
+                        btn.textContent = `${opt.emoji} ${opt.label}`;
                     }
 
                     this.resetSlidersToZero();
                     this.drawTargetVisualization();
+
+                    if (opt.id === 'custom') {
+                        const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
+                        if (!baseCurve) {
+                            showToast("Add a curve to the EQ Base slot to use Custom baseline!", "🛠️");
+                            return;
+                        }
+                        showToast(`Custom baseline locked to "${baseCurve.name}"!`, "🛠️");
+                        return;
+                    }
+
                     showToast(`Toggled baseline to "${opt.label}"!`, "🎯");
                 },
 
                 startActiveSlotObserver: function() {
                     if (this._activeSlotObserverStarted) return;
                     this._activeSlotObserverStarted = true;
+                    this._lastObservedBaseKey = '';
 
                     setInterval(() => {
                         if (document.hidden) return;
@@ -22433,7 +22985,20 @@ loadSoundLibrary: async function() {
                         // the next tick after returning corrects any stale state.
                         const findPane = document.getElementById('pane-find');
                         if (findPane && findPane.classList.contains('hidden')) return;
+
                         const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
+                        const baseUid = baseCurve ? baseCurve.uid : null;
+                        const baseDataReady = !!(baseCurve && baseCurve.data && baseCurve.data.length >= 2);
+                        const baseKey = baseUid ? `${baseUid}:${baseDataReady ? 'ready' : 'pending'}` : '';
+
+                        const opt = this.baselineOptions[this.currentBaselineIndex];
+                        const customMode = !!(opt && opt.id === 'custom');
+
+                        if (customMode && baseKey !== this._lastObservedBaseKey) {
+                            this._lastObservedBaseKey = baseKey;
+                            this.drawTargetVisualization();
+                        }
+
                         const btn = document.getElementById('find-clone-btn');
                         const row = document.getElementById('find-clone-actions-row');
                         if (!btn || !row) return;
@@ -22561,7 +23126,7 @@ loadSoundLibrary: async function() {
 
                     const btn = document.getElementById('find-baseline-btn');
                     if (btn) {
-                        btn.textContent = `❤️ Baseline: Custom Taste`;
+                        btn.textContent = `❤️ Custom Taste`;
                     }
 
                     setTimeout(async () => {
@@ -22575,42 +23140,43 @@ loadSoundLibrary: async function() {
                         }
 
                         const validItems = dataset.filter(item => item.data !== null && item.data.length >= 2);
-                        const canonicalList = await this.buildCanonicalProfiles(validItems);
                         const targetInterp = Array.from(averagedInterp);
 
                         const matches = [];
 
                         const datasetItems = PEQDB_Module.STATE.dataset || [];
 
-                            canonicalList.forEach(iem => {
-                                const matchPct = this._scoreInterp(iem.interp, targetInterp, freqs, true);
+                        const tuningMatches = await this.runTuningScan(validItems, targetInterp, freqs);
 
-                                const dsItem = datasetItems.find(d => d.id === iem.id);
-                                const rawFiles = dsItem && dsItem.files ? dsItem.files : [];
-                                const fileScores = [];
+                        tuningMatches.forEach(iem => {
+                            const matchPct = iem.similarity;
 
-                                if (rawFiles.length > 1) {
-                                    rawFiles.forEach(filePath => {
-                                        if (dsItem && dsItem.sourcesCache && dsItem.sourcesCache[filePath]) {
-                                            const subData = dsItem.sourcesCache[filePath];
-                                            const subPct = this.calculateCurveMatchScore(subData, targetInterp, freqs, true);
-                                            fileScores.push(subPct);
-                                        } else {
-                                            fileScores.push(matchPct);
-                                        }
-                                    });
-                                }
+                            const dsItem = datasetItems.find(d => d.id === iem.id);
+                            const rawFiles = dsItem && dsItem.files ? dsItem.files : [];
+                            const fileScores = [];
 
-                                matches.push({
-                                    name: iem.name,
-                                    id: iem.id,
-                                    data: iem.sourceData,
-                                    similarity: matchPct,
-                                    fileScores: fileScores,
-                                    interp: iem.interp,
-                                    isTuningMatch: true
+                            if (rawFiles.length > 1) {
+                                rawFiles.forEach(filePath => {
+                                    if (dsItem && dsItem.sourcesCache && dsItem.sourcesCache[filePath]) {
+                                        const subData = dsItem.sourcesCache[filePath];
+                                        const subPct = this.calculateCurveMatchScore(subData, targetInterp, freqs, true);
+                                        fileScores.push(subPct);
+                                    } else {
+                                        fileScores.push(matchPct);
+                                    }
                                 });
+                            }
+
+                            matches.push({
+                                name: iem.name,
+                                id: iem.id,
+                                data: iem.data,
+                                similarity: matchPct,
+                                fileScores: fileScores,
+                                interp: iem.interp,
+                                isTuningMatch: true
                             });
+                        });
 
                             matches.sort((a, b) => b.similarity - a.similarity);
 
@@ -22685,7 +23251,12 @@ loadSoundLibrary: async function() {
                     const opt = this.baselineOptions[this.currentBaselineIndex];
                     let baselineInterp;
 
-                    if (opt.id === 'harman') {
+                    if (opt.id === 'custom') {
+                        const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
+                        if (!baseCurve || !baseCurve.data || baseCurve.data.length < 2) return null;
+                        const baseNorm = CurveUtils.normalizeTo75dB(baseCurve.data, 500, 75);
+                        baselineInterp = CurveUtils.cubicSplineInterpolate(baseNorm, freqs);
+                    } else if (opt.id === 'harman') {
                         const harman = PEQDB_Module.TARGETS.harman.data;
                         const harmanNorm = CurveUtils.normalizeTo75dB(harman, 500, 75);
                         baselineInterp = CurveUtils.cubicSplineInterpolate(harmanNorm, freqs);
@@ -22857,6 +23428,20 @@ loadSoundLibrary: async function() {
                     });
 
                     const targetCurve = this.generateTargetCurve();
+
+                    if (!targetCurve || targetCurve.length < 2) {
+                        canvas.style.cursor = 'pointer';
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+                        ctx.font = 'bold 11px system-ui, sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('🛠️ Add a custom curve to the EQ base slot', w / 2, h / 2 - 8);
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+                        ctx.font = 'bold 9px system-ui, sans-serif';
+                        ctx.fillText('Click here to open the EQ tab', w / 2, h / 2 + 10);
+                        return;
+                    }
+
+                    canvas.style.cursor = 'default';
                     const minDb = 60;
                     const maxDb = 90;
 
@@ -23101,6 +23686,79 @@ loadSoundLibrary: async function() {
                     return matches;
                 },
 
+                _runUpgradeViaWorker: function(token, items, baseInterp, freqs, goal) {
+                    const worker = this.ensureFindWorker();
+                    if (!worker) return Promise.resolve(null);
+                    return new Promise((resolve) => {
+                        const onMsg = (e) => {
+                            const d = e.data || {};
+                            if (d.type !== 'result') return;
+                            worker.removeEventListener('message', onMsg);
+                            worker.removeEventListener('error', onErr);
+                            if (this._scanToken !== token) return resolve(null);
+                            if (!d.ok) { console.warn("[FindEngine] worker upgrade failed:", d.error); return resolve(null); }
+                            resolve((d.matches || []).slice());
+                        };
+                        const onErr = (e) => {
+                            console.warn("[FindEngine] worker error:", e && e.message);
+                            worker.removeEventListener('message', onMsg);
+                            worker.removeEventListener('error', onErr);
+                            resolve(null);
+                        };
+                        worker.addEventListener('message', onMsg);
+                        worker.addEventListener('error', onErr);
+                        try {
+                            const slim = items.map(function(it) {
+                                return {
+                                    id: it && it.id,
+                                    name: it && it.name,
+                                    data: it && it.data || null,
+                                    tags: it && it.tags && it.tags.slice ? it.tags.slice() : (it && it.tags || [])
+                                };
+                            });
+                            worker.postMessage({ type: 'upgrade', items: slim, baseInterp: baseInterp || null, freqs: freqs, goal: goal });
+                        } catch (e) {
+                            worker.removeEventListener('message', onMsg);
+                            worker.removeEventListener('error', onErr);
+                            resolve(null);
+                        }
+                    });
+                },
+
+                runUpgradeScan: async function(items, baseInterp, freqs, goal) {
+                    const token = (this._scanToken || 0) + 1;
+                    this._scanToken = token;
+
+                    const workerResults = await this._runUpgradeViaWorker(token, items, baseInterp, freqs, goal);
+
+                    if (workerResults !== null && this._scanToken === token) {
+                        return workerResults;
+                    }
+
+                    const freqsLocal = freqs || CurveUtils.generateLogGrid(100);
+                    const results = [];
+                    items.forEach(it => {
+                        const data = (it && it.data) || null;
+                        const tags = (it && it.tags) || [];
+                        if (!data || data.length < 2 || !baseInterp) {
+                            results.push({ id: it && it.id, tonalMatch: 0, acousticPassed: false, acousticReason: "Missing Curve Data", matchedTag: false });
+                            return;
+                        }
+                        const norm = CurveUtils.normalizeTo75dB(data, 500, 75);
+                        const interp = CurveUtils.cubicSplineInterpolate(norm, freqsLocal);
+                        const tonalMatch = this._scoreInterp(interp, baseInterp, freqsLocal, true);
+                        const acoustic = this.verifyGoalAcoustics(interp, baseInterp, freqsLocal, goal);
+                        results.push({
+                            id: it.id,
+                            tonalMatch: tonalMatch,
+                            acousticPassed: !!acoustic.passed,
+                            acousticReason: acoustic.reason || "",
+                            matchedTag: this.hasGoalTag(tags, goal)
+                        });
+                    });
+                    return results;
+                },
+
                 updateIndexingProgressBar: function() {
                     const progressContainer = document.getElementById('find-progress-container');
                     if (PEQDB_Module.databaseFullyLoaded) {
@@ -23152,6 +23810,16 @@ loadSoundLibrary: async function() {
                     const isTuningMode = (this.findMode === 'tuning');
 
                     if (isTuningMode) {
+
+                        const opt = this.baselineOptions[this.currentBaselineIndex];
+                        if (opt.id === 'custom') {
+                            const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
+                            if (!baseCurve || !baseCurve.data || baseCurve.data.length < 2) {
+                                showToast("Add a curve to the EQ Base slot to use Custom baseline!", "🛠️");
+                                this.isScanning = false;
+                                return;
+                            }
+                        }
 
                         const dataset = PEQDB_Module.STATE.dataset;
                         if (!dataset || dataset.length === 0) {
@@ -23598,14 +24266,18 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                 cardState: {},
 
 
-        // These 16 families are NOT hand-guessed — they're the actual clusters
+        // These 32 families are NOT hand-guessed — they're the actual clusters
         // found by running k-means on 7,575 real measured curves from this
         // catalog (reduced to the same 5-axis [subBoost, warmth, vocal,
         // treble, air] shape used everywhere else). Each cluster's `profile`
-        // is its real centroid. Each family carries exactly one canonical
-        // music label and one canonical gaming label, so the match-card
-        // badges, the live EQ-tab overlay, and the Find-tab genre filters all
-        // read off the same single set of names.
+        // is its real centroid. Indexes 0-15 are the ORIGINAL 16 clusters,
+        // frozen as anchors (their labels/styles/presetGenreMap indices are
+        // untouched); indexes 16-31 are 16 additional sub-clusters that were
+        // fit into the gaps between them by the same seeded k-means on all
+        // clean curves, then labeled by their centroid signature. Every family
+        // carries exactly one canonical music label and one canonical gaming
+        // label, so the match-card badges, the live EQ-tab overlay, and the
+        // Find-tab genre filters all read off the same single set of names.
         genreFamilies: [
             { profile: [11.8, 8.4, 7.6, 8.6, -3.9], // "Basshead" (e.g. Blon BL03)
                 musicVariants: [ { emoji: '🎤', name: 'Hip-Hop' } ],
@@ -23665,11 +24337,11 @@ getDriveabilityStatus: function(impedance, sensitivity) {
 
             { profile: [-32.4, -15.4, 6.7, -1.4, -13.3], // Near-bassless open-ear/bone-conduction
                 musicVariants: [ { emoji: '🫧', name: 'ASMR' } ],
-                gameVariants: [ { emoji: '👾', name: 'Arcade' } ] },
+                gameVariants: [ { emoji: '🧱', name: 'Platformer' } ] },
 
             { profile: [6.9, 4.6, 7.7, 2.8, -3.7], // "Typical" balanced Harman-ish — most common shape
                 musicVariants: [ { emoji: '🎬', name: 'Cinematic' } ],
-                gameVariants: [ { emoji: '🔫', name: 'FPS' } ] }
+                gameVariants: [ { emoji: '🔫', name: 'FPS' } ] },
         ],
 
         // Independent GAMING-side classifier. Music and gaming live in
@@ -23700,8 +24372,8 @@ getDriveabilityStatus: function(impedance, sensitivity) {
             { profile: [3.0, 6.0, 3.0, -3.0, -9.0], gameVariants: [ { emoji: '🌱', name: 'Cozy' } ] },
             { profile: [5.0, 1.0, 2.0, -9.0, -12.0], gameVariants: [ { emoji: '👻', name: 'Horror' } ] },
             { profile: [1.0, 3.0, 7.0, 4.0, -5.0], gameVariants: [ { emoji: '🧩', name: 'Puzzle' } ] },
-            { profile: [3.0, 2.0, 8.0, 8.0, -2.0], gameVariants: [ { emoji: '👾', name: 'Arcade' } ] },
-            { profile: [-2.0, 0.0, 10.0, 10.0, 3.0], gameVariants: [ { emoji: '🔫', name: 'FPS' } ] }
+            { profile: [3.0, 2.0, 8.0, 8.0, -2.0], gameVariants: [ { emoji: '🧱', name: 'Platformer' } ] },
+            { profile: [-2.0, 0.0, 10.0, 10.0, 3.0], gameVariants: [ { emoji: '🔫', name: 'FPS' } ] },
         ],
 
         // Indexed 1:1 with genreFamilies, for the live EQ-tab badge's pulse
@@ -23731,26 +24403,29 @@ getDriveabilityStatus: function(impedance, sensitivity) {
         // trebleBoost, airExt] that the family profiles above are scored against.
         getCurveDeltas: function(curveData) {
             if (!curveData || curveData.length < 5) return null;
-            const freqs = [30, 100, 500, 2500, 8000, 14000];
             const norm = CurveUtils.normalizeTo75dB(curveData, 500, 75);
-            const interp = CurveUtils.cubicSplineInterpolate(norm, freqs);
-            const [sb, mb, m, v, tr, air] = interp;
+            const [sb, mb, m, v, tr, air] = CurveUtils.bandAverages(norm, CurveUtils.AXIS_BANDS);
             return [sb - m, mb - m, v - m, tr - m, air - m];
         },
 
         // Same 5-axis reduction, but for the EQ tab's live 10-band parametric
         // EQ (fixed centers 31/62/125/250/500/1000/2000/4000/8000/16000 Hz)
         // instead of a measured curve, so both features share one classifier.
+        // Convirt the 10 EQ bands into a smooth curve (via the same cubic
+        // spline), interpolate onto the exact reference frequencies used by
+        // getCurveDeltas and return the SAME mid-relative deltas — so the live
+        // overlay and the DB-card classifier rank shapes identically.
         // bandDeltas is the 10 boost/cut values in dB, band-index order.
         getEqBandDeltas: function(bandDeltas) {
             if (!bandDeltas || bandDeltas.length < 10) return null;
-            const [b31, b62, b125, b250, b500, b1k, b2k, b4k, b8k, b16k] = bandDeltas;
-            const sub = (b31 + b62) / 2;
-            const warmth = (b125 + b250) / 2;
-            const vocal = b1k;
-            const treble = (b2k + b4k) / 2;
-            const air = (b8k + b16k) / 2;
-            return [sub, warmth, vocal, treble, air];
+            const eqFreqs = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+            const points = [];
+            for (let i = 0; i < bandDeltas.length; i++) {
+                const db = parseFloat(bandDeltas[i]);
+                points.push([eqFreqs[i], isNaN(db) ? 0 : db]);
+            }
+            const [sb, mb, m, v, tr, air] = CurveUtils.bandAverages(points, CurveUtils.AXIS_BANDS);
+            return [sb - m, mb - m, v - m, tr - m, air - m];
         },
 
         // Stable (non-random) string hash so the same IEM always lands on the
@@ -23764,42 +24439,65 @@ getDriveabilityStatus: function(impedance, sensitivity) {
             return Math.abs(h) % mod;
         },
 
+        // Shared similarity between a weighted query vector and one weighted
+        // family profile. Direction-cosine alone is magnitude-blind: a 1dB
+        // boost and a 10dB boost point the same way, so small moves never
+        // re-rank families and weird curve shapes sit in one Voronoi cell for
+        // a long time. Blending in a magnitude-overlap term (2·dot / (|q|²+|p|²),
+        // max when the query strength matches the family strength) makes the
+        // live overlay respond proportionally: louder, clearer shapes commit
+        // to their family; faint ones fall back. KEEP 0.5/0.5 unless the family
+        // set is re-tuned.
+        _familyShapeScore: function(qW, pW, dot, qSq, pSq) {
+            const denom = qSq + pSq - dot;
+            const overlap = denom > 1e-9 ? (2 * dot) / (qSq + pSq) : 0;
+            const cos = (qSq > 1e-9 && pSq > 1e-9) ? dot / (Math.sqrt(qSq) * Math.sqrt(pSq)) : 0;
+            return 0.5 * cos + 0.5 * overlap;
+        },
+
         nearestGenreFamilyIndex: function(deltas) {
             // Direction-based (weighted cosine) matching instead of Euclidean
             // nearest-centroid. Euclidean distance is biased toward whichever
-            // centroid sits geometrically closest to the center of the 16-family
+            // centroid sits geometrically closest to the center of the 32-family
             // cluster, which collapsed every moderate V/bass shape onto one
             // "middle" family (Jazz/MMO). Cosine ignores overall magnitude, so
             // a big pure-bass boost maps to the bass-dominant family (Hip-Hop),
             // a V-shaped boost maps to the V-shaped family (EDM/Racing), etc.
             //
             // Per-axis weights for the 5-axis [sub, warmth, vocal, treble, air]
-            // deltas. Perception-wise, genre primarily lives in the mid/vocal
-            // bands, while sub-bass and air are the noisiest in measurement and
-            // the least diagnostic — so we under-weight them and emphasize
-            // vocal presence & treble so classification is more musical.
-            const AXIS_W = [0.7, 1.0, 1.3, 1.1, 0.6];
+            // deltas, derived from the shared PERCEPTUAL_WEIGHTS table so the
+            // classifier, similar-curve ranking and auto-EQ all emphasize the
+            // same bands. Perception-wise, genre primarily lives in the mid/
+            // vocal bands, while sub-bass and air are the noisiest in
+            // measurement and the least diagnostic.
+            const AXIS_W = CurveUtils.axisScoreWeights();
             const W = AXIS_W.map(w => Math.sqrt(w));
+
+            let qSq = 0;
+            const qW = [];
+            for (let j = 0; j < deltas.length; j++) {
+                const v = deltas[j] * W[j];
+                qW.push(v);
+                qSq += v * v;
+            }
 
             // Magnitude gate: an essentially-flat/quiet shape carries no genre
             // information, so route it to the near-neutral family (Classical)
             // instead of letting noise pick an arbitrary direction.
-            let mag = 0;
-            for (let j = 0; j < deltas.length; j++) mag += deltas[j] * W[j] * deltas[j] * W[j];
-            if (mag < 0.25) return 10;
+            if (qSq < 0.25) return 10;
 
             let bestIdx = 0;
             let bestSim = -Infinity;
             this.genreFamilies.forEach((f, i) => {
-                let dot = 0, qm = 0, pm = 0;
+                let dot = 0, pSq = 0;
+                const pW = [];
                 for (let j = 0; j < deltas.length; j++) {
-                    const q = deltas[j] * W[j];
                     const p = f.profile[j] * W[j];
-                    dot += q * p;
-                    qm += q * q;
-                    pm += p * p;
+                    pW.push(p);
+                    dot += qW[j] * p;
+                    pSq += p * p;
                 }
-                const sim = dot / (Math.sqrt(qm) * Math.sqrt(pm));
+                const sim = this._familyShapeScore(qW, pW, dot, qSq, pSq);
                 if (sim > bestSim) {
                     bestSim = sim;
                     bestIdx = i;
@@ -23813,28 +24511,35 @@ getDriveabilityStatus: function(impedance, sensitivity) {
         },
 
         nearestGameGenreFamilyIndex: function(deltas) {
-            // Gaming-tuned axis weights for [sub, warm, vocal, treble, air].
-            // Emphasize sub-bass (rumble) and treble (footsteps/ammo clicks),
-            // de-emphasize warmth (mud masking) and air (measurement noise).
-            const AXIS_W = [1.2, 0.7, 1.3, 1.5, 0.5];
+            // Gaming-tuned axis weights for [sub, warm, vocal, treble, air],
+            // derived from the shared PERCEPTUAL_WEIGHTS table with a gaming
+            // tilt: emphasize sub-bass (rumble) and treble (footsteps/ammo
+            // clicks), de-emphasize warmth (mud masking) and air (noise).
+            const AXIS_W = CurveUtils.axisScoreWeights().map((w, i) => w * [1.7, 0.6, 1.0, 1.3, 0.8][i]);
             const W = AXIS_W.map(w => Math.sqrt(w));
 
-            let mag = 0;
-            for (let j = 0; j < deltas.length; j++) mag += deltas[j] * W[j] * deltas[j] * W[j];
-            if (mag < 0.25) return 10; // near-flat -> Strategy
+            let qSq = 0;
+            const qW = [];
+            for (let j = 0; j < deltas.length; j++) {
+                const v = deltas[j] * W[j];
+                qW.push(v);
+                qSq += v * v;
+            }
+
+            if (qSq < 0.25) return 10; // near-flat -> Strategy
 
             let bestIdx = 0;
             let bestSim = -Infinity;
             this.gameGenreFamilies.forEach((f, i) => {
-                let dot = 0, qm = 0, pm = 0;
+                let dot = 0, pSq = 0;
+                const pW = [];
                 for (let j = 0; j < deltas.length; j++) {
-                    const q = deltas[j] * W[j];
                     const p = f.profile[j] * W[j];
-                    dot += q * p;
-                    qm += q * q;
-                    pm += p * p;
+                    pW.push(p);
+                    dot += qW[j] * p;
+                    pSq += p * p;
                 }
-                const sim = dot / (Math.sqrt(qm) * Math.sqrt(pm));
+                const sim = this._familyShapeScore(qW, pW, dot, qSq, pSq);
                 if (sim > bestSim) {
                     bestSim = sim;
                     bestIdx = i;
@@ -23941,26 +24646,21 @@ declaredPresetGenre: function(presetKey, side) {
     };
 },
 
-// Live EQ-tab version: same 16 families, but returns ONE stable representative
+// Live EQ-tab version: same 32 families, but returns ONE stable representative
 // label per family (variants[0]) instead of hashing, since there's no per-id
 // to anchor on here and hashing live slider state would make the badge flicker
 // between synonyms (e.g. Trap vs Drill) on tiny slider moves with no audible reason.
 // If a curated preset is active, its declared genre wins over the raw shape.
 determineLiveMusicGenreMatch: function(bandDeltas, presetKey) {
-    const declared = this.declaredPresetGenre(presetKey, 'm');
-    if (declared) {
-        const fallbackStyle = { colorClass: 'genre-color-pop', animClass: 'anim-match-breath' };
-        return {
-            emoji: declared.emoji,
-            name: declared.name,
-            colorClass: declared.colorClass || fallbackStyle.colorClass,
-            animClass: declared.animClass || fallbackStyle.animClass
-        };
-    }
-
-    const deltas = this.getEqBandDeltas(bandDeltas);
+    const deltas = (bandDeltas && bandDeltas.length === 500)
+        ? this.getResponseDeltas(this.DSP.FREQS, bandDeltas)
+        : this.getEqBandDeltas(bandDeltas);
     const fallbackStyle = { colorClass: 'genre-color-pop', animClass: 'anim-match-breath' };
-    if (!deltas) return { emoji: '💃', name: 'Pop', ...fallbackStyle };
+    if (!deltas) {
+        const declared = this.declaredPresetGenre(presetKey, 'm');
+        if (declared) return declared;
+        return { emoji: '💃', name: 'Pop', ...fallbackStyle };
+    }
     const idx = this.nearestGenreFamilyIndex(deltas);
     const family = this.genreFamilies[idx];
     const style = this.genreFamilyStyles[idx] || fallbackStyle;
@@ -23969,25 +24669,55 @@ determineLiveMusicGenreMatch: function(bandDeltas, presetKey) {
 },
 
 determineLiveGameGenreMatch: function(bandDeltas, presetKey) {
-    const declared = this.declaredPresetGenre(presetKey, 'game');
-    if (declared) {
-        const fallbackStyle = { colorClass: 'genre-color-electronic', animClass: 'anim-match-breath' };
-        return {
-            emoji: declared.emoji,
-            name: declared.name,
-            colorClass: declared.colorClass || fallbackStyle.colorClass,
-            animClass: declared.animClass || fallbackStyle.animClass
-        };
-    }
-
-    const deltas = this.getEqBandDeltas(bandDeltas);
+    const deltas = (bandDeltas && bandDeltas.length === 500)
+        ? this.getResponseDeltas(this.DSP.FREQS, bandDeltas)
+        : this.getEqBandDeltas(bandDeltas);
     const fallbackStyle = { colorClass: 'genre-color-electronic', animClass: 'anim-match-breath' };
-    if (!deltas) return { emoji: '🎮', name: 'Video Game OST', ...fallbackStyle };
-    const idx = this.nearestGenreFamilyIndex(deltas);
-    const family = this.genreFamilies[idx];
+    if (!deltas) {
+        const declared = this.declaredPresetGenre(presetKey, 'game');
+        if (declared) return declared;
+        return { emoji: '🎮', name: 'Video Game OST', ...fallbackStyle };
+    }
+    const idx = this.nearestGameGenreFamilyIndex(deltas);
+    const family = this.gameGenreFamilies[idx];
     const style = this.genreFamilyStyles[idx] || fallbackStyle;
     const v = family.gameVariants[0];
     return { emoji: v.emoji, name: v.name, colorClass: style.colorClass, animClass: style.animClass };
+},
+
+// Exact dB response of the current graph curve (same path that draws the graph curve):
+// Supports both EQ filter faders and Target Sculptor mode (sculptPoints).
+getLiveResponseDbs: function() {
+    try {
+        const freqs = Float32Array.from(this.DSP.FREQS);
+        const n = freqs.length;
+
+        // If Target Sculptor mode is active, classify the live Sculptor target curve on screen
+        if (typeof PEQDB_Module !== 'undefined' && PEQDB_Module.targetMode === 'sculptor' && Array.isArray(PEQDB_Module.sculptPoints) && PEQDB_Module.sculptPoints.length >= 2) {
+            const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignDb : 75.0;
+            const pts = PEQDB_Module.sculptPoints.map(p => [p.hz, p.val - alignDb]);
+            return CurveUtils.cubicSplineInterpolate(pts, Array.from(freqs));
+        }
+
+        if (typeof EQ_Module === 'undefined' || !EQ_Module.getCompositeFilterMagnitude) return null;
+        const mag = EQ_Module.getCompositeFilterMagnitude(freqs, n);
+        if (!mag) return null;
+        const resp = new Float32Array(n);
+        for (let j = 0; j < n; j++) resp[j] = 20 * Math.log10(Math.max(1e-9, mag[j]));
+        return resp;
+    } catch (err) {
+        return null;
+    }
+},
+
+// Band-mean deltas (5 axes relative to the mid axis) from a dense dB response.
+getResponseDeltas: function(freqs, resp) {
+    try {
+        const bs = CurveUtils.responseBandMeans(freqs, resp, CurveUtils.AXIS_BANDS);
+        return [bs[0] - bs[2], bs[1] - bs[2], bs[3] - bs[2], bs[4] - bs[2], bs[5] - bs[2]];
+    } catch (err) {
+        return null;
+    }
 },
 
 applyGenreFilters: function(matches) {
@@ -24010,41 +24740,6 @@ applyGenreFilters: function(matches) {
                     { role: 'reference', label: '<span class="emoji-font vibrant-emoji text-lg mr-1 anim-toggle-pop">🆚</span> Load as Reference' },
                     { role: 'autoeq', label: '<span class="emoji-font vibrant-emoji text-lg mr-1 anim-toggle-pop">🪄</span> AutoEQ To This' }
                 ],
-
-                tuningPresets: [
-                    { key: 'neutral', label: '🎼 Preset: Neutral', values: { bass: 0, sub: 0, punch: 0, warm: 0, vocals: 0, treble: 0, smooth: 0 } },
-                    { key: 'basshead', label: '💥 Basshead Boost', values: { bass: 6, sub: 4, punch: 3, warm: 2, vocals: 0, treble: -1, smooth: 1 } },
-                    { key: 'vocal', label: '🎤 Vocal Forward', values: { bass: -1, sub: -1, punch: 0, warm: 2, vocals: 4, treble: 2, smooth: 1 } },
-                    { key: 'crisp', label: '✨ Crisp & Airy', values: { bass: 0, sub: 1, punch: 0, warm: -1, vocals: 1, treble: 4, smooth: 2 } },
-                    { key: 'gaming', label: '🎮 Footstep Focus', values: { bass: -2, sub: -4, punch: 1, warm: 0, vocals: 3, treble: 3, smooth: 0 } },
-                    { key: 'chill', label: '☕ Chill Lo-Fi', values: { bass: 3, sub: 2, punch: 1, warm: 3, vocals: -1, treble: -3, smooth: 3 } },
-                    { key: 'vshape', label: '🔺 V-Shaped', values: { bass: 5, sub: 4, punch: 2, warm: -1, vocals: -2, treble: 4, smooth: 0 } }
-                ],
-                currentTuningPresetIdx: 0,
-
-                cycleTuningPreset: function(dir) {
-                    const total = this.tuningPresets.length;
-                    this.currentTuningPresetIdx = (this.currentTuningPresetIdx + dir + total) % total;
-                    const p = this.tuningPresets[this.currentTuningPresetIdx];
-
-                    Object.entries(p.values).forEach(([key, val]) => {
-                        const id = `find-${key}`;
-                        const el = document.getElementById(id);
-                        if (el) {
-                            el.value = val;
-                            this.updateSliderUI(id);
-                        }
-                    });
-
-                    const btn = document.getElementById('find-preset-cycle-btn');
-                    const labelSpaceIdx = p.label.indexOf(' ');
-                    const labelEmoji = p.label.slice(0, labelSpaceIdx);
-                    const labelText = p.label.slice(labelSpaceIdx + 1);
-                    if (btn) btn.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 inline-flex items-center justify-center leading-none mr-1.5 anim-toggle-pop">${labelEmoji}</span> ${labelText}`;
-
-                    this.drawTargetVisualization();
-                    showToast(`Tuning preset "${labelText}" applied!`, "🎼");
-                },
 
                 updateFloatingCompareBar: function() {
                     const checked = document.querySelectorAll('.find-compare-cb:checked');
@@ -24288,8 +24983,8 @@ applyGenreFilters: function(matches) {
                     }
 
                     container.innerHTML = matches.map(item => `
-                        <div onclick="FindEngine.setUpgradeBaseIem('${item.id}', '${item.name.replace(/'/g, "\\'")}')" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
-                            ${item.name}
+                        <div onclick="FindEngine.setUpgradeBaseIem('${escJs(item.id)}', '${escJs(item.name)}')" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
+                            ${esc(item.name)}
                         </div>
                     `).join('');
                 },
@@ -24439,13 +25134,13 @@ applyGenreFilters: function(matches) {
                 hasGoalTag: function(tags, goal) {
                     if (!tags || !Array.isArray(tags)) return false;
                     const tagStr = tags.join(' ').toLowerCase();
-                    if (goal === 'direct') return /balanced|smooth|reference|neutral|all-rounder/i.test(tagStr);
-                    if (goal === 'bass') return /basshead|sub-bass|punchy/i.test(tagStr);
-                    if (goal === 'detail') return /detailed|resolving|technical|analytical/i.test(tagStr);
+                    if (goal === 'direct') return /balanced|smooth|reference|neutral|all-rounder|studio-monitoring/i.test(tagStr);
+                    if (goal === 'bass') return /basshead|sub-bass|punchy|u-shaped/i.test(tagStr);
+                    if (goal === 'detail') return /detailed|resolving|technical|analytical|treble-head|studio-monitoring/i.test(tagStr);
                     if (goal === 'gaming') return /gaming|competitive|imaging|stage/i.test(tagStr);
                     if (goal === 'vocal') return /vocal|smooth|warm|mid/i.test(tagStr);
                     if (goal === 'stage') return /wide-stage|good-imaging|3d/i.test(tagStr);
-                    if (goal === 'refine') return /balanced|smooth|reference|neutral/i.test(tagStr);
+                    if (goal === 'refine') return /balanced|smooth|reference|neutral|studio-monitoring/i.test(tagStr);
                     return false;
                 },
 
@@ -24600,15 +25295,15 @@ applyGenreFilters: function(matches) {
                     const driveability = dbEntry ? FindEngine.getDriveabilityStatus(dbEntry.impedance, dbEntry.sensitivity) : null;
                     const targetCurve = FindEngine.generateTargetCurve();
                     const freqs = CurveUtils.generateLogGrid(100);
-                    const targetInterp = CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]);
+                    const targetInterp = targetCurve ? CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]) : null;
                     const candInterp = c.item.interp || (c.item.data ? CurveUtils.cubicSplineInterpolate(CurveUtils.normalizeTo75dB(c.item.data, 500, 75), freqs) : null);
-                    const eqFeat = candInterp ? FindEngine.calculateEQFeasibility(candInterp, targetInterp, freqs) : null;
+                    const eqFeat = (targetInterp && candInterp) ? FindEngine.calculateEQFeasibility(candInterp, targetInterp, freqs) : null;
 
                     const driveHtml = FindEngine.getShortDriveLabel(driveability);
                     const eqHtml = FindEngine.getShortEqLabel(eqFeat);
 
                     const rawTags = dbEntry ? dbEntry.tags : PEQDB_Module.analyzeCurveSignature(c.item.data);
-                    const uniqueTags = [...new Set(rawTags || [])].slice(0, 4);
+                    const uniqueTags = [...new Set(rawTags || [])].slice(0, 12);
                     const tagsHtml = uniqueTags.map(t => {
                         const emoji = FindEngine.getTagEmoji(t);
                         return `<span class="find-tag-icon" data-tooltip="${t}">${emoji || '🏷️'}</span>`;
@@ -24705,7 +25400,7 @@ applyGenreFilters: function(matches) {
                                     ${eqHtml}
                                 </div>
 
-                                <div class="flex items-center justify-center gap-3 w-full mt-1.5 pt-1">
+                                <div class="flex items-center justify-center gap-1 flex-wrap w-full mt-1.5 pt-1">
                                     ${tagsHtml}
                                 </div>
                             </div>
@@ -24784,6 +25479,8 @@ applyGenreFilters: function(matches) {
                     const goal = this.selectedUpgradeGoal;
                     const candidates = [];
 
+                    const candidateEntries = [];
+
                     for (let i = 0; i < dataset.length; i++) {
                         const cand = dataset[i];
                         if (cand.id === baseItem.id) continue;
@@ -24812,37 +25509,53 @@ applyGenreFilters: function(matches) {
                             if (!connStr.toLowerCase().includes(selectedConnector.toLowerCase())) continue;
                         }
 
-                        if (!cand.data || cand.data.length < 2) {
-                            await CurveIndexer.loadCurve(cand, 0);
+                        candidateEntries.push({ cand: cand, db: candDb, price: candPrice });
+                    }
+
+                    const ugBatchSize = 25;
+                    for (let i = 0; i < candidateEntries.length; i += ugBatchSize) {
+                        const chunk = candidateEntries.slice(i, i + ugBatchSize).filter(e => !e.cand.data || e.cand.data.length < 2);
+                        if (chunk.length > 0) {
+                            await Promise.all(chunk.map(e => CurveIndexer.loadCurve(e.cand, 0)));
                         }
-                        if (!cand.data) continue;
+                    }
 
-                        const candNorm = CurveUtils.normalizeTo75dB(cand.data, 500, 75);
-                        const candInterp = CurveUtils.cubicSplineInterpolate(candNorm, freqs);
+                    const upgradeItems = candidateEntries.filter(e => e.cand.data && e.cand.data.length >= 2).map(e => ({
+                        id: e.cand.id,
+                        name: e.cand.name,
+                        data: e.cand.data,
+                        tags: (e.db ? e.db.tags : e.cand.tags) || []
+                    }));
 
-                        let maeSum = 0;
-                        for (let k = 0; k < freqs.length; k++) {
-                            maeSum += Math.abs(candInterp[k] - baseInterp[k]);
-                        }
-                        const mae = maeSum / freqs.length;
-                        const tonalMatch = Math.max(0, 100 * Math.exp(-0.11 * mae));
+                    const upgradeResults = await this.runUpgradeScan(upgradeItems, baseInterp, freqs, goal);
 
-                        if (tonalMatch < 60 && goal !== 'tech' && goal !== 'tier') continue;
+                    const resultById = {};
+                    upgradeResults.forEach(r => { if (r && r.id) resultById[r.id] = r; });
 
-                        const acousticTest = this.verifyGoalAcoustics(candInterp, baseInterp, freqs, goal);
-                        const candTags = (candDb ? candDb.tags : cand.tags) || [];
-                        const matchedTag = this.hasGoalTag(candTags, goal);
+                    candidateEntries.forEach(entry => {
+                        const cand = entry.cand;
+                        const candDb = entry.db;
+                        const candPrice = entry.price;
+                        const res = resultById[cand.id];
+                        if (!res) return;
+
+                        const tonalMatch = res.tonalMatch;
+
+                        if (tonalMatch < 60 && goal !== 'tech' && goal !== 'tier') return;
+
+                        const acousticPassed = res.acousticPassed;
+                        const matchedTag = res.matchedTag;
 
                         let score = tonalMatch;
                         let badgeHtml = '';
 
-                        if (acousticTest.passed && matchedTag) {
+                        if (acousticPassed && matchedTag) {
                             score += 35;
                             badgeHtml = `<span class="text-[8.5px] font-black text-emerald-400 bg-emerald-950/40 border border-emerald-800/80 px-1.5 py-0.5 rounded">✅ Confirmed ${goal.toUpperCase()}</span>`;
-                        } else if (acousticTest.passed && !matchedTag) {
+                        } else if (acousticPassed && !matchedTag) {
                             score += 20;
                             badgeHtml = `<span class="text-[8.5px] font-black text-teal-400 bg-teal-950/40 border border-teal-800/80 px-1.5 py-0.5 rounded">🔬 Measured ${goal.toUpperCase()}</span>`;
-                        } else if (!acousticTest.passed && matchedTag) {
+                        } else if (!acousticPassed && matchedTag) {
                             score -= 25;
                             badgeHtml = `<span class="text-[8.5px] font-black text-rose-400 bg-rose-950/40 border border-rose-800/80 px-1.5 py-0.5 rounded">⚠️ Tag Conflict</span>`;
                         } else {
@@ -24865,9 +25578,9 @@ applyGenreFilters: function(matches) {
                             score: score,
                             tonalMatch: tonalMatch,
                             badgeHtml: badgeHtml,
-                            reason: acousticTest.reason
+                            reason: res.acousticReason
                         });
-                    }
+                    })
 
                     candidates.sort((a, b) => b.score - a.score);
 
@@ -24967,7 +25680,7 @@ applyGenreFilters: function(matches) {
                     const candInterp = item.interp || (item.data ? CurveUtils.cubicSplineInterpolate(CurveUtils.normalizeTo75dB(item.data, 500, 75), freqs) : null);
 
                     const rawTags = dbEntry ? dbEntry.tags : (item.data ? PEQDB_Module.analyzeCurveSignature(item.data) : []);
-                    const uniqueTags = [...new Set(rawTags || [])].slice(0, 4);
+                    const uniqueTags = [...new Set(rawTags || [])].slice(0, 12);
                     const tagsHtml = uniqueTags.map(t => {
                         const emoji = FindEngine.getTagEmoji(t);
                         return `<span class="find-tag-icon" data-tooltip="${t}">${emoji || '🏷️'}</span>`;
@@ -25043,7 +25756,7 @@ applyGenreFilters: function(matches) {
                     const isBlind = document.getElementById('find-blind-mode')?.checked;
                     const targetCurve = this.generateTargetCurve();
                     const freqs = CurveUtils.generateLogGrid(100);
-                    const targetInterp = CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]);
+                    const targetInterp = targetCurve ? CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]) : null;
 
                     const matchesToRender = matches;
                     const CHUNK_SIZE = 40;
@@ -25293,7 +26006,7 @@ applyGenreFilters: function(matches) {
                                             ${eqHtml}
                                         </div>
 
-                                        <div class="flex items-center justify-center gap-3 w-full mt-2 pt-1">
+                                        <div class="flex items-center justify-center gap-1 flex-wrap w-full mt-2 pt-1">
                                             ${tagsHtml}
                                         </div>
                                     </div>
@@ -25373,7 +26086,7 @@ applyGenreFilters: function(matches) {
                         if (dsItem && dsItem.files && dsItem.files.length > 1) {
                             const targetCurve = this.generateTargetCurve();
                             const freqs = CurveUtils.generateLogGrid(100);
-                            const targetInterp = CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]);
+                            const targetInterp = targetCurve ? CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]) : null;
 
                             for (let fIdx = 0; fIdx < dsItem.files.length; fIdx++) {
                                 const filePath = dsItem.files[fIdx];
@@ -25796,7 +26509,6 @@ applyGenreFilters: function(matches) {
                 get audio() { return SharedAudio; }
             };
             window.AppState = AppState;
-
 /* ===== js/app-init.js ===== */
 
         (function() {

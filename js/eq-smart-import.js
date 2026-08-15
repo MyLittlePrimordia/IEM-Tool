@@ -72,7 +72,7 @@ const EQ_SmartImportMethods = {
                 }) || cleanLines.some(line => line.split(/[\s,;\t]+/).filter(Boolean).length >= 3);
 
                 if (hasParametricLines) {
-                    EQ.parsePeaceFormat(text); EQ.closeSmartImportModal(); return;
+                    if (EQ.parsePeaceFormat(text)) { EQ.closeSmartImportModal(); return; }
                 }
                 
                 var dataCoords = [];
@@ -99,6 +99,7 @@ const EQ_SmartImportMethods = {
             parsePeaceFormat: function(text) {
                 var lines = text.split(/\r?\n/);
                 var preamp = 0;
+                var mappedAny = false;
                 var mainVals = this.bands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
                 var advVals = this.advancedBands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
                 var self = this;
@@ -116,6 +117,7 @@ const EQ_SmartImportMethods = {
                     
                     // 2. Parse Standard parametric EQ filter parameters
                     var fc = null, gain = 0, q = 1.0;
+                    var filterType = self.detectFilterType(clean);
                     
                     // Check for standard Peace format: "Filter X: ON PK Fc 105 Hz Gain -3.0 dB Q 1.4"
                     var peaceMatch = clean.match(/Fc\s*([\d.]+)\s*Hz\s*Gain\s*([-\d.]+)\s*dB\s*Q\s*([\d.]+)/i);
@@ -124,8 +126,9 @@ const EQ_SmartImportMethods = {
                         gain = parseFloat(peaceMatch[2]);
                         q = parseFloat(peaceMatch[3]);
                     } 
-                    // Check for Qudelix-5K CSV format: "Filter 1,ON,PEAK,20,3.5,1.2"
-                    else if (clean.toLowerCase().includes('peak') || clean.toLowerCase().includes('pk') || clean.toLowerCase().includes('lshelf') || clean.toLowerCase().includes('hshelf')) {
+                    // Check for Qudelix-5K CSV format: "Filter 1,ON,PEAK,20,-3.5,1.2"
+                    // (also NOTCH / LSC / HSC / LPQ / HPQ types)
+                    else if (filterType) {
                         var csvParts = clean.split(/[,;\t\s]+/);
                         if (csvParts.length >= 6) {
                             var fVal = parseFloat(csvParts[csvParts.length - 3]);
@@ -151,26 +154,49 @@ const EQ_SmartImportMethods = {
                     }
                     
                     if (fc !== null) {
-                        self.mapSingleFilter(fc, gain, q, mainVals, advVals);
+                        mappedAny = true;
+                        self.mapSingleFilter(fc, gain, q, filterType, mainVals, advVals);
                     }
                 });
                 
+                // Nothing recognizably parametric was parsed (e.g. a pasted
+                // frequency-response table with an extra phase column, or a
+                // 3-column measurement block). Bail out before loadValues wipes
+                // the current EQ, so processSmartImport can fall through to the
+                // raw curve importer instead.
+                if (preamp === 0 && !mappedAny) return false;
+                
                 this.loadValues({ preVal: preamp, mainVals: mainVals, advVals: advVals });
                 showToast("Parametric EQ profile processed!", "🪄");
+                return true;
             },
-        mapSingleFilter: function(hz, g, q, mainVals, advVals) {
+        detectFilterType: function(raw) {
+            // Map common EQ export type tokens (Peace/APO, Qudelix, REW) to the
+            // app's band types so NOTCH / shelf / LP / HP filters stay their own
+            // type instead of silently becoming peaking filters.
+            var s = ' ' + String(raw || '').toLowerCase().replace(/[()]/g, ' ') + ' ';
+            if (/\bnotch\b|\bno\s[,;]/.test(s)) return 'notch';
+            if (/\blow\s*shelf\b|\blshelf\b|\blsc\b/.test(s)) return 'lowshelf';
+            if (/\bhigh\s*shelf\b|\bhshelf\b|\bhsc\b/.test(s)) return 'highshelf';
+            if (/\bhigh\s*pass\b|\bhipass\b|\bhighpass\b|\bhpq\b/.test(s)) return 'highpass';
+            if (/\blow\s*pass\b|\blowpass\b|\blpq\b/.test(s)) return 'lowpass';
+            if (/\bpeak\b|\bpk\b|\bpeq\b/.test(s)) return 'peaking';
+            return null;
+        },
+        mapSingleFilter: function(hz, g, q, type, mainVals, advVals) {
+            var filterType = type || 'peaking';
             var bestM = 0, bestMd = Infinity;
             mainVals.forEach(function(v, i) { var d = Math.abs(v.hz - hz); if (d < bestMd) { bestMd = d; bestM = i; } });
             var bestA = 0, bestAd = Infinity;
             advVals.forEach(function(v, i) { var d = Math.abs(v.hz - hz); if (d < bestAd) { bestAd = d; bestA = i; } });
-            if (bestMd <= bestAd) { mainVals[bestM].g = g; mainVals[bestM].q = q; mainVals[bestM].hz = hz; }
-            else { advVals[bestA].g = g; advVals[bestA].q = q; advVals[bestA].hz = hz; }
+            if (bestMd <= bestAd) { mainVals[bestM].g = g; mainVals[bestM].q = q; mainVals[bestM].hz = hz; mainVals[bestM].type = filterType; }
+            else { advVals[bestA].g = g; advVals[bestA].q = q; advVals[bestA].hz = hz; advVals[bestA].type = filterType; }
         },
         mapGraphicEQToSliders: function(coords) {
             var mainVals = this.bands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
             var advVals = this.advancedBands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
             var self = this;
-            coords.forEach(function(pt) { self.mapSingleFilter(pt.hz, pt.g, 1.0, mainVals, advVals); });
+            coords.forEach(function(pt) { self.mapSingleFilter(pt.hz, pt.g, 1.0, 'peaking', mainVals, advVals); });
             this.loadValues({ preVal: 0, mainVals: mainVals, advVals: advVals });
         },
 };

@@ -98,13 +98,36 @@ Bluetooth, 2-pin, QDC, MMCX, A2DC, Fixed Cable, Detachable Cable, 3.5mm, 4.4mm, 
 form_factor – allowed values only:
 IEM, Wireless Earbuds (TWS), Earbuds (Wired), Wireless Over-Ear Headphones, Over-Ear Headphones (Wired)
 
-tags – use ONLY these approved tags:
-Basshead, Sub-Bass, Punchy Bass, Warm, Neutral, V-Shaped, Balanced, Bright, Dark, Detailed, Resolving, Technical, Wide-Stage, Good-Imaging, Smooth, Reference, Analytical, Fun, Relaxed, Gaming, Competitive-Gaming, Vocal-Focused, Budget, Mid-Tier, Premium, Flagship, Collab, Limited-Edition
+==================================================
+TAGS RULES & APPROVED TAGS LIST
+==================================================
+Use ONLY these 31 approved tags:
 
-Tag rules:
-- Minimum 4, maximum 12 tags
-- Every tag must be supported by measurements, specifications, or reputable reviews
-- Do not invent new tags
+Tonal Profiles & Sound Signature:
+Basshead, Sub-Bass, Punchy Bass, Warm, Neutral, V-Shaped, U-Shaped, Balanced, Bright, Treblehead, Dark, Vocal-Focused
+
+Technicalities & Presentation:
+Detailed, Resolving, Technical, Wide-Stage, Good-Imaging, Smooth, Reference, Analytical, Fun, Relaxed
+
+Use Cases:
+Gaming, Competitive-Gaming, Studio-Monitoring
+
+Price Tiers:
+Budget, Mid-Tier, Premium, Flagship
+
+Release Types:
+Collab, Limited-Edition
+
+Tag Rules:
+- Minimum 4, maximum 12 tags per entry.
+- Every entry MUST contain EXACTLY ONE mandatory price tier tag derived strictly from price_usd:
+  - Budget:        $0 to $99
+  - Mid-Tier:      $100 to $499
+  - Premium:       $500 to $1,499
+  - Flagship:      $1,500+ (or the verified halo/flagship model for that brand)
+- Do NOT omit the price tier tag. Do NOT assign multiple price tier tags to one entry.
+- Every tag must be supported by measurements, specifications, or reputable reviews.
+- Do not invent new tags.
 
 files:
 - If a measurement file path was provided → place the exact, unedited path in the array
@@ -123,13 +146,10 @@ DD, BA, BC, Planar, Hybrid, Tribrid, EST, MEMS, PZT
 ==================================================
 MANDATORY SECONDARY DRIVER TECHNOLOGY CHECK
 ==================================================
-
 Before assigning driver_type, you MUST verify whether the product contains any secondary driver technologies.
-
 Never assume the first listed driver is the complete driver system.
 
 For EVERY product, specifically search for:
-
 - "product name bone conduction"
 - "product name BC driver"
 - "product name bone conduction driver"
@@ -140,235 +160,57 @@ For EVERY product, specifically search for:
 - "product name MEMS driver"
 - "product name driver configuration"
 
-Many manufacturers list only the primary driver first.
-
-Example:
-
-Incorrect:
-Manufacturer page:
-"10mm Dynamic Driver"
-
-Result:
-{
-"driver_type": "DD",
-"driver_config": "1DD"
-}
-
-Correct if further specifications confirm BC:
-
-Manufacturer page:
-"10mm Dynamic Driver + Bone Conduction Driver"
-
-Result:
-{
-"driver_type": "Hybrid",
-"driver_config": "1DD+1BC"
-}
-
 ==================================================
 DRIVER CLASSIFICATION RULES
 ==================================================
-
-Classification:
-
 Single driver technology:
-- Use that technology only.
-
-Examples:
-
-1DD:
-driver_type = DD
-
-1BA:
-driver_type = BA
-
-1BC:
-driver_type = BC
-
-1Planar:
-driver_type = Planar
-
-1EST:
-driver_type = EST
-
-1MEMS:
-driver_type = MEMS
-
-1PZT:
-driver_type = PZT
-
+- 1DD       → driver_type = DD
+- 1BA       → driver_type = BA
+- 1BC       → driver_type = BC
+- 1Planar   → driver_type = Planar
+- 1EST      → driver_type = EST
+- 1MEMS     → driver_type = MEMS
+- 1PZT      → driver_type = PZT
 
 Multiple driver technologies:
-
-Exactly 2 different driver technologies:
-driver_type = Hybrid
-
-Examples:
-
-1DD + 1BA:
-Hybrid
-
-1DD + 1BC:
-Hybrid
-
-1DD + 1Planar:
-Hybrid
-
-1DD + 1EST:
-Hybrid
-
-
-3 or more different driver technologies:
-driver_type = Tribrid
-
-Examples:
-
-1DD + 4BA + 2EST:
-Tribrid
-
-1DD + 1BA + 1BC:
-Tribrid
-
-1DD + 1BA + 1PZT:
-Tribrid
-
+- Exactly 2 different driver technologies → driver_type = Hybrid
+  (e.g., 1DD + 1BA, 1DD + 1BC, 1DD + 1Planar, 1DD + 1EST)
+- 3 or more different driver technologies → driver_type = Tribrid
+  (e.g., 1DD + 4BA + 2EST, 1DD + 1BA + 1BC, 1DD + 1BA + 1PZT)
 
 ==================================================
 BONE CONDUCTION (BC) VALIDATION RULES
 ==================================================
-
 Bone conduction drivers are REAL audio transducers.
-
 They MUST:
 - appear in driver_config
 - affect driver_type classification
 
-Incorrect:
-
-{
-"driver_type": "DD",
-"driver_config": "1DD+1BC"
-}
-
-Correct:
-
-{
-"driver_type": "Hybrid",
-"driver_config": "1DD+1BC"
-}
-
-
-Do NOT confuse:
-
-Bone Conduction Driver:
-- Audio transducer.
-- Transfers sound vibration through the shell/body.
-- Counts as a driver technology.
-- Must affect driver_type.
-
-Haptic Vibration Motor:
-- Adds physical vibration or rumble only.
-- Does NOT count as BC.
-- Must NOT affect driver_type.
-
-Only classify BC when supported by:
-- official manufacturer specifications
-- official technical documentation
-- reliable technical sources
-
-If a product uses vague wording such as:
-
-- vibration unit
-- bass vibration system
-- resonance driver
-- low frequency vibration module
-- enhanced vibration technology
-
-DO NOT automatically classify as BC.
-
-Verify whether it is:
-1. A real bone conduction audio transducer
-OR
-2. A haptic/vibration enhancement system
-
-Only option 1 counts as BC.
-
+Do NOT classify haptic vibration motors, bass rumble modules, or resonance chambers as BC.
+Only classify BC when supported by official technical documentation confirming a true bone conduction audio transducer.
 
 ==================================================
 DRIVER CONFIGURATION VERIFICATION RULE
 ==================================================
-
-driver_config must contain every actual driver technology.
-
-Examples:
-
-"1DD"
-
-"2DD"
-
-"1DD+4BA"
-
-"1DD+1BC"
-
-"1DD+1BA+2EST"
-
-"2DD+4BA+1BC"
-
-
-Never infer driver counts from:
-
-- product names
-- marketing names
-- shell appearance
-- pictures
-- retailer titles
-- reviewer assumptions
-
-Only use verified hardware specifications.
-
+driver_config must contain every actual driver technology (e.g., "1DD", "2DD", "1DD+4BA", "1DD+1BC", "1DD+1BA+2EST", "2DD+4BA+1BC").
+Never infer driver counts from marketing names, pictures, or shell appearance.
 If the exact configuration cannot be verified:
-
-driver_config:
-""
-
-driver_type:
-""
-
-Do not guess.
-
+driver_config: ""
+driver_type: ""
 
 ==================================================
 FINAL DRIVER CONSISTENCY CHECK
 ==================================================
-
 Before outputting the JSON entry, verify:
-
 1. Does driver_config include every confirmed driver technology?
 2. Does driver_type represent the complete system?
 3. Are BC, EST, PZT, MEMS, or other secondary technologies accounted for?
-4. Does the classification follow the Hybrid/Tribrid rules?
-
-If driver_config and driver_type conflict:
-
-Fix the classification before creating the final entry.
-
-Example:
-
-Wrong:
-
-"driver_type": "DD",
-"driver_config": "1DD+1BC"
-
-Correct:
-
-"driver_type": "Hybrid",
-"driver_config": "1DD+1BC"
+4. Does the classification follow the Hybrid/Tribrid technology count rules?
 
 ==================================================
 MANDATORY RESEARCH & VERIFICATION PROCESS
 ==================================================
 For EVERY product, follow this exact order:
-
 1. Identify the exact official product name + variant.
 2. Perform web searches BEFORE filling any fields.
 3. Preferred source order:
@@ -382,7 +224,6 @@ For EVERY product, follow this exact order:
 EVIDENCE REQUIREMENT
 ==================================================
 Above every completed entry, briefly note the key sources used, for example:
-
 // Sources: Official Moondrop product page + Linsoul (launch MSRP confirmed)
 // Driver config confirmed from manufacturer specifications
 
@@ -390,13 +231,12 @@ Above every completed entry, briefly note the key sources used, for example:
 SECTIONAL PROCESSING RULE (ANTI-CUTOFF)
 ==================================================
 If the user gives a list of multiple products or file paths:
-
 1. Process only 3–5 items per section.
 2. Fully research and create complete entries for the current section only.
 3. Output the finished entries for that section.
 4. End the response with:
    "Section complete. Reply 'Continue' to process the next section."
-5. Do not start the next section until the user replies “Continue”.
+5. Do not start the next section until the user replies "Continue".
 6. When the entire list is finished, end with:
    "All requested entries complete."
 

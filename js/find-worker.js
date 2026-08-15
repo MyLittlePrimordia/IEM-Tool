@@ -4,7 +4,7 @@
  * Pure functions only; no DOM. Curve math comes from js/utils.js.
  */
 try {
-    importScripts('js/utils.js'); // provides CurveUtils
+    importScripts('utils.js'); // provides CurveUtils (relative to this worker's own path)
 } catch (e) {
     // Worker may be created from a different base path; ignore, CurveUtils is
     // resolved lazily below and will throw a clear error if genuinely missing.
@@ -48,13 +48,10 @@ function sanitizeName(name) {
 }
 
 function freqWeight(f) {
-    if (f < 80) return 1.2;
-    if (f < 250) return 1.1;
-    if (f < 1000) return 1.0;
-    if (f < 3500) return 1.5;
-    if (f < 7000) return 1.0;
-    if (f <= 10000) return 0.5;
-    return 0.1;
+    // Unified perceptual weight table (CurveUtils.PERCEPTUAL_WEIGHTS) so the
+    // worker's scoring matches the main-thread Find scoring (_scoreInterp in
+    // app-core.js) exactly - see CurveUtils.weightFor.
+    return CurveUtils.weightFor(f);
 }
 
 function scoreInterp(interp, targetInterp, freqs, weighted) {
@@ -181,6 +178,101 @@ function buildCanonicalProfiles(dataset) {
     return canonicalList;
 }
 
+function verifyGoalAcoustics(candInterp, baseInterp, freqs, goal) {
+    if (!candInterp || !baseInterp || !freqs) return { passed: false, reason: "Missing Curve Data" };
+
+    const getBandAvg = (interp, minHz, maxHz, offset) => {
+        let sum = 0, count = 0;
+        for (let i = 0; i < freqs.length; i++) {
+            if (freqs[i] >= minHz && freqs[i] <= maxHz) {
+                sum += (interp[i] + (offset || 0));
+                count++;
+            }
+        }
+        return count > 0 ? sum / count : 75;
+    };
+
+    const baseMid = getBandAvg(baseInterp, 400, 1000, 0);
+    const candMidRaw = getBandAvg(candInterp, 400, 1000, 0);
+    const alignOffset = baseMid - candMidRaw;
+
+    const candSubBass = getBandAvg(candInterp, 20, 80, alignOffset);
+    const baseSubBass = getBandAvg(baseInterp, 20, 80, 0);
+    const candMidrange = getBandAvg(candInterp, 400, 1000, alignOffset);
+    const candTreble = getBandAvg(candInterp, 10000, 16000, alignOffset);
+    const baseTreble = getBandAvg(baseInterp, 10000, 16000, 0);
+    const candPinna = getBandAvg(candInterp, 1500, 3500, alignOffset);
+
+    const candBassBoost = candSubBass - candMidrange;
+
+    if (goal === 'direct') {
+        let totalDiff = 0;
+        for (let i = 0; i < freqs.length; i++) totalDiff += Math.abs(candInterp[i] - baseInterp[i]);
+        const mae = totalDiff / freqs.length;
+        const passed = (mae <= 2.8);
+        return { passed, reason: passed ? "High Tonal Match to Base IEM" : "Tuning Deviates From Base" };
+    } else if (goal === 'bass') {
+        const passed = (candBassBoost >= 6.5) || (candSubBass >= baseSubBass + 1.8);
+        return { passed, reason: passed ? "Measured +6.5dB Sub-Bass Shelf" : "Lacks Measured Sub-Bass Elevation" };
+    } else if (goal === 'detail') {
+        const passed = (candTreble >= baseTreble + 1.0) && (candPinna >= candMidrange + 3.5);
+        return { passed, reason: passed ? "Measured High-Treble Extension" : "Treble Air Rolled Off" };
+    } else if (goal === 'vocal') {
+        const pinnaGain = candPinna - candMidrange;
+        const passed = (pinnaGain >= 5.5 && pinnaGain <= 11.5);
+        return { passed, reason: passed ? "Measured Smooth Vocal Pinna Gain" : "Pinna Gain Too Flat or Harsh" };
+    } else if (goal === 'stage') {
+        const passed = (candTreble >= baseTreble - 1.0) && (candPinna >= candMidrange + 2.5);
+        return { passed, reason: passed ? "Measured Spatial Air & Pinna Balance" : "Narrow High-Frequency Energy" };
+    } else if (goal === 'refine') {
+        let totalDiff = 0;
+        for (let i = 0; i < freqs.length; i++) totalDiff += Math.abs(candInterp[i] - baseInterp[i]);
+        const mae = totalDiff / freqs.length;
+        const passed = (mae <= 2.2);
+        return { passed, reason: passed ? "High Tonal Shape Continuity" : "Tonal Shape Deviates Too Far" };
+    }
+
+    return { passed: true, reason: "Goal Criteria Met" };
+}
+
+function hasGoalTag(tags, goal) {
+    if (!tags || !Array.isArray(tags)) return false;
+    const tagStr = tags.join(' ').toLowerCase();
+    if (goal === 'direct') return /balanced|smooth|reference|neutral|all-rounder/i.test(tagStr);
+    if (goal === 'bass') return /basshead|sub-bass|punchy/i.test(tagStr);
+    if (goal === 'detail') return /detailed|resolving|technical|analytical/i.test(tagStr);
+    if (goal === 'gaming') return /gaming|competitive|imaging|stage/i.test(tagStr);
+    if (goal === 'vocal') return /vocal|smooth|warm|mid/i.test(tagStr);
+    if (goal === 'stage') return /wide-stage|good-imaging|3d/i.test(tagStr);
+    if (goal === 'refine') return /balanced|smooth|reference|neutral/i.test(tagStr);
+    return false;
+}
+
+function scoreUpgradeCandidate(item, baseInterp, freqs, goal) {
+    const tags = (item && Array.isArray(item.tags)) ? item.tags : [];
+    const data = item && item.data;
+    if (!data || data.length < 2 || !baseInterp || !freqs) {
+        return { id: item && item.id, tonalMatch: 0, acousticPassed: false, acousticReason: "Missing Curve Data", matchedTag: false };
+    }
+
+    const norm = CurveUtils.normalizeTo75dB(data, 500, 75);
+    const interp = CurveUtils.cubicSplineInterpolate(norm, freqs);
+
+    // Use the SAME offset-corrected, perceptually weighted scorer as the
+    // main-thread upgrade fallback so worker and inline results agree.
+    const tonalMatch = scoreInterp(interp, baseInterp, freqs, true);
+
+    const acoustic = verifyGoalAcoustics(interp, baseInterp, freqs, goal);
+
+    return {
+        id: item.id,
+        tonalMatch: tonalMatch,
+        acousticPassed: !!acoustic.passed,
+        acousticReason: acoustic.reason || "",
+        matchedTag: hasGoalTag(tags, goal)
+    };
+}
+
 let canonicalKey = null;
 let canonicalList = null;
 
@@ -232,6 +324,23 @@ self.onmessage = function (e) {
                     interp: iem.interp,
                     isTuningMatch: true
                 });
+            }
+
+            self.postMessage({ type: 'result', ok: true, matches: returnList });
+        } else if (msg.type === 'upgrade') {
+            const items = msg.items || [];
+            const freqs = msg.freqs || CurveUtils.generateLogGrid(100);
+            const baseInterp = msg.baseInterp || null;
+
+            if (!baseInterp) {
+                self.postMessage({ type: 'result', ok: false, error: 'no baseInterp' });
+                return;
+            }
+
+            const returnList = [];
+
+            for (let i = 0; i < items.length; i++) {
+                returnList.push(scoreUpgradeCandidate(items[i], baseInterp, freqs, msg.goal || 'direct'));
             }
 
             self.postMessage({ type: 'result', ok: true, matches: returnList });

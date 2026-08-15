@@ -76,8 +76,12 @@ class BiquadFilter {
         const w0 = 2 * Math.PI * freq / sampleRate;
         const cosW0 = Math.cos(w0);
         const sinW0 = Math.sin(w0);
-        const alpha = sinW0 / (2 * q);
         const A = Math.pow(10, gain / 40);
+        // Shelves use the RBJ shelf alpha (slope governed by Q) so the audible
+        // response matches getBiquadMagnitude (drawn curve & exports).
+        const alpha = (this.type === 'lowshelf' || this.type === 'highshelf')
+            ? (sinW0 / 2) * Math.sqrt(Math.max(0.001, (A + 1 / A) * (1 / Math.max(0.1, q) - 1) + 2))
+            : sinW0 / (2 * q);
 
         let b0 = 1, b1 = 0, b2 = 0, a0 = 1, a1 = 0, a2 = 0;
 

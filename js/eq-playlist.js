@@ -28,7 +28,12 @@ const EQ_PlaylistMethods = {
         // cache its loudness factor. Fallback: no change (1.0). Never throws.
         _analyzeCurrentLoudness: function() {
             if (!this.audioEl || !this.audioEl.src || !this.audioEl.canPlayType) return;
-            if (!this.settingsLoudnessMatchEnabled()) { this._activeLoudnessGain = 1.0; }
+            if (!this.settingsLoudnessMatchEnabled()) {
+                // Feature off - don't fetch + fully decode the track, the gain
+                // nodes are gated by the setting anyway. Just reset to unity.
+                this._activeLoudnessGain = 1.0;
+                return;
+            }
             if (this._loudnessInFlight) return;
             
             const el = this.audioEl;
@@ -55,7 +60,7 @@ const EQ_PlaylistMethods = {
         },
 
         // Resolves a linear gain factor that brings track loudness to a matched
-        // target (~-18 dBFS channel RMS). Clamped to +/- 12 dB. Returns 1 on error.
+        // target (-23 dBFS channel RMS). Clamped to +/- 12 dB. Returns 1 on error.
         _decodeAndMeasureLoudness: async function(url) {
             try {
                 if (!url) return 1;

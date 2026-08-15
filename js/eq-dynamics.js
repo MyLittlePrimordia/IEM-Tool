@@ -46,7 +46,7 @@ const EQ_DynamicsMethods = {
         this.compressorActive = !this.compressorActive;
         
         if (!this.compressorActive) {
-            SharedAudio.compressor.ratio.value = 1.0;
+            setAudioParamSmooth(SharedAudio.compressor.ratio, 1.0, 0.015);
             // Also neutralise make-up gain and the pre-filter, which stay engaged
             // even with ratio=1 and would keep boosting/shaping the signal after
             // the compressor is switched off.
@@ -67,7 +67,7 @@ const EQ_DynamicsMethods = {
         } else {
             const ratioSlider = document.getElementById('comp-ratio-slider');
             const ratioVal = ratioSlider ? parseFloat(ratioSlider.value) / 10 : 4.0;
-            SharedAudio.compressor.ratio.value = Number.isFinite(ratioVal) ? ratioVal : 4.0;
+            setAudioParamSmooth(SharedAudio.compressor.ratio, Number.isFinite(ratioVal) ? ratioVal : 4.0, 0.015);
             
             if (btn) btn.classList.add('is-on');
             if (lbl) lbl.textContent = "Comp: ON";
