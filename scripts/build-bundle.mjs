@@ -2,9 +2,8 @@
 // Concats the app's source scripts (in load order) into js/app.bundle.js and a
 // minified js/app.bundle.min.js, and writes js/bundle-version.js with a content
 // hash so index.html can cache-bust on actual changes instead of Date.now().
-// Order MUST match the original <script src> sequence. chart.js and
-// tailwindcss.js are intentionally NOT included (chart.js is injected at
-// runtime via injectScriptAsync; tailwindcss.js is unused at rt).
+// Order MUST match the original <script src> sequence. chart.js is
+// intentionally NOT included (it's injected at runtime via injectScriptAsync).
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';

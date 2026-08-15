@@ -14,7 +14,11 @@ const SafeStorage = {
     getItem: function(key) {
         if (this.isSupported) {
             try {
-                return localStorageBackup.getItem(key);
+                const val = localStorageBackup.getItem(key);
+                if (val === null && this.memoryStorage.hasOwnProperty(key)) {
+                    return this.memoryStorage[key];
+                }
+                return val;
             } catch (e) {
                 console.warn("[SafeStorage] Read failed; falling back to memory.", e);
                 return this.memoryStorage.hasOwnProperty(key) ? this.memoryStorage[key] : null;

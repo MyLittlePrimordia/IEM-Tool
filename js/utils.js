@@ -170,16 +170,28 @@ const CurveUtils = {
         });
     },
 
-    // 5-axis classification bands: average a small log-window around each
-    // reference instead of reading one fragile sample. Order matches the
+    // 5-axis classification bands. Each band's lo/hi now meets its neighbors
+    // at the geometric-mean boundary between adjacent centers (and the outer
+    // two extend to the edges of the audible range), so the six windows tile
+    // the full 20Hz-20kHz spectrum with NO gaps between them. The previous
+    // version used narrow islands (e.g. 25-45, 85-160) with large silent gaps
+    // between them (45-85, 160-400, 650-2000, 3200-6500, 9500-11500) - any EQ
+    // band whose *frequency* (not just gain) landed in one of those gaps was
+    // invisible to the genre classifier, which is why dragging a dot
+    // horizontally on the graph barely moved the Find-tab genre badge even
+    // though the curve visibly changed shape. With contiguous coverage, every
+    // point on the curve - and therefore any horizontal drag anywhere on the
+    // graph - now lands inside exactly one axis band and measurably shifts
+    // its average, so the badge tracks the drawn curve shape everywhere, not
+    // just at a few pre-selected frequencies. Order matches the
     // [subBoost, warmth, vocal, treble, air] axes used by the genre families.
     AXIS_BANDS: [
-        { center: 30, lo: 25, hi: 45 },
-        { center: 100, lo: 85, hi: 160 },
-        { center: 500, lo: 400, hi: 650 },
-        { center: 2500, lo: 2000, hi: 3200 },
-        { center: 8000, lo: 6500, hi: 9500 },
-        { center: 14000, lo: 11500, hi: 16500 }
+        { center: 30, lo: 20, hi: 54.77 },
+        { center: 100, lo: 54.77, hi: 223.61 },
+        { center: 500, lo: 223.61, hi: 1118.03 },
+        { center: 2500, lo: 1118.03, hi: 4472.14 },
+        { center: 8000, lo: 4472.14, hi: 10583.01 },
+        { center: 14000, lo: 10583.01, hi: 20000 }
     ],
 
     // Average the curve's spline over each band (9 log-spaced samples per band).

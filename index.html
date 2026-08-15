@@ -12,7 +12,7 @@
     <link rel="apple-touch-icon" href="favicon.png">
 
     <link rel="stylesheet" href="css/tailwind.output.css">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: data:; worker-src 'self' blob:; connect-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: data:; worker-src 'self' blob:; connect-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'">
 
     
 
@@ -1227,7 +1227,7 @@
                         <div id="viewport-canvas-wrapper-main" class="w-full flex-1 min-h-[240px] relative">
 
                             <div id="graph-match-badges-overlay" class="absolute top-2 left-2 flex items-center gap-4 bg-transparent p-1 z-40 text-xs select-none">
-                                <div class="flex items-center gap-2 min-w-0">
+                                <div class="flex items-center gap-2 min-w-0 relative">
                                     <div id="music-match-emoji-container" class="w-8 h-8 flex items-center justify-center text-2xl flex-shrink-0">
                                         <span class="vibrant-emoji anim-match-breath">🚫</span>
                                     </div>
@@ -1235,14 +1235,42 @@
                                         <div class="text-[8px] uppercase font-black text-[var(--accent-blue)] leading-none">Music Match</div>
                                         <div id="music-match-genre-text" class="text-xs text-zinc-200 font-extrabold leading-tight truncate mt-0.5">No Match</div>
                                     </div>
+                                    <button type="button" onclick="EQ.toggleGenreTargetPicker('music')" title="Genre-Target AutoEQ" class="genre-target-btn flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full cursor-pointer">
+                                        <span class="emoji-font vibrant-emoji leading-none" style="font-size: 12px;">🎯</span>
+                                    </button>
+                                    <div id="music-genre-target-panel" class="genre-target-panel hidden">
+                                        <div class="flex items-center gap-1">
+                                            <button type="button" onclick="EQ.cycleGenreTargetPick('music', -1)" class="genre-target-step-btn">◀</button>
+                                            <span id="music-genre-target-label" class="genre-target-label"></span>
+                                            <button type="button" onclick="EQ.cycleGenreTargetPick('music', 1)" class="genre-target-step-btn">▶</button>
+                                        </div>
+                                        <div class="flex items-center gap-1 mt-1.5">
+                                            <button type="button" onclick="EQ.applyGenreTargetAutoEQ('music')" class="genre-target-apply-btn flex-1">🪄 Apply AutoEQ</button>
+                                            <button type="button" onclick="EQ.closeGenreTargetPicker('music')" class="genre-target-close-btn">✕</button>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="flex items-center gap-2 min-w-0">
+                                <div class="flex items-center gap-2 min-w-0 relative">
                                     <div id="game-match-emoji-container" class="w-8 h-8 flex items-center justify-center text-2xl flex-shrink-0">
                                         <span class="vibrant-emoji anim-match-breath">🚫</span>
                                     </div>
                                     <div class="truncate">
                                         <div class="text-[8px] uppercase font-black text-[var(--accent-amber)] leading-none">Gaming Match</div>
                                         <div id="game-match-genre-text" class="text-xs text-zinc-200 font-extrabold leading-tight truncate mt-0.5">No Match</div>
+                                    </div>
+                                    <button type="button" onclick="EQ.toggleGenreTargetPicker('game')" title="Genre-Target AutoEQ" class="genre-target-btn flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full cursor-pointer">
+                                        <span class="emoji-font vibrant-emoji leading-none" style="font-size: 12px;">🎯</span>
+                                    </button>
+                                    <div id="game-genre-target-panel" class="genre-target-panel hidden">
+                                        <div class="flex items-center gap-1">
+                                            <button type="button" onclick="EQ.cycleGenreTargetPick('game', -1)" class="genre-target-step-btn">◀</button>
+                                            <span id="game-genre-target-label" class="genre-target-label"></span>
+                                            <button type="button" onclick="EQ.cycleGenreTargetPick('game', 1)" class="genre-target-step-btn">▶</button>
+                                        </div>
+                                        <div class="flex items-center gap-1 mt-1.5">
+                                            <button type="button" onclick="EQ.applyGenreTargetAutoEQ('game')" class="genre-target-apply-btn flex-1">🪄 Apply AutoEQ</button>
+                                            <button type="button" onclick="EQ.closeGenreTargetPicker('game')" class="genre-target-close-btn">✕</button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1464,6 +1492,7 @@
                                             </div>
                                             <input type="range" id="loudness-strength-slider" min="0" max="100" value="100" class="w-full h-1 cursor-pointer" oninput="EQ.updateLoudnessParam('strength', this.value)">
                                         </div>
+                                        <button onclick="EQ.calibrateLoudnessFromVolume()" class="w-full retro-switch-btn font-black text-[10px] h-7 flex items-center justify-center gap-1 cursor-pointer truncate" title="Use your current volume level as the calibration point">🎯 Use Current Volume</button>
                                     </div>
                                 </div>
 

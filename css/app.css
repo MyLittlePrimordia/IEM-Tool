@@ -2330,6 +2330,94 @@
             gap: 3px;
             width: 100%;
         }
+        /* ---- Genre-Target AutoEQ (🎯 stepper on the EQ tab Match badges) ---- */
+        .genre-target-btn {
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.15) !important;
+            opacity: 0.65;
+            transition: opacity 0.15s, transform 0.15s;
+        }
+        .genre-target-btn:hover {
+            opacity: 1;
+            transform: scale(1.15);
+        }
+        .genre-target-panel {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            z-index: 60;
+            background: #0d0d14;
+            border: 2px solid var(--border-color, #2a2a35);
+            border-radius: 6px;
+            padding: 8px;
+            min-width: 168px;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+        }
+        .genre-target-step-btn {
+            width: 22px;
+            height: 22px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-input);
+            border: 2px solid black !important;
+            color: white;
+            font-weight: 900;
+            font-size: 10px;
+            cursor: pointer;
+        }
+        .genre-target-step-btn:hover {
+            background: var(--accent-blue);
+        }
+        .genre-target-label {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            font-size: 11px;
+            font-weight: 800;
+            color: var(--text-main, #e5e5e5);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .genre-target-apply-btn {
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            background: var(--accent-violet, #805ad5);
+            color: white;
+            font-size: 10px;
+            font-weight: 900;
+            border: 2px solid black !important;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .genre-target-apply-btn:hover {
+            filter: brightness(1.15);
+        }
+        .genre-target-close-btn {
+            width: 22px;
+            height: 22px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-input);
+            border: 2px solid black !important;
+            color: white;
+            font-size: 10px;
+            font-weight: 900;
+            cursor: pointer;
+        }
+        .genre-target-close-btn:hover {
+            background: var(--accent-red);
+        }
+
         .find-pick-badge {
             display: flex;
             align-items: center;
@@ -2360,6 +2448,30 @@
         .find-pick-badge.on:hover {
             transform: scale(1.25);
             filter: drop-shadow(0 0 6px var(--accent-blue));
+        }
+        /* Exclude state (3rd tap) - anti-recommendation: dimmed + red ✕ badge */
+        .find-pick-badge.excluded {
+            filter: grayscale(1) opacity(0.55);
+        }
+        .find-pick-badge.excluded:hover {
+            transform: scale(1.25);
+            filter: grayscale(0.6) opacity(0.85) drop-shadow(0 0 6px var(--accent-red));
+        }
+        .find-pick-exclude-x {
+            position: absolute;
+            top: -3px;
+            right: -3px;
+            width: 12px;
+            height: 12px;
+            line-height: 12px;
+            text-align: center;
+            font-size: 8px;
+            font-weight: 900;
+            color: #fff;
+            background: var(--accent-red);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 3;
         }
 
         /* ---- pick tag select FX (each tag gets its own signature move) ---- */

@@ -13,6 +13,7 @@
     "dist-linux": "electron-builder --linux --publish never",
     "build:js": "node scripts/build-bundle.mjs",
     "check:js": "node scripts/check-js.mjs",
+    "check:reach": "node scripts/check-reachability.mjs",
     "build:css": "tailwindcss -c twbuild/tailwind.config.js -i twbuild/input.css -o css/tailwind.output.css --minify"
   },
   "devDependencies": {

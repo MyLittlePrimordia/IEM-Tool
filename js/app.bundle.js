@@ -171,16 +171,28 @@ const CurveUtils = {
         });
     },
 
-    // 5-axis classification bands: average a small log-window around each
-    // reference instead of reading one fragile sample. Order matches the
+    // 5-axis classification bands. Each band's lo/hi now meets its neighbors
+    // at the geometric-mean boundary between adjacent centers (and the outer
+    // two extend to the edges of the audible range), so the six windows tile
+    // the full 20Hz-20kHz spectrum with NO gaps between them. The previous
+    // version used narrow islands (e.g. 25-45, 85-160) with large silent gaps
+    // between them (45-85, 160-400, 650-2000, 3200-6500, 9500-11500) - any EQ
+    // band whose *frequency* (not just gain) landed in one of those gaps was
+    // invisible to the genre classifier, which is why dragging a dot
+    // horizontally on the graph barely moved the Find-tab genre badge even
+    // though the curve visibly changed shape. With contiguous coverage, every
+    // point on the curve - and therefore any horizontal drag anywhere on the
+    // graph - now lands inside exactly one axis band and measurably shifts
+    // its average, so the badge tracks the drawn curve shape everywhere, not
+    // just at a few pre-selected frequencies. Order matches the
     // [subBoost, warmth, vocal, treble, air] axes used by the genre families.
     AXIS_BANDS: [
-        { center: 30, lo: 25, hi: 45 },
-        { center: 100, lo: 85, hi: 160 },
-        { center: 500, lo: 400, hi: 650 },
-        { center: 2500, lo: 2000, hi: 3200 },
-        { center: 8000, lo: 6500, hi: 9500 },
-        { center: 14000, lo: 11500, hi: 16500 }
+        { center: 30, lo: 20, hi: 54.77 },
+        { center: 100, lo: 54.77, hi: 223.61 },
+        { center: 500, lo: 223.61, hi: 1118.03 },
+        { center: 2500, lo: 1118.03, hi: 4472.14 },
+        { center: 8000, lo: 4472.14, hi: 10583.01 },
+        { center: 14000, lo: 10583.01, hi: 20000 }
     ],
 
     // Average the curve's spline over each band (9 log-spaced samples per band).
@@ -508,7 +520,11 @@ const SafeStorage = {
     getItem: function(key) {
         if (this.isSupported) {
             try {
-                return localStorageBackup.getItem(key);
+                const val = localStorageBackup.getItem(key);
+                if (val === null && this.memoryStorage.hasOwnProperty(key)) {
+                    return this.memoryStorage[key];
+                }
+                return val;
             } catch (e) {
                 console.warn("[SafeStorage] Read failed; falling back to memory.", e);
                 return this.memoryStorage.hasOwnProperty(key) ? this.memoryStorage[key] : null;
@@ -2397,6 +2413,15 @@ const EQ_LoudnessMethods = {
             this.updateLoudnessDSP();
             this.drawCurve();
             if (window.syncGlobalSliders) window.syncGlobalSliders();
+        },
+        calibrateLoudnessFromVolume: function() {
+            const volSlider = document.getElementById("eq-musicVolumeSlider");
+            const rawVol = volSlider ? (parseFloat(volSlider.value) || 50) : 50;
+            const vol = Math.max(10, Math.min(90, Math.round(rawVol)));
+            this.updateLoudnessParam('calibration', vol);
+            const calSlider = document.getElementById("loudness-cal-slider");
+            if (calSlider) calSlider.value = vol;
+            showToast(`Calibration set to current volume (${vol}%).`, "🎯");
         },
         updateLoudnessDSP: function() {
             if (!this.graphBuilt || !SharedAudio.workletNode) return;
@@ -13621,10 +13646,13 @@ this.advancedBands.forEach((b, i) => {
             } else {
                 const faders = [];
                 for (let i = 0; i < 10; i++) {
-                    const el = document.getElementById('eq-s' + i);
-                    faders.push(el ? parseFloat(el.value) : 0.0);
+                    const gEl = document.getElementById('eq-s' + i);
+                    const fEl = document.getElementById('eq-f' + i);
+                    const g = gEl ? parseFloat(gEl.value) : 0.0;
+                    const hz = fEl ? parseFloat(fEl.value) : (this.bands[i] ? this.bands[i].hz : undefined);
+                    faders.push({ hz, g: isNaN(g) ? 0.0 : g });
                 }
-                maxDb = faders.reduce((sum, v) => sum + Math.abs(v), 0);
+                maxDb = faders.reduce((sum, f) => sum + Math.abs(f.g), 0);
                 if (maxDb < 1.5) {
                     this.setMusicMatchUI("🚫", "No Match", "text-zinc-500", "anim-match-breath");
                     return;
@@ -13705,10 +13733,13 @@ this.advancedBands.forEach((b, i) => {
             } else {
                 const faders = [];
                 for (let i = 0; i < 10; i++) {
-                    const el = document.getElementById('eq-s' + i);
-                    faders.push(el ? parseFloat(el.value) : 0.0);
+                    const gEl = document.getElementById('eq-s' + i);
+                    const fEl = document.getElementById('eq-f' + i);
+                    const g = gEl ? parseFloat(gEl.value) : 0.0;
+                    const hz = fEl ? parseFloat(fEl.value) : (this.bands[i] ? this.bands[i].hz : undefined);
+                    faders.push({ hz, g: isNaN(g) ? 0.0 : g });
                 }
-                maxDb = faders.reduce((sum, v) => sum + Math.abs(v), 0);
+                maxDb = faders.reduce((sum, f) => sum + Math.abs(f.g), 0);
                 if (maxDb < 1.5) {
                     this.setGameMatchUI("🚫", "No Match", "text-zinc-500", "anim-match-breath");
                     return;
@@ -13725,6 +13756,85 @@ this.advancedBands.forEach((b, i) => {
 
             const bestMatch = FindEngine.determineLiveGameGenreMatch(resp, this.activePreset);
             this.setGameMatchUI(bestMatch.emoji, bestMatch.name, bestMatch.colorClass, bestMatch.animClass);
+        },
+
+        // ---- Genre-Target AutoEQ (🎯 stepper on the Music/Game Match badges) ----
+
+        genreTargetPickIdx: { music: 0, game: 0 },
+
+        // Same fader-deltas fallback used by updateMusicMatch/updateGameMatch,
+        // just returning the raw family INDEX (0-15) instead of a label, so the
+        // picker can default to whatever genre the badge is currently showing.
+        _liveGenreFamilyIndex: function(side) {
+            const resp = FindEngine.getLiveResponseDbs();
+            let deltas = null;
+            if (resp) {
+                deltas = FindEngine.getResponseDeltas(PEQDB_Module.DSP.FREQS, resp);
+            }
+            if (!deltas) {
+                const faders = [];
+                for (let i = 0; i < 10; i++) {
+                    const gEl = document.getElementById('eq-s' + i);
+                    const fEl = document.getElementById('eq-f' + i);
+                    const g = gEl ? parseFloat(gEl.value) : 0.0;
+                    const hz = fEl ? parseFloat(fEl.value) : (this.bands[i] ? this.bands[i].hz : undefined);
+                    faders.push({ hz, g: isNaN(g) ? 0.0 : g });
+                }
+                deltas = FindEngine.getEqBandDeltas(faders);
+            }
+            if (!deltas) return 0;
+            return side === 'game' ? FindEngine.nearestGameGenreFamilyIndex(deltas) : FindEngine.nearestGenreFamilyIndex(deltas);
+        },
+
+        toggleGenreTargetPicker: function(side) {
+            const panelId = side === 'game' ? 'game-genre-target-panel' : 'music-genre-target-panel';
+            const otherId = side === 'game' ? 'music-genre-target-panel' : 'game-genre-target-panel';
+            const panel = document.getElementById(panelId);
+            if (!panel) return;
+            const other = document.getElementById(otherId);
+            if (other) other.classList.add('hidden');
+
+            const wasHidden = panel.classList.contains('hidden');
+            if (wasHidden) {
+                this.genreTargetPickIdx[side] = this._liveGenreFamilyIndex(side);
+                this.renderGenreTargetPicker(side);
+                panel.classList.remove('hidden');
+            } else {
+                panel.classList.add('hidden');
+            }
+        },
+
+        closeGenreTargetPicker: function(side) {
+            const panelId = side === 'game' ? 'game-genre-target-panel' : 'music-genre-target-panel';
+            const panel = document.getElementById(panelId);
+            if (panel) panel.classList.add('hidden');
+        },
+
+        cycleGenreTargetPick: function(side, dir) {
+            const list = side === 'game' ? FindEngine.gameGenreFamilies : FindEngine.genreFamilies;
+            const total = list.length;
+            let idx = this.genreTargetPickIdx[side] || 0;
+            idx = ((idx + dir) % total + total) % total;
+            this.genreTargetPickIdx[side] = idx;
+            this.renderGenreTargetPicker(side);
+        },
+
+        renderGenreTargetPicker: function(side) {
+            const isGame = side === 'game';
+            const list = isGame ? FindEngine.gameGenreFamilies : FindEngine.genreFamilies;
+            const idx = this.genreTargetPickIdx[side] || 0;
+            const family = list[idx];
+            const variant = family ? (isGame ? family.gameVariants[0] : family.musicVariants[0]) : null;
+            const label = document.getElementById(side === 'game' ? 'game-genre-target-label' : 'music-genre-target-label');
+            if (label && variant) {
+                label.innerHTML = `<span class="emoji-font vibrant-emoji text-lg leading-none">${variant.emoji}</span> ${variant.name}`;
+            }
+        },
+
+        applyGenreTargetAutoEQ: function(side) {
+            const idx = this.genreTargetPickIdx[side] || 0;
+            PEQDB_Module.applyGenreAutoEQ(idx, side);
+            this.closeGenreTargetPicker(side);
         },
 
         changeGraphMode: function(mode) {
@@ -13789,6 +13899,16 @@ startVisualizer: function() {
 
             let agcArrayL = new Uint8Array(SharedAudio.analyserL ? SharedAudio.analyserL.frequencyBinCount : 2048);
             let agcArrayR = new Uint8Array(SharedAudio.analyserR ? SharedAudio.analyserR.frequencyBinCount : 2048);
+            // Anti-clip limiter state: how far below the user's preamp target the
+            // AGC is currently holding, plus quiet-time bookkeeping for the slow
+            // gain-recovery ramp so a single loud transient doesn't duck the whole
+            // listening session (audit 4.2).
+            let agcDuckedDb = 0;
+            let agcQuietMs = 0;
+            let lastAgcToastAt = 0;
+            const AGC_RECOVERY_DB_PER_SEC = 0.1;  // gentle, inaudible recovery rate
+            const AGC_RECOVERY_QUIET_MS = 3000;   // require ~3s of quiet before recovering
+            const AGC_RECOVERY_FLOOR_PCT = 70.0;  // peak must stay under this to recover
             this.agcIntervalId = setInterval(() => {
                 if (document.hidden) return;
                 if (EQ_Module.preventClipping && SharedAudio.ctx && SharedAudio.analyserL && SharedAudio.analyserR) {
@@ -13816,7 +13936,10 @@ startVisualizer: function() {
                     const pctR = (maxR / 128) * 100;
                     const peakLevel = Math.max(pctL, pctR);
 
+                    const userPreampTarget = (typeof window.userPreampTarget === 'number') ? window.userPreampTarget : 0;
+
                     if (peakLevel > 94.0) {
+                        agcQuietMs = 0;
                         const excessDb = 20 * Math.log10(peakLevel / 93.0);
                         if (excessDb > 0.1) {
                             const preampSlider = document.getElementById("eq-preampSlider");
@@ -13828,8 +13951,45 @@ startVisualizer: function() {
                                 window.isProgrammaticPreampUpdate = true;
                                 EQ_Module.updatePreamp();
                                 window.isProgrammaticPreampUpdate = false;
+
+                                agcDuckedDb = Math.max(0, userPreampTarget - newPreamp);
+
+                                const now = Date.now();
+                                if (agcDuckedDb >= 0.5 && now - lastAgcToastAt > 4000) {
+                                    lastAgcToastAt = now;
+                                    showToast(`🛡 Anti-Clip: -${agcDuckedDb.toFixed(1)} dB`, "🛡️");
+                                }
                             }
                         }
+                    } else if (agcDuckedDb > 0.05) {
+                        // Gain-recovery ramp: only climb back once the signal has
+                        // stayed quiet for a while, and only as far as the user's
+                        // own preamp target (never above it). Per-tick step is
+                        // ~0.1 dB/sec, small enough to be inaudible as movement.
+                        if (peakLevel < AGC_RECOVERY_FLOOR_PCT) {
+                            agcQuietMs += 30;
+                        } else {
+                            agcQuietMs = 0;
+                        }
+                        if (agcQuietMs >= AGC_RECOVERY_QUIET_MS) {
+                            const preampSlider = document.getElementById("eq-preampSlider");
+                            if (preampSlider) {
+                                const currentPreamp = parseFloat(preampSlider.value) || 0;
+                                const step = AGC_RECOVERY_DB_PER_SEC * 0.03;
+                                const recovered = Math.min(userPreampTarget, currentPreamp + step);
+                                if (recovered > currentPreamp + 0.0005) {
+                                    preampSlider.value = recovered.toFixed(1);
+                                    window.isProgrammaticPreampUpdate = true;
+                                    EQ_Module.updatePreamp();
+                                    window.isProgrammaticPreampUpdate = false;
+                                    agcDuckedDb = Math.max(0, userPreampTarget - recovered);
+                                } else {
+                                    agcDuckedDb = 0;
+                                }
+                            }
+                        }
+                    } else {
+                        agcQuietMs = 0;
                     }
                 }
             }, 30);
@@ -17236,17 +17396,10 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             this.updateAll();
         },
 
-generateLeastSquaresAutoEQ: function() {
-            const baseCurve = this.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
-            const targetCurve = this.STATE.activeCurves.find(c => c.role === 'target' && c.visible);
-
-            Mascot.triggerTemporaryExpression('genius', 1500);
-
-            if (!baseCurve || !targetCurve) {
-                showToast("Load both a Base and Target curve to solve.", "⚠️");
-                return;
-            }
-
+// Shared reset step used before any AutoEQ solve (curve-based or genre-based):
+// zeroes all main/advanced bands in both the UI and EQ_Module state so the
+// solver always starts from a clean slate.
+_resetEqBandsForAutoEQ: function() {
             EQ_Module.isProgrammaticSliderUpdate = true;
 
             for (let i = 0; i < 10; i++) {
@@ -17292,22 +17445,14 @@ generateLeastSquaresAutoEQ: function() {
             EQ_Module.virtualBands = [];
 
             EQ_Module.isProgrammaticSliderUpdate = false;
+        },
 
-            const baseInterp = this.DSP.interpolate(this.getNormalizedData(baseCurve.data, baseCurve.name));
-            const targetInterp = this.DSP.interpolate(this.getNormalizedData(targetCurve.data, targetCurve.name));
-            const freqs = this.DSP.FREQS;
+// Shared align+smooth step: removes the mid-band (300-3000Hz) mean from a raw
+// correction curve (so the solver never chases a broadband offset that
+// peaking bands can't reproduce) and lightly gaussian-smooths it (so tiny
+// measurement ripples / sparse-anchor spline wiggles aren't chased 1:1).
+_alignAndSmoothCorrection: function(targetCorrection, freqs) {
             const points = freqs.length;
-
-            const targetCorrection = new Float32Array(points);
-            for (let j = 0; j < points; j++) {
-                targetCorrection[j] = targetInterp[j] - baseInterp[j];
-            }
-
-            // Align the pair to the same mid-band mean (curves were normalized
-            // against the global Align setting, which pins one point/band to
-            // 75 dB). Removing the mid-band constant here means whichever Align
-            // mode is active, the solver never chases a broadband flat offset
-            // that peaking bands physically can't reproduce.
             let midSum = 0, midWSum = 0;
             for (let j = 0; j < points; j++) {
                 const f = freqs[j];
@@ -17321,16 +17466,51 @@ generateLeastSquaresAutoEQ: function() {
                 const midMean = midSum / midWSum;
                 for (let j = 0; j < points; j++) targetCorrection[j] -= midMean;
             }
-
-            // Smooth the correction target before solving (the AutoEQ
-            // "smoothbins" behavior): measurement micro-ripples shouldn't be
-            // chased by peaking bands, especially at high resolution where
-            // boosts can carve into every tiny dip. Light octave-band gaussian
-            // over the log-freq grid, applied after the broadband offset is
-            // removed so the edges don't smear a DC term back in.
             const smoothedTarget = CurveUtils.gaussianSmooth(freqs, targetCorrection, 0.05);
             for (let j = 0; j < points; j++) targetCorrection[j] = smoothedTarget[j];
+            return targetCorrection;
+        },
 
+generateLeastSquaresAutoEQ: function() {
+            const baseCurve = this.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
+            const targetCurve = this.STATE.activeCurves.find(c => c.role === 'target' && c.visible);
+
+            Mascot.triggerTemporaryExpression('genius', 1500);
+
+            if (!baseCurve || !targetCurve) {
+                showToast("Load both a Base and Target curve to solve.", "⚠️");
+                return;
+            }
+
+            this._resetEqBandsForAutoEQ();
+
+            const baseInterp = this.DSP.interpolate(this.getNormalizedData(baseCurve.data, baseCurve.name));
+            const targetInterp = this.DSP.interpolate(this.getNormalizedData(targetCurve.data, targetCurve.name));
+            const freqs = this.DSP.FREQS;
+            const points = freqs.length;
+
+            const targetCorrection = new Float32Array(points);
+            for (let j = 0; j < points; j++) {
+                targetCorrection[j] = targetInterp[j] - baseInterp[j];
+            }
+
+            // Align to the mid-band mean (curves were normalized against the
+            // global Align setting, which pins one point/band to 75 dB) and
+            // lightly smooth (the AutoEQ "smoothbins" behavior) before solving.
+            this._alignAndSmoothCorrection(targetCorrection, freqs);
+
+            this._solveAutoEQBands(targetCorrection, freqs, null);
+        },
+
+// Core iterative solve: given a target correction curve (dB per this.DSP.FREQS
+// point) that the cascaded EQ bands should approximate, resets nothing further
+// (callers must already have reset bands via _resetEqBandsForAutoEQ and
+// prepared targetCorrection via _alignAndSmoothCorrection or equivalent),
+// solves gains for the active band resolution, applies them to the UI/state,
+// and shows a completion toast. toastText overrides the default message;
+// pass null to use the generic "AutoEQ solved and loaded N bands" message.
+_solveAutoEQBands: function(targetCorrection, freqs, toastText) {
+            const points = freqs.length;
             const bandCount = PEQDB_Module.autoeqResolution || 10;
 
             const optimizedBands = [];
@@ -17555,7 +17735,62 @@ generateLeastSquaresAutoEQ: function() {
             EQ_Module.updatePreamp();
             EQ_Module.drawCurve();
             if (window.syncGlobalSliders) window.syncGlobalSliders();
-            showToast(`AutoEQ solved and loaded ${bandCount} bands successfully!`, "🪄");
+            showToast(toastText || `AutoEQ solved and loaded ${bandCount} bands successfully!`, "🪄");
+        },
+
+// Genre-Target AutoEQ: instead of solving toward a loaded external Target
+// curve, synthesize a target shape directly from one of the 32 genre family
+// tonal profiles (5-axis dB deltas from the 500Hz mid reference - the same
+// profiles that drive the live Music/Game Match badges) and solve the 10/20/N
+// EQ bands toward THAT shape. If a Base curve is loaded, the genre shape is
+// applied as a correction on top of it (so the IEM's own measured deviations
+// still get corrected); if no Base curve is loaded, the genre shape is
+// solved directly against flat, so the EQ alone sculpts the curve toward the
+// genre's family shape.
+applyGenreAutoEQ: function(familyIndex, side) {
+            const isGame = side === 'game';
+            const family = isGame ? FindEngine.gameGenreFamilies[familyIndex] : FindEngine.genreFamilies[familyIndex];
+            if (!family) {
+                showToast("Couldn't find that genre.", "⚠️");
+                return;
+            }
+            const variant = isGame ? family.gameVariants[0] : family.musicVariants[0];
+            const profile = family.profile;
+            if (!profile) {
+                showToast("That genre doesn't have a tuning profile yet.", "⚠️");
+                return;
+            }
+
+            Mascot.triggerTemporaryExpression('genius', 1500);
+
+            this._resetEqBandsForAutoEQ();
+
+            const freqs = this.DSP.FREQS;
+            const points = freqs.length;
+
+            // Anchor points matching CurveUtils.AXIS_BANDS centers - [sub,
+            // warmth, vocal, treble, air] relative to the 500Hz mid (pinned
+            // to 0) - extended flat at the spectrum edges so the spline
+            // doesn't swing wildly past the outermost anchors.
+            const anchorPoints = [
+                [20, profile[0]], [30, profile[0]], [100, profile[1]], [500, 0],
+                [2500, profile[2]], [8000, profile[3]], [14000, profile[4]], [20000, profile[4]]
+            ];
+            const genreShape = CurveUtils.cubicSplineInterpolate(anchorPoints, Array.from(freqs));
+
+            const baseCurve = this.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
+            const targetCorrection = new Float32Array(points);
+            if (baseCurve) {
+                const baseInterp = this.DSP.interpolate(this.getNormalizedData(baseCurve.data, baseCurve.name));
+                for (let j = 0; j < points; j++) targetCorrection[j] = genreShape[j] - baseInterp[j];
+            } else {
+                for (let j = 0; j < points; j++) targetCorrection[j] = genreShape[j];
+            }
+
+            this._alignAndSmoothCorrection(targetCorrection, freqs);
+
+            const label = variant ? `${variant.emoji} ${variant.name}` : 'genre target';
+            this._solveAutoEQBands(targetCorrection, freqs, `🎯 AutoEQ solved toward ${label}!`);
         },
 
                         clearState: function() {
@@ -22200,7 +22435,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     const grid = document.getElementById('find-pick-grid');
                     if (!grid) return;
                     const selected = this.selectedPicks || [];
-                    const isSel = p => selected.some(s => s.kind === p.kind && s.value === p.value);
+                    const findSel = p => selected.find(s => s.kind === p.kind && s.value === p.value);
                     let html = '';
                     this._pickGroupList().forEach(group => {
                         if (!group.items.length) return;
@@ -22208,11 +22443,16 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             <span class="pick-group-label ${group.cls || 'text-zinc-400'}">${group.emoji} ${group.title}</span>
                             <div class="pick-group-grid">`;
                         group.items.forEach(p => {
-                            const on = isSel(p);
+                            const sel = findSel(p);
+                            const on = !!sel && sel.mode !== 'exclude';
+                            const excluded = !!sel && sel.mode === 'exclude';
                             const fx = this.pickFx[p.value] || '';
                             const playing = on && p.value === this._lastFx ? ' fx-play' : '';
-                            html += `<button type="button" onclick="FindEngine.togglePick('${escJs(p.kind)}','${escJs(p.value)}')" data-tooltip="${esc(p.value)}" data-value="${esc(p.value)}" data-fx="${esc(fx)}" class="no-tactile find-pick-badge ${on ? 'on' : ''}${playing}" aria-pressed="${on}">
-                                <span class="emoji-font vibrant-emoji leading-none pointer-events-none">${esc(p.emoji)}</span>
+                            const stateClass = on ? 'on' : (excluded ? 'excluded' : '');
+                            const ariaPressed = on ? 'true' : (excluded ? 'mixed' : 'false');
+                            const tooltip = excluded ? `${p.value} (excluded)` : p.value;
+                            html += `<button type="button" onclick="FindEngine.togglePick('${escJs(p.kind)}','${escJs(p.value)}')" data-tooltip="${esc(tooltip)}" data-value="${esc(p.value)}" data-fx="${esc(fx)}" class="no-tactile find-pick-badge ${stateClass}${playing}" aria-pressed="${ariaPressed}">
+                                <span class="emoji-font vibrant-emoji leading-none pointer-events-none">${esc(p.emoji)}</span>${excluded ? '<span class="find-pick-exclude-x">✕</span>' : ''}
                             </button>`;
                         });
                         html += `</div></div>`;
@@ -22229,12 +22469,18 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     grid.style.setProperty('--pick-emoji', '20px');
                 },
 
+                // Three-state cycle: off -> Include (highlighted) -> Exclude
+                // (dimmed with a ✕ badge, filters OUT matches carrying this
+                // tag/genre) -> off.
                 togglePick: function(kind, value) {
                     const picks = this.selectedPicks || [];
                     const idx = picks.findIndex(p => p.kind === kind && p.value === value);
                     if (idx === -1) {
-                        picks.push({ kind, value, emoji: this._pickEmojiFor(kind, value) });
+                        picks.push({ kind, value, emoji: this._pickEmojiFor(kind, value), mode: 'include' });
                         this._lastFx = value;
+                    } else if (picks[idx].mode !== 'exclude') {
+                        picks[idx].mode = 'exclude';
+                        this._lastFx = null;
                     } else {
                         picks.splice(idx, 1);
                         this._lastFx = null;
@@ -22286,6 +22532,30 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         }
                     }
                     return count;
+                },
+                // Boolean short-circuit version of countPickMatches, used to test
+                // Exclude-mode picks (anti-recommendations) where a single hit is
+                // enough to drop the candidate - no need to keep counting.
+                hasAnyPickMatch: function(item, dbEntry, picks) {
+                    picks = picks || [];
+                    if (!picks.length) return false;
+                    let music = null, game = null;
+                    for (const p of picks) {
+                        if (p.kind === 'meta') {
+                            if (dbEntry && dbEntry.tags && Array.isArray(dbEntry.tags)) {
+                                const reqLower = String(p.value).toLowerCase();
+                                const hasTag = dbEntry.tags.some(t => { const tl = String(t).toLowerCase(); return tl.includes(reqLower) || reqLower.includes(tl); });
+                                if (hasTag) return true;
+                            }
+                        } else if (p.kind === 'music') {
+                            if (!music) music = this.determineIemGenreMatch(item, dbEntry);
+                            if (music && music.name === p.value) return true;
+                        } else if (p.kind === 'game') {
+                            if (!game) game = this.determineIemGameGenreMatch(item, dbEntry);
+                            if (game && game.name === p.value) return true;
+                        }
+                    }
+                    return false;
                 },
                 selectCustomOption: function(key, value, htmlLabel) {
                     this._selectCustomOptionPrefixed('find', key, value, htmlLabel);
@@ -24419,20 +24689,29 @@ getDriveabilityStatus: function(impedance, sensitivity) {
         },
 
         // Same 5-axis reduction, but for the EQ tab's live 10-band parametric
-        // EQ (fixed centers 31/62/125/250/500/1000/2000/4000/8000/16000 Hz)
-        // instead of a measured curve, so both features share one classifier.
-        // Convirt the 10 EQ bands into a smooth curve (via the same cubic
-        // spline), interpolate onto the exact reference frequencies used by
-        // getCurveDeltas and return the SAME mid-relative deltas — so the live
-        // overlay and the DB-card classifier rank shapes identically.
-        // bandDeltas is the 10 boost/cut values in dB, band-index order.
+        // EQ, used only as a fallback when the dense filter-magnitude response
+        // (getLiveResponseDbs) isn't available yet. Convert the 10 EQ bands
+        // into a smooth curve (via the same cubic spline), interpolate onto
+        // the exact reference frequencies used by getCurveDeltas and return
+        // the SAME mid-relative deltas — so the live overlay and the DB-card
+        // classifier rank shapes identically.
+        // bandDeltas is either the 10 boost/cut values in dB (band-index
+        // order, using each band's DEFAULT frequency - only correct if no dot
+        // has been dragged left/right), or an array of {hz, g} pairs giving
+        // each band's actual current frequency and gain, which stays correct
+        // after the band has been dragged horizontally. Callers that already
+        // know the live per-band frequencies (e.g. a dragged dot) should pass
+        // the {hz, g} form so this fallback doesn't silently ignore the drag.
         getEqBandDeltas: function(bandDeltas) {
             if (!bandDeltas || bandDeltas.length < 10) return null;
-            const eqFreqs = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+            const defaultEqFreqs = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
             const points = [];
             for (let i = 0; i < bandDeltas.length; i++) {
-                const db = parseFloat(bandDeltas[i]);
-                points.push([eqFreqs[i], isNaN(db) ? 0 : db]);
+                const entry = bandDeltas[i];
+                const isPair = entry && typeof entry === 'object';
+                const hz = isPair ? parseFloat(entry.hz) : defaultEqFreqs[i];
+                const db = isPair ? parseFloat(entry.g) : parseFloat(entry);
+                points.push([isNaN(hz) ? defaultEqFreqs[i] : hz, isNaN(db) ? 0 : db]);
             }
             const [sb, mb, m, v, tr, air] = CurveUtils.bandAverages(points, CurveUtils.AXIS_BANDS);
             return [sb - m, mb - m, v - m, tr - m, air - m];
@@ -24734,11 +25013,22 @@ applyGenreFilters: function(matches) {
     const picks = this.selectedPicks || [];
     const list = matches || [];
     if (!picks.length) return list;
+    // Include-mode picks require at least one match (scored/sorted by how
+    // many they hit, as before); Exclude-mode picks (anti-recommendations)
+    // drop a candidate outright the moment any one of them matches,
+    // regardless of how well it scores on the Include side.
+    const includePicks = picks.filter(p => p.mode !== 'exclude');
+    const excludePicks = picks.filter(p => p.mode === 'exclude');
     const kept = list.filter(m => {
         const dbEntry = m.dbEntry || this.getDbEntry(m);
-        const count = this.countPickMatches(m, dbEntry, picks);
-        m.pickCount = count;
-        return count > 0;
+        if (excludePicks.length && this.hasAnyPickMatch(m, dbEntry, excludePicks)) return false;
+        if (includePicks.length) {
+            const count = this.countPickMatches(m, dbEntry, includePicks);
+            m.pickCount = count;
+            return count > 0;
+        }
+        m.pickCount = 0;
+        return true;
     });
     kept.sort((a, b) => (b.pickCount || 0) - (a.pickCount || 0));
     return kept;

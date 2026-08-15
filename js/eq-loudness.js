@@ -42,6 +42,15 @@ const EQ_LoudnessMethods = {
             this.drawCurve();
             if (window.syncGlobalSliders) window.syncGlobalSliders();
         },
+        calibrateLoudnessFromVolume: function() {
+            const volSlider = document.getElementById("eq-musicVolumeSlider");
+            const rawVol = volSlider ? (parseFloat(volSlider.value) || 50) : 50;
+            const vol = Math.max(10, Math.min(90, Math.round(rawVol)));
+            this.updateLoudnessParam('calibration', vol);
+            const calSlider = document.getElementById("loudness-cal-slider");
+            if (calSlider) calSlider.value = vol;
+            showToast(`Calibration set to current volume (${vol}%).`, "🎯");
+        },
         updateLoudnessDSP: function() {
             if (!this.graphBuilt || !SharedAudio.workletNode) return;
             
