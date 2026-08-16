@@ -15,12 +15,13 @@ Built for audio enthusiasts, reviewers, and tuners who want an all-in-one offlin
 * ✏️ **Target Sculptor & Freehand Draw:** Draw or sculpt custom target curves directly on the interactive frequency response graph.
 * 🎚️ **Parametric EQ & AutoEQ Solver:** 1-Click AutoEQ solver supporting 10 to 50 band resolutions with Anti-Clip Limiter and Auto-Gain Matching.
 * 🌌 **3D Soundstage & Spatial Simulator:** Interactive 3D spatial pad with HRTF positioning and room acoustic simulations.
+* 🎯 **Live Genre Match & Genre-Target AutoEQ:** The FR graph overlay shows real-time Music and Game genre matches based on your current EQ curve, with a one-click stepper to cycle genre families and AutoEQ solve directly to that genre's target shape.
 * 🔬 **Acoustic Test Lab:** Ear Canal Resonance Peak locking, Channel Imbalance detector, Burn-In Station, and 10 Diagnostic Sweeps.
 * 🎮 **Blind A/B & ABX Test Station:** Conduct blind listening tests with crossfading and statistical confidence scoring ($P$-value).
 * 📝 **Review Profile Suite:** Rate IEMs with radar spider charts, sound characteristic sliders, photo attachment background removal, and DAC power/driveability calculations.
-* 📊 **Real-time Audio Visualizers:** Spectrum Oscilloscope, OLED Bars, Spectrogram, 3D Waterfall, and Audio Mesh effects.
-* 🎨 **Custom 8-Bit Retro Themes & Fonts:** 9 retro skins (Parchment, Slate, Ember, Circuit, Byte, Cartridge, Arcade, Blush, Bit) with auto-scaled retro fonts.
-* 🚫 **100% Offline & Private:** Runs completely local in your browser without requiring server connections.
+* 📊 **Real-time Audio Visualizers:** 6 switchable render modes — Neon Stars, Liquid Fiber Wave, Cosmic Vortex, Spectrum Bars, EQ Grid, and Aurora Ribbons.
+* 🎨 **Custom 8-Bit Retro Themes & Fonts:** 9 retro skins (Slate, Parchment, Ember, Circuit, Byte, Cartridge, Arcade, Blush, Bit) with auto-scaled retro fonts.
+* 🚫 **100% Offline & Private:** Runs completely local as a self-contained desktop app (Electron) with no server connections required.
 
 ---
 
@@ -45,6 +46,7 @@ Built for audio enthusiasts, reviewers, and tuners who want an all-in-one offlin
 * **AutoEQ Engine:** Solves parametric EQ filters automatically across 10, 15, 20, 30, 40, or 50 band resolutions.
 * **Presets & Acoustics:** Standard & Advanced cards, Speaker Crossfeed, Stereo Expander, Loudness Compensation, De-Esser, and Reverb simulator.
 * **Preset Exporters:** Export active filters directly to **Peace**, **Wavelet**, **Poweramp**, **Qudelix**, and **FxSound**.
+* **Genre Match Overlay:** Top-left graph overlay live-matches your current curve to the closest Music and Game genre profiles. Use the 🎯 button next to each match to open a stepper, pick a different genre family, and apply AutoEQ straight to that genre's target — with or without a Base curve loaded.
 
 <p align="center">
   <img src="screenshots/EQ.png" width="900" alt="EQ Workspace">
@@ -80,7 +82,7 @@ Built for audio enthusiasts, reviewers, and tuners who want an all-in-one offlin
 ---
 
 ### 5. 📊 Visualizer (Real-time Spectrum)
-* Immersive spectrum visualizer with 6 switchable render modes: **Waveform Oscilloscope**, **OLED Spectrum Bars**, **Horizontal Spectrogram**, **3D Waterfall**, **Acoustic Tunnel**, and **3D Audio Mesh**.
+* Immersive spectrum visualizer with 6 switchable render modes: **✨ Neon Stars**, **🌊 Liquid Fiber Wave**, **🌀 Cosmic Vortex**, **📊 Spectrum Bars**, **🟩 EQ Grid**, and **🌈 Aurora Ribbons**.
 
 <p align="center">
   <img src="screenshots/VISUALIZER.png" width="900" alt="Visualizer Workspace">
@@ -103,8 +105,8 @@ Customize your workstation interface with 9 built-in skins:
 
 | Theme | Name | Preview |
 | :--- | :--- | :---: |
-| `parchment` | **Parchment** *(Default)* | <img src="screenshots/PARCHMENT.png" width="280"> |
-| `slate` | **Slate** | <img src="screenshots/SLATE.png" width="280"> |
+| `slate` | **Slate** *(Default)* | <img src="screenshots/SLATE.png" width="280"> |
+| `parchment` | **Parchment** | <img src="screenshots/PARCHMENT.png" width="280"> |
 | `ember` | **Ember** | <img src="screenshots/EMBER.png" width="280"> |
 | `circuit` | **Circuit** | <img src="screenshots/CIRCUIT.png" width="280"> |
 | `byte` | **Byte** | <img src="screenshots/BYTE.png" width="280"> |
@@ -195,8 +197,19 @@ This utility compresses `database.json` into a GZip archive (`database.json.gz`)
 
 ---
 
+## 🖥️ Running / Building
+
+IEM Tool ships as an **Electron** desktop app with a small local HTTP server (`main.js`) serving the app to a sandboxed renderer (`preload.js` exposes no privileged APIs).
+
+* `npm start` — launch the app in Electron.
+* `npm run dist-win` / `npm run dist-mac` / `npm run dist-linux` — package platform-specific builds via `electron-builder`.
+* `npm run build:js` / `npm run build:css` — rebuild the JS bundle and Tailwind CSS output after editing source files.
+
+---
+
 ## 🛠️ Built With
 
+* **Electron** (Desktop packaging, local server bridge, sandboxed preload)
 * **HTML5 / Vanilla JavaScript (ES6+)**
 * **Tailwind CSS (Static 8-Bit Build)**
 * **Web Audio API** (Custom DSP Worklet Node, Biquad Filters, HRTF Spatial Panner, Stereo Panner, Convolver, Dynamics Compressor, Analyser Node)
