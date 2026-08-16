@@ -117,7 +117,7 @@ Customize your workstation interface with 9 built-in skins:
 
 ---
 
-## 📂 Utilities & Executables
+## 📂 Utilities & Executables (Windows Only)
 
 ### 1. 🛠️ Database Editor  (`Database Editor.exe`)
 
