@@ -2542,31 +2542,6 @@ min-width: 200px;
             transform: scale(1.25);
             filter: drop-shadow(0 0 6px var(--accent-blue));
         }
-        /* Exclude state (3rd tap) - anti-recommendation: dimmed + red ✕ badge */
-        .find-pick-badge.excluded {
-            filter: grayscale(1) opacity(0.55);
-        }
-        .find-pick-badge.excluded:hover {
-            transform: scale(1.25);
-            filter: grayscale(0.6) opacity(0.85) drop-shadow(0 0 6px var(--accent-red));
-        }
-        .find-pick-exclude-x {
-            position: absolute;
-            top: -3px;
-            right: -3px;
-            width: 12px;
-            height: 12px;
-            line-height: 12px;
-            text-align: center;
-            font-size: 8px;
-            font-weight: 900;
-            color: #fff;
-            background: var(--accent-red);
-            border-radius: 50%;
-            pointer-events: none;
-            z-index: 3;
-        }
-
         /* ---- pick tag select FX (each tag gets its own signature move) ---- */
         .fx-play {
             position: relative;

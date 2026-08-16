@@ -17186,7 +17186,7 @@ loadSoundLibrary: async function() {
                 filterTags: new Set(),
                 selectedPicks: [],
                 approvedTagsList: [
-    "Basshead", "Treble-Head", "Sub-Bass", "Punchy Bass", "Warm", "Neutral", 
+    "Basshead", "Treblehead", "Sub-Bass", "Punchy Bass", "Warm", "Neutral", 
     "V-Shaped", "U-Shaped", "Balanced", "Bright", "Dark", "Detailed", 
     "Resolving", "Technical", "Wide-Stage", "Good-Imaging", "Smooth", 
     "Reference", "Studio-Monitoring", "Analytical", "Fun", "Relaxed", 
@@ -17194,7 +17194,7 @@ loadSoundLibrary: async function() {
     "Premium", "Flagship", "Collab", "Limited-Edition"
 ],
 tagEmojis: {
-    "Basshead": "💥", "Treble-Head": "⚡", "Sub-Bass": "🌊", "Punchy Bass": "🥊", 
+    "Basshead": "💥", "Treblehead": "⚡", "Sub-Bass": "🌊", "Punchy Bass": "🥊", 
     "Warm": "🌿", "Neutral": "⚖️", "V-Shaped": "🔺", "U-Shaped": "🧲", 
     "Balanced": "☯️", "Bright": "✨", "Dark": "🌑", "Detailed": "💎", 
     "Resolving": "🔍", "Technical": "🔬", "Wide-Stage": "🏟️", "Good-Imaging": "🔭", 
@@ -17329,7 +17329,7 @@ tagEmojis: {
                     const tags = this.approvedTagsList || [];
                     const tagOf = (name) => ({ kind: 'meta', value: name, emoji: this.tagEmojis[name] || '🏷️' });
                     const soundTuning = [
-    'Basshead', 'Treble-Head', 'Sub-Bass', 'Punchy Bass', 'Warm', 
+    'Basshead', 'Treblehead', 'Sub-Bass', 'Punchy Bass', 'Warm', 
     'Neutral', 'V-Shaped', 'U-Shaped', 'Balanced', 'Bright', 
     'Dark', 'Detailed', 'Resolving', 'Technical', 'Wide-Stage', 
     'Good-Imaging', 'Smooth', 'Reference', 'Studio-Monitoring', 
@@ -17350,6 +17350,12 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     return groups;
                 },
 
+                // Normalizes a tag string for comparison so cosmetic differences
+                // (hyphens, spaces, casing - e.g. "Treble-Head" vs "Treblehead")
+                // never cause a real tag match to be missed.
+                _normTag: function(s) {
+                    return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                },
                 _pickEmojiFor: function(kind, value) {
                     let emoji = '🏷️';
                     this._pickGroupList().forEach(g => g.items.forEach(p => { if (p.kind === kind && p.value === value) emoji = p.emoji; }));
@@ -17357,7 +17363,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                 },
 
                 pickFx: {
-    'Basshead': 'basshead', 'Treble-Head': 'treblehead', 'Sub-Bass': 'subbass', 'Punchy Bass': 'punch', 'Warm': 'warm',
+    'Basshead': 'basshead', 'Treblehead': 'treblehead', 'Sub-Bass': 'subbass', 'Punchy Bass': 'punch', 'Warm': 'warm',
     'Neutral': 'neutral', 'V-Shaped': 'vshape', 'U-Shaped': 'ushape', 'Balanced': 'balanced', 'Bright': 'bright',
     'Dark': 'dark', 'Detailed': 'detailed', 'Resolving': 'resolving', 'Technical': 'technical',
     'Wide-Stage': 'widestage', 'Good-Imaging': 'imaging', 'Smooth': 'smooth', 'Reference': 'reference',
@@ -17388,15 +17394,12 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             <div class="pick-group-grid">`;
                         group.items.forEach(p => {
                             const sel = findSel(p);
-                            const on = !!sel && sel.mode !== 'exclude';
-                            const excluded = !!sel && sel.mode === 'exclude';
+                            const on = !!sel;
                             const fx = this.pickFx[p.value] || '';
                             const playing = on && p.value === this._lastFx ? ' fx-play' : '';
-                            const stateClass = on ? 'on' : (excluded ? 'excluded' : '');
-                            const ariaPressed = on ? 'true' : (excluded ? 'mixed' : 'false');
-                            const tooltip = excluded ? `${p.value} (excluded)` : p.value;
-                            html += `<button type="button" onclick="FindEngine.togglePick('${escJs(p.kind)}','${escJs(p.value)}')" data-tooltip="${esc(tooltip)}" data-value="${esc(p.value)}" data-fx="${esc(fx)}" class="no-tactile find-pick-badge ${stateClass}${playing}" aria-pressed="${ariaPressed}">
-                                <span class="emoji-font vibrant-emoji leading-none pointer-events-none">${esc(p.emoji)}</span>${excluded ? '<span class="find-pick-exclude-x">✕</span>' : ''}
+                            const stateClass = on ? 'on' : '';
+                            html += `<button type="button" onclick="FindEngine.togglePick('${escJs(p.kind)}','${escJs(p.value)}')" data-tooltip="${esc(p.value)}" data-value="${esc(p.value)}" data-fx="${esc(fx)}" class="no-tactile find-pick-badge ${stateClass}${playing}" aria-pressed="${on ? 'true' : 'false'}">
+                                <span class="emoji-font vibrant-emoji leading-none pointer-events-none">${esc(p.emoji)}</span>
                             </button>`;
                         });
                         html += `</div></div>`;
@@ -17413,18 +17416,15 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     grid.style.setProperty('--pick-emoji', '20px');
                 },
 
-                // Three-state cycle: off -> Include (highlighted) -> Exclude
-                // (dimmed with a ✕ badge, filters OUT matches carrying this
-                // tag/genre) -> off.
+                // Two-state toggle: off (grayed out, included in results by
+                // default) -> Include (highlighted, narrows results to those
+                // carrying this tag/genre) -> off.
                 togglePick: function(kind, value) {
                     const picks = this.selectedPicks || [];
                     const idx = picks.findIndex(p => p.kind === kind && p.value === value);
                     if (idx === -1) {
                         picks.push({ kind, value, emoji: this._pickEmojiFor(kind, value), mode: 'include' });
                         this._lastFx = value;
-                    } else if (picks[idx].mode !== 'exclude') {
-                        picks[idx].mode = 'exclude';
-                        this._lastFx = null;
                     } else {
                         picks.splice(idx, 1);
                         this._lastFx = null;
@@ -17463,8 +17463,8 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     for (const p of picks) {
                         if (p.kind === 'meta') {
                             if (dbEntry && dbEntry.tags && Array.isArray(dbEntry.tags)) {
-                                const reqLower = String(p.value).toLowerCase();
-                                const hasTag = dbEntry.tags.some(t => { const tl = String(t).toLowerCase(); return tl.includes(reqLower) || reqLower.includes(tl); });
+                                const reqNorm = this._normTag(p.value);
+                                const hasTag = dbEntry.tags.some(t => { const tn = this._normTag(t); return tn.includes(reqNorm) || reqNorm.includes(tn); });
                                 if (hasTag) count++;
                             }
                         } else if (p.kind === 'music') {
@@ -17487,8 +17487,8 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     for (const p of picks) {
                         if (p.kind === 'meta') {
                             if (dbEntry && dbEntry.tags && Array.isArray(dbEntry.tags)) {
-                                const reqLower = String(p.value).toLowerCase();
-                                const hasTag = dbEntry.tags.some(t => { const tl = String(t).toLowerCase(); return tl.includes(reqLower) || reqLower.includes(tl); });
+                                const reqNorm = this._normTag(p.value);
+                                const hasTag = dbEntry.tags.some(t => { const tn = this._normTag(t); return tn.includes(reqNorm) || reqNorm.includes(tn); });
                                 if (hasTag) return true;
                             }
                         } else if (p.kind === 'music') {
@@ -17743,10 +17743,10 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     const metaPicks = (f.picks || []).filter(p => p.kind === 'meta');
                     if (metaPicks.length) {
                         if (!db.tags || !Array.isArray(db.tags)) return false;
-                        const dbTagsLower = db.tags.map(t => String(t).toLowerCase());
+                        const dbTagsNorm = db.tags.map(t => this._normTag(t));
                         const anyTag = metaPicks.some(p => {
-                            const reqLower = String(p.value).toLowerCase();
-                            return dbTagsLower.some(t => t.includes(reqLower) || reqLower.includes(t));
+                            const reqNorm = this._normTag(p.value);
+                            return dbTagsNorm.some(t => t.includes(reqNorm) || reqNorm.includes(t));
                         });
                         if (!anyTag) return false;
                     }
@@ -19957,22 +19957,14 @@ applyGenreFilters: function(matches) {
     const picks = this.selectedPicks || [];
     const list = matches || [];
     if (!picks.length) return list;
-    // Include-mode picks require at least one match (scored/sorted by how
-    // many they hit, as before); Exclude-mode picks (anti-recommendations)
-    // drop a candidate outright the moment any one of them matches,
-    // regardless of how well it scores on the Include side.
-    const includePicks = picks.filter(p => p.mode !== 'exclude');
-    const excludePicks = picks.filter(p => p.mode === 'exclude');
+    // Selected picks require at least one match (scored/sorted by how many
+    // they hit). Anything with zero selected picks stays included by
+    // default - picks only ever narrow the results, never exclude.
     const kept = list.filter(m => {
         const dbEntry = m.dbEntry || this.getDbEntry(m);
-        if (excludePicks.length && this.hasAnyPickMatch(m, dbEntry, excludePicks)) return false;
-        if (includePicks.length) {
-            const count = this.countPickMatches(m, dbEntry, includePicks);
-            m.pickCount = count;
-            return count > 0;
-        }
-        m.pickCount = 0;
-        return true;
+        const count = this.countPickMatches(m, dbEntry, picks);
+        m.pickCount = count;
+        return count > 0;
     });
     kept.sort((a, b) => (b.pickCount || 0) - (a.pickCount || 0));
     return kept;
