@@ -49,6 +49,32 @@ Do not infer driver counts from marketing images, shell appearance, or product n
 Only use officially documented driver specifications.
 
 ==================================================
+FORM FACTOR & CONNECTOR CONSISTENCY RULES
+==================================================
+Strict Allowed Values:
+
+form_factor (5 values ONLY):
+- "IEM" (In-ear canal sealing monitors, typically wired)
+- "Wireless Earbuds (TWS)" (True wireless earbuds / TWS)
+- "Earbuds (Wired)" (Non-sealing flatheads resting in the concha, e.g., VE Monk, NiceHCK EB2S)
+- "Wireless Over-Ear Headphones" (Full-size / on-ear Bluetooth wireless headphones)
+- "Over-Ear Headphones (Wired)" (Full-size / on-ear wired headphones)
+
+connector (13 values ONLY):
+- "Bluetooth", "2-pin", "QDC", "MMCX", "A2DC", "Fixed Cable", "Detachable Cable", "3.5mm", "4.4mm", "6.35mm", "XLR", "Electrostatic", "Unknown"
+
+Mandatory Pairing & Disambiguation Rules:
+1. Wireless Devices:
+   - "Wireless Earbuds (TWS)" and "Wireless Over-Ear Headphones" MUST use connector "Bluetooth" (even if an optional backup 3.5mm cable is included in the box).
+2. Electrostatic Distinction:
+   - connector "Electrostatic" is strictly reserved for specialized headphones/earphones requiring dedicated high-voltage bias energizers (5-pin Stax Pro-bias, Sennheiser HE 1 / HE 90 / HE 60).
+   - IEMs containing EST drivers (e.g., Sonion micro-tweeters) connect via standard "2-pin" or "MMCX", NOT "Electrostatic".
+3. Flatheads vs. IEMs:
+   - Non-sealing flathead earbuds must be classified as "Earbuds (Wired)".
+4. Hardwired Cables:
+   - Any non-detachable / hardwired earphone or headphone must be assigned connector "Fixed Cable".
+
+==================================================
 OUTPUT & NOTEPAD++ SEARCH/REPLACE RULES (CRITICAL)
 ==================================================
 To maximize speed and allow instant editing in Notepad++:
