@@ -13,7 +13,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 // Source-of-truth load order (matches the pre-bundling <script> tags).
 const src = [
-  'js/utils.js','js/audio-engine.js','js/safe-storage.js','js/accessibility.js','js/eq-export.js',
+  'js/utils.js','js/audio-engine.js','js/safe-storage.js','js/accessibility.js','js/ui-kit.js',
+  'js/shortcuts.js','js/eq-export.js',
   'js/eq-playlist.js','js/eq-reverb.js','js/eq-crossfeed.js','js/eq-crossover.js','js/eq-dynamics.js',
   'js/eq-loudness.js','js/eq-tempo.js','js/eq-smart-import.js','js/eq-hearing-cal.js','js/eq-viz-fullscreen.js',
   'js/eq-source-sim.js','js/eq-presets.js','js/eq-band-handlers.js','js/eq-draw-curve.js','js/eq-squig-graph.js',

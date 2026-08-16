@@ -188,13 +188,31 @@ const EQ_PresetMethods = {
             this.renderCustomPresets();
             if (window.syncGlobalSliders) window.syncGlobalSliders();
         },
-        deleteCustomPreset: function(id) {
-            if (!confirm("Delete this custom preset?")) return;
+        deleteCustomPreset: async function(id) {
+            const ok = await UIKit.confirm({
+                title: "Delete this custom preset?",
+                confirmLabel: "Delete",
+                danger: true
+            });
+            if (!ok) return;
             const presets = this.getCustomPresets();
+            const removed = presets[id];
             delete presets[id];
             SafeStorage.setItem('iem_custom_eq_presets', JSON.stringify(presets));
             if (this.activePreset === id) this.activePreset = null;
             this.switchCategory('custom');
+            showToast(`Deleted preset "${id}"`, "🗑️", {
+                action: removed ? {
+                    label: "Undo",
+                    onClick: () => {
+                        const current = this.getCustomPresets();
+                        current[id] = removed;
+                        SafeStorage.setItem('iem_custom_eq_presets', JSON.stringify(current));
+                        this.switchCategory('custom');
+                        showToast("Preset restored.", "↩️");
+                    }
+                } : undefined
+            });
         },
         applyPreset: function(name) {
             this.activePreset = name;

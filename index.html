@@ -385,14 +385,12 @@
                         <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col" style="scrollbar-width: thin; justify-content: flex-start !important; align-items: stretch !important;">
 
                             <div id="iem-right-panel-sound" class="iem-right-panel space-y-2 overflow-x-hidden">
-                                <div class="flex items-center gap-1.5 w-full mb-1.5 flex-shrink-0">
-                                    <button type="button" onclick="IEM.cycleSoundCharTab(-1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                                    <button type="button" id="sc-tab-stepper-btn" onclick="IEM.cycleSoundCharTab(1)" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none" >
-                                        <span id="sc-tab-stepper-label" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-black uppercase tracking-wider">
-                                            <span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🥁</span> Bass
-                                        </span>
-                                    </button>
-                                    <button type="button" onclick="IEM.cycleSoundCharTab(1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">▶</button>
+                                <div id="sound-char-tabs" class="subtab-seg-grid cols-3 mb-1.5 flex-shrink-0">
+                                    <button type="button" id="sc-tab-bass" onclick="IEM.switchSoundCharTab('bass')" class="subtab-seg-btn no-tactile active"><span class="subtab-seg-emoji">🥁</span> Bass</button>
+                                    <button type="button" id="sc-tab-mids" onclick="IEM.switchSoundCharTab('mids')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">🎤</span> Mids</button>
+                                    <button type="button" id="sc-tab-treble" onclick="IEM.switchSoundCharTab('treble')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">✨</span> Treble</button>
+                                    <button type="button" id="sc-tab-stage" onclick="IEM.switchSoundCharTab('stage')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">🏟️</span> Stage</button>
+                                    <button type="button" id="sc-tab-fit" onclick="IEM.switchSoundCharTab('fit')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">🎧</span> Fit</button>
                                 </div>
 
                                 <div id="sc-panel-bass" class="sound-char-panel space-y-2">
@@ -1235,19 +1233,22 @@
                                         <div class="text-[8px] uppercase font-black text-[var(--accent-blue)] leading-none">Music Match</div>
                                         <div id="music-match-genre-text" class="text-xs text-zinc-200 font-extrabold leading-tight truncate mt-0.5">No Match</div>
                                     </div>
-                                    <button type="button" onclick="EQ.toggleGenreTargetPicker('music')" title="Genre-Target AutoEQ" class="genre-target-btn flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full cursor-pointer">
+                                    <button type="button" onclick="EQ.toggleGenreTargetPicker('music')" title="AutoEQ toward a genre target" class="genre-target-btn flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full cursor-pointer">
                                         <span class="emoji-font vibrant-emoji leading-none" style="font-size: 12px;">🎯</span>
                                     </button>
                                     <div id="music-genre-target-panel" class="genre-target-panel hidden">
-                                        <div class="flex items-center gap-1">
-                                            <button type="button" onclick="EQ.cycleGenreTargetPick('music', -1)" class="genre-target-step-btn">◀</button>
-                                            <span id="music-genre-target-label" class="genre-target-label"></span>
-                                            <button type="button" onclick="EQ.cycleGenreTargetPick('music', 1)" class="genre-target-step-btn">▶</button>
+                                        <div class="relative">
+                                            <button type="button" id="music-genre-target-trigger" class="genre-target-select" onclick="EQ.toggleGenreTargetList('music')">
+                                                <span id="music-genre-target-label" class="genre-target-label"></span>
+                                                <span class="genre-target-arrow">▼</span>
+                                            </button>
+                                            <div id="music-genre-target-list" class="genre-target-list hidden"></div>
                                         </div>
                                         <div class="flex items-center gap-1 mt-1.5">
                                             <button type="button" onclick="EQ.applyGenreTargetAutoEQ('music')" class="genre-target-apply-btn flex-1">🪄 Apply AutoEQ</button>
                                             <button type="button" onclick="EQ.closeGenreTargetPicker('music')" class="genre-target-close-btn">✕</button>
                                         </div>
+                                        <div id="music-genre-target-hint" class="genre-target-hint"></div>
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-2 min-w-0 relative">
@@ -1258,19 +1259,22 @@
                                         <div class="text-[8px] uppercase font-black text-[var(--accent-amber)] leading-none">Gaming Match</div>
                                         <div id="game-match-genre-text" class="text-xs text-zinc-200 font-extrabold leading-tight truncate mt-0.5">No Match</div>
                                     </div>
-                                    <button type="button" onclick="EQ.toggleGenreTargetPicker('game')" title="Genre-Target AutoEQ" class="genre-target-btn flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full cursor-pointer">
+                                    <button type="button" onclick="EQ.toggleGenreTargetPicker('game')" title="AutoEQ toward a genre target" class="genre-target-btn flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full cursor-pointer">
                                         <span class="emoji-font vibrant-emoji leading-none" style="font-size: 12px;">🎯</span>
                                     </button>
                                     <div id="game-genre-target-panel" class="genre-target-panel hidden">
-                                        <div class="flex items-center gap-1">
-                                            <button type="button" onclick="EQ.cycleGenreTargetPick('game', -1)" class="genre-target-step-btn">◀</button>
-                                            <span id="game-genre-target-label" class="genre-target-label"></span>
-                                            <button type="button" onclick="EQ.cycleGenreTargetPick('game', 1)" class="genre-target-step-btn">▶</button>
+                                        <div class="relative">
+                                            <button type="button" id="game-genre-target-trigger" class="genre-target-select" onclick="EQ.toggleGenreTargetList('game')">
+                                                <span id="game-genre-target-label" class="genre-target-label"></span>
+                                                <span class="genre-target-arrow">▼</span>
+                                            </button>
+                                            <div id="game-genre-target-list" class="genre-target-list hidden"></div>
                                         </div>
                                         <div class="flex items-center gap-1 mt-1.5">
                                             <button type="button" onclick="EQ.applyGenreTargetAutoEQ('game')" class="genre-target-apply-btn flex-1">🪄 Apply AutoEQ</button>
                                             <button type="button" onclick="EQ.closeGenreTargetPicker('game')" class="genre-target-close-btn">✕</button>
                                         </div>
+                                        <div id="game-genre-target-hint" class="genre-target-hint"></div>
                                     </div>
                                 </div>
                             </div>
@@ -1333,14 +1337,9 @@
 
                         <div id="rc-panel-filters" class="console-panel flex-1 flex flex-col justify-between h-full min-h-0 overflow-hidden">
 
-                            <div class="flex items-center gap-1.5 w-full mb-1.5 flex-shrink-0">
-                                <button type="button" onclick="EQ.cycleFaderTab(-1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                                <button type="button" id="eq-fader-stepper-btn" onclick="EQ.cycleFaderTab(1)" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none" >
-                                    <span id="eq-fader-stepper-label" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-black uppercase tracking-wider">
-                                        <span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🎚️</span> Standard
-                                    </span>
-                                </button>
-                                <button type="button" onclick="EQ.cycleFaderTab(1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">▶</button>
+                            <div id="eq-fader-sub-tabs" class="subtab-seg-grid cols-2 mb-1.5 flex-shrink-0">
+                                <button type="button" id="eq-tab-standard" onclick="EQ.switchFaderTab('standard')" class="subtab-seg-btn no-tactile active"><span class="subtab-seg-emoji">🎚️</span> Standard</button>
+                                <button type="button" id="eq-tab-advanced" onclick="EQ.switchFaderTab('advanced')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">⚙️</span> Advanced</button>
                             </div>
 
                             <div class="flex-1 min-h-0 overflow-hidden relative border-2 border-black bg-zinc-950/40 p-1 rounded-none my-1 flex flex-col">
@@ -1393,14 +1392,11 @@
                         </div>
 
                             <div id="rc-panel-acoustics" class="console-panel hidden flex-1 flex flex-col justify-start gap-2.5 h-full overflow-hidden">
-                                <div class="flex items-center gap-1.5 w-full mb-1 flex-shrink-0">
-                                    <button type="button" onclick="EQ.cycleAcousticsSubTab(-1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                                    <button type="button" id="acoustics-sub-stepper-btn" onclick="EQ.cycleAcousticsSubTab(1)" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none" >
-                                        <span id="acoustics-sub-stepper-label" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-black uppercase tracking-wider">
-                                            <span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🎧</span> Coupling
-                                        </span>
-                                    </button>
-                                    <button type="button" onclick="EQ.cycleAcousticsSubTab(1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">▶</button>
+                                <div id="acoustics-sub-tabs" class="subtab-seg-grid cols-2 mb-1 flex-shrink-0">
+                                    <button type="button" id="as-tab-coupling" onclick="EQ.switchAcousticsSubTab('coupling')" class="subtab-seg-btn no-tactile active"><span class="subtab-seg-emoji">🎧</span> Coupling</button>
+                                    <button type="button" id="as-tab-spatial" onclick="EQ.switchAcousticsSubTab('spatial')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">🌌</span> Spatial</button>
+                                    <button type="button" id="as-tab-effects" onclick="EQ.switchAcousticsSubTab('effects')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">📣</span> Effects</button>
+                                    <button type="button" id="as-tab-crossover" onclick="EQ.switchAcousticsSubTab('crossover')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">𔔀</span> Crossover</button>
                                 </div>
 
                                 <div id="as-panel-coupling" class="acoustics-sub-panel flex flex-col gap-2.5">
@@ -1762,14 +1758,13 @@
                         </div>
 
                         <div id="rc-panel-presets" class="console-panel hidden flex-grow flex flex-col justify-start gap-2.5 h-full overflow-hidden">
-                            <div class="flex items-center gap-1.5 w-full flex-shrink-0">
-                                <button type="button" onclick="EQ.cyclePresetCategory(-1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                                <button type="button" id="preset-category-stepper-btn" onclick="EQ.cyclePresetCategory(1)" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none" >
-                                    <span id="preset-category-stepper-label" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-black uppercase tracking-wider">
-                                        <span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🎵</span> Music
-                                    </span>
-                                </button>
-                                <button type="button" onclick="EQ.cyclePresetCategory(1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">▶</button>
+                            <div id="preset-category-tabs" class="subtab-seg-grid cols-3 mb-1.5 flex-shrink-0">
+                                <button type="button" id="cat-music" onclick="EQ.switchCategory('music')" class="subtab-seg-btn no-tactile active"><span class="subtab-seg-emoji">🎵</span> Music</button>
+                                <button type="button" id="cat-gaming" onclick="EQ.switchCategory('gaming')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">🎮</span> Gaming</button>
+                                <button type="button" id="cat-media" onclick="EQ.switchCategory('media')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">🎬</span> Film</button>
+                                <button type="button" id="cat-audiophile" onclick="EQ.switchCategory('audiophile')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">🎧</span> Audio</button>
+                                <button type="button" id="cat-basshead" onclick="EQ.switchCategory('basshead')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">🔥</span> Bass</button>
+                                <button type="button" id="cat-custom" onclick="EQ.switchCategory('custom')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">⭐</span> Custom</button>
                             </div>
 
                             <div class="flex-1 overflow-y-auto p-1 bg-[var(--bg-input)] border-2 border-black w-full min-h-0" style="scrollbar-width: thin;">

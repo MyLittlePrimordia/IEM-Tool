@@ -645,6 +645,219 @@ Object.defineProperty(window, 'localStorage', {
         setLimiter: function(mode) {}
     };
 
+/* ===== js/ui-kit.js ===== */
+/* ===== ui-kit.js =====
+ * Small drop-in UI primitives shared across workspaces.
+ * Currently: UIKit.confirm() — a themed replacement for window.confirm()
+ * that matches the existing modal styling (rename-modal, save-preset-modal,
+ * etc.) instead of popping the unstyled native browser dialog.
+ *
+ * Usage:
+ *   const ok = await UIKit.confirm({
+ *       title: "Delete this profile?",
+ *       message: "This can be undone from the toast that follows.",
+ *       confirmLabel: "Delete",
+ *       danger: true
+ *   });
+ *   if (!ok) return;
+ */
+const UIKit = {
+    _modalEl: null,
+    _resolver: null,
+
+    _ensureModal: function () {
+        if (this._modalEl) return this._modalEl;
+
+        const wrap = document.createElement('div');
+        wrap.id = 'uikit-confirm-modal';
+        wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden flex items-center justify-center p-4';
+        wrap.innerHTML = `
+            <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
+                <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
+                    <span id="uikit-confirm-title" class="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">⚠️ Confirm</span>
+                    <button id="uikit-confirm-x" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
+                </div>
+                <p id="uikit-confirm-msg" class="text-[10px] text-zinc-500 mb-4 leading-normal"></p>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="uikit-confirm-cancel" class="py-2 text-xs font-bold rounded btn-clear cursor-pointer">Cancel</button>
+                    <button id="uikit-confirm-ok" class="py-2 text-xs font-bold rounded hover:brightness-110 text-white transition-all cursor-pointer text-center"></button>
+                </div>
+            </div>`;
+        document.body.appendChild(wrap);
+
+        const finish = (result) => {
+            wrap.classList.add('hidden');
+            const resolve = this._resolver;
+            this._resolver = null;
+            if (resolve) resolve(result);
+        };
+
+        wrap.querySelector('#uikit-confirm-x').onclick = () => finish(false);
+        wrap.querySelector('#uikit-confirm-cancel').onclick = () => finish(false);
+        wrap.querySelector('#uikit-confirm-ok').onclick = () => finish(true);
+        // Click on the dark backdrop (not the card itself) cancels, matching
+        // the rest of the app's modal behavior.
+        wrap.addEventListener('click', (e) => { if (e.target === wrap) finish(false); });
+        // Esc cancels, Enter confirms — only while this modal is the one showing.
+        document.addEventListener('keydown', (e) => {
+            if (wrap.classList.contains('hidden')) return;
+            if (e.key === 'Escape') finish(false);
+            else if (e.key === 'Enter') finish(true);
+        });
+
+        this._modalEl = wrap;
+        return wrap;
+    },
+
+    confirm: function (opts) {
+        opts = opts || {};
+        const wrap = this._ensureModal();
+        const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+        wrap.querySelector('#uikit-confirm-title').innerHTML = (opts.icon || (opts.danger ? '🗑️' : '⚠️')) + ' ' + esc(opts.title || 'Are you sure?');
+        wrap.querySelector('#uikit-confirm-msg').textContent = opts.message || '';
+        const okBtn = wrap.querySelector('#uikit-confirm-ok');
+        okBtn.textContent = opts.confirmLabel || 'Confirm';
+        okBtn.className = 'py-2 text-xs font-bold rounded hover:brightness-110 text-white transition-all cursor-pointer text-center ' +
+            (opts.danger ? 'bg-red-600' : 'bg-[var(--accent-blue)]');
+
+        wrap.classList.remove('hidden');
+        wrap.classList.add('flex');
+
+        return new Promise((resolve) => {
+            // If a previous confirm() is somehow still pending, resolve it false
+            // rather than losing/overwriting its promise silently.
+            if (this._resolver) this._resolver(false);
+            this._resolver = resolve;
+        });
+    }
+};
+
+if (typeof window !== 'undefined') window.UIKit = UIKit;
+
+/* ===== js/shortcuts.js ===== */
+/* ===== shortcuts.js =====
+ * App-wide keyboard shortcuts + a discoverable cheat-sheet modal.
+ * Bindings are intentionally conservative (workspace switching, playback,
+ * export, help) so they never fight with typing in an input, a slider drag,
+ * or a canvas gesture.
+ *
+ * Open the cheat sheet any time with "?" (Shift+/) or the floating help
+ * button injected in the bottom-right corner.
+ */
+const Shortcuts = {
+    _modalEl: null,
+    _fabEl: null,
+
+    // Each entry: key (as reported by e.key, lowercase), label, group, action.
+    _bindings: [
+        { key: '1', label: 'Switch to Find', group: 'Workspace', action: () => App.switchTab('find') },
+        { key: '2', label: 'Switch to EQ', group: 'Workspace', action: () => App.switchTab('eq') },
+        { key: '3', label: 'Switch to Test Lab', group: 'Workspace', action: () => App.switchTab('testlab') },
+        { key: '4', label: 'Switch to Review', group: 'Workspace', action: () => App.switchTab('iem') },
+        { key: '5', label: 'Switch to Visualizer', group: 'Workspace', action: () => App.switchTab('visualizer') },
+        { key: '6', label: 'Switch to Settings', group: 'Workspace', action: () => App.switchTab('settings') },
+        { key: ' ', displayKey: 'Space', label: 'Play / Pause', group: 'Playback', action: () => { if (typeof EQ !== 'undefined' && EQ.togglePlayState) EQ.togglePlayState(); } },
+        { key: 'e', ctrl: true, label: 'Export EQ Profile', group: 'EQ', action: () => { if (typeof EQ !== 'undefined' && EQ.showExportModal) EQ.showExportModal(); } },
+        { key: '?', label: 'Show this shortcuts list', group: 'General', action: () => Shortcuts.toggleHelp() },
+        { key: 'escape', label: 'Close open modal', group: 'General', action: null } // handled natively by each modal; listed for discoverability only
+    ],
+
+    _isTypingTarget: function (el) {
+        if (!el) return false;
+        const tag = el.tagName;
+        return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+    },
+
+    _handleKeydown: function (e) {
+        if (Shortcuts._isTypingTarget(e.target)) return;
+        const key = e.key.toLowerCase();
+        const match = Shortcuts._bindings.find(b => {
+            if (!b.action) return false;
+            const bKey = (b.key || '').toLowerCase();
+            const ctrlOk = !!b.ctrl === (e.ctrlKey || e.metaKey);
+            return bKey === key && ctrlOk;
+        });
+        if (!match) return;
+        e.preventDefault();
+        try { match.action(); } catch (err) { console.error('[Shortcuts]', err); }
+    },
+
+    _ensureHelpModal: function () {
+        if (this._modalEl) return this._modalEl;
+
+        const groups = {};
+        this._bindings.forEach(b => {
+            if (!groups[b.group]) groups[b.group] = [];
+            groups[b.group].push(b);
+        });
+
+        const keyChip = (b) => `<span class="inline-flex items-center justify-center min-w-[22px] px-1.5 py-0.5 border border-[var(--border-color)] rounded bg-[var(--bg-input)] text-[10px] font-mono font-bold">${b.ctrl ? 'Ctrl+' : ''}${b.displayKey || b.key.toUpperCase()}</span>`;
+
+        let groupsHtml = '';
+        Object.keys(groups).forEach(g => {
+            groupsHtml += `<div class="mb-3"><p class="text-[9px] uppercase tracking-wider text-zinc-500 font-bold mb-1.5">${g}</p><div class="space-y-1.5">`;
+            groups[g].forEach(b => {
+                groupsHtml += `<div class="flex items-center justify-between gap-3"><span class="text-[11px] text-[var(--text-main)]">${b.label}</span>${keyChip(b)}</div>`;
+            });
+            groupsHtml += `</div></div>`;
+        });
+
+        const wrap = document.createElement('div');
+        wrap.id = 'shortcuts-help-modal';
+        wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden flex items-center justify-center p-4';
+        wrap.innerHTML = `
+            <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none max-h-[85vh] overflow-y-auto">
+                <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
+                    <span class="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">⌨️ Keyboard Shortcuts</span>
+                    <button id="shortcuts-help-close" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
+                </div>
+                ${groupsHtml}
+                <p class="text-[9px] text-zinc-600 mt-1 leading-normal">Shortcuts are disabled while typing in a text field.</p>
+            </div>`;
+        document.body.appendChild(wrap);
+
+        const close = () => wrap.classList.add('hidden');
+        wrap.querySelector('#shortcuts-help-close').onclick = close;
+        wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
+
+        this._modalEl = wrap;
+        return wrap;
+    },
+
+    _ensureFab: function () {
+        if (this._fabEl) return;
+        const btn = document.createElement('button');
+        btn.id = 'shortcuts-help-fab';
+        btn.title = 'Keyboard shortcuts (?)';
+        btn.className = 'fixed bottom-4 right-4 z-[200] w-8 h-8 rounded-full border-2 border-black bg-[var(--bg-card)] text-[var(--text-main)] shadow-[3px_3px_0_0_#000] text-xs font-black cursor-pointer hover:brightness-110 flex items-center justify-center';
+        btn.textContent = '?';
+        btn.onclick = () => Shortcuts.toggleHelp();
+        document.body.appendChild(btn);
+        this._fabEl = btn;
+    },
+
+    toggleHelp: function () {
+        const modal = this._ensureHelpModal();
+        modal.classList.toggle('hidden');
+        modal.classList.toggle('flex');
+    },
+
+    init: function () {
+        document.addEventListener('keydown', Shortcuts._handleKeydown);
+        this._ensureFab();
+    }
+};
+
+if (typeof window !== 'undefined') {
+    window.Shortcuts = Shortcuts;
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => Shortcuts.init());
+    } else {
+        Shortcuts.init();
+    }
+}
+
 /* ===== js/eq-export.js ===== */
 const EQ_ExportMethods = {
         triggerDownload: function(filename, text) { 
@@ -3529,13 +3742,31 @@ const EQ_PresetMethods = {
             this.renderCustomPresets();
             if (window.syncGlobalSliders) window.syncGlobalSliders();
         },
-        deleteCustomPreset: function(id) {
-            if (!confirm("Delete this custom preset?")) return;
+        deleteCustomPreset: async function(id) {
+            const ok = await UIKit.confirm({
+                title: "Delete this custom preset?",
+                confirmLabel: "Delete",
+                danger: true
+            });
+            if (!ok) return;
             const presets = this.getCustomPresets();
+            const removed = presets[id];
             delete presets[id];
             SafeStorage.setItem('iem_custom_eq_presets', JSON.stringify(presets));
             if (this.activePreset === id) this.activePreset = null;
             this.switchCategory('custom');
+            showToast(`Deleted preset "${id}"`, "🗑️", {
+                action: removed ? {
+                    label: "Undo",
+                    onClick: () => {
+                        const current = this.getCustomPresets();
+                        current[id] = removed;
+                        SafeStorage.setItem('iem_custom_eq_presets', JSON.stringify(current));
+                        this.switchCategory('custom');
+                        showToast("Preset restored.", "↩️");
+                    }
+                } : undefined
+            });
         },
         applyPreset: function(name) {
             this.activePreset = name;
@@ -9874,9 +10105,26 @@ if (profile.eqData && typeof EQ_Module !== 'undefined' && EQ_Module.loadValues) 
 else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.applyPreset('balanced');
             this.updateAll(); this.toggleLibraryModal();
         },
-        deleteFromLibrary: async function(id) { if(!confirm("Are you sure you want to delete this profile?")) return; await DBCache.deleteReview(id); await this.renderLibrary(); },
+        deleteFromLibrary: async function(id) {
+            const ok = await UIKit.confirm({
+                title: "Delete this profile?",
+                message: "You can undo this from the confirmation toast right after.",
+                confirmLabel: "Delete",
+                danger: true
+            });
+            if (!ok) return;
+            const profile = await DBCache.getReview(id);
+            await DBCache.deleteReview(id);
+            await this.renderLibrary();
+            showToast(`Deleted ${(profile && profile.brand) || 'profile'} ${(profile && profile.model) || ''}`.trim(), "🗑️", {
+                action: profile ? {
+                    label: "Undo",
+                    onClick: async () => { await DBCache.saveReview(profile); await this.renderLibrary(); showToast("Profile restored.", "↩️"); }
+                } : undefined
+            });
+        },
         compareSelected: async function() {
-            const checkboxes = document.querySelectorAll('.compare-cb:checked'); if(checkboxes.length < 2 || checkboxes.length > 4) { alert("Please select between 2 and 4 IEMs to compare."); return; }
+            const checkboxes = document.querySelectorAll('.compare-cb:checked'); if(checkboxes.length < 2 || checkboxes.length > 4) { showToast("Please select between 2 and 4 IEMs to compare.", "⚠️"); return; }
             const library = await this.getLibrary(); const selected = Array.from(checkboxes).map(cb => library.find(i => i.id === cb.value));
             document.getElementById('library-table').classList.add('hidden'); const compView = document.getElementById('compare-view'); const compGrid = document.getElementById('compare-grid');
             compGrid.innerHTML = '';
@@ -9909,8 +10157,14 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
             compView.classList.remove('hidden'); compView.classList.add('flex');
         },
         closeCompare: function() { document.getElementById('library-table').classList.remove('hidden'); document.getElementById('compare-view').classList.add('hidden'); document.getElementById('compare-view').classList.remove('flex'); },
-        resetAll: function() {
-            if(!confirm("Clear all current workspace data?")) return;
+        resetAll: async function() {
+            const ok = await UIKit.confirm({
+                title: "Clear all workspace data?",
+                message: "This resets the current Review form and clears local settings. Your saved Library entries are kept.",
+                confirmLabel: "Clear",
+                danger: true
+            });
+            if (!ok) return;
 
             const preservedKeys = ['iem_library_v2', 'settings_theme_id', 'settings_font_id', 'settings_align_hz', 'settings_align_db'];
             const preserved = {};
@@ -13798,6 +14052,7 @@ this.advancedBands.forEach((b, i) => {
             if (wasHidden) {
                 this.genreTargetPickIdx[side] = this._liveGenreFamilyIndex(side);
                 this.renderGenreTargetPicker(side);
+                this.closeGenreTargetList();
                 panel.classList.remove('hidden');
             } else {
                 panel.classList.add('hidden');
@@ -13810,24 +14065,70 @@ this.advancedBands.forEach((b, i) => {
             if (panel) panel.classList.add('hidden');
         },
 
-        cycleGenreTargetPick: function(side, dir) {
-            const list = side === 'game' ? FindEngine.gameGenreFamilies : FindEngine.genreFamilies;
-            const total = list.length;
-            let idx = this.genreTargetPickIdx[side] || 0;
-            idx = ((idx + dir) % total + total) % total;
+        setGenreTargetPick: function(side, value) {
+            const idx = parseInt(value, 10);
+            if (isNaN(idx)) return;
             this.genreTargetPickIdx[side] = idx;
             this.renderGenreTargetPicker(side);
+            this.closeGenreTargetList();
+        },
+
+        toggleGenreTargetList: function(side) {
+            this._ensureGenreTargetDocHandler();
+            const listId = side === 'game' ? 'game-genre-target-list' : 'music-genre-target-list';
+            const otherId = side === 'game' ? 'music-genre-target-list' : 'game-genre-target-list';
+            const list = document.getElementById(listId);
+            const other = document.getElementById(otherId);
+            if (other) other.classList.add('hidden');
+            if (list) list.classList.toggle('hidden');
+        },
+
+        closeGenreTargetList: function() {
+            const m = document.getElementById('music-genre-target-list');
+            const g = document.getElementById('game-genre-target-list');
+            if (m) m.classList.add('hidden');
+            if (g) g.classList.add('hidden');
+        },
+
+        _ensureGenreTargetDocHandler: function() {
+            if (this._genreTargetDocBound) return;
+            this._genreTargetDocBound = true;
+            const self = this;
+            document.addEventListener('click', (e) => {
+                if (e.target.closest('#music-genre-target-panel') || e.target.closest('#game-genre-target-panel')) return;
+                self.closeGenreTargetList();
+            });
         },
 
         renderGenreTargetPicker: function(side) {
             const isGame = side === 'game';
             const list = isGame ? FindEngine.gameGenreFamilies : FindEngine.genreFamilies;
             const idx = this.genreTargetPickIdx[side] || 0;
+
+            const itemsEl = document.getElementById(side === 'game' ? 'game-genre-target-list' : 'music-genre-target-list');
+            if (itemsEl) {
+                let html = '';
+                list.forEach((family, i) => {
+                    const v = family ? (isGame ? family.gameVariants[0] : family.musicVariants[0]) : null;
+                    const name = v ? `${v.emoji} ${v.name}` : 'Genre ' + (i + 1);
+                    html += `<div class="genre-target-item${i === idx ? ' genre-target-item-active' : ''}" onclick="EQ.setGenreTargetPick('${side}', ${i})"><span class="genre-target-item-num">${i + 1}</span><span>${name}</span></div>`;
+                });
+                itemsEl.innerHTML = html;
+            }
+
+            const label = document.getElementById(side === 'game' ? 'game-genre-target-label' : 'music-genre-target-label');
             const family = list[idx];
             const variant = family ? (isGame ? family.gameVariants[0] : family.musicVariants[0]) : null;
-            const label = document.getElementById(side === 'game' ? 'game-genre-target-label' : 'music-genre-target-label');
             if (label && variant) {
-                label.innerHTML = `<span class="emoji-font vibrant-emoji text-lg leading-none">${variant.emoji}</span> ${variant.name}`;
+                label.innerHTML = `<span class="emoji-font vibrant-emoji text-lg leading-none">${variant.emoji}</span> ${variant.name} <span class="genre-target-count">${idx + 1}/${list.length}</span>`;
+            }
+
+            const hint = document.getElementById(side === 'game' ? 'game-genre-target-hint' : 'music-genre-target-hint');
+            if (hint) {
+                const hasBase = (PEQDB_Module.STATE.activeCurves || []).some(c => c.role === 'base' && c.visible);
+                hint.innerHTML = hasBase
+                    ? 'Base curve loaded: genre shape applied as a correction on top of it.'
+                    : 'Tip: load your IEM\u2019s measured FR as a Base curve to correct its deviation while tuning.';
             }
         },
 

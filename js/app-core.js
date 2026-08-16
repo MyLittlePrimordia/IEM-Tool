@@ -4748,9 +4748,26 @@ if (profile.eqData && typeof EQ_Module !== 'undefined' && EQ_Module.loadValues) 
 else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.applyPreset('balanced');
             this.updateAll(); this.toggleLibraryModal();
         },
-        deleteFromLibrary: async function(id) { if(!confirm("Are you sure you want to delete this profile?")) return; await DBCache.deleteReview(id); await this.renderLibrary(); },
+        deleteFromLibrary: async function(id) {
+            const ok = await UIKit.confirm({
+                title: "Delete this profile?",
+                message: "You can undo this from the confirmation toast right after.",
+                confirmLabel: "Delete",
+                danger: true
+            });
+            if (!ok) return;
+            const profile = await DBCache.getReview(id);
+            await DBCache.deleteReview(id);
+            await this.renderLibrary();
+            showToast(`Deleted ${(profile && profile.brand) || 'profile'} ${(profile && profile.model) || ''}`.trim(), "🗑️", {
+                action: profile ? {
+                    label: "Undo",
+                    onClick: async () => { await DBCache.saveReview(profile); await this.renderLibrary(); showToast("Profile restored.", "↩️"); }
+                } : undefined
+            });
+        },
         compareSelected: async function() {
-            const checkboxes = document.querySelectorAll('.compare-cb:checked'); if(checkboxes.length < 2 || checkboxes.length > 4) { alert("Please select between 2 and 4 IEMs to compare."); return; }
+            const checkboxes = document.querySelectorAll('.compare-cb:checked'); if(checkboxes.length < 2 || checkboxes.length > 4) { showToast("Please select between 2 and 4 IEMs to compare.", "⚠️"); return; }
             const library = await this.getLibrary(); const selected = Array.from(checkboxes).map(cb => library.find(i => i.id === cb.value));
             document.getElementById('library-table').classList.add('hidden'); const compView = document.getElementById('compare-view'); const compGrid = document.getElementById('compare-grid');
             compGrid.innerHTML = '';
@@ -4783,8 +4800,14 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
             compView.classList.remove('hidden'); compView.classList.add('flex');
         },
         closeCompare: function() { document.getElementById('library-table').classList.remove('hidden'); document.getElementById('compare-view').classList.add('hidden'); document.getElementById('compare-view').classList.remove('flex'); },
-        resetAll: function() {
-            if(!confirm("Clear all current workspace data?")) return;
+        resetAll: async function() {
+            const ok = await UIKit.confirm({
+                title: "Clear all workspace data?",
+                message: "This resets the current Review form and clears local settings. Your saved Library entries are kept.",
+                confirmLabel: "Clear",
+                danger: true
+            });
+            if (!ok) return;
 
             const preservedKeys = ['iem_library_v2', 'settings_theme_id', 'settings_font_id', 'settings_align_hz', 'settings_align_db'];
             const preserved = {};
@@ -8672,6 +8695,7 @@ this.advancedBands.forEach((b, i) => {
             if (wasHidden) {
                 this.genreTargetPickIdx[side] = this._liveGenreFamilyIndex(side);
                 this.renderGenreTargetPicker(side);
+                this.closeGenreTargetList();
                 panel.classList.remove('hidden');
             } else {
                 panel.classList.add('hidden');
@@ -8684,24 +8708,70 @@ this.advancedBands.forEach((b, i) => {
             if (panel) panel.classList.add('hidden');
         },
 
-        cycleGenreTargetPick: function(side, dir) {
-            const list = side === 'game' ? FindEngine.gameGenreFamilies : FindEngine.genreFamilies;
-            const total = list.length;
-            let idx = this.genreTargetPickIdx[side] || 0;
-            idx = ((idx + dir) % total + total) % total;
+        setGenreTargetPick: function(side, value) {
+            const idx = parseInt(value, 10);
+            if (isNaN(idx)) return;
             this.genreTargetPickIdx[side] = idx;
             this.renderGenreTargetPicker(side);
+            this.closeGenreTargetList();
+        },
+
+        toggleGenreTargetList: function(side) {
+            this._ensureGenreTargetDocHandler();
+            const listId = side === 'game' ? 'game-genre-target-list' : 'music-genre-target-list';
+            const otherId = side === 'game' ? 'music-genre-target-list' : 'game-genre-target-list';
+            const list = document.getElementById(listId);
+            const other = document.getElementById(otherId);
+            if (other) other.classList.add('hidden');
+            if (list) list.classList.toggle('hidden');
+        },
+
+        closeGenreTargetList: function() {
+            const m = document.getElementById('music-genre-target-list');
+            const g = document.getElementById('game-genre-target-list');
+            if (m) m.classList.add('hidden');
+            if (g) g.classList.add('hidden');
+        },
+
+        _ensureGenreTargetDocHandler: function() {
+            if (this._genreTargetDocBound) return;
+            this._genreTargetDocBound = true;
+            const self = this;
+            document.addEventListener('click', (e) => {
+                if (e.target.closest('#music-genre-target-panel') || e.target.closest('#game-genre-target-panel')) return;
+                self.closeGenreTargetList();
+            });
         },
 
         renderGenreTargetPicker: function(side) {
             const isGame = side === 'game';
             const list = isGame ? FindEngine.gameGenreFamilies : FindEngine.genreFamilies;
             const idx = this.genreTargetPickIdx[side] || 0;
+
+            const itemsEl = document.getElementById(side === 'game' ? 'game-genre-target-list' : 'music-genre-target-list');
+            if (itemsEl) {
+                let html = '';
+                list.forEach((family, i) => {
+                    const v = family ? (isGame ? family.gameVariants[0] : family.musicVariants[0]) : null;
+                    const name = v ? `${v.emoji} ${v.name}` : 'Genre ' + (i + 1);
+                    html += `<div class="genre-target-item${i === idx ? ' genre-target-item-active' : ''}" onclick="EQ.setGenreTargetPick('${side}', ${i})"><span class="genre-target-item-num">${i + 1}</span><span>${name}</span></div>`;
+                });
+                itemsEl.innerHTML = html;
+            }
+
+            const label = document.getElementById(side === 'game' ? 'game-genre-target-label' : 'music-genre-target-label');
             const family = list[idx];
             const variant = family ? (isGame ? family.gameVariants[0] : family.musicVariants[0]) : null;
-            const label = document.getElementById(side === 'game' ? 'game-genre-target-label' : 'music-genre-target-label');
             if (label && variant) {
-                label.innerHTML = `<span class="emoji-font vibrant-emoji text-lg leading-none">${variant.emoji}</span> ${variant.name}`;
+                label.innerHTML = `<span class="emoji-font vibrant-emoji text-lg leading-none">${variant.emoji}</span> ${variant.name} <span class="genre-target-count">${idx + 1}/${list.length}</span>`;
+            }
+
+            const hint = document.getElementById(side === 'game' ? 'game-genre-target-hint' : 'music-genre-target-hint');
+            if (hint) {
+                const hasBase = (PEQDB_Module.STATE.activeCurves || []).some(c => c.role === 'base' && c.visible);
+                hint.innerHTML = hasBase
+                    ? 'Base curve loaded: genre shape applied as a correction on top of it.'
+                    : 'Tip: load your IEM\u2019s measured FR as a Base curve to correct its deviation while tuning.';
             }
         },
 
