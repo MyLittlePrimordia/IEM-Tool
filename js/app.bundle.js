@@ -24785,6 +24785,7 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                     const budgetLimit = parseFloat(document.getElementById('find-gk-budget-slider')?.value || 50);
                     const selectedDriver = document.getElementById('gk-filter-driver')?.value || 'any';
                     const selectedFormFactor = document.getElementById('gk-filter-formfactor')?.value || 'any';
+                    const selectedConnector = document.getElementById('gk-filter-connector')?.value || 'any';
 
                     const matches = [];
 
@@ -24802,6 +24803,17 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                         if (selectedFormFactor !== 'any') {
                             const ff = dbEntry ? (dbEntry.form_factor || 'IEM') : 'IEM';
                             if (!ff.toLowerCase().includes(selectedFormFactor.toLowerCase())) continue;
+                        }
+
+                        if (selectedConnector !== 'any') {
+                            if (!dbEntry || !dbEntry.connector) continue;
+                            const targetConn = selectedConnector.toLowerCase().trim();
+                            const dbConnStr = Array.isArray(dbEntry.connector) ? dbEntry.connector.join(' ').toLowerCase() : String(dbEntry.connector).toLowerCase();
+
+                            if (targetConn === 'mmcx' && !dbConnStr.includes('mmcx')) continue;
+                            else if (targetConn === '2-pin' && !dbConnStr.includes('2-pin') && !dbConnStr.includes('2pin') && !dbConnStr.includes('0.78')) continue;
+                            else if (targetConn === 'qdc' && !dbConnStr.includes('qdc')) continue;
+                            else if (!dbConnStr.includes(targetConn)) continue;
                         }
 
                         if (!item.data || item.data.length < 2) {
