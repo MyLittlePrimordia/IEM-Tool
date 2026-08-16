@@ -119,20 +119,26 @@ Customize your workstation interface with 9 built-in skins:
 
 ## 📂 Utilities & Executables
 
-### 1. 🔍 Audit Database  (`Audit Database.exe`)
+### 1. 🛠️ Database Editor  (`Database Editor.exe`)
 
 #### ❓ What does this tool do?
-The application relies on `database.json` to index available measurement curves in your library. When new measurement files are added, removed, or renamed in the `data` folder, `database.json` must reflect those changes.
+A full desktop GUI for browsing, editing, validating, and repairing `database.json` directly — no more hand-editing raw JSON. It replaces the old Audit Database.exe with an editor that can also *fix* what it finds, not just report it.
 
-This utility scans for missing or unlinked measurement files and generates a clean text summary (`audit_report.txt`).
+#### 🌟 Key Features:
+* **📋 Entry Browser & Editor:** Searchable, A–Z indexed list of every entry with a full form for editing brand, model, variant, year, price, driver config, connector, form factor, tags, and linked measurement files. Add, duplicate, or delete entries; brand names autocomplete against existing casing to prevent duplicates like "Moondrop" vs "moondrop".
+* **✅ Validate All Entries:** Checks every entry against the schema — required fields, allowed connector/form-factor/driver-type values, the 4–12 tag count rule, duplicate IDs, and mandatory price-tier tags — and produces a full error report.
+* **🏷️ Auto-Fix Price-Tier Tags:** One-click repair for entries whose Budget/Mid-Tier/Premium/Flagship tag doesn't match their `price_usd`. Previews every change before applying it, fixes what it safely can, and flags anything needing manual review (missing or multiple tier tags) instead of guessing.
+* **🔍 Run File Audit:** Cross-references every entry's `files` array against what's actually in your `data/` folder and reports Missing Files, Unlinked Files, and Duplicate File Assignments (same file linked to two entries).
+* **🧹 Find & Fix Backslash Paths:** Detects and normalizes Windows-style `\` paths to `/` in one click.
+* **🩺 JSON Syntax Checker:** Validates any JSON file and reports the exact line/column of a syntax error.
+* **↩️ Undo/Redo & Change History:** Every edit is tracked with full undo/redo, plus a persistent changelog you can review at any time.
+* **💾 Autosave Working Copy:** Changes autosave to a working copy as you go, with a separate "Export Final Database" step when you're ready to publish.
 
 #### 🚀 How to use it:
-1. Place **`Audit Database.exe`** in the same folder as your `data` directory and **`database.json`**.
-2. Run **`Audit Database.exe`**.
-3. It will scan your directory and write a report detailing:
-   * **Missing Files:** Listed in `database.json` but missing from the `data/` folder.
-   * **Unlinked Files:** Existing in the `data/` folder but missing from `database.json`.
-   * **Duplicate IDs & Path References.**
+1. Place **`Database Editor.exe`** in the same folder as your `data` directory and **`database.json`**.
+2. Run **`Database Editor.exe`**.
+3. Use the toolbar or **Tools** menu to Validate All, Auto-Fix Price Tiers, Run File Audit, or check JSON syntax — each opens a report you can export as a `.txt` file.
+4. Edit entries directly in the form on the right, then **Save Entry** (or **Ctrl+S** to save your working copy at any time).
 
 ---
 

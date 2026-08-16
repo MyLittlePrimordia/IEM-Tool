@@ -1381,6 +1381,30 @@
     ]
   },
   {
+    "id": "64audio_u12",
+    "brand": "64 Audio",
+    "model": "U12",
+    "variant": "",
+    "year": 2016,
+    "price_usd": 1600,
+    "driver_type": "BA",
+    "driver_config": "12BA",
+    "impedance": 16,
+    "sensitivity": 115,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Flagship",
+      "Warm",
+      "Smooth",
+      "Detailed",
+      "Studio-Monitoring"
+    ],
+    "files": [
+      "data/THEROLLO9/64 AUDIO U12.txt"
+    ]
+  },
+  {
     "id": "64audio_u12t",
     "brand": "64 Audio",
     "model": "U12t",
@@ -1409,30 +1433,6 @@
       "data/SUPER REVIEW/64 AUDIO U12T.txt",
       "data/TONEDEAFMONK/64 AUDIO U12T.txt",
       "data/HANGOUT.AUDIO/64 AUDIO U12T S2.txt"
-    ]
-  },
-  {
-    "id": "64audio_u12",
-    "brand": "64 Audio",
-    "model": "U12",
-    "variant": "",
-    "year": 2016,
-    "price_usd": 1600,
-    "driver_type": "BA",
-    "driver_config": "12BA",
-    "impedance": 16,
-    "sensitivity": 115,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Flagship",
-      "Warm",
-      "Smooth",
-      "Detailed",
-      "Studio-Monitoring"
-    ],
-    "files": [
-      "data/THEROLLO9/64 AUDIO U12.txt"
     ]
   },
   {
@@ -5467,28 +5467,27 @@
     ]
   },
   {
-    "id": "akg_n400",
+    "id": "akg_n30",
     "brand": "AKG",
-    "model": "N400",
+    "model": "N30",
     "variant": "",
-    "year": 2020,
-    "price_usd": 150,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 16,
-    "sensitivity": null,
-    "connector": "Bluetooth",
-    "form_factor": "Wireless Earbuds (TWS)",
+    "year": 2017,
+    "price_usd": 300,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD + 1BA",
+    "impedance": 32,
+    "sensitivity": 101,
+    "connector": "MMCX",
+    "form_factor": "IEM",
     "tags": [
       "Mid-Tier",
       "Balanced",
+      "Punchy Bass",
       "Smooth",
-      "Detailed"
+      "Warm"
     ],
     "files": [
-      "data/HYPETHESONICS/AKG N400.txt",
-      "data/ORATORY1990/AKG N400.txt",
-      "data/HANGOUT.AUDIO/AKG N400 NC.txt"
+      "data/HU-FI/AKG N30.txt"
     ]
   },
   {
@@ -5512,32 +5511,33 @@
       "Smooth"
     ],
     "files": [
-	"data/HANA/AKG N40.txt"
-	]
+      "data/HANA/AKG N40.txt"
+    ]
   },
   {
-    "id": "akg_n30",
+    "id": "akg_n400",
     "brand": "AKG",
-    "model": "N30",
+    "model": "N400",
     "variant": "",
-    "year": 2017,
-    "price_usd": 300,
-    "driver_type": "Hybrid",
-    "driver_config": "1DD + 1BA",
-    "impedance": 32,
-    "sensitivity": 101,
-    "connector": "MMCX",
-    "form_factor": "IEM",
+    "year": 2020,
+    "price_usd": 150,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": null,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Earbuds (TWS)",
     "tags": [
       "Mid-Tier",
       "Balanced",
-      "Punchy Bass",
       "Smooth",
-      "Warm"
+      "Detailed"
     ],
     "files": [
-	"data/HU-FI/AKG N30.txt"
-	]
+      "data/HYPETHESONICS/AKG N400.txt",
+      "data/ORATORY1990/AKG N400.txt",
+      "data/HANGOUT.AUDIO/AKG N400 NC.txt"
+    ]
   },
   {
     "id": "akg_n5_hybrid",
@@ -9780,6 +9780,32 @@
     ]
   },
   {
+    "id": "audeze_isine_lx",
+    "brand": "Audeze",
+    "model": "iSINE",
+    "variant": "LX",
+    "year": 2018,
+    "price_usd": 200,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 16,
+    "sensitivity": 110,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Mid-Tier",
+      "Warm",
+      "Smooth",
+      "Wide-Stage",
+      "Detailed",
+      "Technical",
+      "Relaxed"
+    ],
+    "files": [
+      "data/ACHO REVIEWS/AUDEZE ISINE LX.txt"
+    ]
+  },
+  {
     "id": "audeze_isine_10",
     "brand": "Audeze",
     "model": "iSINE 10",
@@ -9827,32 +9853,6 @@
       "data/HANGOUT.AUDIO/AUDEZE ISINE 20.txt",
       "data/INNERFIDELITY/AUDEZE ISINE 20.txt",
       "data/ORATORY1990/AUDEZE ISINE 20.txt"
-    ]
-  },
-  {
-    "id": "audeze_isine_lx",
-    "brand": "Audeze",
-    "model": "iSINE",
-    "variant": "LX",
-    "year": 2018,
-    "price_usd": 200,
-    "driver_type": "Planar",
-    "driver_config": "1Planar",
-    "impedance": 16,
-    "sensitivity": 110,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Mid-Tier",
-	  "Warm",
-	  "Smooth",
-	  "Wide-Stage",
-	  "Detailed",
-	  "Technical",
-	  "Relaxed"
-    ],
-    "files": [
-      "data/ACHO REVIEWS/AUDEZE ISINE LX.txt"
     ]
   },
   {
@@ -10716,31 +10716,6 @@
     ]
   },
   {
-    "id": "audio_technica_ath_awas",
-    "brand": "Audio-Technica",
-    "model": "ATH-AWAS",
-    "variant": "",
-    "year": 2020,
-    "price_usd": 1400,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 40,
-    "sensitivity": 99,
-    "connector": "A2DC",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Premium",
-      "Balanced",
-      "Smooth",
-      "Detailed",
-      "Resolving",
-      "Technical"
-    ],
-    "files": [
-	"data/CAPRA AUDIO/AUDIO TECHNICA AWAS.txt"
-	]
-  },
-  {
     "id": "audio_technica_ath_a1000x",
     "brand": "Audio-Technica",
     "model": "ATH-A1000X",
@@ -10888,28 +10863,29 @@
     ]
   },
   {
-    "id": "audio_technica_ath_ad2000x",
+    "id": "audio_technica_ath_ad1000x",
     "brand": "Audio-Technica",
-    "model": "ATH-AD2000X",
+    "model": "ATH-AD1000X",
     "variant": "",
     "year": 2012,
-    "price_usd": 1000,
+    "price_usd": 600,
     "driver_type": "DD",
     "driver_config": "1DD",
     "impedance": 40,
-    "sensitivity": 103,
+    "sensitivity": 102,
     "connector": "Fixed Cable",
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
       "Premium",
-      "Balanced",
-      "Good-Imaging",
+      "Bright",
       "Vocal-Focused",
       "Detailed",
-      "Treblehead"
+      "Resolving",
+      "Wide-Stage",
+      "Good-Imaging"
     ],
     "files": [
-      "data/INNERFIDELITY/AUDIO TECHNICA ATH AD2000X.txt"
+      "data/HANGOUT.AUDIO/ATH-AD1000X.txt"
     ]
   },
   {
@@ -10935,8 +10911,33 @@
       "Vocal-Focused"
     ],
     "files": [
-	"data/DEN-FI/AUDIO TECHNICA ATH-AD2000.txt"
-	]
+      "data/DEN-FI/AUDIO TECHNICA ATH-AD2000.txt"
+    ]
+  },
+  {
+    "id": "audio_technica_ath_ad2000x",
+    "brand": "Audio-Technica",
+    "model": "ATH-AD2000X",
+    "variant": "",
+    "year": 2012,
+    "price_usd": 1000,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 40,
+    "sensitivity": 103,
+    "connector": "Fixed Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Premium",
+      "Balanced",
+      "Good-Imaging",
+      "Vocal-Focused",
+      "Detailed",
+      "Treblehead"
+    ],
+    "files": [
+      "data/INNERFIDELITY/AUDIO TECHNICA ATH AD2000X.txt"
+    ]
   },
   {
     "id": "audio_technica_ath_ad500",
@@ -11088,34 +11089,8 @@
       "Good-Imaging"
     ],
     "files": [
-	"data/HANGOUT.AUDIO/ATH-AD900X.txt"
-	]
-  },
-  {
-    "id": "audio_technica_ath_ad1000x",
-    "brand": "Audio-Technica",
-    "model": "ATH-AD1000X",
-    "variant": "",
-    "year": 2012,
-    "price_usd": 600,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 40,
-    "sensitivity": 102,
-    "connector": "Fixed Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Premium",
-      "Bright",
-      "Vocal-Focused",
-      "Detailed",
-      "Resolving",
-      "Wide-Stage",
-      "Good-Imaging"
-    ],
-    "files": [
-	"data/HANGOUT.AUDIO/ATH-AD1000X.txt"
-	]
+      "data/HANGOUT.AUDIO/ATH-AD900X.txt"
+    ]
   },
   {
     "id": "audio_technica_ath_adx3000",
@@ -11357,6 +11332,31 @@
     "files": [
       "data/INNERFIDELITY/AUDIO TECHNICA ATH ANC9.txt",
       "data/RTINGS/AUDIO TECHNICA ATH ANC9.txt"
+    ]
+  },
+  {
+    "id": "audio_technica_ath_awas",
+    "brand": "Audio-Technica",
+    "model": "ATH-AWAS",
+    "variant": "",
+    "year": 2020,
+    "price_usd": 1400,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 40,
+    "sensitivity": 99,
+    "connector": "A2DC",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Premium",
+      "Balanced",
+      "Smooth",
+      "Detailed",
+      "Resolving",
+      "Technical"
+    ],
+    "files": [
+      "data/CAPRA AUDIO/AUDIO TECHNICA AWAS.txt"
     ]
   },
   {
@@ -15667,77 +15667,6 @@
     ]
   },
   {
-    "id": "beyerdynamic_beat_byrd",
-    "brand": "beyerdynamic",
-    "model": "Beat BYRD",
-    "variant": "",
-    "year": 2018,
-    "price_usd": 25,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 18,
-    "sensitivity": 104,
-    "connector": "Fixed Cable",
-    "form_factor": "IEM",
-    "tags": [
-      "Budget",
-      "Balanced",
-      "Punchy Bass",
-      "Smooth"
-    ],
-    "files": [
-	"data/DCINSIDE/BEYERDYNAMIC BEAT BYRD.txt"
-	]
-  },
-  {
-    "id": "beyerdynamic_custom_studio",
-    "brand": "Beyerdynamic",
-    "model": "Custom Studio",
-    "variant": "",
-    "year": 2014,
-    "price_usd": 200,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 80,
-    "sensitivity": 96,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Mid-Tier",
-      "Studio-Monitoring",
-      "Punchy Bass",
-      "Detailed",
-      "Analytical"
-    ],
-    "files": [
-	"data/EARPHONES ARCHIVE/BEYERDYNAMIC CUSTOM STUDIO.txt"
-	]
-  },
-  {
-    "id": "beyerdynamic_aventho_300",
-    "brand": "beyerdynamic",
-    "model": "Aventho 300",
-    "variant": "",
-    "year": 2024,
-    "price_usd": 400,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 100,
-    "connector": "Bluetooth",
-    "form_factor": "Wireless Over-Ear Headphones",
-    "tags": [
-      "Mid-Tier",
-      "Warm",
-      "Punchy Bass",
-      "Detailed",
-      "Resolving"
-    ],
-    "files": [
-      "data/KUULOKENURKKA/BEYERDYNAMIC AVENTHO 300.txt"
-    ]
-  },
-  {
     "id": "beyerdynamic_amiron_100",
     "brand": "beyerdynamic",
     "model": "Amiron",
@@ -15858,6 +15787,53 @@
     ]
   },
   {
+    "id": "beyerdynamic_aventho_300",
+    "brand": "beyerdynamic",
+    "model": "Aventho 300",
+    "variant": "",
+    "year": 2024,
+    "price_usd": 400,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 100,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Over-Ear Headphones",
+    "tags": [
+      "Mid-Tier",
+      "Warm",
+      "Punchy Bass",
+      "Detailed",
+      "Resolving"
+    ],
+    "files": [
+      "data/KUULOKENURKKA/BEYERDYNAMIC AVENTHO 300.txt"
+    ]
+  },
+  {
+    "id": "beyerdynamic_beat_byrd",
+    "brand": "beyerdynamic",
+    "model": "Beat BYRD",
+    "variant": "",
+    "year": 2018,
+    "price_usd": 25,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 18,
+    "sensitivity": 104,
+    "connector": "Fixed Cable",
+    "form_factor": "IEM",
+    "tags": [
+      "Budget",
+      "Balanced",
+      "Punchy Bass",
+      "Smooth"
+    ],
+    "files": [
+      "data/DCINSIDE/BEYERDYNAMIC BEAT BYRD.txt"
+    ]
+  },
+  {
     "id": "beyerdynamic_blue_byrd_2",
     "brand": "beyerdynamic",
     "model": "Blue Byrd",
@@ -15903,6 +15879,30 @@
       "data/HEADPHONE.COM LEGACY/BEYERDYNAMIC CUSTOM ONE PRO.txt",
       "data/INNERFIDELITY/BEYERDYNAMIC CUSTOM ONE PRO.txt",
       "data/ORATORY1990/BEYERDYNAMIC CUSTOM ONE PRO PLUS.txt"
+    ]
+  },
+  {
+    "id": "beyerdynamic_custom_studio",
+    "brand": "Beyerdynamic",
+    "model": "Custom Studio",
+    "variant": "",
+    "year": 2014,
+    "price_usd": 200,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 80,
+    "sensitivity": 96,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Mid-Tier",
+      "Studio-Monitoring",
+      "Punchy Bass",
+      "Detailed",
+      "Analytical"
+    ],
+    "files": [
+      "data/EARPHONES ARCHIVE/BEYERDYNAMIC CUSTOM STUDIO.txt"
     ]
   },
   {
@@ -16789,7 +16789,7 @@
       "data/RTINGS/BEYERDYNAMIC T1.txt"
     ]
   },
-   {
+  {
     "id": "beyerdynamic_t1_gen_2",
     "brand": "Beyerdynamic",
     "model": "T1",
@@ -16813,8 +16813,8 @@
       "Reference"
     ],
     "files": [
-	"data/UNHEARD LAB/BEYERDYNAMIC T1 GEN 2.txt"
-	]
+      "data/UNHEARD LAB/BEYERDYNAMIC T1 GEN 2.txt"
+    ]
   },
   {
     "id": "beyerdynamic_t1_gen_3",
@@ -16839,8 +16839,8 @@
       "Relaxed"
     ],
     "files": [
-	"data/UNHEARD LAB/BEYERDYNAMIC T1 GEN 3.txt"
-	]
+      "data/UNHEARD LAB/BEYERDYNAMIC T1 GEN 3.txt"
+    ]
   },
   {
     "id": "beyerdynamic_t5_gen_3",
@@ -16864,8 +16864,8 @@
       "Punchy Bass"
     ],
     "files": [
-	"data/HANGOUT.AUDIO/BEYERDYNAMIC T5 GEN 3.txt"
-	]
+      "data/HANGOUT.AUDIO/BEYERDYNAMIC T5 GEN 3.txt"
+    ]
   },
   {
     "id": "beyerdynamic_t50p",
@@ -20868,33 +20868,6 @@
     ]
   },
   {
-    "id": "campfire_andromeda_10_se",
-    "brand": "Campfire Audio",
-    "model": "Andromeda 10",
-    "variant": "SE",
-    "year": 2025,
-    "price_usd": 2500,
-    "driver_type": "BA",
-    "driver_config": "10BA",
-    "impedance": 9,
-    "sensitivity": 94,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Detailed",
-      "Resolving",
-      "Technical",
-      "Wide-Stage",
-      "Reference",
-      "Limited-Edition",
-      "Flagship",
-      "Treblehead"
-    ],
-    "files": [
-      "data/BLOOM AUDIO/CAMPFIRE AUDIO ANDROMEDA 10 SE.txt"
-    ]
-  },
-  {
     "id": "campfire_andromeda_2019",
     "brand": "Campfire Audio",
     "model": "Andromeda",
@@ -21030,6 +21003,33 @@
     ],
     "files": [
       "data/HANGOUT.AUDIO/CAMPFIRE ANDROMEDA S S.txt"
+    ]
+  },
+  {
+    "id": "campfire_andromeda_10_se",
+    "brand": "Campfire Audio",
+    "model": "Andromeda 10",
+    "variant": "SE",
+    "year": 2025,
+    "price_usd": 2500,
+    "driver_type": "BA",
+    "driver_config": "10BA",
+    "impedance": 9,
+    "sensitivity": 94,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Reference",
+      "Limited-Edition",
+      "Flagship",
+      "Treblehead"
+    ],
+    "files": [
+      "data/BLOOM AUDIO/CAMPFIRE AUDIO ANDROMEDA 10 SE.txt"
     ]
   },
   {
@@ -27391,29 +27391,6 @@
     ]
   },
   {
-    "id": "daiso_earphones",
-    "brand": "Daiso",
-    "model": "Earphones",
-    "variant": "",
-    "year": null,
-    "price_usd": 5,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 95,
-    "connector": "Fixed Cable",
-    "form_factor": "Earbuds (Wired)",
-    "tags": [
-      "Budget",
-      "Relaxed",
-      "Warm",
-      "Smooth"
-    ],
-    "files": [
-      "data/HANGOUT.AUDIO/DAISO EARPHONES DAISO.txt"
-    ]
-  },
-  {
     "id": "dali_io_12",
     "brand": "DALI",
     "model": "IO-12",
@@ -27483,32 +27460,6 @@
     "files": [
       "data/ORATORY1990/DALI IO 6.txt"
     ]
-  },
-  {
-    "id": "dan_clark_audio_corina",
-    "brand": "Dan Clark Audio",
-    "model": "Corina",
-    "variant": "",
-    "year": 2023,
-    "price_usd": 4500,
-    "driver_type": "EST",
-    "driver_config": "1EST",
-    "impedance": 0,
-    "sensitivity": 0,
-    "connector": "Electrostatic",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Flagship",
-      "Reference",
-      "Detailed",
-      "Resolving",
-      "Technical",
-      "Wide-Stage",
-      "Smooth"
-    ],
-    "files": [
-	"data/VSG/DAN CLARK AUDIO CORINA.txt"
-	]
   },
   {
     "id": "dan_clark_audio_aeon_2_closed",
@@ -27755,6 +27706,32 @@
     ],
     "files": [
       "data/INNERFIDELITY/DAN CLARK AUDIO ALPHA PRIME.txt"
+    ]
+  },
+  {
+    "id": "dan_clark_audio_corina",
+    "brand": "Dan Clark Audio",
+    "model": "Corina",
+    "variant": "",
+    "year": 2023,
+    "price_usd": 4500,
+    "driver_type": "EST",
+    "driver_config": "1EST",
+    "impedance": 0,
+    "sensitivity": 0,
+    "connector": "Electrostatic",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Flagship",
+      "Reference",
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Smooth"
+    ],
+    "files": [
+      "data/VSG/DAN CLARK AUDIO CORINA.txt"
     ]
   },
   {
@@ -29445,58 +29422,6 @@
     ]
   },
   {
-    "id": "grell_oae1_signature",
-    "brand": "Grell",
-    "model": "OAE1",
-    "variant": "Signature",
-    "year": 2024,
-    "price_usd": 400,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 38,
-    "sensitivity": 106,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Neutral",
-      "Wide-Stage",
-      "Detailed",
-      "Resolving",
-      "Collab",
-      "Limited-Edition",
-      "Mid-Tier"
-    ],
-    "files": [
-      "data/KUULOKENURKKA/MASSDROP + GRELL OAE1 SIGNATURE.txt",
-      "data/SUPER REVIEW/MASSDROP + GRELL OAE1 SIGNATURE.txt"
-    ]
-  },
-  {
-    "id": "grell_oae2",
-    "brand": "Grell",
-    "model": "OAE2",
-    "variant": "",
-    "year": 2026,
-    "price_usd": 400,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 38,
-    "sensitivity": 106,
-    "connector": "3.5mm",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Neutral",
-      "Detailed",
-      "Resolving",
-      "Wide-Stage",
-      "Reference",
-      "Mid-Tier"
-    ],
-    "files": [
-      "data/SUPER REVIEW/GRELL OAE2.txt"
-    ]
-  },
-  {
     "id": "drop_massdrop_plus",
     "brand": "Drop",
     "model": "Massdrop Plus",
@@ -29645,29 +29570,6 @@
     ],
     "files": [
       "data/INNERFIDELITY/DUBSLABS BEDPHONES.txt"
-    ]
-  },
-  {
-    "id": "dunu_dm480",
-    "brand": "DUNU",
-    "model": "DM-480",
-    "variant": "",
-    "year": 2019,
-    "price_usd": 70,
-    "driver_type": "DD",
-    "driver_config": "2DD",
-    "impedance": 20,
-    "sensitivity": 105,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "V-Shaped",
-      "Punchy Bass",
-      "Smooth",
-      "Budget"
-    ],
-    "files": [
-      "data/BEDROCK REVIEWS/DUNU DM-480.txt"
     ]
   },
   {
@@ -29894,6 +29796,29 @@
     ],
     "files": [
       "data/HARPO/DUNU DM380.txt"
+    ]
+  },
+  {
+    "id": "dunu_dm480",
+    "brand": "DUNU",
+    "model": "DM-480",
+    "variant": "",
+    "year": 2019,
+    "price_usd": 70,
+    "driver_type": "DD",
+    "driver_config": "2DD",
+    "impedance": 20,
+    "sensitivity": 105,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "V-Shaped",
+      "Punchy Bass",
+      "Smooth",
+      "Budget"
+    ],
+    "files": [
+      "data/BEDROCK REVIEWS/DUNU DM-480.txt"
     ]
   },
   {
@@ -31012,55 +30937,6 @@
     ],
     "files": [
       "data/INNERFIDELITY/E MU PURPLEHEART.txt"
-    ]
-  },
-  {
-    "id": "euiu_ei_01",
-    "brand": "EUIU",
-    "model": "EI-01",
-    "variant": "",
-    "year": 2026,
-    "price_usd": 30,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 109,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Budget",
-      "Balanced",
-      "Neutral",
-      "Smooth",
-      "Gaming"
-    ],
-    "files": [
-      "data/SOUNDCHECK39/EUIU EI-01.txt"
-    ]
-  },
-  {
-    "id": "euiu_ui_05",
-    "brand": "EUIU",
-    "model": "UI-05",
-    "variant": "",
-    "year": 2026,
-    "price_usd": 100,
-    "driver_type": "Hybrid",
-    "driver_config": "2DD+3BA",
-    "impedance": 17,
-    "sensitivity": 106,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Mid-Tier",
-      "Balanced",
-      "Detailed",
-      "Resolving",
-      "Smooth",
-      "Good-Imaging"
-    ],
-    "files": [
-      "data/SOUNDCHECK39/EUIU UI-05.txt"
     ]
   },
   {
@@ -32606,29 +32482,6 @@
     ],
     "files": [
       "data/HANGOUT.AUDIO/EFFECT AUDIO SYMPHONY.txt"
-    ]
-  },
-  {
-    "id": "electra_clip_on_earphones",
-    "brand": "Electra",
-    "model": "Clip-On Earphones",
-    "variant": "",
-    "year": null,
-    "price_usd": 5,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": null,
-    "sensitivity": null,
-    "connector": "Fixed Cable",
-    "form_factor": "Earbuds (Wired)",
-    "tags": [
-      "Budget",
-      "Warm",
-      "Relaxed",
-      "Smooth"
-    ],
-    "files": [
-      "data/SIDE SALAD AUDIO/ELECTRA CLIP ON EARPHONES.txt"
     ]
   },
   {
@@ -35454,6 +35307,55 @@
     ]
   },
   {
+    "id": "euiu_ei_01",
+    "brand": "EUIU",
+    "model": "EI-01",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 30,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 109,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Budget",
+      "Balanced",
+      "Neutral",
+      "Smooth",
+      "Gaming"
+    ],
+    "files": [
+      "data/SOUNDCHECK39/EUIU EI-01.txt"
+    ]
+  },
+  {
+    "id": "euiu_ui_05",
+    "brand": "EUIU",
+    "model": "UI-05",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 100,
+    "driver_type": "Hybrid",
+    "driver_config": "2DD+3BA",
+    "impedance": 17,
+    "sensitivity": 106,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Mid-Tier",
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Smooth",
+      "Good-Imaging"
+    ],
+    "files": [
+      "data/SOUNDCHECK39/EUIU UI-05.txt"
+    ]
+  },
+  {
     "id": "faaeal_hibiscus",
     "brand": "Faaeal",
     "model": "Hibiscus",
@@ -35935,6 +35837,29 @@
     ]
   },
   {
+    "id": "fatfreq_musician",
+    "brand": "Fat Freq",
+    "model": "Musician",
+    "variant": "",
+    "year": 2021,
+    "price_usd": 400,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+2BA",
+    "impedance": 18,
+    "sensitivity": 106,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Warm",
+      "Smooth",
+      "Detailed",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/HANGOUT.AUDIO/FATFREQ MUSICIAN FF.txt"
+    ]
+  },
+  {
     "id": "fatfreq_musician_plus",
     "brand": "Fat Freq",
     "model": "Musician",
@@ -35957,29 +35882,6 @@
     "files": [
       "data/HANGOUT.AUDIO/FATFREQ MUSICIAN PLUS.txt",
       "data/HANGOUT.AUDIO/FATFREQ MUSICIAN PLUS V2.txt"
-    ]
-  },
-  {
-    "id": "fatfreq_musician",
-    "brand": "Fat Freq",
-    "model": "Musician",
-    "variant": "",
-    "year": 2021,
-    "price_usd": 400,
-    "driver_type": "Hybrid",
-    "driver_config": "1DD+2BA",
-    "impedance": 18,
-    "sensitivity": 106,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Warm",
-      "Smooth",
-      "Detailed",
-      "Mid-Tier"
-    ],
-    "files": [
-      "data/HANGOUT.AUDIO/FATFREQ MUSICIAN FF.txt"
     ]
   },
   {
@@ -37252,6 +37154,29 @@
     ]
   },
   {
+    "id": "fiil_cc_pro_2",
+    "brand": "FIIL",
+    "model": "CC Pro",
+    "variant": "2",
+    "year": 2022,
+    "price_usd": 100,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 105,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Earbuds (TWS)",
+    "tags": [
+      "Mid-Tier",
+      "Warm",
+      "Balanced",
+      "Smooth"
+    ],
+    "files": [
+      "data/SILICAGEL/FIIL CC PRO 2.txt"
+    ]
+  },
+  {
     "id": "fiil_gs",
     "brand": "FIIL",
     "model": "GS",
@@ -37367,29 +37292,6 @@
     ]
   },
   {
-    "id": "fiil_cc_pro_2",
-    "brand": "FIIL",
-    "model": "CC Pro",
-    "variant": "2",
-    "year": 2022,
-    "price_usd": 100,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 105,
-    "connector": "Bluetooth",
-    "form_factor": "Wireless Earbuds (TWS)",
-    "tags": [
-      "Mid-Tier",
-      "Warm",
-      "Balanced",
-      "Smooth"
-    ],
-    "files": [
-      "data/SILICAGEL/FIIL CC PRO 2.txt"
-    ]
-  },
-  {
     "id": "fiio_eh11",
     "brand": "FiiO",
     "model": "EH11",
@@ -37410,6 +37312,29 @@
     ],
     "files": [
       "data/SUPER REVIEW/FIIO EH11.txt"
+    ]
+  },
+  {
+    "id": "fiio_eh13",
+    "brand": "FiiO",
+    "model": "EH13",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 50,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 98,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Over-Ear Headphones",
+    "tags": [
+      "Warm",
+      "Balanced",
+      "Fun",
+      "Budget"
+    ],
+    "files": [
+      "data/SUPER REVIEW/FIIO EH13.txt"
     ]
   },
   {
@@ -37434,54 +37359,6 @@
     "files": [
       "data/HANGOUT.AUDIO/FIIO F3.txt",
       "data/ORATORY1990/FIIO F3.txt"
-    ]
-  },
-  {
-    "id": "fiio_jt3",
-    "brand": "FiiO",
-    "model": "JT3",
-    "variant": "",
-    "year": 2025,
-    "price_usd": 70,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 80,
-    "sensitivity": 97,
-    "connector": "3.5mm",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Warm",
-      "V-Shaped",
-      "Punchy Bass",
-      "Fun",
-      "Budget",
-      "Gaming"
-    ],
-    "files": [
-      "data/UNHEARD LAB/FIIO JT3.txt"
-    ]
-  },
-  {
-    "id": "fiio_eh13",
-    "brand": "FiiO",
-    "model": "EH13",
-    "variant": "",
-    "year": 2026,
-    "price_usd": 50,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 98,
-    "connector": "Bluetooth",
-    "form_factor": "Wireless Over-Ear Headphones",
-    "tags": [
-      "Warm",
-      "Balanced",
-      "Fun",
-      "Budget"
-    ],
-    "files": [
-      "data/SUPER REVIEW/FIIO EH13.txt"
     ]
   },
   {
@@ -38705,6 +38582,31 @@
     ]
   },
   {
+    "id": "fiio_jt3",
+    "brand": "FiiO",
+    "model": "JT3",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 70,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 80,
+    "sensitivity": 97,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Warm",
+      "V-Shaped",
+      "Punchy Bass",
+      "Fun",
+      "Budget",
+      "Gaming"
+    ],
+    "files": [
+      "data/UNHEARD LAB/FIIO JT3.txt"
+    ]
+  },
+  {
     "id": "fiio_jt7",
     "brand": "FiiO",
     "model": "JT7",
@@ -38821,81 +38723,6 @@
     "files": [
       "data/KUULOKENURKKA/FIIO SNOWSKY WIND.txt",
       "data/SIDE SALAD AUDIO/SNOWSKY WIND.txt"
-    ]
-  },
-  {
-    "id": "final_audio_s4000",
-    "brand": "Final Audio",
-    "model": "S4000",
-    "variant": "",
-    "year": 2026,
-    "price_usd": 380,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 16,
-    "sensitivity": 102,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Neutral",
-      "Detailed",
-      "Resolving",
-      "Wide-Stage",
-      "Reference",
-      "Mid-Tier"
-    ],
-    "files": [
-      "data/HU-FI/FINAL S4000.txt"
-    ]
-  },
-  {
-    "id": "final_audio_vr500",
-    "brand": "Final Audio",
-    "model": "VR500",
-    "variant": "",
-    "year": 2024,
-    "price_usd": 35,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 18,
-    "sensitivity": 98,
-    "connector": "Fixed Cable",
-    "form_factor": "IEM",
-    "tags": [
-      "Budget",
-      "Gaming",
-      "Competitive-Gaming",
-      "Balanced",
-      "Good-Imaging"
-    ],
-    "files": [
-	"data/VORTEX REVIEWS/FINAL VR500.txt"
-	]
-  },
-  {
-    "id": "final_audio_s5000",
-    "brand": "Final Audio",
-    "model": "S5000",
-    "variant": "",
-    "year": 2026,
-    "price_usd": 550,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 16,
-    "sensitivity": 104,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Neutral",
-      "Detailed",
-      "Resolving",
-      "Technical",
-      "Wide-Stage",
-      "Reference",
-      "Premium"
-    ],
-    "files": [
-      "data/HU-FI/FINAL S5000.txt"
     ]
   },
   {
@@ -39157,6 +38984,32 @@
     ]
   },
   {
+    "id": "final_audio_d8000",
+    "brand": "Final Audio",
+    "model": "D8000",
+    "variant": "",
+    "year": 2017,
+    "price_usd": 3800,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 60,
+    "sensitivity": 98,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Flagship",
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Good-Imaging",
+      "Punchy Bass"
+    ],
+    "files": [
+      "data/HANGOUT.AUDIO/FINAL AUDIO D8000.txt"
+    ]
+  },
+  {
     "id": "final_audio_d8000_pro",
     "brand": "Final Audio",
     "model": "D8000",
@@ -39183,32 +39036,6 @@
     "files": [
       "data/ORATORY1990/FINAL AUDIO D8000 PRO EDITION.txt"
     ]
-  },
-  {
-    "id": "final_audio_d8000",
-    "brand": "Final Audio",
-    "model": "D8000",
-    "variant": "",
-    "year": 2017,
-    "price_usd": 3800,
-    "driver_type": "Planar",
-    "driver_config": "1Planar",
-    "impedance": 60,
-    "sensitivity": 98,
-    "connector": "3.5mm",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Flagship",
-      "Detailed",
-      "Resolving",
-      "Technical",
-      "Wide-Stage",
-      "Good-Imaging",
-      "Punchy Bass"
-    ],
-    "files": [
-	"data/HANGOUT.AUDIO/FINAL AUDIO D8000.txt"
-	]
   },
   {
     "id": "final_audio_e1000",
@@ -39808,6 +39635,57 @@
     ]
   },
   {
+    "id": "final_audio_s4000",
+    "brand": "Final Audio",
+    "model": "S4000",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 380,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 102,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Neutral",
+      "Detailed",
+      "Resolving",
+      "Wide-Stage",
+      "Reference",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/HU-FI/FINAL S4000.txt"
+    ]
+  },
+  {
+    "id": "final_audio_s5000",
+    "brand": "Final Audio",
+    "model": "S5000",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 550,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 104,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Neutral",
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Reference",
+      "Premium"
+    ],
+    "files": [
+      "data/HU-FI/FINAL S5000.txt"
+    ]
+  },
+  {
     "id": "final_audio_s6000",
     "brand": "Final Audio",
     "model": "S6000",
@@ -39978,6 +39856,30 @@
       "data/RIKUDOUGOKU/FINAL AUDIO VR3000.txt",
       "data/SQUIGLINK/FINAL AUDIO VR3000.txt",
       "data/SUPER REVIEW/FINAL AUDIO VR3000.txt"
+    ]
+  },
+  {
+    "id": "final_audio_vr500",
+    "brand": "Final Audio",
+    "model": "VR500",
+    "variant": "",
+    "year": 2024,
+    "price_usd": 35,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 18,
+    "sensitivity": 98,
+    "connector": "Fixed Cable",
+    "form_factor": "IEM",
+    "tags": [
+      "Budget",
+      "Gaming",
+      "Competitive-Gaming",
+      "Balanced",
+      "Good-Imaging"
+    ],
+    "files": [
+      "data/VORTEX REVIEWS/FINAL VR500.txt"
     ]
   },
   {
@@ -41242,7 +41144,7 @@
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Premium",
+      "Mid-Tier",
       "Balanced",
       "Vocal-Focused",
       "Detailed",
@@ -41614,6 +41516,62 @@
     ]
   },
   {
+    "id": "focal_clear_mg",
+    "brand": "Focal",
+    "model": "Clear",
+    "variant": "Mg",
+    "year": 2021,
+    "price_usd": 1500,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 55,
+    "sensitivity": 104,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Flagship",
+      "Reference",
+      "Balanced",
+      "Warm",
+      "Good-Imaging",
+      "Wide-Stage",
+      "Detailed",
+      "Studio-Monitoring"
+    ],
+    "files": [
+      "data/KUULOKENURKKA/FOCAL CLEAR MG.txt",
+      "data/ORATORY1990/FOCAL CLEAR MG.txt",
+      "data/RTINGS/FOCAL CLEAR MG.txt"
+    ]
+  },
+  {
+    "id": "focal_clear_mg_professional",
+    "brand": "Focal",
+    "model": "Clear",
+    "variant": "Mg Professional",
+    "year": 2021,
+    "price_usd": 1500,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 55,
+    "sensitivity": 104,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Flagship",
+      "Studio-Monitoring",
+      "Neutral",
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Reference",
+      "Warm"
+    ],
+    "files": [
+      "data/SUPER REVIEW/FOCAL CLEAR MG PROFESSIONAL.txt"
+    ]
+  },
+  {
     "id": "focal_clear_professional",
     "brand": "Focal",
     "model": "Clear Professional",
@@ -41636,65 +41594,9 @@
       "Reference"
     ],
     "files": [
-	"data/SUPER REVIEW/FOCAL CLEAR PROFESSIONAL.txt"
-	]
+      "data/SUPER REVIEW/FOCAL CLEAR PROFESSIONAL.txt"
+    ]
   },
-{
-"id": "focal_clear_mg",
-"brand": "Focal",
-"model": "Clear",
-"variant": "Mg",
-"year": 2021,
-"price_usd": 1500,
-"driver_type": "DD",
-"driver_config": "1DD",
-"impedance": 55,
-"sensitivity": 104,
-"connector": "3.5mm",
-"form_factor": "Over-Ear Headphones (Wired)",
-"tags": [
-"Flagship",
-"Reference",
-"Balanced",
-"Warm",
-"Good-Imaging",
-"Wide-Stage",
-"Detailed",
-"Studio-Monitoring"
-],
-"files": [
-"data/KUULOKENURKKA/FOCAL CLEAR MG.txt",
-"data/ORATORY1990/FOCAL CLEAR MG.txt",
-"data/RTINGS/FOCAL CLEAR MG.txt"
-]
-},
-{
-"id": "focal_clear_mg_professional",
-"brand": "Focal",
-"model": "Clear",
-"variant": "Mg Professional",
-"year": 2021,
-"price_usd": 1500,
-"driver_type": "DD",
-"driver_config": "1DD",
-"impedance": 55,
-"sensitivity": 104,
-"connector": "3.5mm",
-"form_factor": "Over-Ear Headphones (Wired)",
-"tags": [
-"Flagship",
-"Studio-Monitoring",
-"Neutral",
-"Detailed",
-"Resolving",
-"Technical",
-"Reference",
-"Warm"
-],
-"files": [
-"data/SUPER REVIEW/FOCAL CLEAR MG PROFESSIONAL.txt"
-]
-},
   {
     "id": "focal_elear",
     "brand": "Focal",
@@ -43530,32 +43432,6 @@
     ]
   },
   {
-    "id": "gold_planar_gl850",
-    "brand": "Gold Planar",
-    "model": "GL850",
-    "variant": "",
-    "year": 2020,
-    "price_usd": 1020,
-    "driver_type": "Planar",
-    "driver_config": "1Planar",
-    "impedance": 32,
-    "sensitivity": 90,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Balanced",
-      "Detailed",
-      "Resolving",
-      "Technical",
-      "Wide-Stage",
-      "Premium",
-      "Treblehead"
-    ],
-    "files": [
-      "data/UNHEARD LAB/GOLD PLANAR GL850.txt"
-    ]
-  },
-  {
     "id": "goldplanar_amt16",
     "brand": "Gold Planar",
     "model": "AMT16",
@@ -43687,6 +43563,32 @@
     ]
   },
   {
+    "id": "gold_planar_gl850",
+    "brand": "Gold Planar",
+    "model": "GL850",
+    "variant": "",
+    "year": 2020,
+    "price_usd": 1020,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 32,
+    "sensitivity": 90,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Premium",
+      "Treblehead"
+    ],
+    "files": [
+      "data/UNHEARD LAB/GOLD PLANAR GL850.txt"
+    ]
+  },
+  {
     "id": "google_pixel_buds",
     "brand": "Google",
     "model": "Pixel Buds",
@@ -43723,7 +43625,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Earbuds (TWS)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Balanced",
       "Punchy Bass",
       "Warm",
@@ -44041,7 +43943,7 @@
     "connector": "Fixed Cable",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Bright",
       "Vocal-Focused",
       "Detailed",
@@ -44587,7 +44489,7 @@
     "connector": "Fixed Cable",
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Bright",
       "Punchy Bass",
       "Vocal-Focused",
@@ -44649,6 +44551,58 @@
     "files": [
       "data/HYPETHESONICS/GRADO SR80E.txt",
       "data/RTINGS/GRADO SR80E.txt"
+    ]
+  },
+  {
+    "id": "grell_oae1_signature",
+    "brand": "Grell",
+    "model": "OAE1",
+    "variant": "Signature",
+    "year": 2024,
+    "price_usd": 400,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 38,
+    "sensitivity": 106,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Neutral",
+      "Wide-Stage",
+      "Detailed",
+      "Resolving",
+      "Collab",
+      "Limited-Edition",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/KUULOKENURKKA/MASSDROP + GRELL OAE1 SIGNATURE.txt",
+      "data/SUPER REVIEW/MASSDROP + GRELL OAE1 SIGNATURE.txt"
+    ]
+  },
+  {
+    "id": "grell_oae2",
+    "brand": "Grell",
+    "model": "OAE2",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 400,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 38,
+    "sensitivity": 106,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Neutral",
+      "Detailed",
+      "Resolving",
+      "Wide-Stage",
+      "Reference",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/SUPER REVIEW/GRELL OAE2.txt"
     ]
   },
   {
@@ -45875,7 +45829,7 @@
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Balanced",
       "Warm",
       "Punchy Bass",
@@ -47655,7 +47609,7 @@
     "connector": "2-pin",
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Collab",
       "Bright",
       "Detailed",
@@ -47680,7 +47634,7 @@
     "connector": "2-pin",
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Collab",
       "Detailed",
       "Punchy Bass",
@@ -48538,12 +48492,12 @@
       "Basshead",
       "Sub-Bass",
       "Punchy Bass",
-	  "Warm",
-	  "Fun",
-	  "Smooth",
-	  "Detailed",
-	  "Good-Imaging",
-	  "Wide-Stage"
+      "Warm",
+      "Fun",
+      "Smooth",
+      "Detailed",
+      "Good-Imaging",
+      "Wide-Stage"
     ],
     "files": [
       "data/AUDIOAMIGO/HISENIOR MEGA5EST.txt",
@@ -48751,7 +48705,7 @@
     "connector": "Fixed Cable",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Neutral",
       "Vocal-Focused",
       "Detailed",
@@ -50249,7 +50203,7 @@
     "connector": "MMCX",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "V-Shaped",
       "Sub-Bass",
       "Punchy Bass",
@@ -50613,7 +50567,7 @@
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "V-Shaped",
       "Punchy Bass",
       "Warm",
@@ -52548,7 +52502,7 @@
     "connector": "Bluetooth",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Warm",
       "V-Shaped",
       "Punchy Bass",
@@ -52618,7 +52572,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Earbuds (TWS)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Balanced",
       "Warm",
       "Punchy Bass",
@@ -52928,7 +52882,7 @@
     "connector": "Bluetooth",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Bright",
       "Punchy Bass",
       "Vocal-Focused",
@@ -53138,7 +53092,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Over-Ear Headphones",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Punchy Bass",
       "V-Shaped",
       "Warm",
@@ -53162,7 +53116,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Earbuds (TWS)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Vocal-Focused",
       "Balanced",
       "Smooth"
@@ -53371,7 +53325,7 @@
     "connector": "Bluetooth",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Balanced",
       "Warm",
       "Punchy Bass",
@@ -53932,7 +53886,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Earbuds (TWS)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Basshead",
       "Punchy Bass",
       "V-Shaped",
@@ -53956,7 +53910,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Earbuds (TWS)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Punchy Bass",
       "V-Shaped",
       "Warm",
@@ -54003,7 +53957,7 @@
     "connector": "Bluetooth",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Balanced",
       "Warm",
       "Punchy Bass",
@@ -54261,7 +54215,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Over-Ear Headphones",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Balanced",
       "Punchy Bass",
       "Warm",
@@ -54529,29 +54483,6 @@
     ]
   },
   {
-    "id": "jbl_quantum_tws",
-    "brand": "JBL",
-    "model": "Quantum",
-    "variant": "TWS",
-    "year": 2022,
-    "price_usd": 150,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 16,
-    "sensitivity": 106,
-    "connector": "Bluetooth",
-    "form_factor": "Wireless Earbuds (TWS)",
-    "tags": [
-      "V-Shaped",
-      "Gaming",
-      "Punchy Bass",
-      "Mid-Tier"
-    ],
-    "files": [
-      "data/UNHEARD LAB/JBL QUANTUM TWS EARBUDS.txt"
-    ]
-  },
-  {
     "id": "jbl_quantum_400",
     "brand": "JBL",
     "model": "Quantum",
@@ -54565,7 +54496,7 @@
     "connector": "Detachable Cable",
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Gaming",
       "Competitive-Gaming",
       "Good-Imaging",
@@ -54620,6 +54551,29 @@
     ],
     "files": [
       "data/RTINGS/JBL QUANTUM ONE.txt"
+    ]
+  },
+  {
+    "id": "jbl_quantum_tws",
+    "brand": "JBL",
+    "model": "Quantum",
+    "variant": "TWS",
+    "year": 2022,
+    "price_usd": 150,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 106,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Earbuds (TWS)",
+    "tags": [
+      "V-Shaped",
+      "Gaming",
+      "Punchy Bass",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/UNHEARD LAB/JBL QUANTUM TWS EARBUDS.txt"
     ]
   },
   {
@@ -56154,7 +56108,7 @@
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Mid-Tier",
+      "Premium",
       "Balanced",
       "Warm",
       "Vocal-Focused",
@@ -56471,29 +56425,6 @@
     ]
   },
   {
-    "id": "juzear_nimbus",
-    "brand": "JUZEAR",
-    "model": "Nimbus",
-    "variant": "",
-    "year": 2026,
-    "price_usd": 55,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 108,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Balanced",
-      "Smooth",
-      "Detailed",
-      "Budget"
-    ],
-    "files": [
-      "data/JAYTISS/JUZEAR NIMBUS.txt"
-    ]
-  },
-  {
     "id": "juzear_41t",
     "brand": "JUZEAR",
     "model": "41T",
@@ -56797,6 +56728,29 @@
     "files": [
       "data/JAYTISS/JUZEAR X KOTO NEBULA.txt",
       "data/TONEDEAFMONK/JUZEAR X KOTO NEBULA.txt"
+    ]
+  },
+  {
+    "id": "juzear_nimbus",
+    "brand": "JUZEAR",
+    "model": "Nimbus",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 55,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 108,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Smooth",
+      "Detailed",
+      "Budget"
+    ],
+    "files": [
+      "data/JAYTISS/JUZEAR NIMBUS.txt"
     ]
   },
   {
@@ -57411,6 +57365,31 @@
     ]
   },
   {
+    "id": "kali_audio_hp_1",
+    "brand": "Kali Audio",
+    "model": "HP-1",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 100,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 102,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Mid-Tier",
+      "Neutral",
+      "Balanced",
+      "Detailed",
+      "Reference",
+      "Studio-Monitoring"
+    ],
+    "files": [
+      "data/SUPER REVIEW/KALI AUDIO HP-1.txt"
+    ]
+  },
+  {
     "id": "kbear_aurora",
     "brand": "KBEAR",
     "model": "Aurora",
@@ -57586,31 +57565,6 @@
     "files": [
       "data/HANGOUT.AUDIO/KBEAR F1.txt",
       "data/PAUL WASABII/KBEAR F1.txt"
-    ]
-  },
-  {
-    "id": "kali_audio_hp_1",
-    "brand": "Kali Audio",
-    "model": "HP-1",
-    "variant": "",
-    "year": 2026,
-    "price_usd": 100,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 102,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Mid-Tier",
-      "Neutral",
-      "Balanced",
-      "Detailed",
-      "Reference",
-      "Studio-Monitoring"
-    ],
-    "files": [
-      "data/SUPER REVIEW/KALI AUDIO HP-1.txt"
     ]
   },
   {
@@ -58759,32 +58713,6 @@
     ]
   },
   {
-    "id": "kinera_mimisbrunnr",
-    "brand": "Kinera",
-    "model": "Mimisbrunnr",
-    "variant": "",
-    "year": 2026,
-    "price_usd": 800,
-    "driver_type": "Hybrid",
-    "driver_config": "2DD+2EST",
-    "impedance": 16,
-    "sensitivity": 106,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Sub-Bass",
-      "Warm",
-      "Balanced",
-      "Detailed",
-      "Resolving",
-      "Smooth",
-      "Premium"
-    ],
-    "files": [
-      "data/BLOOM AUDIO/KINERA MIMISBRUNNR.txt"
-    ]
-  },
-  {
     "id": "kinera_baldr_2",
     "brand": "Kinera",
     "model": "Baldr",
@@ -58959,6 +58887,30 @@
     ]
   },
   {
+    "id": "kinera_h3",
+    "brand": "Kinera",
+    "model": "H3",
+    "variant": "",
+    "year": 2017,
+    "price_usd": 100,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+2BA",
+    "impedance": 18,
+    "sensitivity": 102,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Mid-Tier",
+      "V-Shaped",
+      "Bright",
+      "Punchy Bass",
+      "Treblehead"
+    ],
+    "files": [
+      "data/HANGOUT.AUDIO/KINERA H3.txt"
+    ]
+  },
+  {
     "id": "kinera_hodur",
     "brand": "Kinera",
     "model": "Hodur",
@@ -59084,6 +59036,32 @@
       "data/HAWAII BAY BOY/KINERA IMPERIAL LOKI EMERALD.txt",
       "data/JAY'S AUDIO/KINERA IMPERIAL LOKI FOAM.txt",
       "data/TED'S SQUIG HOARD/KINERA IMPERIAL LOKI EMERALD.txt"
+    ]
+  },
+  {
+    "id": "kinera_mimisbrunnr",
+    "brand": "Kinera",
+    "model": "Mimisbrunnr",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 800,
+    "driver_type": "Hybrid",
+    "driver_config": "2DD+2EST",
+    "impedance": 16,
+    "sensitivity": 106,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Sub-Bass",
+      "Warm",
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Smooth",
+      "Premium"
+    ],
+    "files": [
+      "data/BLOOM AUDIO/KINERA MIMISBRUNNR.txt"
     ]
   },
   {
@@ -60547,30 +60525,6 @@
     ]
   },
   {
-    "id": "kinera_h3",
-    "brand": "Kinera",
-    "model": "H3",
-    "variant": "",
-    "year": 2017,
-    "price_usd": 100,
-    "driver_type": "Hybrid",
-    "driver_config": "1DD+2BA",
-    "impedance": 18,
-    "sensitivity": 102,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Mid-Tier",
-      "V-Shaped",
-      "Bright",
-      "Punchy Bass",
-      "Treblehead"
-    ],
-    "files": [
-      "data/HANGOUT.AUDIO/KINERA H3.txt"
-    ]
-  },
-  {
     "id": "klipsch_r6_ii",
     "brand": "Klipsch",
     "model": "R6 II",
@@ -61012,6 +60966,30 @@
     ]
   },
   {
+    "id": "koss_kph30_wireless",
+    "brand": "Koss",
+    "model": "KPH30",
+    "variant": "Wireless",
+    "year": 2025,
+    "price_usd": 60,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 104,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Over-Ear Headphones",
+    "tags": [
+      "Budget",
+      "Warm",
+      "Balanced",
+      "Relaxed",
+      "Fun"
+    ],
+    "files": [
+      "data/SUPER REVIEW/KOSS KPH30 WIRELESS.txt"
+    ]
+  },
+  {
     "id": "koss_kph30i",
     "brand": "Koss",
     "model": "KPH30i",
@@ -61037,30 +61015,6 @@
       "data/SUPER REVIEW/KOSS KPH30I.txt",
       "data/SIDE SALAD AUDIO/KOSS KPH30I GRADO PADS OLD PINNA.txt",
       "data/SIDE SALAD AUDIO/KOSS KPH30I GRADO PADS.txt"
-    ]
-  },
-  {
-    "id": "koss_kph30_wireless",
-    "brand": "Koss",
-    "model": "KPH30",
-    "variant": "Wireless",
-    "year": 2025,
-    "price_usd": 60,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 104,
-    "connector": "Bluetooth",
-    "form_factor": "Wireless Over-Ear Headphones",
-    "tags": [
-      "Budget",
-      "Warm",
-      "Balanced",
-      "Relaxed",
-      "Fun"
-    ],
-    "files": [
-      "data/SUPER REVIEW/KOSS KPH30 WIRELESS.txt"
     ]
   },
   {
@@ -64382,29 +64336,6 @@
     ]
   },
   {
-    "id": "kz_zs3e",
-    "brand": "KZ",
-    "model": "ZS3E",
-    "variant": "",
-    "year": 2019,
-    "price_usd": 10,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 16,
-    "sensitivity": 98,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Warm",
-      "Smooth",
-      "Balanced",
-      "Budget"
-    ],
-    "files": [
-      "data/BASSY ALEXANDER/KZ ZS3E.txt"
-    ]
-  },
-  {
     "id": "kz_z3",
     "brand": "KZ",
     "model": "Z3",
@@ -64923,6 +64854,29 @@
     ],
     "files": [
       "data/HANGOUT.AUDIO/KZ ZS3 S2.txt"
+    ]
+  },
+  {
+    "id": "kz_zs3e",
+    "brand": "KZ",
+    "model": "ZS3E",
+    "variant": "",
+    "year": 2019,
+    "price_usd": 10,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 98,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Warm",
+      "Smooth",
+      "Balanced",
+      "Budget"
+    ],
+    "files": [
+      "data/BASSY ALEXANDER/KZ ZS3E.txt"
     ]
   },
   {
@@ -66078,36 +66032,6 @@
     ]
   },
   {
-    "id": "letshuoer_sonata",
-    "brand": "LETSHUOER",
-    "model": "Sonata",
-    "variant": "",
-    "year": 2026,
-    "price_usd": 2300,
-    "driver_type": "Tribrid",
-    "driver_config": "2DD+4BA+4EST",
-    "impedance": 22,
-    "sensitivity": 102,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Sub-Bass",
-      "Punchy Bass",
-      "Balanced",
-      "Detailed",
-      "Resolving",
-      "Technical",
-      "Wide-Stage",
-      "Good-Imaging",
-      "Reference",
-      "Flagship"
-    ],
-    "files": [
-      "data/IEM OCEAN/LETSHUOER SONATA (EJ10).txt",
-      "data/ELISE AUDIO/LETSHUOER EJ10.txt"
-    ]
-  },
-  {
     "id": "letshuoer_ember",
     "brand": "LETSHUOER",
     "model": "Ember",
@@ -66496,6 +66420,36 @@
     ]
   },
   {
+    "id": "letshuoer_sonata",
+    "brand": "LETSHUOER",
+    "model": "Sonata",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 2300,
+    "driver_type": "Tribrid",
+    "driver_config": "2DD+4BA+4EST",
+    "impedance": 22,
+    "sensitivity": 102,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Sub-Bass",
+      "Punchy Bass",
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Good-Imaging",
+      "Reference",
+      "Flagship"
+    ],
+    "files": [
+      "data/IEM OCEAN/LETSHUOER SONATA (EJ10).txt",
+      "data/ELISE AUDIO/LETSHUOER EJ10.txt"
+    ]
+  },
+  {
     "id": "letshuoer_tape",
     "brand": "LETSHUOER",
     "model": "Tape",
@@ -66772,105 +66726,6 @@
     ]
   },
   {
-    "id": "lime_ears_anima",
-    "brand": "Lime Ears",
-    "model": "Anima",
-    "variant": "",
-    "year": 2022,
-    "price_usd": 3400,
-    "driver_type": "Tribrid",
-    "driver_config": "1DD+6BA+6EST",
-    "impedance": 32,
-    "sensitivity": 109,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Flagship",
-      "Resolving",
-      "Technical",
-      "Detailed",
-      "U-Shaped",
-      "Treblehead"
-    ],
-    "files": [
-      "data/ANIMAGUS/LIME EARS ANIMA.txt"
-    ]
-  },
-  {
-    "id": "lime_ears_anima_v2",
-    "brand": "Lime Ears",
-    "model": "Anima",
-    "variant": "V2",
-    "year": 2024,
-    "price_usd": 3750,
-    "driver_type": "Hybrid",
-    "driver_config": "1DD+10BA",
-    "impedance": 25,
-    "sensitivity": 100,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Flagship",
-      "Resolving",
-      "Technical",
-      "Detailed",
-      "U-Shaped",
-      "Treblehead"
-    ],
-    "files": [
-      "data/ANIMAGUS/LIME EARS ANIMA V2.txt"
-    ]
-  },
-  {
-    "id": "lime_ears_pneuma_v2",
-    "brand": "Lime Ears",
-    "model": "Pneuma",
-    "variant": "V2",
-    "year": 2024,
-    "price_usd": 1980,
-    "driver_type": "Hybrid",
-    "driver_config": "1DD+4BA",
-    "impedance": 15,
-    "sensitivity": 109,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Flagship",
-      "Balanced",
-      "Detailed",
-      "Resolving",
-      "U-Shaped"
-    ],
-    "files": [
-      "data/ANIMAGUS/LIME EARS PNEUMA V2 (OFF).txt"
-    ]
-  },
-  {
-    "id": "lime_ears_pneuma",
-    "brand": "Lime Ears",
-    "model": "Pneuma",
-    "variant": "",
-    "year": 2020,
-    "price_usd": 2000,
-    "driver_type": "Hybrid",
-    "driver_config": "1DD+4BA",
-    "impedance": 32,
-    "sensitivity": 109,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Flagship",
-      "Balanced",
-      "Detailed",
-      "Resolving",
-      "U-Shaped"
-    ],
-    "files": [
-      "data/VSG/LIME EARS PNEUMA.txt",
-      "data/ANIMAGUS/LIME EARS PNEUMA (BASS OFF).txt"
-    ]
-  },
-  {
     "id": "lime_ears_aether",
     "brand": "Lime Ears",
     "model": "Aether",
@@ -66918,6 +66773,56 @@
     ],
     "files": [
       "data/HANGOUT.AUDIO/LIME EARS AETHER R.txt"
+    ]
+  },
+  {
+    "id": "lime_ears_anima",
+    "brand": "Lime Ears",
+    "model": "Anima",
+    "variant": "",
+    "year": 2022,
+    "price_usd": 3400,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD+6BA+6EST",
+    "impedance": 32,
+    "sensitivity": 109,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Flagship",
+      "Resolving",
+      "Technical",
+      "Detailed",
+      "U-Shaped",
+      "Treblehead"
+    ],
+    "files": [
+      "data/ANIMAGUS/LIME EARS ANIMA.txt"
+    ]
+  },
+  {
+    "id": "lime_ears_anima_v2",
+    "brand": "Lime Ears",
+    "model": "Anima",
+    "variant": "V2",
+    "year": 2024,
+    "price_usd": 3750,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+10BA",
+    "impedance": 25,
+    "sensitivity": 100,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Flagship",
+      "Resolving",
+      "Technical",
+      "Detailed",
+      "U-Shaped",
+      "Treblehead"
+    ],
+    "files": [
+      "data/ANIMAGUS/LIME EARS ANIMA V2.txt"
     ]
   },
   {
@@ -67026,6 +66931,55 @@
     "files": [
       "data/HANGOUT.AUDIO/LIME EARS MODEL X (SAMPLE 1) (SWITCH OFF).txt",
       "data/HANGOUT.AUDIO/LIME EARS MODEL X (SAMPLE 2) (SWITCH OFF).txt"
+    ]
+  },
+  {
+    "id": "lime_ears_pneuma",
+    "brand": "Lime Ears",
+    "model": "Pneuma",
+    "variant": "",
+    "year": 2020,
+    "price_usd": 2000,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+4BA",
+    "impedance": 32,
+    "sensitivity": 109,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Flagship",
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "U-Shaped"
+    ],
+    "files": [
+      "data/VSG/LIME EARS PNEUMA.txt",
+      "data/ANIMAGUS/LIME EARS PNEUMA (BASS OFF).txt"
+    ]
+  },
+  {
+    "id": "lime_ears_pneuma_v2",
+    "brand": "Lime Ears",
+    "model": "Pneuma",
+    "variant": "V2",
+    "year": 2024,
+    "price_usd": 1980,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+4BA",
+    "impedance": 15,
+    "sensitivity": 109,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Flagship",
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "U-Shaped"
+    ],
+    "files": [
+      "data/ANIMAGUS/LIME EARS PNEUMA V2 (OFF).txt"
     ]
   },
   {
@@ -67851,7 +67805,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Earbuds (TWS)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Balanced",
       "Neutral",
       "Detailed",
@@ -67876,7 +67830,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Earbuds (TWS)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Balanced",
       "Detailed",
       "Punchy Bass",
@@ -69408,54 +69362,6 @@
     ]
   },
   {
-    "id": "meze_99_classics_v2",
-    "brand": "Meze Audio",
-    "model": "99 Classics",
-    "variant": "V2",
-    "year": 2025,
-    "price_usd": 350,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 16,
-    "sensitivity": 103,
-    "connector": "3.5mm",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Mid-Tier",
-      "Balanced",
-      "Warm",
-      "Smooth",
-      "Relaxed"
-    ],
-    "files": [
-	"data/AUDIOAMIGO/MEZE 99 CLASSICS V2.txt"
-	]
-  },
-  {
-    "id": "meze_strada",
-    "brand": "Meze Audio",
-    "model": "STRADA",
-    "variant": "",
-    "year": 2026,
-    "price_usd": 900,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 103,
-    "connector": "3.5mm",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Premium",
-      "Detailed",
-      "Resolving",
-      "Warm",
-      "Smooth"
-    ],
-    "files": [
-	"data/GADGETRY TECH/MEZE STRADA.txt"
-	]
-  },
-  {
     "id": "meze_99_neo",
     "brand": "Meze Audio",
     "model": "99",
@@ -69502,6 +69408,30 @@
     ],
     "files": [
       "data/ORATORY1990/MEZE 99 NOIR.txt"
+    ]
+  },
+  {
+    "id": "meze_99_classics_v2",
+    "brand": "Meze Audio",
+    "model": "99 Classics",
+    "variant": "V2",
+    "year": 2025,
+    "price_usd": 350,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 103,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Mid-Tier",
+      "Balanced",
+      "Warm",
+      "Smooth",
+      "Relaxed"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/MEZE 99 CLASSICS V2.txt"
     ]
   },
   {
@@ -69802,6 +69732,30 @@
     "files": [
       "data/HANGOUT.AUDIO/MEZE RAI SOLO.txt",
       "data/ORATORY1990/MEZE RAI SOLO.txt"
+    ]
+  },
+  {
+    "id": "meze_strada",
+    "brand": "Meze Audio",
+    "model": "STRADA",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 900,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 103,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Premium",
+      "Detailed",
+      "Resolving",
+      "Warm",
+      "Smooth"
+    ],
+    "files": [
+      "data/GADGETRY TECH/MEZE STRADA.txt"
     ]
   },
   {
@@ -70797,55 +70751,6 @@
     "files": [
       "data/HANGOUT.AUDIO/MOONDROP A8.txt",
       "data/PAUL WASABII/MOONDROP A8.txt"
-    ]
-  },
-  {
-    "id": "moondrop_silicon",
-    "brand": "Moondrop",
-    "model": "Silicon",
-    "variant": "",
-    "year": 2026,
-    "price_usd": 250,
-    "driver_type": "Tribrid",
-    "driver_config": "1DD+2BA+2MEMS",
-    "impedance": 18,
-    "sensitivity": 104,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Neutral",
-      "Detailed",
-      "Resolving",
-      "Technical",
-      "Reference",
-      "Collab",
-      "Mid-Tier"
-    ],
-    "files": [
-      "data/HANGOUT.AUDIO/MOONDROP SILICON.txt"
-    ]
-  },
-  {
-    "id": "moondrop_skyland",
-    "brand": "Moondrop",
-    "model": "Skyland",
-    "variant": "",
-    "year": 2026,
-    "price_usd": 60,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 120,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Balanced",
-      "Vocal-Focused",
-      "Smooth",
-      "Budget"
-    ],
-    "files": [
-      "data/SUPER REVIEW/MOONDROP SKYLAND.txt"
     ]
   },
   {
@@ -72032,7 +71937,7 @@
     "connector": "Fixed Cable",
     "form_factor": "IEM",
     "tags": [
-      "Mid-Tier",
+      "Budget",
       "Vocal-Focused",
       "Balanced",
       "Detailed",
@@ -72546,6 +72451,55 @@
       "data/HYPETHESONICS/MOONDROP S8.txt",
       "data/SQUIGLINK/MOONDROP S8.txt",
       "data/SUPER REVIEW/MOONDROP S8.txt"
+    ]
+  },
+  {
+    "id": "moondrop_silicon",
+    "brand": "Moondrop",
+    "model": "Silicon",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 250,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD+2BA+2MEMS",
+    "impedance": 18,
+    "sensitivity": 104,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Neutral",
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Reference",
+      "Collab",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/HANGOUT.AUDIO/MOONDROP SILICON.txt"
+    ]
+  },
+  {
+    "id": "moondrop_skyland",
+    "brand": "Moondrop",
+    "model": "Skyland",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 60,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 120,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Vocal-Focused",
+      "Smooth",
+      "Budget"
+    ],
+    "files": [
+      "data/SUPER REVIEW/MOONDROP SKYLAND.txt"
     ]
   },
   {
@@ -73093,7 +73047,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Earbuds (TWS)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Balanced",
       "Detailed",
       "Smooth",
@@ -75884,29 +75838,6 @@
     ]
   },
   {
-    "id": "noble_audio_trident",
-    "brand": "Noble Audio",
-    "model": "Trident",
-    "variant": "",
-    "year": 2016,
-    "price_usd": 400,
-    "driver_type": "BA",
-    "driver_config": "3BA",
-    "impedance": 30,
-    "sensitivity": 110,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Balanced",
-      "Smooth",
-      "Detailed",
-      "Mid-Tier"
-    ],
-    "files": [
-      "data/HANGOUT.AUDIO/NOBLE AUDIO TRIDENT.txt"
-    ]
-  },
-  {
     "id": "noble_audio_chronicle",
     "brand": "Noble Audio",
     "model": "Chronicle",
@@ -76586,6 +76517,29 @@
     ],
     "files": [
       "data/HYPETHESONICS/NOBLE AUDIO SULTAN SE.txt"
+    ]
+  },
+  {
+    "id": "noble_audio_trident",
+    "brand": "Noble Audio",
+    "model": "Trident",
+    "variant": "",
+    "year": 2016,
+    "price_usd": 400,
+    "driver_type": "BA",
+    "driver_config": "3BA",
+    "impedance": 30,
+    "sensitivity": 110,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Smooth",
+      "Detailed",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/HANGOUT.AUDIO/NOBLE AUDIO TRIDENT.txt"
     ]
   },
   {
@@ -79274,7 +79228,7 @@
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Warm",
       "Basshead",
       "Punchy Bass",
@@ -79299,7 +79253,7 @@
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "V-Shaped",
       "Punchy Bass",
       "Sub-Bass",
@@ -79657,7 +79611,7 @@
     "connector": "Fixed Cable",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Vocal-Focused",
       "Warm",
       "Smooth",
@@ -82203,7 +82157,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Over-Ear Headphones",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Warm",
       "Basshead",
       "Punchy Bass",
@@ -82320,7 +82274,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Earbuds (TWS)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Vocal-Focused",
       "Neutral",
       "Smooth"
@@ -82366,7 +82320,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Earbuds (TWS)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Vocal-Focused",
       "Neutral",
       "Smooth"
@@ -82847,7 +82801,7 @@
     "connector": "Fixed Cable",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Warm",
       "Punchy Bass",
       "V-Shaped",
@@ -84429,55 +84383,6 @@
     ]
   },
   {
-    "id": "qdc_white_tiger",
-    "brand": "qdc",
-    "model": "White Tiger",
-    "variant": "",
-    "year": 2023,
-    "price_usd": 1400,
-    "driver_type": "Tribrid",
-    "driver_config": "1DD+6BA+2EST",
-    "impedance": 15,
-    "sensitivity": 105,
-    "connector": "QDC",
-    "form_factor": "IEM",
-    "tags": [
-      "Balanced",
-      "Resolving",
-      "Technical",
-      "Detailed",
-      "Premium",
-      "U-Shaped",
-      "Treblehead"
-    ],
-    "files": [
-      "data/ADEN/QDC WHITE TIGER.txt"
-    ]
-  },
-  {
-    "id": "qoa_affinity",
-    "brand": "QoA",
-    "model": "Affinity",
-    "variant": "",
-    "year": 2022,
-    "price_usd": 100,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 22,
-    "sensitivity": 107,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Mid-Tier",
-      "Warm",
-      "Balanced",
-      "Smooth"
-    ],
-    "files": [
-      "data/EPLV/QOA AFFINITY.txt"
-    ]
-  },
-  {
     "id": "qdc_uranus",
     "brand": "qdc",
     "model": "Uranus",
@@ -84501,6 +84406,32 @@
       "data/HANGOUT.AUDIO/QDC URANUS.txt",
       "data/SQUIGLINK/QDC URANUS.txt",
       "data/SUPER REVIEW/QDC URANUS.txt"
+    ]
+  },
+  {
+    "id": "qdc_white_tiger",
+    "brand": "qdc",
+    "model": "White Tiger",
+    "variant": "",
+    "year": 2023,
+    "price_usd": 1400,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD+6BA+2EST",
+    "impedance": 15,
+    "sensitivity": 105,
+    "connector": "QDC",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Resolving",
+      "Technical",
+      "Detailed",
+      "Premium",
+      "U-Shaped",
+      "Treblehead"
+    ],
+    "files": [
+      "data/ADEN/QDC WHITE TIGER.txt"
     ]
   },
   {
@@ -84982,6 +84913,29 @@
     ],
     "files": [
       "data/FAHRYST/QUEEN OF AUDIO ADONIX NEW.txt"
+    ]
+  },
+  {
+    "id": "qoa_affinity",
+    "brand": "QoA",
+    "model": "Affinity",
+    "variant": "",
+    "year": 2022,
+    "price_usd": 100,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 22,
+    "sensitivity": 107,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Mid-Tier",
+      "Warm",
+      "Balanced",
+      "Smooth"
+    ],
+    "files": [
+      "data/EPLV/QOA AFFINITY.txt"
     ]
   },
   {
@@ -86014,7 +85968,7 @@
     "connector": "Fixed Cable",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Gaming",
       "Punchy Bass",
       "V-Shaped",
@@ -86022,6 +85976,29 @@
     ],
     "files": [
       "data/RTINGS/RAZER HAMMERHEAD USB C ANC.txt"
+    ]
+  },
+  {
+    "id": "razer_hammerhead_duo",
+    "brand": "Razer",
+    "model": "Hammerhead Duo",
+    "variant": "",
+    "year": 2019,
+    "price_usd": 60,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+1BA",
+    "impedance": 32,
+    "sensitivity": 112,
+    "connector": "Fixed Cable",
+    "form_factor": "IEM",
+    "tags": [
+      "V-Shaped",
+      "Gaming",
+      "Punchy Bass",
+      "Budget"
+    ],
+    "files": [
+      "data/EKAUDIO/RAZER HAMMERHEAD DUO.txt"
     ]
   },
   {
@@ -86061,7 +86038,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Earbuds (TWS)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Gaming",
       "Punchy Bass",
       "V-Shaped",
@@ -86093,29 +86070,6 @@
     ],
     "files": [
       "data/RTINGS/RAZER HAMMERHEAD TRUE WIRELESS PRO.txt"
-    ]
-  },
-  {
-    "id": "razer_hammerhead_duo",
-    "brand": "Razer",
-    "model": "Hammerhead Duo",
-    "variant": "",
-    "year": 2019,
-    "price_usd": 60,
-    "driver_type": "Hybrid",
-    "driver_config": "1DD+1BA",
-    "impedance": 32,
-    "sensitivity": 112,
-    "connector": "Fixed Cable",
-    "form_factor": "IEM",
-    "tags": [
-      "V-Shaped",
-      "Gaming",
-      "Punchy Bass",
-      "Budget"
-    ],
-    "files": [
-      "data/EKAUDIO/RAZER HAMMERHEAD DUO.txt"
     ]
   },
   {
@@ -86891,7 +86845,7 @@
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Limited-Edition",
       "Neutral",
       "Detailed",
@@ -87626,7 +87580,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Over-Ear Headphones",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Gaming",
       "Punchy Bass",
       "V-Shaped",
@@ -87812,30 +87766,6 @@
     ]
   },
   {
-    "id": "roseselsa_cambrian",
-    "brand": "Roseselsa",
-    "model": "Cambrian",
-    "variant": "",
-    "year": 2026,
-    "price_usd": 55,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 102,
-    "connector": "Bluetooth",
-    "form_factor": "Wireless Over-Ear Headphones",
-    "tags": [
-      "Warm",
-      "Balanced",
-      "Smooth",
-      "Budget",
-      "Relaxed"
-    ],
-    "files": [
-      "data/FERNANDA GUNSAN/ROSESELSA CAMBRIAN.txt"
-    ]
-  },
-  {
     "id": "roseselsa_aura_evo",
     "brand": "Roseselsa",
     "model": "Aura",
@@ -87908,6 +87838,30 @@
     ]
   },
   {
+    "id": "roseselsa_cambrian",
+    "brand": "Roseselsa",
+    "model": "Cambrian",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 55,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 102,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Over-Ear Headphones",
+    "tags": [
+      "Warm",
+      "Balanced",
+      "Smooth",
+      "Budget",
+      "Relaxed"
+    ],
+    "files": [
+      "data/FERNANDA GUNSAN/ROSESELSA CAMBRIAN.txt"
+    ]
+  },
+  {
     "id": "roseselsa_ceramics",
     "brand": "Roseselsa",
     "model": "Ceramics",
@@ -87940,29 +87894,6 @@
     ]
   },
   {
-    "id": "roseselsa_ceramics_ultra",
-    "brand": "Roseselsa",
-    "model": "Ceramics",
-    "variant": "Ultra",
-    "year": 2025,
-    "price_usd": 40,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 102,
-    "connector": "Bluetooth",
-    "form_factor": "Wireless Earbuds (TWS)",
-    "tags": [
-      "Balanced",
-      "Warm",
-      "Punchy Bass",
-      "Budget"
-    ],
-    "files": [
-      "data/CSI-ZONE/ROSE CERAMICS ULTRA HIFI.txt"
-    ]
-  },
-  {
     "id": "roseselsa_ceramics_mk2",
     "brand": "Roseselsa",
     "model": "Ceramics",
@@ -87983,6 +87914,29 @@
     ],
     "files": [
       "data/CSI-ZONE/ROSESELSA CERAMICS MK2.txt"
+    ]
+  },
+  {
+    "id": "roseselsa_ceramics_ultra",
+    "brand": "Roseselsa",
+    "model": "Ceramics",
+    "variant": "Ultra",
+    "year": 2025,
+    "price_usd": 40,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 102,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Earbuds (TWS)",
+    "tags": [
+      "Balanced",
+      "Warm",
+      "Punchy Bass",
+      "Budget"
+    ],
+    "files": [
+      "data/CSI-ZONE/ROSE CERAMICS ULTRA HIFI.txt"
     ]
   },
   {
@@ -89302,33 +89256,6 @@
     ]
   },
   {
-    "id": "seeaudio_bravery_ae",
-    "brand": "SeeAudio",
-    "model": "Bravery",
-    "variant": "AE",
-    "year": 2022,
-    "price_usd": 300,
-    "driver_type": "BA",
-    "driver_config": "4BA",
-    "impedance": 18,
-    "sensitivity": 110,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Mid-Tier",
-      "Balanced",
-      "Vocal-Focused",
-      "Smooth",
-      "Detailed",
-      "Limited-Edition",
-      "U-Shaped",
-      "Treblehead"
-    ],
-    "files": [
-      "data/JAYTISS/SEEAUDIO BRAVERY AE.txt"
-    ]
-  },
-  {
     "id": "seeaudio_bravery_24",
     "brand": "SeeAudio",
     "model": "Bravery",
@@ -89353,6 +89280,33 @@
     ],
     "files": [
       "data/ATECHREVIEWS/SEEAUDIO BRAVERY 2024.txt"
+    ]
+  },
+  {
+    "id": "seeaudio_bravery_ae",
+    "brand": "SeeAudio",
+    "model": "Bravery",
+    "variant": "AE",
+    "year": 2022,
+    "price_usd": 300,
+    "driver_type": "BA",
+    "driver_config": "4BA",
+    "impedance": 18,
+    "sensitivity": 110,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Mid-Tier",
+      "Balanced",
+      "Vocal-Focused",
+      "Smooth",
+      "Detailed",
+      "Limited-Edition",
+      "U-Shaped",
+      "Treblehead"
+    ],
+    "files": [
+      "data/JAYTISS/SEEAUDIO BRAVERY AE.txt"
     ]
   },
   {
@@ -90039,154 +89993,6 @@
     ]
   },
   {
-    "id": "sennheiser_hd_590",
-    "brand": "Sennheiser",
-    "model": "HD 590",
-    "variant": "",
-    "year": 2001,
-    "price_usd": 350,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 120,
-    "sensitivity": 97,
-    "connector": "3.5mm",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Mid-Tier",
-      "Detailed",
-      "Bright",
-      "Wide-Stage",
-      "Resolving"
-    ],
-    "files": [
-	"data/TDL/SENNHEISER HD590 HEADPHONE.txt"
-	]
-  },
-  {
-    "id": "sennheiser_hd_26_pro",
-    "brand": "Sennheiser",
-    "model": "HD 26 Pro",
-    "variant": "",
-    "year": 2014,
-    "price_usd": 300,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 100,
-    "sensitivity": 105,
-    "connector": "3.5mm",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Mid-Tier",
-      "Studio-Monitoring",
-      "Neutral",
-      "Detailed",
-      "Analytical",
-      "Reference"
-    ],
-    "files": [
-	"data/EARPHONES ARCHIVE/SENNHEISER HD26 PRO.txt"
-	]
-  },
-  {
-    "id": "sennheiser_hd_579",
-    "brand": "Sennheiser",
-    "model": "HD 579",
-    "variant": "",
-    "year": 2016,
-    "price_usd": 200,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 50,
-    "sensitivity": 106,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Mid-Tier",
-      "Warm",
-      "Balanced",
-      "Smooth",
-      "Relaxed",
-      "Wide-Stage"
-    ],
-    "files": [
-	"data/HANGOUT.AUDIO/SENNHEISER HD579.txt"
-	]
-  },
-  {
-    "id": "sennheiser_hd_400s",
-    "brand": "Sennheiser",
-    "model": "HD 400S",
-    "variant": "",
-    "year": 2019,
-    "price_usd": 70,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 18,
-    "sensitivity": 120,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Budget",
-      "Warm",
-      "Punchy Bass",
-      "Smooth",
-      "V-Shaped"
-    ],
-    "files": [
-	"data/HANGOUT.AUDIO/SENNHEISER HD400S.txt"
-	]
-  },
-  {
-    "id": "sennheiser_hd_200_pro",
-    "brand": "Sennheiser",
-    "model": "HD 200 Pro",
-    "variant": "",
-    "year": 2017,
-    "price_usd": 70,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 108,
-    "connector": "Fixed Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Punchy Bass",
-      "Warm",
-      "Smooth",
-      "Budget",
-      "Studio-Monitoring"
-    ],
-    "files": [
-      "data/LISTENER/SENNHEISER HD 200 PRO.txt"
-    ]
-  },
-  {
-    "id": "sennheiser_hd_480_pro",
-    "brand": "Sennheiser",
-    "model": "HD 480 Pro",
-    "variant": "",
-    "year": 2026,
-    "price_usd": 400,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 130,
-    "sensitivity": 104,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Neutral",
-      "Punchy Bass",
-      "Detailed",
-      "Resolving",
-      "Reference",
-      "Mid-Tier",
-      "Studio-Monitoring"
-    ],
-    "files": [
-      "data/SUPER REVIEW/SENNHEISER HD 480 PRO.txt"
-    ]
-  },
-  {
     "id": "sennheiser_accentum",
     "brand": "Sennheiser",
     "model": "Accentum",
@@ -90657,6 +90463,30 @@
     ]
   },
   {
+    "id": "sennheiser_hd_200_pro",
+    "brand": "Sennheiser",
+    "model": "HD 200 Pro",
+    "variant": "",
+    "year": 2017,
+    "price_usd": 70,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 108,
+    "connector": "Fixed Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Punchy Bass",
+      "Warm",
+      "Smooth",
+      "Budget",
+      "Studio-Monitoring"
+    ],
+    "files": [
+      "data/LISTENER/SENNHEISER HD 200 PRO.txt"
+    ]
+  },
+  {
     "id": "sennheiser_hd_201",
     "brand": "Sennheiser",
     "model": "HD 201",
@@ -90943,6 +90773,31 @@
     ]
   },
   {
+    "id": "sennheiser_hd_25",
+    "brand": "Sennheiser",
+    "model": "HD 25",
+    "variant": "",
+    "year": 2016,
+    "price_usd": 150,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 70,
+    "sensitivity": 120,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Mid-Tier",
+      "Studio-Monitoring",
+      "Reference",
+      "Punchy Bass",
+      "Detailed",
+      "Good-Imaging"
+    ],
+    "files": [
+      "data/RTINGS/SENNHEISER HD 25.txt"
+    ]
+  },
+  {
     "id": "sennheiser_hd_25_1",
     "brand": "Sennheiser",
     "model": "HD 25",
@@ -90968,57 +90823,32 @@
     ]
   },
   {
-  "id": "sennheiser_hd_25_1_ii",
-  "brand": "Sennheiser",
-  "model": "HD 25",
-  "variant": "1 II",
-  "year": 2007,
-  "price_usd": 250,
-  "driver_type": "DD",
-  "driver_config": "1DD",
-  "impedance": 70,
-  "sensitivity": 120,
-  "connector": "Detachable Cable",
-  "form_factor": "Over-Ear Headphones (Wired)",
-  "tags": [
-    "Mid-Tier",
-    "Studio-Monitoring",
-    "Reference",
-    "Neutral",
-    "Detailed",
-    "Punchy Bass"
-  ],
-  "files": [
-    "data/INNERFIDELITY/SENNHEISER HD 25 1 II.txt",
-    "data/ORATORY1990/SENNHEISER HD25 1 II.txt",
-    "data/INNERFIDELITY/SENNHEISER HD 25 1 II B.txt"
-  ]
-},
-{
-  "id": "sennheiser_hd_25",
-  "brand": "Sennheiser",
-  "model": "HD 25",
-  "variant": "",
-  "year": 2016,
-  "price_usd": 150,
-  "driver_type": "DD",
-  "driver_config": "1DD",
-  "impedance": 70,
-  "sensitivity": 120,
-  "connector": "Detachable Cable",
-  "form_factor": "Over-Ear Headphones (Wired)",
-  "tags": [
-    "Mid-Tier",
-    "Studio-Monitoring",
-    "Reference",
-    "Punchy Bass",
-    "Detailed",
-    "Good-Imaging"
-  ],
-  "files": [
-    "data/RTINGS/SENNHEISER HD 25.txt"
-  ]
-},
+    "id": "sennheiser_hd_25_1_ii",
+    "brand": "Sennheiser",
+    "model": "HD 25",
+    "variant": "1 II",
+    "year": 2007,
+    "price_usd": 250,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 70,
+    "sensitivity": 120,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Mid-Tier",
+      "Studio-Monitoring",
+      "Reference",
+      "Neutral",
+      "Detailed",
+      "Punchy Bass"
+    ],
+    "files": [
+      "data/INNERFIDELITY/SENNHEISER HD 25 1 II.txt",
+      "data/ORATORY1990/SENNHEISER HD25 1 II.txt",
+      "data/INNERFIDELITY/SENNHEISER HD 25 1 II B.txt"
+    ]
+  },
   {
     "id": "sennheiser_hd_25_aluminum",
     "brand": "Sennheiser",
@@ -91090,6 +90920,31 @@
     ],
     "files": [
       "data/INNERFIDELITY/SENNHEISER HD 250 II.txt"
+    ]
+  },
+  {
+    "id": "sennheiser_hd_26_pro",
+    "brand": "Sennheiser",
+    "model": "HD 26 Pro",
+    "variant": "",
+    "year": 2014,
+    "price_usd": 300,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 100,
+    "sensitivity": 105,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Mid-Tier",
+      "Studio-Monitoring",
+      "Neutral",
+      "Detailed",
+      "Analytical",
+      "Reference"
+    ],
+    "files": [
+      "data/EARPHONES ARCHIVE/SENNHEISER HD26 PRO.txt"
     ]
   },
   {
@@ -91217,6 +91072,30 @@
     ],
     "files": [
       "data/AURICULARES ARGENTINA/SENNHEISER HD 400 PRO.txt"
+    ]
+  },
+  {
+    "id": "sennheiser_hd_400s",
+    "brand": "Sennheiser",
+    "model": "HD 400S",
+    "variant": "",
+    "year": 2019,
+    "price_usd": 70,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 18,
+    "sensitivity": 120,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Budget",
+      "Warm",
+      "Punchy Bass",
+      "Smooth",
+      "V-Shaped"
+    ],
+    "files": [
+      "data/HANGOUT.AUDIO/SENNHEISER HD400S.txt"
     ]
   },
   {
@@ -91478,6 +91357,32 @@
     ],
     "files": [
       "data/INNERFIDELITY/SENNHEISER HD 471I.txt"
+    ]
+  },
+  {
+    "id": "sennheiser_hd_480_pro",
+    "brand": "Sennheiser",
+    "model": "HD 480 Pro",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 400,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 130,
+    "sensitivity": 104,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Neutral",
+      "Punchy Bass",
+      "Detailed",
+      "Resolving",
+      "Reference",
+      "Mid-Tier",
+      "Studio-Monitoring"
+    ],
+    "files": [
+      "data/SUPER REVIEW/SENNHEISER HD 480 PRO.txt"
     ]
   },
   {
@@ -91876,6 +91781,31 @@
     ]
   },
   {
+    "id": "sennheiser_hd_579",
+    "brand": "Sennheiser",
+    "model": "HD 579",
+    "variant": "",
+    "year": 2016,
+    "price_usd": 200,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 50,
+    "sensitivity": 106,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Mid-Tier",
+      "Warm",
+      "Balanced",
+      "Smooth",
+      "Relaxed",
+      "Wide-Stage"
+    ],
+    "files": [
+      "data/HANGOUT.AUDIO/SENNHEISER HD579.txt"
+    ]
+  },
+  {
     "id": "sennheiser_hd_580",
     "brand": "Sennheiser",
     "model": "HD 580",
@@ -91929,6 +91859,30 @@
       "data/ORATORY1990/SENNHEISER HD 58X.txt",
       "data/RTINGS/SENNHEISER HD 58X.txt",
       "data/SUPER REVIEW/SENNHEISER HD 58X.txt"
+    ]
+  },
+  {
+    "id": "sennheiser_hd_590",
+    "brand": "Sennheiser",
+    "model": "HD 590",
+    "variant": "",
+    "year": 2001,
+    "price_usd": 350,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 120,
+    "sensitivity": 97,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Mid-Tier",
+      "Detailed",
+      "Bright",
+      "Wide-Stage",
+      "Resolving"
+    ],
+    "files": [
+      "data/TDL/SENNHEISER HD590 HEADPHONE.txt"
     ]
   },
   {
@@ -92941,7 +92895,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Over-Ear Headphones",
     "tags": [
-      "Mid-Tier",
+      "Premium",
       "Balanced",
       "Warm",
       "Punchy Bass",
@@ -95140,30 +95094,6 @@
     ]
   },
   {
-    "id": "shure_srh240a",
-    "brand": "Shure",
-    "model": "SRH240A",
-    "variant": "",
-    "year": 2011,
-    "price_usd": 60,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 38,
-    "sensitivity": 102,
-    "connector": "Fixed Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Budget",
-      "Studio-Monitoring",
-      "Neutral",
-      "Detailed",
-      "Reference"
-    ],
-    "files": [
-	"data/HANGOUT.AUDIO/SHURE SRH240A.txt"
-	]
-  },
-  {
     "id": "shure_aonic_3",
     "brand": "Shure",
     "model": "AONIC 3",
@@ -95766,6 +95696,30 @@
     "files": [
       "data/HEADPHONE.COM LEGACY/SHURE SRH240.txt",
       "data/RTINGS/SHURE SRH240.txt"
+    ]
+  },
+  {
+    "id": "shure_srh240a",
+    "brand": "Shure",
+    "model": "SRH240A",
+    "variant": "",
+    "year": 2011,
+    "price_usd": 60,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 38,
+    "sensitivity": 102,
+    "connector": "Fixed Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Budget",
+      "Studio-Monitoring",
+      "Neutral",
+      "Detailed",
+      "Reference"
+    ],
+    "files": [
+      "data/HANGOUT.AUDIO/SHURE SRH240A.txt"
     ]
   },
   {
@@ -96581,78 +96535,78 @@
     ]
   },
   {
-"id": "simgot_ew300",
-"brand": "Simgot",
-"model": "EW300",
-"variant": "",
-"year": 2024,
-"price_usd": 70,
-"driver_type": "Tribrid",
-"driver_config": "1DD + 1Planar + 1PZT",
-"impedance": 28,
-"sensitivity": 121,
-"connector": "2-pin",
-"form_factor": "IEM",
-"tags": [
-"Budget",
-"Bright",
-"Detailed",
-"Balanced",
-"Treblehead",
-"U-Shaped"
-],
-"files": [
-"data/AUDIOAMIGO/SIMGOT EW300 DSP GOLD.txt",
-"data/AUDIOAMIGO/SIMGOT EW300 DSP SILVER.txt",
-"data/FAHRYST/SIMGOT AUDIO EW300.txt",
-"data/FILK/SIMGOT AUDIO EW300.txt",
-"data/HI END PORTABLE/SIMGOT AUDIO EW300.txt",
-"data/JAYTISS/SIMGOT AUDIO EW300 DSP.txt",
-"data/KAZI/SIMGOT AUDIO EW300 DSP.txt",
-"data/KAZI/SIMGOT AUDIO EW300.txt",
-"data/PAUL WASABII/SIMGOT EW300 GOLD.txt",
-"data/PAUL WASABII/SIMGOT EW300 SILVER.txt",
-"data/PAUL WASABII/SIMGOT EW300 DSP SILVER 1FOAM ANALOG CABLE.txt",
-"data/PAUL WASABII/SIMGOT EW300 SILVER+1FOAM.txt",
-"data/AUDIOAMIGO/SIMGOT EW300 DSP GOLD 3.5MM.txt",
-"data/AUDIOAMIGO/SIMGOT EW300 DSP SILVER 3.5MM.txt",
-"data/AUDIOAMIGO/SIMGOT EW300 STD GOLD 15ohm.txt",
-"data/AUDIOAMIGO/SIMGOT EW300 STD GOLD.txt",
-"data/AUDIOAMIGO/SIMGOT EW300 STD SILVER DSP.txt",
-"data/AUDIOAMIGO/SIMGOT EW300 STD SILVER.txt",
-"data/RIKUDOUGOKU/SIMGOT AUDIO EW300.txt"
-]
-},
-{
-"id": "simgot_ew300_hbb",
-"brand": "Simgot",
-"model": "EW300",
-"variant": "HBB",
-"year": 2024,
-"price_usd": 75,
-"driver_type": "Tribrid",
-"driver_config": "1DD + 1Planar + 1PZT",
-"impedance": 28,
-"sensitivity": 121,
-"connector": "2-pin",
-"form_factor": "IEM",
-"tags": [
-"Budget",
-"Collab",
-"Warm",
-"Punchy Bass",
-"Smooth",
-"Detailed",
-"Gaming"
-],
-"files": [
-"data/PAUL WASABII/SIMGOT EW300 HBB GOLD.txt",
-"data/PAUL WASABII/SIMGOT EW300 HBB SILVER.txt",
-"data/AUDIOAMIGO/SIMGOT EW300 HBB GOLD DSP.txt",
-"data/AUDIOAMIGO/SIMGOT EW300 HBB GOLD.txt",
-"data/AUDIOAMIGO/SIMGOT EW300 HBB SILVER.txt"
-]
-},
+    "id": "simgot_ew300",
+    "brand": "Simgot",
+    "model": "EW300",
+    "variant": "",
+    "year": 2024,
+    "price_usd": 70,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD + 1Planar + 1PZT",
+    "impedance": 28,
+    "sensitivity": 121,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Budget",
+      "Bright",
+      "Detailed",
+      "Balanced",
+      "Treblehead",
+      "U-Shaped"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/SIMGOT EW300 DSP GOLD.txt",
+      "data/AUDIOAMIGO/SIMGOT EW300 DSP SILVER.txt",
+      "data/FAHRYST/SIMGOT AUDIO EW300.txt",
+      "data/FILK/SIMGOT AUDIO EW300.txt",
+      "data/HI END PORTABLE/SIMGOT AUDIO EW300.txt",
+      "data/JAYTISS/SIMGOT AUDIO EW300 DSP.txt",
+      "data/KAZI/SIMGOT AUDIO EW300 DSP.txt",
+      "data/KAZI/SIMGOT AUDIO EW300.txt",
+      "data/PAUL WASABII/SIMGOT EW300 GOLD.txt",
+      "data/PAUL WASABII/SIMGOT EW300 SILVER.txt",
+      "data/PAUL WASABII/SIMGOT EW300 DSP SILVER 1FOAM ANALOG CABLE.txt",
+      "data/PAUL WASABII/SIMGOT EW300 SILVER+1FOAM.txt",
+      "data/AUDIOAMIGO/SIMGOT EW300 DSP GOLD 3.5MM.txt",
+      "data/AUDIOAMIGO/SIMGOT EW300 DSP SILVER 3.5MM.txt",
+      "data/AUDIOAMIGO/SIMGOT EW300 STD GOLD 15ohm.txt",
+      "data/AUDIOAMIGO/SIMGOT EW300 STD GOLD.txt",
+      "data/AUDIOAMIGO/SIMGOT EW300 STD SILVER DSP.txt",
+      "data/AUDIOAMIGO/SIMGOT EW300 STD SILVER.txt",
+      "data/RIKUDOUGOKU/SIMGOT AUDIO EW300.txt"
+    ]
+  },
+  {
+    "id": "simgot_ew300_hbb",
+    "brand": "Simgot",
+    "model": "EW300",
+    "variant": "HBB",
+    "year": 2024,
+    "price_usd": 75,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD + 1Planar + 1PZT",
+    "impedance": 28,
+    "sensitivity": 121,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Budget",
+      "Collab",
+      "Warm",
+      "Punchy Bass",
+      "Smooth",
+      "Detailed",
+      "Gaming"
+    ],
+    "files": [
+      "data/PAUL WASABII/SIMGOT EW300 HBB GOLD.txt",
+      "data/PAUL WASABII/SIMGOT EW300 HBB SILVER.txt",
+      "data/AUDIOAMIGO/SIMGOT EW300 HBB GOLD DSP.txt",
+      "data/AUDIOAMIGO/SIMGOT EW300 HBB GOLD.txt",
+      "data/AUDIOAMIGO/SIMGOT EW300 HBB SILVER.txt"
+    ]
+  },
   {
     "id": "simgot_fld100",
     "brand": "Simgot",
@@ -97098,67 +97052,67 @@
     ]
   },
   {
-"id": "sivga_que",
-"brand": "Sivga",
-"model": "Que",
-"variant": "",
-"year": 2024,
-"price_usd": 70,
-"driver_type": "DD",
-"driver_config": "1DD",
-"impedance": 32,
-"sensitivity": 108,
-"connector": "2-pin",
-"form_factor": "IEM",
-"tags": [
-"Balanced",
-"Smooth",
-"Wide-Stage",
-"Resolving",
-"Technical",
-"Detailed",
-"Good-Imaging",
-"Warm",
-"Relaxed",
-"Budget"
-],
-"files": [
-"data/AUDIOAMIGO/SIVGA QUE.txt",
-"data/DUCBLOKE/SIVGA QUE.txt",
-"data/JAYTISS/SIVGA QUE.txt",
-"data/PAUL WASABII/SIVGA QUE.txt",
-"data/SQUIGLINK/SIVGA QUE.txt",
-"data/SUPER REVIEW/SIVGA QUE.txt",
-"data/TONEDEAFMONK/SIVGA QUE.txt"
-]
-},
-{
-"id": "sivga_que_utg",
-"brand": "Sivga",
-"model": "Que",
-"variant": "UTG",
-"year": 2025,
-"price_usd": 90,
-"driver_type": "DD",
-"driver_config": "1DD",
-"impedance": 32,
-"sensitivity": 103,
-"connector": "2-pin",
-"form_factor": "IEM",
-"tags": [
-"Budget",
-"Neutral",
-"Detailed",
-"Resolving",
-"Technical",
-"Analytical",
-"Smooth"
-],
-"files": [
-"data/AUDIOAMIGO/SIVGA QUE UTG.txt",
-"data/TONEDEAFMONK/SIVGA QUE UTG.txt"
-]
-},
+    "id": "sivga_que",
+    "brand": "Sivga",
+    "model": "Que",
+    "variant": "",
+    "year": 2024,
+    "price_usd": 70,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 108,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Smooth",
+      "Wide-Stage",
+      "Resolving",
+      "Technical",
+      "Detailed",
+      "Good-Imaging",
+      "Warm",
+      "Relaxed",
+      "Budget"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/SIVGA QUE.txt",
+      "data/DUCBLOKE/SIVGA QUE.txt",
+      "data/JAYTISS/SIVGA QUE.txt",
+      "data/PAUL WASABII/SIVGA QUE.txt",
+      "data/SQUIGLINK/SIVGA QUE.txt",
+      "data/SUPER REVIEW/SIVGA QUE.txt",
+      "data/TONEDEAFMONK/SIVGA QUE.txt"
+    ]
+  },
+  {
+    "id": "sivga_que_utg",
+    "brand": "Sivga",
+    "model": "Que",
+    "variant": "UTG",
+    "year": 2025,
+    "price_usd": 90,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 103,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Budget",
+      "Neutral",
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Analytical",
+      "Smooth"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/SIVGA QUE UTG.txt",
+      "data/TONEDEAFMONK/SIVGA QUE UTG.txt"
+    ]
+  },
   {
     "id": "sivga_robin",
     "brand": "Sivga",
@@ -99457,31 +99411,6 @@
     ]
   },
   {
-    "id": "sony_mdr_7510",
-    "brand": "Sony",
-    "model": "MDR-7510",
-    "variant": "",
-    "year": 2011,
-    "price_usd": 130,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 24,
-    "sensitivity": 108,
-    "connector": "Fixed Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Mid-Tier",
-      "Neutral",
-      "Studio-Monitoring",
-      "Detailed",
-      "Reference",
-      "Balanced"
-    ],
-    "files": [
-	"data/HANGOUT.AUDIO/SONY MDR 7510.txt"
-	]
-  },
-  {
     "id": "sony_mdr_1am2",
     "brand": "Sony",
     "model": "MDR-1AM2",
@@ -99654,6 +99583,31 @@
     "files": [
       "data/HEADPHONE.COM LEGACY/SONY MDR 7509HD.txt",
       "data/INNERFIDELITY/SONY MDR 7509HD.txt"
+    ]
+  },
+  {
+    "id": "sony_mdr_7510",
+    "brand": "Sony",
+    "model": "MDR-7510",
+    "variant": "",
+    "year": 2011,
+    "price_usd": 130,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 24,
+    "sensitivity": 108,
+    "connector": "Fixed Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Mid-Tier",
+      "Neutral",
+      "Studio-Monitoring",
+      "Detailed",
+      "Reference",
+      "Balanced"
+    ],
+    "files": [
+      "data/HANGOUT.AUDIO/SONY MDR 7510.txt"
     ]
   },
   {
@@ -101058,7 +101012,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Over-Ear Headphones",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Gaming",
       "Good-Imaging",
       "Punchy Bass",
@@ -101294,7 +101248,7 @@
     "connector": "Bluetooth",
     "form_factor": "Wireless Earbuds (TWS)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Balanced",
       "Warm",
       "Punchy Bass",
@@ -102511,7 +102465,7 @@
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Mid-Tier",
+      "Budget",
       "Detailed",
       "Bright",
       "Resolving",
@@ -103209,29 +103163,6 @@
     ]
   },
   {
-    "id": "soundpeats_sonic_pro",
-    "brand": "SoundPEATS",
-    "model": "Sonic",
-    "variant": "Pro",
-    "year": 2021,
-    "price_usd": 60,
-    "driver_type": "BA",
-    "driver_config": "2BA",
-    "impedance": 16,
-    "sensitivity": 102,
-    "connector": "Bluetooth",
-    "form_factor": "Wireless Earbuds (TWS)",
-    "tags": [
-      "Balanced",
-      "Smooth",
-      "Detailed",
-      "Budget"
-    ],
-    "files": [
-      "data/DCINSIDE/SOUNDPEATS SONIC PRO S1.txt"
-    ]
-  },
-  {
     "id": "soundpeats_air3",
     "brand": "SoundPEATS",
     "model": "Air3",
@@ -103922,6 +103853,29 @@
     ],
     "files": [
       "data/SIDE SALAD AUDIO/SOUNDPEATS RUNFREE LITE 2.txt"
+    ]
+  },
+  {
+    "id": "soundpeats_sonic_pro",
+    "brand": "SoundPEATS",
+    "model": "Sonic",
+    "variant": "Pro",
+    "year": 2021,
+    "price_usd": 60,
+    "driver_type": "BA",
+    "driver_config": "2BA",
+    "impedance": 16,
+    "sensitivity": 102,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Earbuds (TWS)",
+    "tags": [
+      "Balanced",
+      "Smooth",
+      "Detailed",
+      "Budget"
+    ],
+    "files": [
+      "data/DCINSIDE/SOUNDPEATS SONIC PRO S1.txt"
     ]
   },
   {
@@ -107475,35 +107429,6 @@
       "data/AUDIOAMIGO/TANCHJIM KARA 30ohm.txt"
     ]
   },
-{
-    "id": "tanchjim_origin_lost_manor",
-    "brand": "TANCHJIM",
-    "model": "Origin",
-    "variant": "Lost Manor",
-    "year": 2024,
-    "price_usd": 500,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 16,
-    "sensitivity": 124,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Premium",
-      "Balanced",
-      "Smooth",
-      "Good-Imaging",
-      "Resolving",
-      "Technical",
-      "Detailed",
-      "Wide-Stage",
-      "Limited-Edition"
-    ],
-    "files": [
-      "data/CSI-ZONE/TANCHJIM ORIGIN LOST MANOR (ASANO TANCH EDITION).txt",
-      "data/ADEN/TANCHJIM LOST MANOR.txt"
-    ]
-  },
   {
     "id": "tanchjim_mino",
     "brand": "Tanchjim",
@@ -107706,6 +107631,35 @@
       "data/AUDIOAMIGO/TANCHJIM ORIGIN D.txt",
       "data/AUDIOAMIGO/TANCHJIM ORIGIN L.txt",
       "data/AUDIOAMIGO/TANCHJIM ORIGIN S.txt"
+    ]
+  },
+  {
+    "id": "tanchjim_origin_lost_manor",
+    "brand": "TANCHJIM",
+    "model": "Origin",
+    "variant": "Lost Manor",
+    "year": 2024,
+    "price_usd": 500,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 124,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Premium",
+      "Balanced",
+      "Smooth",
+      "Good-Imaging",
+      "Resolving",
+      "Technical",
+      "Detailed",
+      "Wide-Stage",
+      "Limited-Edition"
+    ],
+    "files": [
+      "data/CSI-ZONE/TANCHJIM ORIGIN LOST MANOR (ASANO TANCH EDITION).txt",
+      "data/ADEN/TANCHJIM LOST MANOR.txt"
     ]
   },
   {
@@ -108247,6 +108201,29 @@
     ]
   },
   {
+    "id": "tangzu_waner_se",
+    "brand": "Tangzu",
+    "model": "Wan'er",
+    "variant": "SE",
+    "year": 2025,
+    "price_usd": 20,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 20,
+    "sensitivity": 107,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Punchy Bass",
+      "Vocal-Focused",
+      "Budget"
+    ],
+    "files": [
+      "data/FERNANDA GUNSAN/TANGZU WANER SE.txt"
+    ]
+  },
+  {
     "id": "tangzu_waner_sg",
     "brand": "Tangzu",
     "model": "Wan'er S.G",
@@ -108277,29 +108254,6 @@
       "data/PAUL WASABII/TANGZU WAN'ER S.G.txt",
       "data/SQUIGLINK/TANGZU WAN'ER.txt",
       "data/SUPER REVIEW/TANGZU WAN'ER S.G.txt"
-    ]
-  },
-  {
-    "id": "tangzu_waner_se",
-    "brand": "Tangzu",
-    "model": "Wan'er",
-    "variant": "SE",
-    "year": 2025,
-    "price_usd": 20,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 20,
-    "sensitivity": 107,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Balanced",
-      "Punchy Bass",
-      "Vocal-Focused",
-      "Budget"
-    ],
-    "files": [
-      "data/FERNANDA GUNSAN/TANGZU WANER SE.txt"
     ]
   },
   {
@@ -110570,29 +110524,6 @@
     ]
   },
   {
-    "id": "thieaudio_wraith",
-    "brand": "THIEAUDIO",
-    "model": "Wraith",
-    "variant": "",
-    "year": 2022,
-    "price_usd": 550,
-    "driver_type": "Planar",
-    "driver_config": "1Planar",
-    "impedance": 32,
-    "sensitivity": 98,
-    "connector": "3.5mm",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Premium",
-      "Neutral",
-      "Detailed",
-      "Resolving"
-    ],
-    "files": [
-      "data/VSG/THIEAUDIO WRAITH.txt"
-    ]
-  },
-  {
     "id": "thieaudio_clairvoyance",
     "brand": "THIEAUDIO",
     "model": "Clairvoyance",
@@ -111422,6 +111353,29 @@
     "files": [
       "data/RIKUDOUGOKU/THIEAUDIO VOYAGER 3.txt",
       "data/HANGOUT.AUDIO/THIEAUDIO VOYAGER 3 (V3) (12 SETTING).txt"
+    ]
+  },
+  {
+    "id": "thieaudio_wraith",
+    "brand": "THIEAUDIO",
+    "model": "Wraith",
+    "variant": "",
+    "year": 2022,
+    "price_usd": 550,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 32,
+    "sensitivity": 98,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Premium",
+      "Neutral",
+      "Detailed",
+      "Resolving"
+    ],
+    "files": [
+      "data/VSG/THIEAUDIO WRAITH.txt"
     ]
   },
   {
@@ -118753,33 +118707,6 @@
     ]
   },
   {
-    "id": "unique_melody_maven_pro",
-    "brand": "Unique Melody",
-    "model": "Maven",
-    "variant": "Pro",
-    "year": 2023,
-    "price_usd": 1800,
-    "driver_type": "Hybrid",
-    "driver_config": "10BA+2EST",
-    "impedance": 30,
-    "sensitivity": 112,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Flagship",
-      "Balanced",
-      "Good-Imaging",
-      "Detailed",
-      "Wide-Stage",
-      "Vocal-Focused",
-      "U-Shaped",
-      "Treblehead"
-    ],
-    "files": [
-      "data/HAWAII BAY BOY/UNIQUE MELODY MAVEN PRO.txt"
-    ]
-  },
-  {
     "id": "unique_melody_maven_2",
     "brand": "Unique Melody",
     "model": "Maven",
@@ -118828,6 +118755,33 @@
     ],
     "files": [
       "data/DUNG LE/UNIQUE MELODY MAVEN III.txt"
+    ]
+  },
+  {
+    "id": "unique_melody_maven_pro",
+    "brand": "Unique Melody",
+    "model": "Maven",
+    "variant": "Pro",
+    "year": 2023,
+    "price_usd": 1800,
+    "driver_type": "Hybrid",
+    "driver_config": "10BA+2EST",
+    "impedance": 30,
+    "sensitivity": 112,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Flagship",
+      "Balanced",
+      "Good-Imaging",
+      "Detailed",
+      "Wide-Stage",
+      "Vocal-Focused",
+      "U-Shaped",
+      "Treblehead"
+    ],
+    "files": [
+      "data/HAWAII BAY BOY/UNIQUE MELODY MAVEN PRO.txt"
     ]
   },
   {
@@ -121299,54 +121253,6 @@
     ]
   },
   {
-    "id": "westone_pro_x10",
-    "brand": "Westone Audio",
-    "model": "Pro X10",
-    "variant": "",
-    "year": 2021,
-    "price_usd": 170,
-    "driver_type": "BA",
-    "driver_config": "1BA",
-    "impedance": 19,
-    "sensitivity": 114,
-    "connector": "Detachable Cable",
-    "form_factor": "IEM",
-    "tags": [
-      "Neutral",
-      "Smooth",
-      "Detailed",
-      "Mid-Tier",
-      "Studio-Monitoring"
-    ],
-    "files": [
-      "data/THEROLLO9/WESTONE PRO X10.txt"
-    ]
-  },
-  {
-    "id": "westone_am_pro_x30",
-    "brand": "Westone Audio",
-    "model": "AM Pro X30",
-    "variant": "",
-    "year": 2023,
-    "price_usd": 480,
-    "driver_type": "BA",
-    "driver_config": "3BA",
-    "impedance": 56,
-    "sensitivity": 124,
-    "connector": "Detachable Cable",
-    "form_factor": "IEM",
-    "tags": [
-      "Balanced",
-      "Smooth",
-      "Detailed",
-      "Mid-Tier",
-      "Studio-Monitoring"
-    ],
-    "files": [
-      "data/VSG/WESTONE AM PRO X30.txt"
-    ]
-  },
-  {
     "id": "westone_4r",
     "brand": "Westone Audio",
     "model": "4R",
@@ -121392,6 +121298,30 @@
     ],
     "files": [
       "data/INNERFIDELITY/WESTONE ADV ALPHA.txt"
+    ]
+  },
+  {
+    "id": "westone_am_pro_x30",
+    "brand": "Westone Audio",
+    "model": "AM Pro X30",
+    "variant": "",
+    "year": 2023,
+    "price_usd": 480,
+    "driver_type": "BA",
+    "driver_config": "3BA",
+    "impedance": 56,
+    "sensitivity": 124,
+    "connector": "Detachable Cable",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Smooth",
+      "Detailed",
+      "Mid-Tier",
+      "Studio-Monitoring"
+    ],
+    "files": [
+      "data/VSG/WESTONE AM PRO X30.txt"
     ]
   },
   {
@@ -121626,6 +121556,30 @@
     ]
   },
   {
+    "id": "westone_pro_x10",
+    "brand": "Westone Audio",
+    "model": "Pro X10",
+    "variant": "",
+    "year": 2021,
+    "price_usd": 170,
+    "driver_type": "BA",
+    "driver_config": "1BA",
+    "impedance": 19,
+    "sensitivity": 114,
+    "connector": "Detachable Cable",
+    "form_factor": "IEM",
+    "tags": [
+      "Neutral",
+      "Smooth",
+      "Detailed",
+      "Mid-Tier",
+      "Studio-Monitoring"
+    ],
+    "files": [
+      "data/THEROLLO9/WESTONE PRO X10.txt"
+    ]
+  },
+  {
     "id": "westone_pro_x50",
     "brand": "Westone Audio",
     "model": "Pro X50",
@@ -121735,7 +121689,7 @@
     "connector": "Fixed Cable",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Studio-Monitoring",
       "Neutral",
       "Vocal-Focused",
@@ -123176,7 +123130,7 @@
     "connector": "Fixed Cable",
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Warm",
       "Neutral",
       "Detailed",
@@ -123367,7 +123321,7 @@
     "connector": "Fixed Cable",
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
-      "Budget",
+      "Mid-Tier",
       "Neutral",
       "Warm",
       "Detailed",
