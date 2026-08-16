@@ -5492,6 +5492,54 @@
     ]
   },
   {
+    "id": "akg_n40",
+    "brand": "AKG",
+    "model": "N40",
+    "variant": "",
+    "year": 2016,
+    "price_usd": 400,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD + 1BA",
+    "impedance": 20,
+    "sensitivity": 115,
+    "connector": "MMCX",
+    "form_factor": "IEM",
+    "tags": [
+      "Mid-Tier",
+      "Detailed",
+      "Balanced",
+      "Punchy Bass",
+      "Smooth"
+    ],
+    "files": [
+	"data/HANA/AKG N40.txt"
+	]
+  },
+  {
+    "id": "akg_n30",
+    "brand": "AKG",
+    "model": "N30",
+    "variant": "",
+    "year": 2017,
+    "price_usd": 300,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD + 1BA",
+    "impedance": 32,
+    "sensitivity": 101,
+    "connector": "MMCX",
+    "form_factor": "IEM",
+    "tags": [
+      "Mid-Tier",
+      "Balanced",
+      "Punchy Bass",
+      "Smooth",
+      "Warm"
+    ],
+    "files": [
+	"data/HU-FI/AKG N30.txt"
+	]
+  },
+  {
     "id": "akg_n5_hybrid",
     "brand": "AKG",
     "model": "N5",
@@ -10668,6 +10716,31 @@
     ]
   },
   {
+    "id": "audio_technica_ath_awas",
+    "brand": "Audio-Technica",
+    "model": "ATH-AWAS",
+    "variant": "",
+    "year": 2020,
+    "price_usd": 1400,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 40,
+    "sensitivity": 99,
+    "connector": "A2DC",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Premium",
+      "Balanced",
+      "Smooth",
+      "Detailed",
+      "Resolving",
+      "Technical"
+    ],
+    "files": [
+	"data/CAPRA AUDIO/AUDIO TECHNICA AWAS.txt"
+	]
+  },
+  {
     "id": "audio_technica_ath_a1000x",
     "brand": "Audio-Technica",
     "model": "ATH-A1000X",
@@ -10838,6 +10911,32 @@
     "files": [
       "data/INNERFIDELITY/AUDIO TECHNICA ATH AD2000X.txt"
     ]
+  },
+  {
+    "id": "audio_technica_ath_ad2000",
+    "brand": "Audio-Technica",
+    "model": "ATH-AD2000",
+    "variant": "",
+    "year": 2004,
+    "price_usd": 775,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 40,
+    "sensitivity": 102,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Premium",
+      "Bright",
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Vocal-Focused"
+    ],
+    "files": [
+	"data/DEN-FI/AUDIO TECHNICA ATH-AD2000.txt"
+	]
   },
   {
     "id": "audio_technica_ath_ad500",
@@ -15566,6 +15665,29 @@
     "files": [
       "data/RTINGS/BETRON YSM1000.txt"
     ]
+  },
+  {
+    "id": "beyerdynamic_beat_byrd",
+    "brand": "beyerdynamic",
+    "model": "Beat BYRD",
+    "variant": "",
+    "year": 2018,
+    "price_usd": 25,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 18,
+    "sensitivity": 104,
+    "connector": "Fixed Cable",
+    "form_factor": "IEM",
+    "tags": [
+      "Budget",
+      "Balanced",
+      "Punchy Bass",
+      "Smooth"
+    ],
+    "files": [
+	"data/DCINSIDE/BEYERDYNAMIC BEAT BYRD.txt"
+	]
   },
   {
     "id": "beyerdynamic_custom_studio",
@@ -38727,6 +38849,30 @@
     ]
   },
   {
+    "id": "final_audio_vr500",
+    "brand": "Final Audio",
+    "model": "VR500",
+    "variant": "",
+    "year": 2024,
+    "price_usd": 35,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 18,
+    "sensitivity": 98,
+    "connector": "Fixed Cable",
+    "form_factor": "IEM",
+    "tags": [
+      "Budget",
+      "Gaming",
+      "Competitive-Gaming",
+      "Balanced",
+      "Good-Imaging"
+    ],
+    "files": [
+	"data/VORTEX REVIEWS/FINAL VR500.txt"
+	]
+  },
+  {
     "id": "final_audio_s5000",
     "brand": "Final Audio",
     "model": "S5000",
@@ -41468,11 +41614,11 @@
     ]
   },
   {
-    "id": "focal_clear_mg",
+    "id": "focal_clear_professional",
     "brand": "Focal",
-    "model": "Clear",
-    "variant": "Mg",
-    "year": 2021,
+    "model": "Clear Professional",
+    "variant": "",
+    "year": 2018,
     "price_usd": 1500,
     "driver_type": "DD",
     "driver_config": "1DD",
@@ -41482,21 +41628,73 @@
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
       "Flagship",
-      "Reference",
-      "Balanced",
-      "Warm",
-      "Good-Imaging",
-      "Wide-Stage",
+      "Studio-Monitoring",
+      "Neutral",
       "Detailed",
-      "Studio-Monitoring"
+      "Resolving",
+      "Technical",
+      "Reference"
     ],
     "files": [
-      "data/KUULOKENURKKA/FOCAL CLEAR MG.txt",
-      "data/ORATORY1990/FOCAL CLEAR MG.txt",
-      "data/RTINGS/FOCAL CLEAR MG.txt",
-      "data/SUPER REVIEW/FOCAL CLEAR MG PROFESSIONAL.txt"
-    ]
+	"data/SUPER REVIEW/FOCAL CLEAR PROFESSIONAL.txt"
+	]
   },
+{
+"id": "focal_clear_mg",
+"brand": "Focal",
+"model": "Clear",
+"variant": "Mg",
+"year": 2021,
+"price_usd": 1500,
+"driver_type": "DD",
+"driver_config": "1DD",
+"impedance": 55,
+"sensitivity": 104,
+"connector": "3.5mm",
+"form_factor": "Over-Ear Headphones (Wired)",
+"tags": [
+"Flagship",
+"Reference",
+"Balanced",
+"Warm",
+"Good-Imaging",
+"Wide-Stage",
+"Detailed",
+"Studio-Monitoring"
+],
+"files": [
+"data/KUULOKENURKKA/FOCAL CLEAR MG.txt",
+"data/ORATORY1990/FOCAL CLEAR MG.txt",
+"data/RTINGS/FOCAL CLEAR MG.txt"
+]
+},
+{
+"id": "focal_clear_mg_professional",
+"brand": "Focal",
+"model": "Clear",
+"variant": "Mg Professional",
+"year": 2021,
+"price_usd": 1500,
+"driver_type": "DD",
+"driver_config": "1DD",
+"impedance": 55,
+"sensitivity": 104,
+"connector": "3.5mm",
+"form_factor": "Over-Ear Headphones (Wired)",
+"tags": [
+"Flagship",
+"Studio-Monitoring",
+"Neutral",
+"Detailed",
+"Resolving",
+"Technical",
+"Reference",
+"Warm"
+],
+"files": [
+"data/SUPER REVIEW/FOCAL CLEAR MG PROFESSIONAL.txt"
+]
+},
   {
     "id": "focal_elear",
     "brand": "Focal",
@@ -69210,6 +69408,54 @@
     ]
   },
   {
+    "id": "meze_99_classics_v2",
+    "brand": "Meze Audio",
+    "model": "99 Classics",
+    "variant": "V2",
+    "year": 2025,
+    "price_usd": 350,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 103,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Mid-Tier",
+      "Balanced",
+      "Warm",
+      "Smooth",
+      "Relaxed"
+    ],
+    "files": [
+	"data/AUDIOAMIGO/MEZE 99 CLASSICS V2.txt"
+	]
+  },
+  {
+    "id": "meze_strada",
+    "brand": "Meze Audio",
+    "model": "STRADA",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 900,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 103,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Premium",
+      "Detailed",
+      "Resolving",
+      "Warm",
+      "Smooth"
+    ],
+    "files": [
+	"data/GADGETRY TECH/MEZE STRADA.txt"
+	]
+  },
+  {
     "id": "meze_99_neo",
     "brand": "Meze Audio",
     "model": "99",
@@ -89793,6 +90039,55 @@
     ]
   },
   {
+    "id": "sennheiser_hd_590",
+    "brand": "Sennheiser",
+    "model": "HD 590",
+    "variant": "",
+    "year": 2001,
+    "price_usd": 350,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 120,
+    "sensitivity": 97,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Mid-Tier",
+      "Detailed",
+      "Bright",
+      "Wide-Stage",
+      "Resolving"
+    ],
+    "files": [
+	"data/TDL/SENNHEISER HD590 HEADPHONE.txt"
+	]
+  },
+  {
+    "id": "sennheiser_hd_26_pro",
+    "brand": "Sennheiser",
+    "model": "HD 26 Pro",
+    "variant": "",
+    "year": 2014,
+    "price_usd": 300,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 100,
+    "sensitivity": 105,
+    "connector": "3.5mm",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Mid-Tier",
+      "Studio-Monitoring",
+      "Neutral",
+      "Detailed",
+      "Analytical",
+      "Reference"
+    ],
+    "files": [
+	"data/EARPHONES ARCHIVE/SENNHEISER HD26 PRO.txt"
+	]
+  },
+  {
     "id": "sennheiser_hd_579",
     "brand": "Sennheiser",
     "model": "HD 579",
@@ -96286,53 +96581,78 @@
     ]
   },
   {
-    "id": "simgot_ew300",
-    "brand": "Simgot",
-    "model": "EW300",
-    "variant": "",
-    "year": 2024,
-    "price_usd": 70,
-    "driver_type": "Tribrid",
-    "driver_config": "1DD+1Planar+1PZT",
-    "impedance": 28,
-    "sensitivity": 121,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Budget",
-      "Bright",
-      "Detailed",
-      "Balanced",
-      "Treblehead",
-      "U-Shaped"
-    ],
-    "files": [
-      "data/AUDIOAMIGO/SIMGOT EW300 DSP GOLD.txt",
-      "data/AUDIOAMIGO/SIMGOT EW300 DSP SILVER.txt",
-      "data/FAHRYST/SIMGOT AUDIO EW300.txt",
-      "data/FILK/SIMGOT AUDIO EW300.txt",
-      "data/HI END PORTABLE/SIMGOT AUDIO EW300.txt",
-      "data/JAYTISS/SIMGOT AUDIO EW300 DSP.txt",
-      "data/KAZI/SIMGOT AUDIO EW300 DSP.txt",
-      "data/KAZI/SIMGOT AUDIO EW300.txt",
-      "data/PAUL WASABII/SIMGOT EW300 GOLD.txt",
-      "data/PAUL WASABII/SIMGOT EW300 SILVER.txt",
-      "data/PAUL WASABII/SIMGOT EW300 DSP SILVER 1FOAM ANALOG CABLE.txt",
-      "data/PAUL WASABII/SIMGOT EW300 HBB GOLD.txt",
-      "data/PAUL WASABII/SIMGOT EW300 HBB SILVER.txt",
-      "data/PAUL WASABII/SIMGOT EW300 SILVER+1FOAM.txt",
-      "data/AUDIOAMIGO/SIMGOT EW300 DSP GOLD 3.5MM.txt",
-      "data/AUDIOAMIGO/SIMGOT EW300 DSP SILVER 3.5MM.txt",
-      "data/AUDIOAMIGO/SIMGOT EW300 HBB GOLD DSP.txt",
-      "data/AUDIOAMIGO/SIMGOT EW300 HBB GOLD.txt",
-      "data/AUDIOAMIGO/SIMGOT EW300 HBB SILVER.txt",
-      "data/AUDIOAMIGO/SIMGOT EW300 STD GOLD 15ohm.txt",
-      "data/AUDIOAMIGO/SIMGOT EW300 STD GOLD.txt",
-      "data/AUDIOAMIGO/SIMGOT EW300 STD SILVER DSP.txt",
-      "data/AUDIOAMIGO/SIMGOT EW300 STD SILVER.txt",
-      "data/RIKUDOUGOKU/SIMGOT AUDIO EW300.txt"
-    ]
-  },
+"id": "simgot_ew300",
+"brand": "Simgot",
+"model": "EW300",
+"variant": "",
+"year": 2024,
+"price_usd": 70,
+"driver_type": "Tribrid",
+"driver_config": "1DD + 1Planar + 1PZT",
+"impedance": 28,
+"sensitivity": 121,
+"connector": "2-pin",
+"form_factor": "IEM",
+"tags": [
+"Budget",
+"Bright",
+"Detailed",
+"Balanced",
+"Treblehead",
+"U-Shaped"
+],
+"files": [
+"data/AUDIOAMIGO/SIMGOT EW300 DSP GOLD.txt",
+"data/AUDIOAMIGO/SIMGOT EW300 DSP SILVER.txt",
+"data/FAHRYST/SIMGOT AUDIO EW300.txt",
+"data/FILK/SIMGOT AUDIO EW300.txt",
+"data/HI END PORTABLE/SIMGOT AUDIO EW300.txt",
+"data/JAYTISS/SIMGOT AUDIO EW300 DSP.txt",
+"data/KAZI/SIMGOT AUDIO EW300 DSP.txt",
+"data/KAZI/SIMGOT AUDIO EW300.txt",
+"data/PAUL WASABII/SIMGOT EW300 GOLD.txt",
+"data/PAUL WASABII/SIMGOT EW300 SILVER.txt",
+"data/PAUL WASABII/SIMGOT EW300 DSP SILVER 1FOAM ANALOG CABLE.txt",
+"data/PAUL WASABII/SIMGOT EW300 SILVER+1FOAM.txt",
+"data/AUDIOAMIGO/SIMGOT EW300 DSP GOLD 3.5MM.txt",
+"data/AUDIOAMIGO/SIMGOT EW300 DSP SILVER 3.5MM.txt",
+"data/AUDIOAMIGO/SIMGOT EW300 STD GOLD 15ohm.txt",
+"data/AUDIOAMIGO/SIMGOT EW300 STD GOLD.txt",
+"data/AUDIOAMIGO/SIMGOT EW300 STD SILVER DSP.txt",
+"data/AUDIOAMIGO/SIMGOT EW300 STD SILVER.txt",
+"data/RIKUDOUGOKU/SIMGOT AUDIO EW300.txt"
+]
+},
+{
+"id": "simgot_ew300_hbb",
+"brand": "Simgot",
+"model": "EW300",
+"variant": "HBB",
+"year": 2024,
+"price_usd": 75,
+"driver_type": "Tribrid",
+"driver_config": "1DD + 1Planar + 1PZT",
+"impedance": 28,
+"sensitivity": 121,
+"connector": "2-pin",
+"form_factor": "IEM",
+"tags": [
+"Budget",
+"Collab",
+"Warm",
+"Punchy Bass",
+"Smooth",
+"Detailed",
+"Gaming"
+],
+"files": [
+"data/PAUL WASABII/SIMGOT EW300 HBB GOLD.txt",
+"data/PAUL WASABII/SIMGOT EW300 HBB SILVER.txt",
+"data/AUDIOAMIGO/SIMGOT EW300 HBB GOLD DSP.txt",
+"data/AUDIOAMIGO/SIMGOT EW300 HBB GOLD.txt",
+"data/AUDIOAMIGO/SIMGOT EW300 HBB SILVER.txt"
+]
+},
   {
     "id": "simgot_fld100",
     "brand": "Simgot",
@@ -96778,42 +97098,67 @@
     ]
   },
   {
-    "id": "sivga_que",
-    "brand": "Sivga",
-    "model": "Que",
-    "variant": "",
-    "year": 2024,
-    "price_usd": 70,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 108,
-    "connector": "2-pin",
-    "form_factor": "IEM",
-    "tags": [
-      "Balanced",
-      "Smooth",
-      "Wide-Stage",
-      "Resolving",
-      "Technical",
-      "Detailed",
-      "Good-Imaging",
-      "Warm",
-      "Relaxed",
-      "Budget"
-    ],
-    "files": [
-      "data/AUDIOAMIGO/SIVGA QUE.txt",
-      "data/DUCBLOKE/SIVGA QUE.txt",
-      "data/JAYTISS/SIVGA QUE.txt",
-      "data/PAUL WASABII/SIVGA QUE.txt",
-      "data/SQUIGLINK/SIVGA QUE.txt",
-      "data/SUPER REVIEW/SIVGA QUE.txt",
-      "data/TONEDEAFMONK/SIVGA QUE.txt",
-      "data/AUDIOAMIGO/SIVGA QUE UTG.txt",
-      "data/TONEDEAFMONK/SIVGA QUE UTG.txt"
-    ]
-  },
+"id": "sivga_que",
+"brand": "Sivga",
+"model": "Que",
+"variant": "",
+"year": 2024,
+"price_usd": 70,
+"driver_type": "DD",
+"driver_config": "1DD",
+"impedance": 32,
+"sensitivity": 108,
+"connector": "2-pin",
+"form_factor": "IEM",
+"tags": [
+"Balanced",
+"Smooth",
+"Wide-Stage",
+"Resolving",
+"Technical",
+"Detailed",
+"Good-Imaging",
+"Warm",
+"Relaxed",
+"Budget"
+],
+"files": [
+"data/AUDIOAMIGO/SIVGA QUE.txt",
+"data/DUCBLOKE/SIVGA QUE.txt",
+"data/JAYTISS/SIVGA QUE.txt",
+"data/PAUL WASABII/SIVGA QUE.txt",
+"data/SQUIGLINK/SIVGA QUE.txt",
+"data/SUPER REVIEW/SIVGA QUE.txt",
+"data/TONEDEAFMONK/SIVGA QUE.txt"
+]
+},
+{
+"id": "sivga_que_utg",
+"brand": "Sivga",
+"model": "Que",
+"variant": "UTG",
+"year": 2025,
+"price_usd": 90,
+"driver_type": "DD",
+"driver_config": "1DD",
+"impedance": 32,
+"sensitivity": 103,
+"connector": "2-pin",
+"form_factor": "IEM",
+"tags": [
+"Budget",
+"Neutral",
+"Detailed",
+"Resolving",
+"Technical",
+"Analytical",
+"Smooth"
+],
+"files": [
+"data/AUDIOAMIGO/SIVGA QUE UTG.txt",
+"data/TONEDEAFMONK/SIVGA QUE UTG.txt"
+]
+},
   {
     "id": "sivga_robin",
     "brand": "Sivga",
@@ -107130,17 +107475,17 @@
       "data/AUDIOAMIGO/TANCHJIM KARA 30ohm.txt"
     ]
   },
-  {
-    "id": "tanchjim_lost_manor",
-    "brand": "Tanchjim",
-    "model": "Lost Manor",
-    "variant": "",
+{
+    "id": "tanchjim_origin_lost_manor",
+    "brand": "TANCHJIM",
+    "model": "Origin",
+    "variant": "Lost Manor",
     "year": 2024,
-    "price_usd": 1000,
-    "driver_type": "Tribrid",
-    "driver_config": "1DD+2BA+2EST",
-    "impedance": 22,
-    "sensitivity": 104,
+    "price_usd": 500,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 124,
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
@@ -107151,9 +107496,11 @@
       "Resolving",
       "Technical",
       "Detailed",
-      "Wide-Stage"
+      "Wide-Stage",
+      "Limited-Edition"
     ],
     "files": [
+      "data/CSI-ZONE/TANCHJIM ORIGIN LOST MANOR (ASANO TANCH EDITION).txt",
       "data/ADEN/TANCHJIM LOST MANOR.txt"
     ]
   },
