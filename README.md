@@ -111,8 +111,8 @@ npm run dist-linux
 
 Built With
 
-    *Core: Electron, Vanilla JavaScript (ES6+), HTML5, Tailwind CSS
+    * Core: Electron, Vanilla JavaScript (ES6+), HTML5, Tailwind CSS
 
-    *Audio Engine: Web Audio API (AudioWorklet, Biquad Filters, HRTF Spatial Panner, Convolver)
+    * Audio Engine: Web Audio API (AudioWorklet, Biquad Filters, HRTF Spatial Panner, Convolver)
 
-    *Rendering & Storage: HTML5 Canvas, IndexedDB, Electron SafeStorage
+    * Rendering & Storage: HTML5 Canvas, IndexedDB, Electron SafeStorage
