@@ -391,6 +391,7 @@
                                     <button type="button" id="sc-tab-treble" onclick="IEM.switchSoundCharTab('treble')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">✨</span> Treble</button>
                                     <button type="button" id="sc-tab-stage" onclick="IEM.switchSoundCharTab('stage')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">🏟️</span> Stage</button>
                                     <button type="button" id="sc-tab-fit" onclick="IEM.switchSoundCharTab('fit')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">🎧</span> Fit</button>
+                                    <button type="button" id="sc-tab-package" onclick="IEM.switchSoundCharTab('package')" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">📦</span> Package</button>
                                 </div>
 
                                 <div id="sc-panel-bass" class="sound-char-panel space-y-2">
@@ -578,13 +579,6 @@
                                         </div>
                                         <div class="flex flex-col gap-1 px-1">
                                             <div class="flex justify-between items-center text-xs font-bold text-zinc-300">
-                                                <span class="flex items-center gap-2"><span class="text-xl leading-none">⚡</span><span>Drive</span></span>
-                                                <span id="ease-of-drive-val" class="font-mono text-zinc-200 text-xs font-bold">0.0</span>
-                                            </div>
-                                            <input type="range" id="ease-of-drive" min="-10" max="10" step="0.1" value="0.0" class="iem-slider" oninput="IEM.debouncedUpdateAll()">
-                                        </div>
-                                        <div class="flex flex-col gap-1 px-1">
-                                            <div class="flex justify-between items-center text-xs font-bold text-zinc-300">
                                                 <span class="flex items-center gap-2"><span class="text-xl leading-none">☁️</span><span>Comfort</span></span>
                                                 <span id="wear-comfort-val" class="font-mono text-zinc-200 text-xs font-bold">0.0</span>
                                             </div>
@@ -592,17 +586,29 @@
                                         </div>
                                         <div class="flex flex-col gap-1 px-1">
                                             <div class="flex justify-between items-center text-xs font-bold text-zinc-300">
-                                                <span class="flex items-center gap-2"><span class="text-xl leading-none">💪</span><span>Build</span></span>
-                                                <span id="build-quality-val" class="font-mono text-zinc-200 text-xs font-bold">0.0</span>
-                                            </div>
-                                            <input type="range" id="build-quality" min="-10" max="10" step="0.1" value="0.0" class="iem-slider" oninput="IEM.debouncedUpdateAll()">
-                                        </div>
-                                        <div class="flex flex-col gap-1 px-1">
-                                            <div class="flex justify-between items-center text-xs font-bold text-zinc-300">
                                                 <span class="flex items-center gap-2"><span class="text-xl leading-none">🔇</span><span>Isolation</span></span>
                                                 <span id="isolation-val" class="font-mono text-zinc-200 text-xs font-bold">0.0</span>
                                             </div>
                                             <input type="range" id="isolation" min="-10" max="10" step="0.1" value="0.0" class="iem-slider" oninput="IEM.debouncedUpdateAll()">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div id="sc-panel-package" class="sound-char-panel hidden space-y-2">
+                                    <div class="grid grid-cols-1 gap-2 py-0.5">
+                                        <div class="flex flex-col gap-1 px-1">
+                                            <div class="flex justify-between items-center text-xs font-bold text-zinc-300">
+                                                <span class="flex items-center gap-2"><span class="text-xl leading-none">⚡</span><span>Drive</span></span>
+                                                <span id="ease-of-drive-val" class="font-mono text-zinc-200 text-xs font-bold">0.0</span>
+                                            </div>
+                                            <input type="range" id="ease-of-drive" min="-10" max="10" step="0.1" value="0.0" class="iem-slider" oninput="IEM.debouncedUpdateAll()">
+                                        </div>
+                                        <div class="flex flex-col gap-1 px-1">
+                                            <div class="flex justify-between items-center text-xs font-bold text-zinc-300">
+                                                <span class="flex items-center gap-2"><span class="text-xl leading-none">💪</span><span>Build</span></span>
+                                                <span id="build-quality-val" class="font-mono text-zinc-200 text-xs font-bold">0.0</span>
+                                            </div>
+                                            <input type="range" id="build-quality" min="-10" max="10" step="0.1" value="0.0" class="iem-slider" oninput="IEM.debouncedUpdateAll()">
                                         </div>
                                         <div class="flex flex-col gap-1 px-1">
                                             <div class="flex justify-between items-center text-xs font-bold text-zinc-300">
@@ -1103,6 +1109,9 @@
                                 <span class="text-xs font-black uppercase tracking-widest text-amber-500">Database</span>
                                 <div class="flex items-center gap-1.5">
                                     <div id="peqdb-indexing-indicator" class="text-[9px] font-black text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 px-2 py-0.5 rounded animate-pulse uppercase tracking-wider hidden">⚡ Indexing: 0%</div>
+                                    <button onclick="PEQDB_Module.toggleSearchMode(PEQDB_Module.searchMode === 'similar' ? 'database' : 'similar')" class="px-2.5 py-1 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] text-[var(--text-main)] font-black text-xs border-[3px] border-black cursor-pointer shadow-sm flex items-center justify-center gap-1.5 h-9" title="Find IEMs with curves similar to the current graph" id="btn-sim-mode">
+                                        <span class="text-xl w-6 h-6 inline-flex items-center justify-center leading-none">🔎</span> Similar
+                                    </button>
                                     <button onclick="EQ.showSmartImportModal()" class="px-2.5 py-1 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] text-[var(--text-main)] font-black text-xs border-[3px] border-black cursor-pointer shadow-sm flex items-center justify-center gap-1.5 h-9" title="Import an EQ or measurement file">
                                         <span class="text-xl w-6 h-6 inline-flex items-center justify-center leading-none">📥</span> Import
                                     </button>

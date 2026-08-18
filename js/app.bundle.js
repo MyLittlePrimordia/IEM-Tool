@@ -171,6 +171,32 @@ const CurveUtils = {
         });
     },
 
+    // Resample an already-interpolated dense response (e.g. a cachedInterp on
+    // the 500-pt DSP.FREQS grid) onto a sparser target grid via log-space
+    // linear interpolation. Avoids re-normalizing + re-splining raw curve data
+    // whenever a scan needs a different grid density than the cached one.
+    resampleInterp: function(sourceInterp, sourceFreqs, targetFreqs) {
+        if (!sourceInterp || !sourceFreqs || !targetFreqs) return null;
+        const n = sourceFreqs.length;
+        if (n < 2 || targetFreqs.length === 0) return null;
+        const out = new Float32Array(targetFreqs.length);
+        for (let i = 0; i < targetFreqs.length; i++) {
+            const f = targetFreqs[i];
+            if (f <= sourceFreqs[0]) { out[i] = sourceInterp[0]; continue; }
+            if (f >= sourceFreqs[n - 1]) { out[i] = sourceInterp[n - 1]; continue; }
+            let lo = 0, hi = n - 1;
+            while (lo + 1 < hi) {
+                const mid = (lo + hi) >> 1;
+                if (sourceFreqs[mid] < f) lo = mid; else hi = mid;
+            }
+            const x0 = Math.log10(sourceFreqs[lo]);
+            const x1 = Math.log10(sourceFreqs[hi]);
+            const t = (x1 > x0) ? (Math.log10(f) - x0) / (x1 - x0) : 0;
+            out[i] = sourceInterp[lo] + (sourceInterp[hi] - sourceInterp[lo]) * t;
+        }
+        return out;
+    },
+
     // 5-axis classification bands. Each band's lo/hi now meets its neighbors
     // at the geometric-mean boundary between adjacent centers (and the outer
     // two extend to the edges of the audible range), so the six windows tile
@@ -687,6 +713,10 @@ const UIKit = {
 
         const finish = (result) => {
             wrap.classList.add('hidden');
+            if (this._keyHandler) {
+                document.removeEventListener('keydown', this._keyHandler);
+                this._keyHandler = null;
+            }
             const resolve = this._resolver;
             this._resolver = null;
             if (resolve) resolve(result);
@@ -698,12 +728,17 @@ const UIKit = {
         // Click on the dark backdrop (not the card itself) cancels, matching
         // the rest of the app's modal behavior.
         wrap.addEventListener('click', (e) => { if (e.target === wrap) finish(false); });
-        // Esc cancels, Enter confirms — only while this modal is the one showing.
-        document.addEventListener('keydown', (e) => {
+        // Esc cancels, Enter confirms — only while this modal is the one
+        // showing, and never while typing inside an input (keeps Enter from
+        // confirming the dialog mid-typing).
+        this._keyHandler = (e) => {
             if (wrap.classList.contains('hidden')) return;
+            const tag = (e.target && e.target.tagName) || '';
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
             if (e.key === 'Escape') finish(false);
             else if (e.key === 'Enter') finish(true);
-        });
+        };
+        document.addEventListener('keydown', this._keyHandler);
 
         this._modalEl = wrap;
         return wrap;
@@ -1460,11 +1495,70 @@ const EQ_PlaylistMethods = {
             });
         },
 
+        // Standalone worker script: fetch + decode + RMS measurement happen
+        // off the main thread so a long track never stalls playback UI while
+        // its loudness is measured. Falls back to the main-thread path below.
+        _loudnessWorkerSrc: function() {
+            return "self.onmessage = async (e) => {" +
+                "const url = e.data && e.data.url; " +
+                "if (!url) { self.postMessage({ ok: false }); return; } " +
+                "try { " +
+                "const res = await fetch(url); " +
+                "if (!res.ok) { self.postMessage({ ok: false }); return; } " +
+                "const buf = await res.arrayBuffer(); " +
+                "const Ctx = self.OfflineAudioContext || self.webkitOfflineAudioContext; " +
+                "if (!Ctx) { self.postMessage({ ok: false }); return; } " +
+                "const ctx = new Ctx(1, 1, 44100); " +
+                "const audio = await new Promise((resolve, reject) => ctx.decodeAudioData(buf, resolve, reject)); " +
+                "const n = audio.length; " +
+                "const ch = audio.numberOfChannels; " +
+                "let sumSq = 0; " +
+                "for (let c = 0; c < ch; c++) { " +
+                "const d = audio.getChannelData(c); " +
+                "let s = 0; " +
+                "for (let i = 0; i < n; i++) s += d[i] * d[i]; " +
+                "sumSq += s; " +
+                "} " +
+                "const rms = Math.max(1e-9, Math.sqrt((sumSq / (ch * n)) || 0)); " +
+                "const dbfs = 20 * Math.log10(rms); " +
+                "let gainDb = -23 - dbfs; " +
+                "gainDb = Math.max(-12, Math.min(12, gainDb)); " +
+                "self.postMessage({ ok: true, gain: Math.pow(10, gainDb / 20) }); " +
+                "} catch (err) { self.postMessage({ ok: false, error: String(err) }); } " +
+                "};";
+        },
+
         // Resolves a linear gain factor that brings track loudness to a matched
         // target (-23 dBFS channel RMS). Clamped to +/- 12 dB. Returns 1 on error.
         _decodeAndMeasureLoudness: async function(url) {
             try {
                 if (!url) return 1;
+
+                // Worker path first: keeps the decode off the main thread.
+                if (typeof Worker === 'function') {
+                    const workerGain = await new Promise((resolve) => {
+                        try {
+                            const blob = new Blob([this._loudnessWorkerSrc()], { type: 'application/javascript' });
+                            const workerUrl = URL.createObjectURL(blob);
+                            const worker = new Worker(workerUrl);
+                            const done = (gain) => {
+                                clearTimeout(timer);
+                                worker.terminate();
+                                URL.revokeObjectURL(workerUrl);
+                                resolve(gain);
+                            };
+                            const timer = setTimeout(() => done(null), 60000);
+                            worker.onmessage = (e) => done(e.data && e.data.ok ? e.data.gain : null);
+                            worker.onerror = () => done(null);
+                            worker.postMessage({ url: url });
+                        } catch (e) {
+                            resolve(null);
+                        }
+                    });
+                    if (workerGain !== null) return workerGain;
+                    console.warn("[Playlist] Loudness worker unavailable, using main-thread measurement.");
+                }
+
                 const res = await fetch(url);
                 if (!res.ok) return 1;
                 const arrayBuffer = await res.arrayBuffer();
@@ -1506,6 +1600,39 @@ const EQ_PlaylistMethods = {
             if (!track) return null;
             if (track.key) return track.key;
             return track.url || (track.name + '-' + (track.file ? track.file.size : ''));
+        },
+
+        // Lazily (re)create the object URL for a file-backed track. Revoking
+        // the URL at track-swap time means uploaded files no longer pin their
+        // full decode buffers for the whole session; the URL is recreated on
+        // demand the next time the track is played.
+        _ensureTrackUrl: function(track) {
+            if (!track) return null;
+            if (track.url) return track.url;
+            if (track.file) {
+                const url = URL.createObjectURL(track.file);
+                track.url = url;
+                if (this._urlRegistry && track.key) this._urlRegistry[track.key] = url;
+                if (this.objectUrlsCache) this.objectUrlsCache.push(url);
+                return url;
+            }
+            return track.url || null;
+        },
+
+        // Revoke a file-backed track's blob URL and remove it from the
+        // registries so clearGhostFiles() doesn't double-revoke it.
+        _revokeTrackUrl: function(track) {
+            if (!track || !track.url) return;
+            const url = track.url;
+            if (this._urlRegistry && track.key && this._urlRegistry[track.key] === url) {
+                delete this._urlRegistry[track.key];
+            }
+            if (this.objectUrlsCache) {
+                const idx = this.objectUrlsCache.indexOf(url);
+                if (idx !== -1) this.objectUrlsCache.splice(idx, 1);
+            }
+            track.url = null;
+            URL.revokeObjectURL(url);
         },
 
         /**
@@ -1653,6 +1780,7 @@ const EQ_PlaylistMethods = {
         },
         playPlaylistIndex: function(index) {
             if(index < 0 || index >= this.playlist.length) return;
+            const prevIndex = this.playlistIndex;
             this.playlistIndex = index;
             const infoText = document.getElementById("playlist-track-info");
             const mobInfoText = document.getElementById("mobile-track-info");
@@ -1673,8 +1801,15 @@ const EQ_PlaylistMethods = {
             this._activeLoudnessGain = 1;
             
             setTimeout(() => {
+                // Free the previous track's blob URL at swap time — uploaded
+                // files otherwise pin their full buffer until playlist clear.
+                if (prevIndex !== index) {
+                    const prevTrack = this.playlist[prevIndex];
+                    if (prevTrack && prevTrack !== track) this._revokeTrackUrl(prevTrack);
+                }
+                const trackUrl = this._ensureTrackUrl(track);
                 if (this.audioEl) {
-                    this.audioEl.src = track.url;
+                    this.audioEl.src = trackUrl;
                     this.audioEl.load();
                     this.audioEl.play()
                         .then(() => {
@@ -2689,6 +2824,11 @@ const EQ_TempoMethods = {
             this.audioEl.playbackRate = this.tempoActive ? (this.tempoSpeed || 1.0) : 1.0;
         }
     },
+
+    updateTempoSpeed: function(val) {
+        this.tempoSpeed = Math.max(0.1, Math.min(5, (parseFloat(val) || 100) / 100));
+        this.updateTempoDSP();
+    },
 };
 
 /* ===== js/eq-smart-import.js ===== */
@@ -2961,28 +3101,33 @@ const EQ_HearingCalMethods = {
                 this.updatePreamp();
             },
             applyHearingCalibrationGains: function() {
-                if (this.graphBuilt && this.hearingFilters) {
-                    let maxBoost = 0;
-                    this.hearingFilters.forEach((f, idx) => {
-                        const gainVal = this.hearingCalEnabled ? (this.hearingOffsets[idx] || 0) : 0;
-                        setAudioParamSmooth(f.gain, gainVal);
-                        if (gainVal > maxBoost) maxBoost = gainVal;
-                    });
-
-                    // Subtractive Headroom Attenuation: pad preamp automatically to prevent digital clipping
-const userPreampDb = parseFloat(document.getElementById("eq-preampSlider")?.value || 0);
-const finalPreampDb = this.hearingCalEnabled ? (userPreampDb - maxBoost) : userPreampDb;
-
-if (this.preampNode) {
-setAudioParamSmooth(this.preampNode.gain, Math.pow(10, finalPreampDb / 20));
-}
-
-// Sync the numeric display to show effective preamp value
-const preValEl = document.getElementById("eq-preampVal");
-if (preValEl && this.hearingCalEnabled) {
-preValEl.value = finalPreampDb.toFixed(1);
-}
+                const hearingFreqs = [250, 500, 1000, 2000, 4000, 8000, 12000, 16000];
+                let maxBoost = 0;
+                if (this.hearingCalEnabled && Array.isArray(this.hearingOffsets)) {
+                    for (let i = 0; i < this.hearingOffsets.length; i++) {
+                        const g = this.hearingOffsets[i] || 0;
+                        if (g > maxBoost) maxBoost = g;
+                    }
                 }
+                this._hearingMaxBoost = this.hearingCalEnabled ? maxBoost : 0;
+
+                if (SharedAudio.workletNode) {
+                    const sims = [];
+                    for (let i = 0; i < 8; i++) {
+                        const gainVal = this.hearingCalEnabled ? (this.hearingOffsets[i] || 0) : 0;
+                        sims.push({
+                            index: 12 + i,
+                            bypassed: gainVal === 0,
+                            filterType: 'peaking',
+                            frequency: hearingFreqs[i],
+                            gain: gainVal,
+                            q: 1.0
+                        });
+                    }
+                    SharedAudio.workletNode.port.postMessage({ type: 'updateSimulations', sims });
+                }
+
+                this.updatePreamp();
             },
             toggleDeEsser: function() {
                 this.deEsserEnabled = !this.deEsserEnabled;
@@ -3650,6 +3795,7 @@ const EQ_PresetMethods = {
             this.activePreset = id;
             EQ_Module.isProgrammaticSliderUpdate = true; // Lock UI updates during load
 
+            try {
             // Map values cleanly to UI faders
             const preSlider = document.getElementById("eq-preampSlider");
             if (preSlider && p.p !== undefined) {
@@ -3732,7 +3878,9 @@ const EQ_PresetMethods = {
                 });
             }
 
-            EQ_Module.isProgrammaticSliderUpdate = false; // Release UI lock
+            } finally {
+                EQ_Module.isProgrammaticSliderUpdate = false; // Release UI lock even if a band throws
+            }
 
             if (this.graphBuilt) {
                 this.updateAudioConnections();
@@ -3785,7 +3933,7 @@ const EQ_PresetMethods = {
                 if (!p) return;
                 
                 EQ_Module.isProgrammaticSliderUpdate = true; // Raise protection flag
-                
+                try {
                 const preSlider = document.getElementById("eq-preampSlider");
                 if (preSlider && p.p !== undefined) {
                     preSlider.value = p.p;
@@ -3813,8 +3961,10 @@ const EQ_PresetMethods = {
                         this.updateSlider(i, 'adv');
                     });
                 }
-                
-                EQ_Module.isProgrammaticSliderUpdate = false; // Release protection flag
+
+                } finally {
+                    EQ_Module.isProgrammaticSliderUpdate = false; // Release protection flag even if a band throws
+                }
                 
                 // Send a single, complete message update to the worklet
                 if (this.graphBuilt) {
@@ -4098,16 +4248,13 @@ const EQ_DrawCurveMethods = {
         if (!cv || cv.clientWidth === 0 || cv.clientHeight === 0) return;
         
         const now = Date.now();
-        const isPlaying = this.audioEl && !this.audioEl.paused;
         const isDragging = this.isDragging;
         
-        // 60 FPS (16ms) only during node dragging (interaction needs max response).
-        // The Spectrum Overlay shows a live bar chart, but the response curve + grid
-        // behind it are static, so 40 FPS (24ms) keeps the bars smooth while cutting
-        // the per-second graph redraw cost ~40% on live sound.
-        // Decays to 20 FPS (50ms) during static music playback when overlay is OFF.
+        // Throttle every draw, not just during playback: the overlay can keep
+        // scheduling frames while paused, and a visible graph pays for every
+        // redraw. Node dragging keeps the 60 FPS interaction budget.
         const limit = isDragging ? 16 : (this.showSpectrumOverlay ? 24 : 50);
-        if (isPlaying && (now - this.lastDrawTime < limit)) {
+        if (now - this.lastDrawTime < limit) {
             return;
         }
         
@@ -4117,271 +4264,9 @@ const EQ_DrawCurveMethods = {
             this.lastDrawTime = Date.now();
             this.drawSquiglinkGraphInternal();
         });
-    },
-
-    drawLargeResponse: function() {
-        const numPoints = 150; 
-        const _now = Date.now();
-        if (this._lfAccentTs === undefined || _now - this._lfAccentTs > 120) {
-            this._lfAccent = getComputedStyle(document.documentElement).getPropertyValue('--accent-blue').trim() || '#6488b0';
-            this._lfAccentTs = _now;
-        }
-        const accentBlue = this._lfAccent;
-        
-        if (!this.cachedResponseFreqs) {
-            this.allocateResponseBuffers(numPoints);
-        }
-        const freqs = this.cachedResponseFreqs;
-        const filterMag = this.cachedResponseFilterMag;
-        filterMag.fill(1.0);
-        
-        const magRes = this.cachedResponseMagRes;
-        const phaseRes = this.cachedResponsePhaseRes;
-        const { main: mainState } = this.getLiveFiltersState();
-        const advState = this.getLiveAdvancedFiltersState();
-        
-        // Calculate exact response over unified 10 parametric bands
-        this.bands.forEach((b, i) => {
-            const state = mainState[i];
-            const f = this.mathFilters[i]; 
-            if (f) {
-                // Mirror the DSP slope cascade (slope/12 identical sections). Shelves
-                // split their gain across sections so the total stays g dB; LP/HP
-                // cascades sharpen the roll-off to match the audible graph.
-                const cascadeCount = Math.max(1, Math.round((b.slope || 12) / 12));
-                const isShelf = (state.type === 'lowshelf' || state.type === 'highshelf');
-                f.type = state.type || 'peaking'; 
-                f.frequency.value = state.hz;
-                f.gain.value = isShelf ? (state.g / cascadeCount) : state.g; 
-                f.Q.value = state.q;
-                f.getFrequencyResponse(freqs, magRes, phaseRes); 
-                for (let k = 0; k < cascadeCount; k++) {
-                    for (let j = 0; j < numPoints; j++) filterMag[j] *= magRes[j];
-                }
-            }
-        });
-
-        // Calculate advanced bands response
-        this.advancedBands.forEach((b, i) => {
-            const state = advState[i];
-            const f = this.mathFilters[10 + i];
-            if (f) {
-                f.type = state.type || 'peaking';
-                f.frequency.value = state.hz;
-                f.gain.value = state.g;
-                f.Q.value = state.q;
-                f.getFrequencyResponse(freqs, magRes, phaseRes);
-                for (let j = 0; j < numPoints; j++) filterMag[j] *= magRes[j];
-            }
-        });
-
-        // Map and plot active virtual filters
-        if (this.virtualBands) {
-            this.virtualBands.forEach((b, i) => {
-                const f = this.mathFilters[20 + i];
-                if (f) {
-                    f.type = b.type || 'peaking';
-                    f.frequency.value = b.hz;
-                    f.gain.value = b.g;
-                    f.Q.value = b.q;
-                    f.getFrequencyResponse(freqs, magRes, phaseRes);
-                    for (let j = 0; j < numPoints; j++) filterMag[j] *= magRes[j];
-                }
-            });
-        }
-
-        // Map and plot active Fletcher-Munson Equal Loudness filters
-        if (this.loudnessActive) {
-            const currentVol = parseFloat(document.getElementById("eq-musicVolumeSlider")?.value || 50);
-            const volumeDiff = Math.max(0, this.loudnessCalibrationVol - currentVol);
-            const bassBoost = (volumeDiff / 100) * 14.0 * (this.loudnessStrength / 100); 
-            const trebleBoost = (volumeDiff / 100) * 8.0 * (this.loudnessStrength / 100); 
-            
-            for (let j = 0; j < numPoints; j++) {
-                const f = freqs[j];
-                if (bassBoost !== 0) {
-                    filterMag[j] *= this.getBiquadMagnitude('lowshelf', f, 100, 0.7, bassBoost);
-                }
-                if (trebleBoost !== 0) {
-                    filterMag[j] *= this.getBiquadMagnitude('highshelf', f, 7500, 0.7, trebleBoost);
-                }
-            }
-        }
-
-        if (this.deEsserEnabled && this.deEsserReductionDb !== 0) {
-            const activeFreq = this.deEsserCurrentFreq || 6000;
-            for (let j = 0; j < numPoints; j++) {
-                filterMag[j] *= this.getBiquadMagnitude('peaking', freqs[j], activeFreq, 2.5, this.deEsserReductionDb);
-            }
-        }
-
-        // Factoring in Master Tone Controls (Bass/Treble)
-        const masterBassSlider = document.getElementById("eq-masterBass");
-        const rawMasterBass = masterBassSlider ? parseFloat(masterBassSlider.value) : 0;
-        const masterBassDb = isNaN(rawMasterBass) ? 0 : rawMasterBass;
-
-        const masterTrebleSlider = document.getElementById("eq-masterTreble");
-        const rawMasterTreble = masterTrebleSlider ? parseFloat(masterTrebleSlider.value) : 0;
-        const masterTrebleDb = isNaN(rawMasterTreble) ? 0 : rawMasterTreble;
-
-        for (let j = 0; j < numPoints; j++) {
-            const f = freqs[j];
-            if (masterBassDb !== 0) {
-                filterMag[j] *= this.getBiquadMagnitude('lowshelf', f, 105, 0.7, masterBassDb);
-            }
-            if (masterTrebleDb !== 0) {
-                filterMag[j] *= this.getBiquadMagnitude('highshelf', f, 8000, 0.7, masterTrebleDb);
-            }
-        }
-
-        // Real-time visual overlay for Tip Type, Fit Depth, and Seal Quality
-        const tip = this.simState.tip;
-        const depth = this.simState.depth;
-        const seal = this.simState.seal;
-        const strength = parseFloat(document.getElementById('sim-tip-strength')?.value || 100) / 100;
-
-        for (let j = 0; j < numPoints; j++) {
-            const f = freqs[j];
-            let simVal = 1.0;
-
-            if (tip === 'foam') {
-                simVal *= this.getBiquadMagnitude('highshelf', f, 6000, 0.7, -3.0 * strength);
-            } else if (tip === 'narrow') {
-                simVal *= this.getBiquadMagnitude('lowshelf', f, 200, 0.7, 2.0 * strength);
-                simVal *= this.getBiquadMagnitude('highshelf', f, 4000, 0.7, -2.5 * strength);
-            } else if (tip === 'wide') {
-                simVal *= this.getBiquadMagnitude('lowshelf', f, 250, 0.7, -1.5 * strength);
-                simVal *= this.getBiquadMagnitude('highshelf', f, 5000, 0.7, 1.5 * strength);
-            } else if (tip === 'double') {
-                simVal *= this.getBiquadMagnitude('peaking', f, 7000, 2.5, -4.0 * strength);
-            } else if (tip === 'triple') {
-                simVal *= this.getBiquadMagnitude('highshelf', f, 5000, 0.7, -3.5 * strength);
-                simVal *= this.getBiquadMagnitude('peaking', f, 8000, 1.5, -2.0 * strength);
-            }
-
-            if (depth === 'shallow') {
-                simVal *= this.getBiquadMagnitude('peaking', f, 6000, 2.0, 3.0);
-                simVal *= this.getBiquadMagnitude('peaking', f, 8500, 2.0, -4.0);
-            } else if (depth === 'deep') {
-                simVal *= this.getBiquadMagnitude('peaking', f, 8000, 2.0, -4.0);
-                simVal *= this.getBiquadMagnitude('peaking', f, 11500, 1.5, 4.0);
-            }
-
-            if (seal === 'good') {
-                simVal *= this.getBiquadMagnitude('lowshelf', f, 80, 0.7, -2.5);
-            } else if (seal === 'loose') {
-                simVal *= this.getBiquadMagnitude('lowshelf', f, 150, 0.7, -9.0);
-            } else if (seal === 'broken') {
-                simVal *= this.getBiquadMagnitude('lowshelf', f, 250, 0.7, -18.0);
-            }
-
-            filterMag[j] *= simVal;
-        }
-
-        let maxFilterMag = 0;
-        for (let i = 0; i < numPoints; i++) { 
-            if (filterMag[i] > maxFilterMag) maxFilterMag = filterMag[i]; 
-        }
-        
-        const rawPreamp = parseFloat(document.getElementById("eq-preampSlider")?.value || 0);
-        const preVal = isNaN(rawPreamp) ? 0 : rawPreamp;
-
-        const cv = document.getElementById("eq-largeResponseViz");
-        if (!cv) return; // Exit cleanly if canvas is not present
-        
-        const cc = cv.getContext("2d"); 
-        const { w, h } = this.setupDPRCanvas(cv);
-        
-        // Paint solid matching deep-black background
-        cc.fillStyle = "#030305";
-        cc.fillRect(0, 0, w, h);
-
-        const preLin = Math.pow(10, preVal / 20); 
-        if (!this._largeTotalMag || this._largeTotalMag.length !== numPoints) this._largeTotalMag = new Float32Array(numPoints);
-        const totalMag = this._largeTotalMag;
-        for (let j = 0; j < numPoints; j++) {
-            totalMag[j] = filterMag[j] * preLin;
-        }
-
-        const gridFreqs = [20, 30, 40, 50, 60, 80, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1500, 2000, 3000, 4000, 5000, 6000, 8000, 10000, 15000, 20000];
-        cc.strokeStyle = "rgba(255, 255, 255, 0.05)"; 
-        cc.lineWidth = 1;
-        
-        const isExpandedRight = document.getElementById('viewport-card-right')?.classList.contains('fixed');
-        
-        gridFreqs.forEach(f => {
-            const x = w * (Math.log10(f / 20) / Math.log10(20000 / 20));
-            cc.beginPath(); 
-            cc.moveTo(x, 0); 
-            cc.lineTo(x, h); 
-            cc.stroke();
-            
-            cc.fillStyle = "#6b7280"; 
-            cc.font = this.getActiveCanvasFont(8);
-            
-            const shouldDraw = isExpandedRight ? true : (f === 100 || f === 1000 || f === 10000 || f === 20000);
-            
-            if (shouldDraw) {
-                cc.save();
-                if (f === 20) {
-                    cc.textAlign = "left";
-                    cc.fillText("20", x + 4, h - 6);
-                } else {
-                    cc.textAlign = "center";
-                    const labelMap = {
-                        30: "30", 40: "40", 50: "50", 60: "60", 80: "80",
-                        100: "100", 150: "150", 200: "200", 300: "300", 400: "400", 500: "500", 600: "600", 800: "800",
-                        1000: "1k", 1500: "1.5k", 2000: "2k", 3000: "3k", 4000: "4k", 5000: "5k", 6000: "6k", 8000: "8k",
-                        10000: "10k", 15000: "15k", 20000: "20k"
-                    };
-                    cc.fillText(labelMap[f] || f, x, h - 6);
-                }
-                cc.restore();
-            }
-        });
-
-        [-15, -10, -5, 0, 5, 10, 15].forEach(db => {
-            const y = (h / 2) - (db / 15) * (h / 2);
-            cc.save();
-            if (db === 0) {
-                cc.strokeStyle = "rgba(255, 255, 255, 0.08)";
-                cc.setLineDash([4, 4]);
-            } else {
-                cc.strokeStyle = "rgba(255, 255, 255, 0.02)";
-            }
-            cc.beginPath(); 
-            cc.moveTo(0, y); 
-            cc.lineTo(w, y); 
-            cc.stroke();
-            cc.restore();
-            
-            cc.fillStyle = "#6b7280"; 
-            cc.font = this.getActiveCanvasFont(8);
-            cc.fillText((db > 0 ? "+" : "") + db + " dB", 5, y - 3);
-        });
-
-        cc.beginPath(); 
-        cc.strokeStyle = accentBlue; 
-        cc.lineWidth = 2.5; 
-        cc.lineJoin = "round";
-        for (let i = 0; i < numPoints; i++) {
-            const magDB = 20 * Math.log10(Math.max(1e-10, totalMag[i]));
-            const x = w * (Math.log10(freqs[i] / 20) / Math.log10(20000 / 20));
-            const y = (h / 2) - (magDB / 15) * (h / 2);
-            if (i === 0) cc.moveTo(x, y); 
-            else cc.lineTo(x, y);
-        }
-        cc.stroke();
-
-        // Draw clean 10-band spectrum dots on Large response chart
-        this.bands.forEach((b, i) => {
-            const hz = parseFloat(document.getElementById("eq-f" + i)?.value || b.hz);
-            const g = parseFloat(document.getElementById("eq-s" + i)?.value || 0);
-            const isHovered = (this.hoverTarget && this.hoverTarget.type === 'main' && this.hoverTarget.i === i);
-            this.drawDot(cc, hz, g, w, h, isHovered, g !== 0, 'main');
-        });
     }
 };
+
 /* ===== js/eq-squig-graph.js ===== */
 const EQ_SquigGraphMethods = {
         // Live spectrum analyzer overlay: shows the currently playing audio's real-time
@@ -4487,7 +4372,9 @@ const EQ_SquigGraphMethods = {
         drawSquiglinkGraphInternal: function() {
             const cv = document.getElementById("eq-squiglinkViz");
             if (!cv || cv.clientWidth === 0 || cv.clientHeight === 0) {
-                requestAnimationFrame(() => this.drawSquiglinkGraphInternal());
+                // Canvas is hidden/zero-size (e.g. tab not visible) - do not keep
+                // scheduling frames; drawCurve() will be called again once the
+                // graph becomes visible/sized (tab switch, resize, etc).
                 return;
             }
             const cc = cv.getContext("2d"); 
@@ -4759,6 +4646,14 @@ const EQ_SquigGraphMethods = {
 
             if (EQ_Module.graphMode === 'heatmap') {
                 cc.save();
+                // Heatmap gradients are identical across frames whenever the
+                // eq values are unchanged, so cache them per (y0, y1, sign)
+                // instead of allocating one per sample per frame.
+                if (!this._heatmapGradCache || this._heatmapGradCacheH !== h) {
+                    this._heatmapGradCache = {};
+                    this._heatmapGradCacheH = h;
+                    this._heatmapGradCount = 0;
+                }
                 for (let i = 0; i < steps; i++) {
                     const curX = (i / (steps - 1)) * w;
                     const dbVal = eqDb[i];
@@ -4766,13 +4661,22 @@ const EQ_SquigGraphMethods = {
                     const y0 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb, h);
                     const y1 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + dbVal, h);
                     
-                    const grad = cc.createLinearGradient(0, y0, 0, y1);
-                    if (dbVal > 0) {
-                        grad.addColorStop(0, 'rgba(16, 185, 129, 0.01)');
-                        grad.addColorStop(1, 'rgba(16, 185, 129, 0.1)');
-                    } else {
-                        grad.addColorStop(0, 'rgba(239, 68, 68, 0.01)');
-                        grad.addColorStop(1, 'rgba(239, 68, 68, 0.1)');
+                    const key = Math.round(y0) + ':' + Math.round(y1) + ':' + (dbVal > 0 ? 'p' : 'n');
+                    let grad = this._heatmapGradCache[key];
+                    if (!grad) {
+                        grad = cc.createLinearGradient(0, y0, 0, y1);
+                        if (dbVal > 0) {
+                            grad.addColorStop(0, 'rgba(16, 185, 129, 0.01)');
+                            grad.addColorStop(1, 'rgba(16, 185, 129, 0.1)');
+                        } else {
+                            grad.addColorStop(0, 'rgba(239, 68, 68, 0.01)');
+                            grad.addColorStop(1, 'rgba(239, 68, 68, 0.1)');
+                        }
+                        this._heatmapGradCache[key] = grad;
+                        if (++this._heatmapGradCount > 1000) {
+                            this._heatmapGradCache = {};
+                            this._heatmapGradCount = 0;
+                        }
                     }
                     cc.strokeStyle = grad;
                     cc.lineWidth = w / steps + 1;
@@ -5582,7 +5486,8 @@ function showDebugError(message, source) {
 }
 
 window.addEventListener('error', function(e) {
-    showDebugError(e.message, `File: ${e.filename.split('/').pop()} | Line: ${e.lineno} | Col: ${e.colno}`);
+    const file = (e.filename && String(e.filename).split('/').pop()) || 'unknown';
+    showDebugError(e.message, `File: ${file} | Line: ${e.lineno} | Col: ${e.colno}`);
 });
 
 window.addEventListener('unhandledrejection', function(e) {
@@ -6230,6 +6135,18 @@ function getBandEnergy(dataArray, startBin, endBin) {
                 audioParam.value = value;
             }
         }
+    }
+
+    // Cached current theme accent color. Reads App.currentTheme (maintained by
+    // App.setGlobalTheme) instead of hitting localStorage on every canvas frame.
+    function getThemeAccent(fallback = '#787878') {
+        const id = (typeof App !== 'undefined' && App.currentTheme) ? App.currentTheme : ((typeof localStorage !== 'undefined' ? localStorage.getItem('settings_theme_id') : null) || 'slate');
+        if (getThemeAccent._cachedId !== id) {
+            getThemeAccent._cachedId = id;
+            const cfg = (typeof App !== 'undefined' && App.themeMap) ? (App.themeMap[id] || App.themeMap['slate']) : null;
+            getThemeAccent._cached = cfg ? (cfg.accent || fallback) : fallback;
+        }
+        return getThemeAccent._cached;
     }
 
     function showToast(message, icon = "ℹ️", opts) {
@@ -7274,7 +7191,10 @@ window.updateExpandedAutoHide = function() {
                 }
             };
             resizeCanvas();
-            window.addEventListener('resize', resizeCanvas);
+            if (!this._sporesResizeHandler) {
+                this._sporesResizeHandler = resizeCanvas;
+                window.addEventListener('resize', resizeCanvas);
+            }
 
             const particles = [];
             const maxParticles = 65;
@@ -7295,15 +7215,18 @@ window.updateExpandedAutoHide = function() {
                 if (!window.mushroomSporesActive) {
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                     canvas.style.display = 'none';
+                    this._sporesLoopStarted = false;
+                    if (this._sporesResizeHandler) {
+                        window.removeEventListener('resize', this._sporesResizeHandler);
+                        this._sporesResizeHandler = null;
+                    }
                     return;
                 }
 
                 canvas.style.display = 'block';
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-                const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
-                const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
-                const themeAccent = activeThemeConfig.accent || "#787878";
+                const themeAccent = getThemeAccent();
 
                 while (particles.length < maxParticles) {
                     particles.push(createParticle());
@@ -7624,6 +7547,7 @@ window.updateExpandedAutoHide = function() {
                 }, { once: true, passive: true });
 
                 setInterval(() => {
+                    if (document.hidden) return;
                     if (window.Mascot && window.EQ && !EQ.vizLoopRunning) {
                         Mascot.update();
                     }
@@ -8024,9 +7948,14 @@ renderIemDbSearch: function(query) {
                 matches = db;
             } else {
                 const tokens = q.split(/\s+/).filter(Boolean);
+                if (!this._iemSearchableCache) this._iemSearchableCache = new Map();
                 for (let i = 0; i < db.length; i++) {
                     const it = db[i];
-                    const searchable = `${it.brand || ''} ${it.model || ''} ${it.variant || ''} ${(it.tags || []).join(' ')} ${(it.name || '')}`.toLowerCase();
+                    let searchable = this._iemSearchableCache.get(it);
+                    if (searchable === undefined) {
+                        searchable = `${it.brand || ''} ${it.model || ''} ${it.variant || ''} ${(it.tags || []).join(' ')} ${(it.name || '')}`.toLowerCase();
+                        this._iemSearchableCache.set(it, searchable);
+                    }
                     if (tokens.every(t => searchable.includes(t))) matches.push(it);
                 }
             }
@@ -8266,6 +8195,46 @@ renderIemDbSearch: function(query) {
             this.updateAll();
             showToast("Selection cleared — review restored.", "↩️");
         },
+        // Maps impedance/sensitivity to the "Ease of Drive" slider using the same
+        // voltage-requirement math as FindEngine.getDriveabilityStatus
+        // (vReq = sqrt(10^((115 - sens)/10) * imp / 1000)). Anchors sit on the
+        // badge thresholds: 0.45V phone-OK, 1.5V dongle, 3.5V portable amp;
+        // interpolated in log space so the slider stays continuous. Returns
+        // null when either spec is missing (drive slider stays untouched).
+        computeDriveSliderValue: function(impedance, sensitivity) {
+            const imp = parseFloat(impedance);
+            const sens = parseFloat(sensitivity);
+            if (isNaN(imp) || isNaN(sens) || imp <= 0) return null;
+            const vReq = Math.sqrt((Math.pow(10, (115 - sens) / 10) * imp) / 1000);
+            const anchors = [
+                [0.10, 10],
+                [0.45, 7],
+                [1.50, 3],
+                [3.50, 0],
+                [10.0, -8],
+                [50.0, -10]
+            ];
+            let value;
+            if (vReq <= anchors[0][0]) {
+                value = anchors[0][1];
+            } else if (vReq >= anchors[anchors.length - 1][0]) {
+                value = anchors[anchors.length - 1][1];
+            } else {
+                const logV = Math.log10(vReq);
+                value = 0;
+                for (let i = 1; i < anchors.length; i++) {
+                    if (vReq <= anchors[i][0]) {
+                        const x0 = anchors[i - 1][0], y0 = anchors[i - 1][1];
+                        const x1 = anchors[i][0], y1 = anchors[i][1];
+                        const t = (logV - Math.log10(x0)) / (Math.log10(x1) - Math.log10(x0));
+                        value = y0 + (y1 - y0) * t;
+                        break;
+                    }
+                }
+            }
+            return Math.max(-10, Math.min(10, Math.round(value * 10) / 10));
+        },
+
         applyDbEntryToReview: async function(itemId) {
             const db = this.getIemDatabase();
             const item = db.find(x => x.id === itemId);
@@ -8316,6 +8285,17 @@ renderIemDbSearch: function(query) {
             if (document.getElementById('sensitivity-slider')) document.getElementById('sensitivity-slider').value = Math.min(125, Math.max(80, Math.round(item.sensitivity || 80)));
             let impEl = document.getElementById('impedance');
             if (impEl) document.getElementById('impedance').dispatchEvent(new Event('input', { bubbles: true }));
+
+            // Ease-of-Drive slider: derived from the entry's impedance/sensitivity
+            // with the same voltage-requirement math as the Find tab badges.
+            const driveVal = this.computeDriveSliderValue(item.impedance, item.sensitivity);
+            if (driveVal !== null) {
+                const driveNode = (this.sliderNodes || []).find(n => n.element && n.element.id === 'ease-of-drive');
+                if (driveNode) {
+                    driveNode.element.value = driveVal.toFixed(1);
+                    if (driveNode.displayValueNode) driveNode.displayValueNode.textContent = (driveVal >= 0 ? "+" : "") + driveVal.toFixed(1);
+                }
+            }
 
             if (item.form_factor) this.setFormFactor(item.form_factor);
             if (item.connector) this.setConnector(item.connector);
@@ -8857,7 +8837,8 @@ renderIemDbSearch: function(query) {
             { id: 'mids', label: 'Mids', emoji: '🎤' },
             { id: 'treble', label: 'Treble', emoji: '✨' },
             { id: 'stage', label: 'Stage', emoji: '🏟️' },
-            { id: 'fit', label: 'Fit', emoji: '🎧' }
+            { id: 'fit', label: 'Fit', emoji: '🎧' },
+            { id: 'package', label: 'Package', emoji: '📦' }
         ],
         activeSoundCharTab: 'bass',
         cycleSoundCharTab: function(dir) {
@@ -11349,7 +11330,8 @@ return;
                 const slider = document.getElementById('tone-slider');
                 if (slider) {
                     slider.value = this.current;
-                    if (window.syncGlobalSliders) window.syncGlobalSliders();
+                    const pct = Math.min(100, (this.current / 20000) * 100);
+                    slider.style.setProperty('--range-fill', pct + '%');
                 }
                 this.updateUI();
                 if(this.osc) setAudioParamSmooth(this.osc.frequency, this.current);
@@ -11385,13 +11367,22 @@ return;
                 slider.style.background = `linear-gradient(90deg, var(--accent-blue) ${percent}%, rgba(255, 255, 255, 0.08) ${percent}%)`;
             }
         },
-        getState: function() { return { freq: this.current, volume: document.getElementById('tone-volume').value }; },
+        getState: function() { const volEl = document.getElementById('tone-volume'); return { freq: this.current, volume: volEl ? volEl.value : 50 }; },
         loadState: function(state) {
-            if (state) { this.current = state.freq || 0; document.getElementById('tone-slider').value = this.current; document.getElementById('tone-volume').value = 50; document.getElementById('tone-vol-display').innerText = (state.volume || 50) + '%'; if(this.gain) setAudioParamSmooth(this.gain.gain, (state.volume || 50) / 100 * 0.2); } else { this.reset(); }
+            if (state) {
+                this.current = state.freq || 0;
+                document.getElementById('tone-slider').value = this.current;
+                const volEl = document.getElementById('tone-volume'); if (volEl) volEl.value = 50;
+                const volDisp = document.getElementById('tone-vol-display'); if (volDisp) volDisp.innerText = (state.volume || 50) + '%';
+                if(this.gain) setAudioParamSmooth(this.gain.gain, (state.volume || 50) / 100 * 0.2);
+            } else { this.reset(); }
             this.updateUI();
         },
         reset: function() {
-            this.current = 0; document.getElementById('tone-slider').value = 0; document.getElementById('tone-volume').value = 50; document.getElementById('tone-vol-display').innerText = '50%';
+            this.current = 0;
+            document.getElementById('tone-slider').value = 0;
+            const volEl = document.getElementById('tone-volume'); if (volEl) volEl.value = 50;
+            const volDisp = document.getElementById('tone-vol-display'); if (volDisp) volDisp.innerText = '50%';
             if(this.gain) setAudioParamSmooth(this.gain.gain, 50 / 100 * 0.2); this.updateUI();
         }
     };
@@ -11970,8 +11961,35 @@ simState: { tip: 'off', depth: 'off', seal: 'off' },
                 const nextIdx = (curIdx + dir + total) % total;
                 this.tapeModState = this.tapeModOptions[nextIdx];
                 this.updateTapeModUI();
+                this.updateTapeSimDSP();
                 this.drawCurve();
                 if (this.updateAudioConnections) this.updateAudioConnections();
+            },
+            updateTapeSimDSP: function() {
+                if (!SharedAudio.workletNode) return;
+                let sims;
+                if (this.tapeModState === 'front') {
+                    sims = [
+                        { index: 6, bypassed: false, filterType: 'lowshelf', frequency: 120, gain: 6.0, q: 0.7 },
+                        { index: 7, bypassed: false, filterType: 'peaking', frequency: 35, gain: 2.5, q: 1.2 }
+                    ];
+                } else if (this.tapeModState === 'rear') {
+                    sims = [
+                        { index: 6, bypassed: false, filterType: 'lowshelf', frequency: 250, gain: 3.5, q: 0.7 },
+                        { index: 7, bypassed: false, filterType: 'peaking', frequency: 150, gain: 2.0, q: 1.0 }
+                    ];
+                } else if (this.tapeModState === 'full') {
+                    sims = [
+                        { index: 6, bypassed: false, filterType: 'lowshelf', frequency: 180, gain: 8.5, q: 0.8 },
+                        { index: 7, bypassed: false, filterType: 'peaking', frequency: 30, gain: 4.0, q: 1.5 }
+                    ];
+                } else {
+                    sims = [
+                        { index: 6, bypassed: true, filterType: 'lowshelf', frequency: 180, gain: 0, q: 0.8 },
+                        { index: 7, bypassed: true, filterType: 'peaking', frequency: 100, gain: 0, q: 1.0 }
+                    ];
+                }
+                SharedAudio.workletNode.port.postMessage({ type: 'updateSimulations', sims });
             },
             updateTapeModUI: function() {
                 const label = document.getElementById('label-tape-mod');
@@ -12783,6 +12801,9 @@ vizModalActive: false,
                         EQ_Module.isDragging = false;
                         EQ_Module.activeEQNode = null;
                         squigCanvas.style.cursor = 'default';
+                        if (PEQDB_Module.searchMode === 'similar' && PEQDB_Module.similarDirty) {
+                            PEQDB_Module.findSimilarCurves();
+                        }
                     }
                     if (isDraggingSculptNode) {
                         isDraggingSculptNode = false;
@@ -13276,6 +13297,10 @@ vizModalActive: false,
                     finalPreamp += this.autoGainCompensationDb;
                 }
 
+                if (this.hearingCalEnabled && this._hearingMaxBoost) {
+                    finalPreamp -= this._hearingMaxBoost;
+                }
+
                 const dacHeadroomGain = (this.sourceSimGain !== undefined) ? this.sourceSimGain : 1.0;
                 const finalGainLinear = Math.pow(10, finalPreamp / 20) * dacHeadroomGain;
 
@@ -13439,7 +13464,7 @@ getLiveFiltersState: function() {
             const deEsserFreq = (this.deEsserFilter && this.deEsserFilter.frequency) ? this.deEsserFilter.frequency.value : 0;
             const bypassSize = window.bypassedBands ? window.bypassedBands.size : -1;
             const cheapKey = [simStrength, loudnessVol, Number.isFinite(deEsserFreq) ? +deEsserFreq.toFixed(2) : 0,
-                this.deEsserEnabled ? 1 : 0, this.deEsserReductionDb || 0,
+                this.deEsserEnabled ? 1 : 0, Math.round((this.deEsserReductionDb || 0) * 10) / 10,
                 this.loudnessActive ? 1 : 0, this.loudnessCalibrationVol, this.loudnessStrength,
                 this.crossoverActive ? 1 : 0, this.crossoverType,
                 this.crossoverLowTrim, this.crossoverLowMidTrim, this.crossoverMidTrim,
@@ -13448,6 +13473,7 @@ getLiveFiltersState: function() {
                 this.sourceSimLowG, this.sourceSimLowF, this.sourceSimHighG, this.sourceSimHighF,
                 this.simState.tip, this.simState.depth, this.simState.seal,
                 this.tapeModState ? JSON.stringify(this.tapeModState) : 'n',
+                this.hearingCalEnabled ? 1 : 0, this.hearingOffsets ? this.hearingOffsets.join(',') : '',
                 this.virtualBands ? this.virtualBands.length : -1].join('|');
 
             // freqs is a log-spaced array whose range changes when the graph is
@@ -13601,6 +13627,15 @@ this.advancedBands.forEach((b, i) => {
                 } else if (tapeMode === 'full') {
                     simVal *= this.getBiquadMagnitude('lowshelf', f, 180, 0.8, 8.5);
                     simVal *= this.getBiquadMagnitude('peaking', f, 30, 1.5, 4.0);
+                }
+
+                if (this.hearingCalEnabled && Array.isArray(this.hearingOffsets)) {
+                    for (let h = 0; h < 8; h++) {
+                        const hGain = this.hearingOffsets[h] || 0;
+                        if (hGain !== 0) {
+                            simVal *= this.getBiquadMagnitude('peaking', f, [250, 500, 1000, 2000, 4000, 8000, 12000, 16000][h], 1.0, hGain);
+                        }
+                    }
                 }
 
                 filterMag[j] *= simVal;
@@ -14184,9 +14219,47 @@ toggleVizFullscreen: function() {
         },
 
                 calculateTargetMatches: function() {
-
+            // Skipped when nothing changed: this runs on EVERY graph draw
+            // (20-60fps) and the genre badge only depends on the live response
+            // + active preset. getLiveResponseDbs returns a memoized array
+            // instance, so identity comparison makes the steady-state check
+            // near-free; recompute the hash only when the response changed.
+            const resp = FindEngine.getLiveResponseDbs();
+            const preset = this.activePreset || '';
+            let sig;
+            if (resp) {
+                if (resp !== this._lastMatchResp) {
+                    this._lastMatchResp = resp;
+                    let h = 0, sum = 0;
+                    for (let i = 0; i < resp.length; i++) {
+                        h = (h * 31 + Math.round(resp[i] * 10)) | 0;
+                        sum += Math.abs(resp[i]);
+                    }
+                    this._lastMatchRespSig = h + ':' + resp.length + ':' + sum.toFixed(2);
+                }
+                sig = 'r|' + this._lastMatchRespSig + '|' + preset;
+            } else {
+                sig = 'd|' + this._faderSig() + '|' + preset;
+            }
+            if (sig === this._lastTargetMatchSig) return;
+            this._lastTargetMatchSig = sig;
             this.updateMusicMatch();
             this.updateGameMatch();
+        },
+
+        _faderSig: function() {
+            const parts = [];
+            for (let i = 0; i < 10; i++) {
+                const gEl = document.getElementById('eq-s' + i);
+                const fEl = document.getElementById('eq-f' + i);
+                parts.push((gEl ? gEl.value : '0') + '@' + (fEl ? fEl.value : ''));
+            }
+            for (let i = 0; i < this.advancedBands.length; i++) {
+                const gEl = document.getElementById('eq-a' + i);
+                const fEl = document.getElementById('eq-af' + i);
+                parts.push((gEl ? gEl.value : '0') + '@' + (fEl ? fEl.value : ''));
+            }
+            return parts.join(',');
         },
 
 startVisualizer: function() {
@@ -14328,6 +14401,15 @@ startVisualizer: function() {
             };
 
             const drawViz = () => {
+                // Hidden tab: keep the loop alive but skip ALL per-frame work
+                // (spectrum reads, curve redraws, DOM writes). rAF is already
+                // throttled in background tabs; this removes the remaining
+                // main-thread cost while audio keeps playing.
+                if (document.hidden) {
+                    this.vizFrameId = requestAnimationFrame(drawViz);
+                    return;
+                }
+
                 if (!cachedBarsL || cachedBarsL.length === 0) {
                     refreshVizDomCache();
                 }
@@ -14557,18 +14639,20 @@ if (diffR > 0.4) {
 
                 if (this.deEsserEnabled) {
 
+                    const binWidth = (SharedAudio.ctx && SharedAudio.ctx.sampleRate) ? SharedAudio.ctx.sampleRate / 2048 : 21.53;
+
                     let midSum = 0;
-                    const midStartBin = 23;
-                    const midEndBin = 93;
+                    const midStartBin = Math.round(500 / binWidth);
+                    const midEndBin = Math.round(2000 / binWidth);
                     for (let i = midStartBin; i < midEndBin; i++) {
                         midSum += dataArray[i];
                     }
                     const midAverage = midSum / (midEndBin - midStartBin) / 255;
 
                     let maxVal = 0;
-                    let peakBin = 278;
-                    const startBin = 186;
-                    const endBin = 372;
+                    let peakBin = Math.round(6000 / binWidth);
+                    const startBin = Math.round(4000 / binWidth);
+                    const endBin = Math.round(8000 / binWidth);
                     for (let i = startBin; i < endBin; i++) {
                         if (dataArray[i] > maxVal) {
                             maxVal = dataArray[i];
@@ -14576,7 +14660,6 @@ if (diffR > 0.4) {
                         }
                     }
                     const sibilancePeak = maxVal / 255;
-                    const binWidth = 21.53;
 
                     const relativeMargin = 0.08;
                     const isSibilant = (sibilancePeak > (midAverage + relativeMargin)) && (sibilancePeak > 0.12);
@@ -14765,9 +14848,7 @@ if (diffR > 0.4) {
                     for (let i = 0; i < bufferLength; i++) totalEnergy += dataArray[i];
                     totalEnergy = (totalEnergy / bufferLength) / 255;
 
-                    const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
-                    const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
-                    const themeAccent = activeThemeConfig.accent === '#ffffff' ? '#ffffff' : activeThemeConfig.accent;
+                    const themeAccent = getThemeAccent();
 
                     const mode = EQ_Module.vizModes[EQ_Module.vizModeIndex];
 
@@ -15077,45 +15158,6 @@ if (diffR > 0.4) {
                             break;
                         }
                     }
-
-                    if (window.mushroomSporesActive) {
-                        if (!this.sporeParticles || this.sporeParticles.length === 0) {
-                            this.sporeParticles = [];
-                            for (let i = 0; i < 40; i++) {
-                                this.sporeParticles.push({
-                                    x: Math.random() * w,
-                                    y: h + Math.random() * 100,
-                                    size: Math.random() * 3 + 1,
-                                    speedY: Math.random() * -0.8 - 0.3,
-                                    wobble: Math.random() * Math.PI
-                                });
-                            }
-                        }
-
-                        fctx.save();
-                        this.sporeParticles.forEach(spore => {
-                            spore.y += spore.speedY;
-                            spore.wobble += 0.02;
-
-                            const dx = spore.x + Math.sin(spore.wobble) * 15;
-
-                            if (spore.y < -10) {
-                                spore.y = h + 10;
-                                spore.x = Math.random() * w;
-                            }
-
-                            const themeColor = themeAccent || "#3b82f6";
-                            fctx.fillStyle = themeColor;
-                            fctx.shadowBlur = 6;
-                            fctx.shadowColor = themeColor;
-
-                            fctx.globalAlpha = 0.25 + (treble * 0.5);
-                            fctx.beginPath();
-                            fctx.arc(dx, spore.y, spore.size, 0, Math.PI * 2);
-                            fctx.fill();
-                        });
-                        fctx.restore();
-                    }
                 }
             };
             drawViz();
@@ -15131,20 +15173,22 @@ if (diffR > 0.4) {
                 console.log("[AudioEngine] AudioWorklet dsp-processor module loaded successfully.");
             } catch (err) {
                 console.error("[AudioEngine] Failed to load AudioWorklet module. Falling back to native structures.", err);
-                showDebugError("AudioWorklet failed to load. Check console/network paths.", "dsp-processor.js");
-                return;
+                showDebugError("AudioWorklet failed to load. Running in bypass mode (EQ disabled, playback only).", "dsp-processor.js");
+                this.dspFallback = true;
             }
 
-            SharedAudio.workletNode = new AudioWorkletNode(ctx, 'dsp-processor', {
-                numberOfInputs: 1,
-                numberOfOutputs: 1,
-                outputChannelCount: [2]
-            });
+            if (!this.dspFallback) {
+                SharedAudio.workletNode = new AudioWorkletNode(ctx, 'dsp-processor', {
+                    numberOfInputs: 1,
+                    numberOfOutputs: 1,
+                    outputChannelCount: [2]
+                });
 
-            SharedAudio.workletNode.port.postMessage({
-                type: 'init',
-                sampleRate: ctx.sampleRate
-            });
+                SharedAudio.workletNode.port.postMessage({
+                    type: 'init',
+                    sampleRate: ctx.sampleRate
+                });
+            }
 
             this.inputGainNode = ctx.createGain();
             this.inputGainNode.gain.value = 1.0;
@@ -15154,9 +15198,11 @@ if (diffR > 0.4) {
             const initialVol = volSlider ? (parseFloat(volSlider.value) / 100) : 0.5;
             this.musicVolumeNode.gain.value = initialVol;
 
-            this.inputGainNode.connect(SharedAudio.workletNode);
+            this.inputGainNode.connect(this.dspFallback ? SharedAudio.compressorFilter : SharedAudio.workletNode);
 
-            SharedAudio.workletNode.connect(SharedAudio.compressorFilter);
+            if (!this.dspFallback) {
+                SharedAudio.workletNode.connect(SharedAudio.compressorFilter);
+            }
             SharedAudio.compressorFilter.connect(SharedAudio.compressor);
             SharedAudio.compressor.connect(SharedAudio.compressorGain);
             SharedAudio.compressorGain.connect(SharedAudio.autoGainNode);
@@ -15211,6 +15257,9 @@ if (diffR > 0.4) {
             }
 
             this.graphBuilt = true;
+            if (this.dspFallback) {
+                showToast("AudioWorklet unavailable — EQ bypassed, playback fallback active", "⚠️");
+            }
             this.updateAudioConnections();
 
             this.updatePreamp();
@@ -15228,6 +15277,18 @@ if (diffR > 0.4) {
         },
 
         updateAudioConnections: function() {
+            // Coalesced: burst calls (e.g. per-frame slider sweeps) collapse into
+            // a single 30ms-flushed payload while the final state always lands.
+            if (!this.graphBuilt || !SharedAudio.workletNode) return;
+            if (this._audioConnFlushTimer) return;
+            const self = this;
+            this._audioConnFlushTimer = setTimeout(function() {
+                self._audioConnFlushTimer = null;
+                self._sendAudioConnections();
+            }, 30);
+        },
+
+        _sendAudioConnections: function() {
             if (!this.graphBuilt || !SharedAudio.workletNode) return;
 
             const payload = [];
@@ -15703,7 +15764,6 @@ switchCategory: function(catId) {
 const DBCache = {
             DB_NAME: "squig_database_cache",
             DB_VERSION: 3,
-                STORE_NAME: "processed_curves",
                 db: null,
                 init: function() {
                     return new Promise((resolve) => {
@@ -15732,9 +15792,6 @@ const DBCache = {
                             req.onupgradeneeded = (e) => {
                                 try {
                                     const db = e.target.result;
-                                    if (!db.objectStoreNames.contains(this.STORE_NAME)) {
-                                        db.createObjectStore(this.STORE_NAME, { keyPath: "id" });
-                                    }
                                     if (!db.objectStoreNames.contains("iem_reviews")) {
                                         db.createObjectStore("iem_reviews", { keyPath: "id" });
                                     }
@@ -15865,10 +15922,12 @@ const DBCache = {
                             req.onupgradeneeded = (e) => {
                                 const db = e.target.result;
 
-                                if (db.objectStoreNames.contains(this.STORE_NAME)) {
-                                    db.deleteObjectStore(this.STORE_NAME);
+                                // Create the store if missing instead of deleting it:
+                                // wiping the cache on every version bump discards
+                                // thousands of parsed curves for no benefit.
+                                if (!db.objectStoreNames.contains(this.STORE_NAME)) {
+                                    db.createObjectStore(this.STORE_NAME, { keyPath: "path" });
                                 }
-                                db.createObjectStore(this.STORE_NAME, { keyPath: "path" });
                             };
                             req.onsuccess = (e) => { this.db = e.target.result; safeResolve(true); };
                             req.onerror = () => safeResolve(false);
@@ -15880,24 +15939,24 @@ const DBCache = {
                 _dbGetAll: function() {
                     return new Promise((resolve) => {
                         if (!this.db) return resolve([]);
-                        const timeoutId = setTimeout(() => {
-                            console.warn("[CurveIndexer] _dbGetAll timed out.");
-                            resolve([]);
-                        }, 1500);
-
+                        // No timeout race here: a slow-but-working read used to be
+                        // silently discarded after 1.5s, which threw away the whole
+                        // warm cache and forced ~5,000 re-fetches on the next boot.
+                        // Errors still resolve (tx onerror/onabort), so boot can
+                        // never hang, but a genuine result is never dropped.
                         try {
                             const tx = this.db.transaction(this.STORE_NAME, "readonly");
                             const req = tx.objectStore(this.STORE_NAME).getAll();
-                            req.onsuccess = () => {
-                                clearTimeout(timeoutId);
-                                resolve(req.result || []);
-                            };
+                            req.onsuccess = () => resolve(req.result || []);
                             req.onerror = () => {
-                                clearTimeout(timeoutId);
+                                console.warn("[CurveIndexer] _dbGetAll failed.", req.error);
+                                resolve([]);
+                            };
+                            tx.onabort = () => {
+                                console.warn("[CurveIndexer] _dbGetAll transaction aborted.");
                                 resolve([]);
                             };
                         } catch (e) {
-                            clearTimeout(timeoutId);
                             resolve([]);
                         }
                     });
@@ -15913,6 +15972,47 @@ const DBCache = {
                             tx.onerror = () => resolve(false);
                         } catch (e) { resolve(false); }
                     });
+                },
+
+                _dbPutBatch: function(records) {
+                    return new Promise((resolve) => {
+                        if (!this.db || !records || records.length === 0) return resolve(true);
+                        try {
+                            const tx = this.db.transaction(this.STORE_NAME, "readwrite");
+                            const store = tx.objectStore(this.STORE_NAME);
+                            for (let i = 0; i < records.length; i++) store.put(records[i]);
+                            tx.oncomplete = () => resolve(true);
+                            tx.onerror = () => resolve(false);
+                        } catch (e) { resolve(false); }
+                    });
+                },
+
+                // Fire-and-forget write queue: loadCurve no longer opens one
+                // readwrite transaction per curve (~5,000 transactions during
+                // warmup); records are coalesced into batches flushed on a
+                // single transaction each.
+                _writeQueue: [],
+                _writeFlushScheduled: false,
+                _queueWrite: function(record) {
+                    if (!this.db) return;
+                    this._writeQueue.push(record);
+                    if (this._writeQueue.length >= 200) {
+                        this._flushWriteQueue();
+                        return;
+                    }
+                    if (this._writeFlushScheduled) return;
+                    this._writeFlushScheduled = true;
+                    const self = this;
+                    setTimeout(() => {
+                        self._writeFlushScheduled = false;
+                        self._flushWriteQueue();
+                    }, 0);
+                },
+                _flushWriteQueue: function() {
+                    if (this._writeQueue.length === 0) return;
+                    const records = this._writeQueue;
+                    this._writeQueue = [];
+                    this._dbPutBatch(records).catch(() => {});
                 },
 
                 updateCatalogProgressUI: function(pct, loaded, total, isComplete = false) {
@@ -16027,10 +16127,10 @@ const DBCache = {
 
                             if (cached && cached.freqs && cached.dbs && cached.freqs.length >= 2) {
                                 cachedData = this._decodeCurve(cached.freqs, cached.dbs);
-                                cachedInterp = cached.cachedInterp;
+                                cachedInterp = (cached.cachedInterp && cached.interpAlignDb === PEQDB_Module.alignDb) ? cached.cachedInterp : null;
                             } else if (cached && Array.isArray(cached.data) && cached.data.length >= 2) {
                                 cachedData = cached.data;
-                                cachedInterp = cached.cachedInterp;
+                                cachedInterp = (cached.cachedInterp && cached.interpAlignDb === PEQDB_Module.alignDb) ? cached.cachedInterp : null;
                             }
                         }
 
@@ -16091,14 +16191,18 @@ const DBCache = {
                         item.sourcesCache[targetFile] = parsed;
 
                         if (fileIndex === 0) {
+                            const hadData = !!item.data;
                             item.data = parsed;
                             const norm = PEQDB_Module.getNormalizedData(parsed, item.name);
                             item.cachedInterp = Array.from(PEQDB_Module.DSP.interpolate(norm));
+                            if (!hadData) PEQDB_Module._indexedCount = (PEQDB_Module._indexedCount || 0) + 1;
                         }
 
-                        this._dbPut({
+                        this._queueWrite({
                             path: targetFile,
                             ...this._encodeCurve(parsed),
+                            cachedInterp: (fileIndex === 0 && item.cachedInterp) ? Array.from(item.cachedInterp) : null,
+                            interpAlignDb: fileIndex === 0 ? PEQDB_Module.alignDb : null,
                             indexedAt: Date.now()
                         });
                         return true;
@@ -16117,11 +16221,9 @@ const DBCache = {
 
                     if (this.warming || PEQDB_Module.databaseFullyLoaded) return;
                     if (!dataset || dataset.length === 0) {
-                        PEQDB_Module.databaseFullyLoaded = true;
-                        localStorage.setItem('squig_db_indexed', 'true');
-                        if (window.FindEngine && FindEngine.updateIndexingProgressBar) {
-                            FindEngine.updateIndexingProgressBar();
-                        }
+                        // Same boot race guard as startBackgroundLoading: never
+                        // mark the DB "fully loaded" off an empty dataset — retry.
+                        if (!PEQDB_Module.databaseFullyLoaded) PEQDB_Module.startBackgroundLoading();
                         return;
                     }
                     this.warming = true;
@@ -16307,12 +16409,14 @@ const DBCache = {
             if (this.databaseFullyLoaded) return;
             const dataset = this.STATE.dataset;
             if (!dataset || dataset.length === 0) {
-                this.databaseFullyLoaded = true;
-                localStorage.setItem('squig_db_indexed', 'true');
-                this.renderList(false, true);
-                if (window.FindEngine && FindEngine.updateIndexingProgressBar) {
-                    FindEngine.updateIndexingProgressBar();
-                }
+                // Dataset is still being built (async fetches) — retry shortly
+                // instead of marking the DB "fully loaded", which would
+                // permanently skip the warm-up and the similar-curve index.
+                clearTimeout(this._bgLoadingRetryTimer);
+                const self = this;
+                this._bgLoadingRetryTimer = setTimeout(function() {
+                    if (!self.databaseFullyLoaded) self.startBackgroundLoading();
+                }, 400);
                 return;
             }
             CurveIndexer.startBackgroundWarmup(dataset);
@@ -16573,10 +16677,22 @@ const DBCache = {
                 if (typeof Worker === 'undefined') return;
                 const workerCode = `
                     const fn = ${computeSimilarityScores.toString()};
+                    let cachedDataset = null;
+                    let cachedSig = null;
                     self.onmessage = function(e) {
-                        const { dataset, targetInterp, probes, weights, midMask, threshold, token } = e.data;
-                        const matches = fn(targetInterp, dataset, probes, weights, midMask, threshold);
-                        self.postMessage({ token: token, matches: matches });
+                        const msg = e.data || {};
+                        if (msg.type === 'prime') {
+                            cachedDataset = msg.dataset;
+                            cachedSig = msg.sig;
+                            self.postMessage({ type: 'primed', token: msg.token });
+                            return;
+                        }
+                        if (msg.type !== 'search') return;
+                        const ds = (msg.sig !== undefined && msg.sig === cachedSig)
+                            ? cachedDataset
+                            : (cachedDataset = msg.dataset, cachedSig = msg.sig, msg.dataset);
+                        const matches = fn(msg.targetInterp, ds, msg.probes, msg.weights, msg.midMask, msg.threshold);
+                        self.postMessage({ type: 'result', token: msg.token, matches: matches });
                     };
                 `;
                 try {
@@ -16585,17 +16701,43 @@ const DBCache = {
                     this.similarityWorker = new Worker(blobUrl);
                     URL.revokeObjectURL(blobUrl);
                     this.similarityWorker.onmessage = (e) => {
+                        const d = e.data || {};
+                        if (d.type === 'primed') {
+                            // Dataset freshly cloned — retry the pending search
+                            // that triggered the prime.
+                            if (this._similarPriming) {
+                                this._similarPriming = false;
+                                this.findSimilarCurves();
+                            }
+                            return;
+                        }
+                        if (d.type !== 'result') return;
                         // Ignore stale responses that no longer match the newest
                         // in-flight search so an old result can't overwrite the
                         // cache (and its post-time fingerprint).
-                        if (e.data.token !== this._similarSearchToken) return;
-                        this.handleSimilarityResults(e.data.matches, this._similarPostFp);
+                        if (d.token !== this._similarSearchToken) return;
+                        this.handleSimilarityResults(d.matches, this._similarPostFp);
                     };
                 } catch (err) {
                     console.warn("Similarity Web Worker creation restricted on local files. Running inline.");
                     this.similarityWorker = null;
                 }
             },
+
+        // Content signature for the similarity dataset: changes whenever the
+        // membership or per-item interp sizes change, so the worker is only
+        // re-primed when the actual payload differs.
+        _similarDsSig: function(ds) {
+            let h1 = 0, h2 = 0;
+            for (let i = 0; i < ds.length; i++) {
+                const it = ds[i];
+                const idLen = it && it.id ? String(it.id).length : 0;
+                const cLen = it && it.cachedInterp ? it.cachedInterp.length : 0;
+                h1 = (h1 * 33 + idLen + cLen) | 0;
+                h2 = (h2 * 33 + ((it && it.id) ? String(it.id).charCodeAt(0) : 0)) | 0;
+            }
+            return ds.length + ':' + h1 + ':' + h2;
+        },
 
         getRefDb: function(data) {
             if (!data || data.length === 0) return 0;
@@ -16638,7 +16780,7 @@ const DBCache = {
                         graphBtn.innerHTML = `<span class="align-label-prefix">Align: </span>${labelMap[hzStr] || hzStr}`;
                     }
 
-                    this.updateAlignmentCfgActual();
+                    this.updateAlignmentCfg();
                 },
                 setAlignDb: function(db) {
             const numDb = parseFloat(db);
@@ -16683,6 +16825,12 @@ const DBCache = {
             }, 120);
         },
         updateAlignmentCfgActual: function() {
+            if (this._lastAppliedAlignHz === this.alignHz && this._lastAppliedAlignDb === this.alignDb) {
+                return;
+            }
+            this._lastAppliedAlignHz = this.alignHz;
+            this._lastAppliedAlignDb = this.alignDb;
+
             if (this.alignDb === 0) {
                 this.squigYMin = -30;
                 this.squigYMax = 30;
@@ -17027,12 +17175,19 @@ const DBCache = {
                     PEQDB_Module.STATE.dataset = [];
                 }
                 if (!query || !query.trim()) {
-                    PEQDB_Module.STATE.renderList = PEQDB_Module.STATE.dataset.slice().sort((a, b) => {
-                        const nameA = (a.name || '').toLowerCase();
-                        const nameB = (b.name || '').toLowerCase();
-                        if (nameA !== nameB) return nameA.localeCompare(nameB);
-                        return (a.source || '').localeCompare(b.source || '');
-                    });
+                    // Memoize the fully-sorted list: the dataset is immutable
+                    // between loads, and this sort ran on every search() call
+                    // (each keystroke + every renderList refresh).
+                    if (this._sortedDatasetSource !== PEQDB_Module.STATE.dataset) {
+                        this._sortedDatasetSource = PEQDB_Module.STATE.dataset;
+                        this._sortedDataset = PEQDB_Module.STATE.dataset.slice().sort((a, b) => {
+                            const nameA = (a.name || '').toLowerCase();
+                            const nameB = (b.name || '').toLowerCase();
+                            if (nameA !== nameB) return nameA.localeCompare(nameB);
+                            return (a.source || '').localeCompare(b.source || '');
+                        });
+                    }
+                    PEQDB_Module.STATE.renderList = this._sortedDataset;
                     return;
                 }
                 const results = [];
@@ -17088,9 +17243,13 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             const searchInput = document.getElementById("peqdb-search");
             if (searchInput) {
                 searchInput.addEventListener("input", debounce(e => {
-                    this.DATA.search(e.target.value);
-                    this.renderList();
-                    this.updateSearchSuggestions(e.target.value);
+                    if (this.searchMode === 'similar') {
+                        this.debouncedFindSimilarCurves();
+                    } else {
+                        this.DATA.search(e.target.value);
+                        this.renderList();
+                        this.updateSearchSuggestions(e.target.value);
+                    }
                 }, 250));
                 searchInput.addEventListener("blur", () => {
                     setTimeout(() => {
@@ -17382,11 +17541,19 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             const countEl = document.getElementById('peqdb-result-count');
             if (countEl) countEl.textContent = totalItems;
 
-            const brandCounts = new Map();
-            PEQDB_Module.STATE.renderList.forEach(item => {
-                const bk = item.brand || 'Unknown Brand';
-                brandCounts.set(bk, (brandCounts.get(bk) || 0) + 1);
-            });
+            // Memoize brand counts per renderList instance: the full-list pass
+            // ran on every render (including appendMore refreshes) even though
+            // the counts only change when the filtered list itself changes.
+            if (this._brandCountsSource !== PEQDB_Module.STATE.renderList) {
+                this._brandCountsSource = PEQDB_Module.STATE.renderList;
+                const brandCounts = new Map();
+                PEQDB_Module.STATE.renderList.forEach(item => {
+                    const bk = item.brand || 'Unknown Brand';
+                    brandCounts.set(bk, (brandCounts.get(bk) || 0) + 1);
+                });
+                this._brandCounts = brandCounts;
+            }
+            const brandCounts = this._brandCounts;
 
             const fragment = document.createDocumentFragment();
             const activeCurves = PEQDB_Module.STATE.activeCurves;
@@ -17587,7 +17754,7 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             const targetFile = (item.files && item.files[fileIndex]) ? item.files[fileIndex] : item.primaryFilePath;
             const curveUid = `${id}_src_${fileIndex}`;
 
-            const activeIndex = this.STATE.activeCurves.findIndex(c => c.uid === curveUid || (item.files.length <= 1 && c.id === id));
+            const activeIndex = this.STATE.activeCurves.findIndex(c => c.uid === curveUid || ((!item.files || item.files.length <= 1) && c.id === id));
             if (activeIndex >= 0) {
                 this.STATE.activeCurves.splice(activeIndex, 1);
             } else {
@@ -18646,7 +18813,7 @@ generateDynamicFallbackCurve: function(name) {
 
                 if (data.length > 0) {
                     data.sort((a,b) => a[0] - b[0]);
-                    const id = 'imported_' + Date.now();
+                    const id = 'imported_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
                     const cleanName = file.name.replace(/\.[^/.]+$/, "").replace("omega", "Ω");
                     const newItem = {
                         id,
@@ -18670,23 +18837,41 @@ generateDynamicFallbackCurve: function(name) {
 
         precalculateInterps: function() {
             if (!this.STATE.dataset) return;
-            this.STATE.dataset.forEach(item => {
-                if (item.cachedInterp) return;
-                if (!item.data) return;
-                try {
-                    const norm = this.getNormalizedData(item.data, item.name);
-                    item.cachedInterp = Array.from(this.DSP.interpolate(norm));
-                } catch(e) {
-                    item.cachedInterp = null;
+            if (this._interpChunkActive) return;
+            const dataset = this.STATE.dataset;
+            const self = this;
+            this._interpChunkActive = true;
+            const CHUNK = 120;
+            let cursor = 0;
+            const step = () => {
+                const end = Math.min(cursor + CHUNK, dataset.length);
+                for (; cursor < end; cursor++) {
+                    const item = dataset[cursor];
+                    if (item.cachedInterp) continue;
+                    if (!item.data) continue;
+                    try {
+                        const norm = this.getNormalizedData(item.data, item.name);
+                        item.cachedInterp = Array.from(this.DSP.interpolate(norm));
+                    } catch(e) {
+                        item.cachedInterp = null;
+                    }
                 }
-            });
-            this.STATE.lightweightDataset = this.STATE.dataset.map(item => ({
-                id: item.id,
-                name: item.name,
-                variant: item.variant,
-                source: item.source,
-                cachedInterp: item.cachedInterp
-            })).filter(item => item.cachedInterp !== null);
+                if (cursor < dataset.length) {
+                    // Yield to the event loop between chunks so a 5,000-curve
+                    // pass never blocks the main thread in one synchronous hit.
+                    setTimeout(step, 0);
+                } else {
+                    this._interpChunkActive = false;
+                    this.STATE.lightweightDataset = this.STATE.dataset.map(item => ({
+                        id: item.id,
+                        name: item.name,
+                        variant: item.variant,
+                        source: item.source,
+                        cachedInterp: item.cachedInterp
+                    })).filter(item => item.cachedInterp !== null);
+                }
+            };
+            step();
         },
 
         normalizeSearchText: function(str) {
@@ -18776,13 +18961,32 @@ generateDynamicFallbackCurve: function(name) {
         },
 
 toggleSearchMode: function(mode) {
-                this.searchMode = 'database';
+                this.searchMode = (mode === 'similar') ? 'similar' : 'database';
                 const dbList = document.getElementById('peqdb-list');
-                if (dbList) {
-                    dbList.classList.remove('hidden');
-                    this.renderList();
+                const simList = document.getElementById('similar-list');
+                if (this.searchMode === 'similar') {
+                    if (dbList) dbList.classList.add('hidden');
+                    if (simList) simList.classList.remove('hidden');
+                    this.ensureSimilarList();
+                    this.findSimilarCurves();
+                } else {
+                    if (simList) simList.classList.add('hidden');
+                    if (dbList) {
+                        dbList.classList.remove('hidden');
+                        this.renderList();
+                    }
                 }
             },
+
+        ensureSimilarList: function() {
+            if (document.getElementById('similar-list')) return;
+            const wrapper = document.getElementById('peqdb-list-wrapper');
+            if (!wrapper) return;
+            const listEl = document.createElement('div');
+            listEl.id = 'similar-list';
+            listEl.className = 'peqdb-list hidden w-full min-w-0 flex-1 overflow-y-auto pr-2 space-y-1.5';
+            wrapper.appendChild(listEl);
+        },
 
         handleSimilarityResults: function(matches, fingerprint) {
         this.similarDirty = false;
@@ -18951,8 +19155,25 @@ toggleSearchMode: function(mode) {
                 // cache keyed against the data this search actually used.
                 this._similarSearchToken = (this._similarSearchToken || 0) + 1;
                 this._similarPostFp = SimilarCurvesCache.getTargetFingerprint();
+
+                // The dataset is primed into the worker once per signature;
+                // drag ticks only send the (small) search parameters instead of
+                // structured-cloning ~11,000 curve arrays every 220ms.
+                const dsSig = this._similarDsSig(lightweightDs);
+                if (dsSig !== this._similarPrimedSig) {
+                    this._similarPrimedSig = dsSig;
+                    this._similarPriming = true;
+                    this.similarityWorker.postMessage({
+                        type: 'prime',
+                        dataset: lightweightDs,
+                        sig: dsSig,
+                        token: this._similarSearchToken
+                    });
+                    return;
+                }
                 this.similarityWorker.postMessage({
-                    dataset: lightweightDs,
+                    type: 'search',
+                    sig: dsSig,
                     targetInterp: Array.from(targetInterp),
                     probes: Array.from(probesIdx),
                     weights,
@@ -22533,7 +22754,6 @@ loadSoundLibrary: async function() {
             }
 
             const FindEngine = {
-                canonicalCache: {},
                 isScanning: false,
                 currentBaselineIndex: 0,
                 isClonedModeActive: false,
@@ -22930,7 +23150,6 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
 
                 init: async function() {
                     this.bindEvents();
-                    this.loadCachedCanonicalProfiles();
                     this.checkInitialProgress();
 
                     await this.loadDatabase();
@@ -23120,10 +23339,28 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             const res = await fetch('database.json');
                             if (res.ok) this.iemDatabase = await res.json();
                         }
-                        this.populateCloneSelector();
+                        this._rebuildDbIndex();
                         this.populateBrandSuggestions();
                     } catch(e) {
                         console.warn("[FindEngine] Metadata database not found or offline. Filtering fallback in effect.", e);
+                    }
+                },
+
+                _rebuildDbIndex: function() {
+                    this._dbById = new Map();
+                    const db = this.iemDatabase;
+                    if (!db) return;
+                    for (let i = 0; i < db.length; i++) {
+                        const e = db[i];
+                        if (!e || !e.id) continue;
+                        if (!this._dbById.has(e.id)) this._dbById.set(e.id, e);
+                        const files = e.files;
+                        if (Array.isArray(files)) {
+                            for (let f = 0; f < files.length; f++) {
+                                const key = String(files[f]).toLowerCase();
+                                if (!this._dbById.has(key)) this._dbById.set(key, e);
+                            }
+                        }
                     }
                 },
 
@@ -23375,11 +23612,17 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                 getDbEntry: function(item) {
                     if (!this.iemDatabase || this.iemDatabase.length === 0) return null;
 
-                    let match = this.iemDatabase.find(db => db.id === item.id);
-                    if (match) return match;
+                    // O(1) lookups through the rebuild-time index instead of
+                    // a full .find() scan on every candidate card.
+                    if (this._dbById) {
+                        let match = this._dbById.get(item.id);
+                        if (match) return match;
+                        match = this._dbById.get(String(item.id).toLowerCase());
+                        if (match) return match;
+                    }
 
-                    match = this.iemDatabase.find(db => db.files && db.files.some(f => f.toLowerCase() === item.id.toLowerCase()));
-                    return match;
+                    const fallback = this.iemDatabase.find(db => db.files && db.files.some(f => f.toLowerCase() === item.id.toLowerCase()));
+                    return fallback;
                 },
 
                 checkInitialProgress: function() {
@@ -23387,7 +23630,6 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     const progressContainer = document.getElementById('find-progress-container');
                     if (isIndexed && progressContainer) {
                         progressContainer.classList.add('hidden');
-                        this.populateCloneSelector();
                     } else {
                         this.updateIndexingProgressBar();
 
@@ -23639,7 +23881,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     const details = document.getElementById('find-taste-details');
                     if (details && details.open) {
 
-                        this.populateCloneSelector();
+                        this.drawTargetVisualization();
                     }
                 },
 
@@ -23788,22 +24030,13 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                 },
 
                 loadCachedCanonicalProfiles: function() {
-                    try {
-                        const cached = localStorage.getItem('find_canonical_profiles');
-                        if (cached) {
-                            this.canonicalCache = JSON.parse(cached);
-                        }
-                    } catch (e) {
-                        console.warn("Failed to load canonical profiles cache.", e);
-                    }
+                    // Retired: the canonical-profile localStorage cache held
+                    // sourceData (megabytes per entry) and was never read
+                    // anywhere else. Kept as a no-op stub.
                 },
 
                 saveCanonicalProfilesToCache: function() {
-                    try {
-                        localStorage.setItem('find_canonical_profiles', JSON.stringify(this.canonicalCache));
-                    } catch (e) {
-                        console.warn("Failed to save canonical profiles cache.", e);
-                    }
+                    // Retired together with loadCachedCanonicalProfiles.
                 },
 
                 generateTargetCurve: function() {
@@ -23894,11 +24127,16 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     return targetData;
                 },
 
-                drawTasteRadar: function() {
+                drawTasteRadar: function(retryCount) {
                     const canvas = document.getElementById('find-taste-radar');
                     if (!canvas) return;
                     const w = canvas.clientWidth, h = canvas.clientHeight;
-                    if (w === 0 || h === 0) { setTimeout(() => this.drawTasteRadar(), 100); return; }
+                    if (w === 0 || h === 0) {
+                        // Cap the layout-retry loop so a permanently hidden
+                        // canvas can't schedule timers forever.
+                        if ((retryCount || 0) < 10) setTimeout(() => this.drawTasteRadar((retryCount || 0) + 1), 100);
+                        return;
+                    }
                     canvas.width = w; canvas.height = h;
                     const ctx = canvas.getContext('2d');
                     ctx.clearRect(0, 0, w, h);
@@ -23946,7 +24184,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     });
                 },
 
-                drawTargetVisualization: function() {
+                drawTargetVisualization: function(retryCount) {
                     const canvas = document.getElementById('find-target-canvas');
                     if (!canvas) return;
                     const ctx = canvas.getContext('2d');
@@ -23956,7 +24194,9 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     const h = canvas.clientHeight;
 
                     if (w === 0 || h === 0) {
-                        setTimeout(() => this.drawTargetVisualization(), 100);
+                        // Cap the layout-retry loop so a permanently hidden
+                        // canvas can't schedule timers forever.
+                        if ((retryCount || 0) < 10) setTimeout(() => this.drawTargetVisualization((retryCount || 0) + 1), 100);
                         return;
                     }
 
@@ -24026,9 +24266,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     const minDb = 60;
                     const maxDb = 90;
 
-                    const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
-                    const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
-                    const themeAccent = activeThemeConfig.accent || "#3b82f6";
+                    const themeAccent = getThemeAccent('#3b82f6');
 
                     ctx.save();
                     ctx.strokeStyle = themeAccent;
@@ -24090,6 +24328,22 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                 },
 
                 buildCanonicalProfiles: async function(dataset) {
+                    // In-memory cache: the profile list is derived purely from
+                    // the loaded dataset, so reuse it unless the dataset grew.
+                    // (localStorage persistence is impractical — sourceData alone
+                    // is far too large to serialize per session.)
+                    let loadedCount = 0;
+                    if (dataset) {
+                        for (let i = 0; i < dataset.length; i++) {
+                            if (dataset[i] && dataset[i].data) loadedCount++;
+                        }
+                    }
+                    const sig = (dataset ? dataset.length : 0) + '|' + loadedCount +
+                        (dataset && dataset[0] ? '|' + dataset[0].id : '');
+                    if (this._canonicalSig === sig && this._canonicalList) {
+                        return this._canonicalList;
+                    }
+
                     const groups = {};
                     const freqs = CurveUtils.generateLogGrid(100);
 
@@ -24188,6 +24442,8 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         });
                     }
 
+                    this._canonicalSig = sig;
+                    this._canonicalList = canonicalList;
                     return canonicalList;
                 },
 
@@ -24203,6 +24459,21 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     return this._findWorker;
                 },
 
+                // Cheap content hash for the scan payload: changed data
+                // lengths or membership change the signature, identical
+                // scans reuse the previously-primed worker dataset.
+                _scanItemsSig: function(items) {
+                    let h1 = 0, h2 = 0;
+                    for (let i = 0; i < items.length; i++) {
+                        const it = items[i];
+                        const idLen = it && it.id ? String(it.id).length : 0;
+                        const dLen = it && it.data ? it.data.length : 0;
+                        h1 = (h1 * 33 + idLen + dLen) | 0;
+                        h2 = (h2 * 33 + (it && it.id ? String(it.id).charCodeAt(0) : 0)) | 0;
+                    }
+                    return items.length + ':' + h1 + ':' + h2;
+                },
+
                 _runTuningViaWorker: function(token, items, targetInterp, freqs) {
                     const worker = this.ensureFindWorker();
                     if (!worker) return Promise.resolve(null);
@@ -24210,11 +24481,34 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         const onMsg = (e) => {
                             const d = e.data || {};
                             if (d.type !== 'result') return;
+                            if (d.reprime) {
+                                // Worker lost its canonical cache — re-send the
+                                // full payload and retry once in place.
+                                console.warn("[FindEngine] worker cache miss, re-priming dataset.");
+                                this._workerScanSig = null;
+                                this._workerScanItems = null;
+                                const slim = items.map(function(it) {
+                                    return { id: it && it.id, name: it && it.name, data: it && it.data || null };
+                                });
+                                const sig = this._scanItemsSig(slim);
+                                this._workerScanSig = sig;
+                                this._workerScanItems = slim;
+                                worker.postMessage({ type: 'prime', dataset: slim, sig: sig });
+                                worker.postMessage({ type: 'tuning', sig: sig, items: slim, targetInterp: targetInterp, freqs: freqs });
+                                return;
+                            }
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
                             if (this._scanToken !== token) return resolve(null);
                             if (!d.ok) { console.warn("[FindEngine] worker tuning failed:", d.error); return resolve(null); }
                             const list = (d.matches || []).slice();
+                            // The worker only echoes slim payloads (no sourceData),
+                            // so reattach curve data by id on the main thread.
+                            list.forEach(m => {
+                                if (m.data) return;
+                                const it = items.find(i => i && i.id === m.id);
+                                if (it) m.data = it.data || null;
+                            });
                             list.sort((a, b) => b.similarity - a.similarity);
                             resolve(list);
                         };
@@ -24230,7 +24524,20 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             const slim = items.map(function(it) {
                                 return { id: it && it.id, name: it && it.name, data: it && it.data || null };
                             });
-                            worker.postMessage({ type: 'tuning', items: slim, targetInterp: targetInterp, freqs: freqs });
+                            // Prime the dataset into the worker only when the
+                            // payload actually changed — previously the full
+                            // dataset was structured-cloned on every slider tick.
+                            const sig = this._scanItemsSig(slim);
+                            if (sig !== this._workerScanSig || !this._workerScanItems) {
+                                this._workerScanSig = sig;
+                                this._workerScanItems = slim;
+                                worker.postMessage({ type: 'prime', dataset: slim, sig: sig });
+                                worker.postMessage({ type: 'tuning', sig: sig, items: slim, targetInterp: targetInterp, freqs: freqs });
+                            } else {
+                                // Already primed with this exact payload — skip
+                                // re-cloning the curve data entirely.
+                                worker.postMessage({ type: 'tuning', sig: sig, targetInterp: targetInterp, freqs: freqs });
+                            }
                         } catch (e) {
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
@@ -24350,7 +24657,20 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     const dataset = PEQDB_Module.STATE.dataset;
                     if (!dataset || dataset.length === 0) return;
 
-                    const indexedCount = dataset.filter(item => item.data !== null).length;
+                    let indexedCount;
+                    if (PEQDB_Module._indexedCountBase === undefined) {
+                        // First call after the dataset exists: snapshot the
+                        // already-restored (IDB-cached) items once, then let
+                        // loadCurve's incremental counter add on top.
+                        PEQDB_Module._indexedCountBase = dataset.filter(item => item.data !== null).length;
+                    }
+                    indexedCount = PEQDB_Module._indexedCountBase + (PEQDB_Module._indexedCount || 0);
+                    if (indexedCount > dataset.length || indexedCount < 0) {
+                        // Counter out of sync (e.g. cache was cleared) — reconcile once.
+                        indexedCount = dataset.filter(item => item.data !== null).length;
+                        PEQDB_Module._indexedCountBase = indexedCount;
+                        PEQDB_Module._indexedCount = 0;
+                    }
                     const totalCount = dataset.length;
                     const percent = Math.round((indexedCount / totalCount) * 100);
 
@@ -24367,10 +24687,6 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         if (progressContainer) progressContainer.classList.remove('hidden');
                         if (status) status.textContent = `⚡ Indexing: ${indexedCount}/${totalCount} files cached...`;
                     }
-                },
-
-                populateCloneSelector: function() {
-
                 },
 
                 scanAndMatch: async function() {
@@ -24821,8 +25137,16 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                         }
                         if (!item.data) continue;
 
-                        const itemNorm = CurveUtils.normalizeTo75dB(item.data, 500, 75);
-                        const itemInterp = CurveUtils.cubicSplineInterpolate(itemNorm, freqs);
+                        // Reuse the PEQDB 500-point cached interpolation when
+                        // present — the giant-killer loop alone re-normalized
+                        // and re-interpolated every candidate on each run.
+                        let itemInterp;
+                        if (item.cachedInterp && PEQDB_Module.DSP && PEQDB_Module.DSP.FREQS) {
+                            itemInterp = CurveUtils.resampleInterp(item.cachedInterp, PEQDB_Module.DSP.FREQS, freqs);
+                        } else {
+                            const itemNorm = CurveUtils.normalizeTo75dB(item.data, 500, 75);
+                            itemInterp = CurveUtils.cubicSplineInterpolate(itemNorm, freqs);
+                        }
 
                         const matchPct = this._scoreInterp(itemInterp, targetInterp, freqs, true);
 
@@ -25289,9 +25613,15 @@ determineLiveGameGenreMatch: function(bandDeltas, presetKey) {
 
 // Exact dB response of the current graph curve (same path that draws the graph curve):
 // Supports both EQ filter faders and Target Sculptor mode (sculptPoints).
+// getCompositeFilterMagnitude returns the shared cached magnitude array on
+// cache hits, so memoizing on array identity avoids re-allocating the dB
+// response on every genre scan tick when nothing has changed.
+_liveRespMagCache: null,
+_liveRespCache: null,
+_liveFreqsCache: null,
 getLiveResponseDbs: function() {
     try {
-        const freqs = Float32Array.from(this.DSP.FREQS);
+        const freqs = this._liveFreqsCache || (this._liveFreqsCache = Float32Array.from(this.DSP.FREQS));
         const n = freqs.length;
 
         // If Target Sculptor mode is active, classify the live Sculptor target curve on screen
@@ -25304,8 +25634,11 @@ getLiveResponseDbs: function() {
         if (typeof EQ_Module === 'undefined' || !EQ_Module.getCompositeFilterMagnitude) return null;
         const mag = EQ_Module.getCompositeFilterMagnitude(freqs, n);
         if (!mag) return null;
+        if (this._liveRespMagCache === mag) return this._liveRespCache;
         const resp = new Float32Array(n);
         for (let j = 0; j < n; j++) resp[j] = 20 * Math.log10(Math.max(1e-9, mag[j]));
+        this._liveRespMagCache = mag;
+        this._liveRespCache = resp;
         return resp;
     } catch (err) {
         return null;
@@ -25425,9 +25758,7 @@ applyGenreFilters: function(matches) {
                                         sctx.fillStyle = '#000000';
                                         sctx.fillRect(0, 0, sw, sh);
 
-                                        const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
-                                        const themeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
-                                        const sparkColor = themeConfig.accent || '#3b82f6';
+                                        const sparkColor = getThemeAccent('#3b82f6');
 
                                         const norm = CurveUtils.normalizeTo75dB(subData, 500, 75);
                                         sctx.strokeStyle = sparkColor;
@@ -25801,9 +26132,7 @@ applyGenreFilters: function(matches) {
                             sctx.fillStyle = '#000000';
                             sctx.fillRect(0, 0, sw, sh);
 
-                            const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
-                            const themeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
-                            const sparkColor = themeConfig.accent || '#3b82f6';
+                            const sparkColor = getThemeAccent('#3b82f6');
 
                             const norm = CurveUtils.normalizeTo75dB(subData, 500, 75);
                             sctx.strokeStyle = sparkColor;
@@ -26247,9 +26576,7 @@ applyGenreFilters: function(matches) {
                                 sctx.fillStyle = '#000000';
                                 sctx.fillRect(0, 0, sw, sh);
 
-                                const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
-                                const themeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
-                                const sparkColor = themeConfig.accent || '#3b82f6';
+                                const sparkColor = getThemeAccent('#3b82f6');
 
                                 const norm = CurveUtils.normalizeTo75dB(c.item.data, 500, 75);
                                 sctx.strokeStyle = sparkColor;
@@ -26316,9 +26643,7 @@ applyGenreFilters: function(matches) {
                     sctx.clearRect(0, 0, sw, sh);
                     sctx.fillStyle = '#000000';
                     sctx.fillRect(0, 0, sw, sh);
-                    const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
-                    const themeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
-                    const sparkColor = themeConfig.accent || '#3b82f6';
+                    const sparkColor = getThemeAccent('#3b82f6');
                     const norm = CurveUtils.normalizeTo75dB(item.data, 500, 75);
                     sctx.strokeStyle = sparkColor;
                     sctx.lineWidth = 2.2;
@@ -27137,6 +27462,11 @@ applyGenreFilters: function(matches) {
             window.addEventListener('DOMContentLoaded', initAll);
 
             setInterval(initAll, 1000);
+            // Skip the refresh entirely while the tab is hidden — the first
+            // tick after focus resumes corrects any stale fill values.
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) initAll();
+            });
         })();
 
         (function() {

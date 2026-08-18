@@ -170,6 +170,32 @@ const CurveUtils = {
         });
     },
 
+    // Resample an already-interpolated dense response (e.g. a cachedInterp on
+    // the 500-pt DSP.FREQS grid) onto a sparser target grid via log-space
+    // linear interpolation. Avoids re-normalizing + re-splining raw curve data
+    // whenever a scan needs a different grid density than the cached one.
+    resampleInterp: function(sourceInterp, sourceFreqs, targetFreqs) {
+        if (!sourceInterp || !sourceFreqs || !targetFreqs) return null;
+        const n = sourceFreqs.length;
+        if (n < 2 || targetFreqs.length === 0) return null;
+        const out = new Float32Array(targetFreqs.length);
+        for (let i = 0; i < targetFreqs.length; i++) {
+            const f = targetFreqs[i];
+            if (f <= sourceFreqs[0]) { out[i] = sourceInterp[0]; continue; }
+            if (f >= sourceFreqs[n - 1]) { out[i] = sourceInterp[n - 1]; continue; }
+            let lo = 0, hi = n - 1;
+            while (lo + 1 < hi) {
+                const mid = (lo + hi) >> 1;
+                if (sourceFreqs[mid] < f) lo = mid; else hi = mid;
+            }
+            const x0 = Math.log10(sourceFreqs[lo]);
+            const x1 = Math.log10(sourceFreqs[hi]);
+            const t = (x1 > x0) ? (Math.log10(f) - x0) / (x1 - x0) : 0;
+            out[i] = sourceInterp[lo] + (sourceInterp[hi] - sourceInterp[lo]) * t;
+        }
+        return out;
+    },
+
     // 5-axis classification bands. Each band's lo/hi now meets its neighbors
     // at the geometric-mean boundary between adjacent centers (and the outer
     // two extend to the edges of the audible range), so the six windows tile

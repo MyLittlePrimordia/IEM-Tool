@@ -36,6 +36,21 @@ const MIME_TYPES = {
   '.mka': 'audio/x-matroska'
 };
 
+// Static build artifacts are immutable once shipped (the app.bundle hash in
+// bundle-version.js busts them), so they can be cached aggressively. Data
+// files (html/json/gz/audio) stay no-store — they may be replaced on disk
+// while the app runs.
+const CACHEABLE_EXTENSIONS = new Set([
+  '.js', '.css', '.woff2', '.woff', '.ttf', '.otf', '.eot',
+  '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico'
+]);
+
+function cacheControlFor(ext) {
+  return CACHEABLE_EXTENSIONS.has(ext)
+    ? 'public, max-age=31536000, immutable'
+    : 'no-store';
+}
+
 let mainWindow;
 let server;
 
@@ -101,7 +116,7 @@ function serveFile(filePath, stats, req, res) {
       'Content-Length': chunkSize,
       'Content-Range': `bytes ${start}-${end}/${fileSize}`,
       'Accept-Ranges': 'bytes',
-      'Cache-Control': 'no-store',
+      'Cache-Control': cacheControlFor(ext),
       'Connection': 'close'
     });
     stream.pipe(res);
@@ -113,7 +128,7 @@ function serveFile(filePath, stats, req, res) {
     'Content-Type': mimeType,
     'Content-Length': fileSize,
     'Accept-Ranges': 'bytes',
-    'Cache-Control': 'no-store',
+    'Cache-Control': cacheControlFor(ext),
     'Connection': 'close'
   });
   const stream = fs.createReadStream(filePath);

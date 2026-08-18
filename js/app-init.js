@@ -20,6 +20,11 @@
             window.addEventListener('DOMContentLoaded', initAll);
 
             setInterval(initAll, 1000);
+            // Skip the refresh entirely while the tab is hidden — the first
+            // tick after focus resumes corrects any stale fill values.
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) initAll();
+            });
         })();
 
         (function() {

@@ -222,7 +222,7 @@ class DspProcessor extends AudioWorkletProcessor {
         this.targetPreampGain = 1.0;
 
         this.filters = Array.from({ length: 80 }, () => new BiquadFilter());
-        this.simFilters = Array.from({ length: 15 }, () => new BiquadFilter());
+        this.simFilters = Array.from({ length: 20 }, () => new BiquadFilter());
         this.xoFilters = Array.from({ length: 10 }, () => new BiquadFilter());
 
         this.activeFilters = [];

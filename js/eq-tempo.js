@@ -23,4 +23,9 @@ const EQ_TempoMethods = {
             this.audioEl.playbackRate = this.tempoActive ? (this.tempoSpeed || 1.0) : 1.0;
         }
     },
+
+    updateTempoSpeed: function(val) {
+        this.tempoSpeed = Math.max(0.1, Math.min(5, (parseFloat(val) || 100) / 100));
+        this.updateTempoDSP();
+    },
 };

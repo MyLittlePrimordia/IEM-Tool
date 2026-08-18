@@ -96,6 +96,7 @@ const EQ_PresetMethods = {
             this.activePreset = id;
             EQ_Module.isProgrammaticSliderUpdate = true; // Lock UI updates during load
 
+            try {
             // Map values cleanly to UI faders
             const preSlider = document.getElementById("eq-preampSlider");
             if (preSlider && p.p !== undefined) {
@@ -178,7 +179,9 @@ const EQ_PresetMethods = {
                 });
             }
 
-            EQ_Module.isProgrammaticSliderUpdate = false; // Release UI lock
+            } finally {
+                EQ_Module.isProgrammaticSliderUpdate = false; // Release UI lock even if a band throws
+            }
 
             if (this.graphBuilt) {
                 this.updateAudioConnections();
@@ -231,7 +234,7 @@ const EQ_PresetMethods = {
                 if (!p) return;
                 
                 EQ_Module.isProgrammaticSliderUpdate = true; // Raise protection flag
-                
+                try {
                 const preSlider = document.getElementById("eq-preampSlider");
                 if (preSlider && p.p !== undefined) {
                     preSlider.value = p.p;
@@ -259,8 +262,10 @@ const EQ_PresetMethods = {
                         this.updateSlider(i, 'adv');
                     });
                 }
-                
-                EQ_Module.isProgrammaticSliderUpdate = false; // Release protection flag
+
+                } finally {
+                    EQ_Module.isProgrammaticSliderUpdate = false; // Release protection flag even if a band throws
+                }
                 
                 // Send a single, complete message update to the worklet
                 if (this.graphBuilt) {

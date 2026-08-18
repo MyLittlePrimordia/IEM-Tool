@@ -39,6 +39,10 @@ const UIKit = {
 
         const finish = (result) => {
             wrap.classList.add('hidden');
+            if (this._keyHandler) {
+                document.removeEventListener('keydown', this._keyHandler);
+                this._keyHandler = null;
+            }
             const resolve = this._resolver;
             this._resolver = null;
             if (resolve) resolve(result);
@@ -50,12 +54,17 @@ const UIKit = {
         // Click on the dark backdrop (not the card itself) cancels, matching
         // the rest of the app's modal behavior.
         wrap.addEventListener('click', (e) => { if (e.target === wrap) finish(false); });
-        // Esc cancels, Enter confirms — only while this modal is the one showing.
-        document.addEventListener('keydown', (e) => {
+        // Esc cancels, Enter confirms — only while this modal is the one
+        // showing, and never while typing inside an input (keeps Enter from
+        // confirming the dialog mid-typing).
+        this._keyHandler = (e) => {
             if (wrap.classList.contains('hidden')) return;
+            const tag = (e.target && e.target.tagName) || '';
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
             if (e.key === 'Escape') finish(false);
             else if (e.key === 'Enter') finish(true);
-        });
+        };
+        document.addEventListener('keydown', this._keyHandler);
 
         this._modalEl = wrap;
         return wrap;

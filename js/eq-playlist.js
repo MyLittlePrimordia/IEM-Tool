@@ -59,11 +59,70 @@ const EQ_PlaylistMethods = {
             });
         },
 
+        // Standalone worker script: fetch + decode + RMS measurement happen
+        // off the main thread so a long track never stalls playback UI while
+        // its loudness is measured. Falls back to the main-thread path below.
+        _loudnessWorkerSrc: function() {
+            return "self.onmessage = async (e) => {" +
+                "const url = e.data && e.data.url; " +
+                "if (!url) { self.postMessage({ ok: false }); return; } " +
+                "try { " +
+                "const res = await fetch(url); " +
+                "if (!res.ok) { self.postMessage({ ok: false }); return; } " +
+                "const buf = await res.arrayBuffer(); " +
+                "const Ctx = self.OfflineAudioContext || self.webkitOfflineAudioContext; " +
+                "if (!Ctx) { self.postMessage({ ok: false }); return; } " +
+                "const ctx = new Ctx(1, 1, 44100); " +
+                "const audio = await new Promise((resolve, reject) => ctx.decodeAudioData(buf, resolve, reject)); " +
+                "const n = audio.length; " +
+                "const ch = audio.numberOfChannels; " +
+                "let sumSq = 0; " +
+                "for (let c = 0; c < ch; c++) { " +
+                "const d = audio.getChannelData(c); " +
+                "let s = 0; " +
+                "for (let i = 0; i < n; i++) s += d[i] * d[i]; " +
+                "sumSq += s; " +
+                "} " +
+                "const rms = Math.max(1e-9, Math.sqrt((sumSq / (ch * n)) || 0)); " +
+                "const dbfs = 20 * Math.log10(rms); " +
+                "let gainDb = -23 - dbfs; " +
+                "gainDb = Math.max(-12, Math.min(12, gainDb)); " +
+                "self.postMessage({ ok: true, gain: Math.pow(10, gainDb / 20) }); " +
+                "} catch (err) { self.postMessage({ ok: false, error: String(err) }); } " +
+                "};";
+        },
+
         // Resolves a linear gain factor that brings track loudness to a matched
         // target (-23 dBFS channel RMS). Clamped to +/- 12 dB. Returns 1 on error.
         _decodeAndMeasureLoudness: async function(url) {
             try {
                 if (!url) return 1;
+
+                // Worker path first: keeps the decode off the main thread.
+                if (typeof Worker === 'function') {
+                    const workerGain = await new Promise((resolve) => {
+                        try {
+                            const blob = new Blob([this._loudnessWorkerSrc()], { type: 'application/javascript' });
+                            const workerUrl = URL.createObjectURL(blob);
+                            const worker = new Worker(workerUrl);
+                            const done = (gain) => {
+                                clearTimeout(timer);
+                                worker.terminate();
+                                URL.revokeObjectURL(workerUrl);
+                                resolve(gain);
+                            };
+                            const timer = setTimeout(() => done(null), 60000);
+                            worker.onmessage = (e) => done(e.data && e.data.ok ? e.data.gain : null);
+                            worker.onerror = () => done(null);
+                            worker.postMessage({ url: url });
+                        } catch (e) {
+                            resolve(null);
+                        }
+                    });
+                    if (workerGain !== null) return workerGain;
+                    console.warn("[Playlist] Loudness worker unavailable, using main-thread measurement.");
+                }
+
                 const res = await fetch(url);
                 if (!res.ok) return 1;
                 const arrayBuffer = await res.arrayBuffer();
@@ -105,6 +164,39 @@ const EQ_PlaylistMethods = {
             if (!track) return null;
             if (track.key) return track.key;
             return track.url || (track.name + '-' + (track.file ? track.file.size : ''));
+        },
+
+        // Lazily (re)create the object URL for a file-backed track. Revoking
+        // the URL at track-swap time means uploaded files no longer pin their
+        // full decode buffers for the whole session; the URL is recreated on
+        // demand the next time the track is played.
+        _ensureTrackUrl: function(track) {
+            if (!track) return null;
+            if (track.url) return track.url;
+            if (track.file) {
+                const url = URL.createObjectURL(track.file);
+                track.url = url;
+                if (this._urlRegistry && track.key) this._urlRegistry[track.key] = url;
+                if (this.objectUrlsCache) this.objectUrlsCache.push(url);
+                return url;
+            }
+            return track.url || null;
+        },
+
+        // Revoke a file-backed track's blob URL and remove it from the
+        // registries so clearGhostFiles() doesn't double-revoke it.
+        _revokeTrackUrl: function(track) {
+            if (!track || !track.url) return;
+            const url = track.url;
+            if (this._urlRegistry && track.key && this._urlRegistry[track.key] === url) {
+                delete this._urlRegistry[track.key];
+            }
+            if (this.objectUrlsCache) {
+                const idx = this.objectUrlsCache.indexOf(url);
+                if (idx !== -1) this.objectUrlsCache.splice(idx, 1);
+            }
+            track.url = null;
+            URL.revokeObjectURL(url);
         },
 
         /**
@@ -252,6 +344,7 @@ const EQ_PlaylistMethods = {
         },
         playPlaylistIndex: function(index) {
             if(index < 0 || index >= this.playlist.length) return;
+            const prevIndex = this.playlistIndex;
             this.playlistIndex = index;
             const infoText = document.getElementById("playlist-track-info");
             const mobInfoText = document.getElementById("mobile-track-info");
@@ -272,8 +365,15 @@ const EQ_PlaylistMethods = {
             this._activeLoudnessGain = 1;
             
             setTimeout(() => {
+                // Free the previous track's blob URL at swap time — uploaded
+                // files otherwise pin their full buffer until playlist clear.
+                if (prevIndex !== index) {
+                    const prevTrack = this.playlist[prevIndex];
+                    if (prevTrack && prevTrack !== track) this._revokeTrackUrl(prevTrack);
+                }
+                const trackUrl = this._ensureTrackUrl(track);
                 if (this.audioEl) {
-                    this.audioEl.src = track.url;
+                    this.audioEl.src = trackUrl;
                     this.audioEl.load();
                     this.audioEl.play()
                         .then(() => {

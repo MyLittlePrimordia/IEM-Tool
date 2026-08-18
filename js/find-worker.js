@@ -111,8 +111,7 @@ function buildCanonicalProfiles(dataset) {
             canonicalList.push({
                 name: name,
                 id: item.id,
-                interp: Array.from(interp),
-                sourceData: item.data
+                interp: Array.from(interp)
             });
             continue;
         }
@@ -169,8 +168,7 @@ function buildCanonicalProfiles(dataset) {
             canonicalList.push({
                 name: displayName,
                 id: sub.items[0].item.id,
-                interp: Array.from(averagedInterp),
-                sourceData: sub.items[0].item.data
+                interp: Array.from(averagedInterp)
             });
         });
     }
@@ -288,8 +286,19 @@ function itemsKey(list) {
 self.onmessage = function (e) {
     const msg = e.data || {};
     try {
+        if (msg.type === 'prime') {
+            // Prime: build the canonical profiles from the full payload and
+            // cache them under msg.sig. Follow-up tuning messages with the
+            // same sig skip both the rebuild and the payload transfer, so
+            // repeated scans don't re-clone ~20MB of curve data.
+            if (msg.dataset && Array.isArray(msg.dataset)) {
+                canonicalList = buildCanonicalProfiles(msg.dataset);
+                canonicalKey = (msg.sig !== undefined && msg.sig !== null) ? msg.sig : itemsKey(msg.dataset);
+            }
+            self.postMessage({ type: 'primed', ok: true });
+            return;
+        }
         if (msg.type === 'tuning') {
-            const items = msg.items || [];
             const freqs = msg.freqs || CurveUtils.generateLogGrid(100);
             const targetInterp = msg.targetInterp || null;
 
@@ -301,12 +310,22 @@ self.onmessage = function (e) {
             // buildCanonicalProfiles is target-independent (depends only on the
             // item set), so memoize it: repeated scans over the same filtered
             // set with a different target slider value skip the whole rebuild.
-            const key = itemsKey(items);
+            // The main thread sends a signature computed with the same formula
+            // as itemsKey; when it matches, the items themselves are NOT sent
+            // again, so repeated scans don't re-clone ~20MB of curve data.
+            const key = (msg.sig !== undefined && msg.sig !== null) ? msg.sig : itemsKey(msg.items || []);
             let cc;
             if (key === canonicalKey && canonicalList) {
                 cc = canonicalList;
             } else {
-                canonicalList = buildCanonicalProfiles(items);
+                // No memoized list: either the dataset changed (worker expects
+                // items to rebuild) or the worker lost its cache (reply with
+                // reprime so the main thread re-sends the full payload).
+                if (!msg.items || msg.items.length === 0) {
+                    self.postMessage({ type: 'result', ok: false, error: 'no items for rebuild', reprime: true });
+                    return;
+                }
+                canonicalList = buildCanonicalProfiles(msg.items || []);
                 canonicalKey = key;
                 cc = canonicalList;
             }
@@ -319,7 +338,6 @@ self.onmessage = function (e) {
                 returnList.push({
                     name: iem.name,
                     id: iem.id,
-                    data: iem.sourceData,
                     similarity: matchPct,
                     interp: iem.interp,
                     isTuningMatch: true

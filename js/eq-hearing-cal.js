@@ -63,28 +63,33 @@ const EQ_HearingCalMethods = {
                 this.updatePreamp();
             },
             applyHearingCalibrationGains: function() {
-                if (this.graphBuilt && this.hearingFilters) {
-                    let maxBoost = 0;
-                    this.hearingFilters.forEach((f, idx) => {
-                        const gainVal = this.hearingCalEnabled ? (this.hearingOffsets[idx] || 0) : 0;
-                        setAudioParamSmooth(f.gain, gainVal);
-                        if (gainVal > maxBoost) maxBoost = gainVal;
-                    });
-
-                    // Subtractive Headroom Attenuation: pad preamp automatically to prevent digital clipping
-const userPreampDb = parseFloat(document.getElementById("eq-preampSlider")?.value || 0);
-const finalPreampDb = this.hearingCalEnabled ? (userPreampDb - maxBoost) : userPreampDb;
-
-if (this.preampNode) {
-setAudioParamSmooth(this.preampNode.gain, Math.pow(10, finalPreampDb / 20));
-}
-
-// Sync the numeric display to show effective preamp value
-const preValEl = document.getElementById("eq-preampVal");
-if (preValEl && this.hearingCalEnabled) {
-preValEl.value = finalPreampDb.toFixed(1);
-}
+                const hearingFreqs = [250, 500, 1000, 2000, 4000, 8000, 12000, 16000];
+                let maxBoost = 0;
+                if (this.hearingCalEnabled && Array.isArray(this.hearingOffsets)) {
+                    for (let i = 0; i < this.hearingOffsets.length; i++) {
+                        const g = this.hearingOffsets[i] || 0;
+                        if (g > maxBoost) maxBoost = g;
+                    }
                 }
+                this._hearingMaxBoost = this.hearingCalEnabled ? maxBoost : 0;
+
+                if (SharedAudio.workletNode) {
+                    const sims = [];
+                    for (let i = 0; i < 8; i++) {
+                        const gainVal = this.hearingCalEnabled ? (this.hearingOffsets[i] || 0) : 0;
+                        sims.push({
+                            index: 12 + i,
+                            bypassed: gainVal === 0,
+                            filterType: 'peaking',
+                            frequency: hearingFreqs[i],
+                            gain: gainVal,
+                            q: 1.0
+                        });
+                    }
+                    SharedAudio.workletNode.port.postMessage({ type: 'updateSimulations', sims });
+                }
+
+                this.updatePreamp();
             },
             toggleDeEsser: function() {
                 this.deEsserEnabled = !this.deEsserEnabled;

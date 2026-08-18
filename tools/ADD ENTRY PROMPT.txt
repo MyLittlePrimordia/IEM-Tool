@@ -47,18 +47,43 @@ Every generated entry MUST follow this exact JSON structure:
 Do NOT add, remove, rename, or reorder any fields.
 
 ==================================================
+PRODUCT IDENTITY vs MEASUREMENT CONDITIONS & DSP RULES
+==================================================
+Official retail hardware identity determines database entries.
+
+1. KEEP MERGED (Same Product Entry):
+Do NOT create separate entries for measurement variations of the same hardware:
+- Eartips: Foam, Silicone, SpinFit, Final Type E
+- Hardware switch positions: 0000, 1111, ON/OFF, Bass/Vocal switch states
+- Nozzle/filter swaps: Red filter, Black filter, Brass nozzle
+- Impedance adapters: 15ohm, 30ohm, 75ohm
+- Tape mods / DIY acoustic mods
+- Cable swaps & analog termination differences (3.5mm vs 4.4mm included cable)
+- Software/App DSP & EQ presets on wireless/TWS devices: e.g., "Sony XM5 Bass EQ", "AirPods Pro 2 Pop DSP", or companion app EQ profiles
+
+2. SEPARATE OFFICIAL VARIANTS (Create Distinct Entry):
+Create separate entries ONLY when the manufacturer officially released a distinct commercial product, revision, or retuned edition:
+- Official Revisions / Generations: Bose QC35 vs QC35 II, DUNU SA6 vs SA6 MKII
+- Official Collaborations / Retunes: Truthear Zero vs Truthear Zero:RED, KZ Castor vs KZ Castor Bass
+- Official Retail DSP Hardware Editions:
+  - When an IEM is sold as a distinct retail SKU/product with dedicated Type-C DSP hardware (e.g., "Moondrop Chu II DSP", "Simgot EW300 DSP", "Tanchjim Tanya DSP", "Moondrop Quarks DSP"), it is an OFFICIAL VARIANT:
+    - model: Base model name (e.g., "Chu II", "EW300", "Tanya")
+    - variant: "DSP" or "DSP Edition"
+    - connector: "2-pin" (if detachable shell) or "Fixed Cable" (if hardwired non-detachable)
+
+==================================================
 MODEL / VARIANT NORMALIZATION
 ==================================================
 Always separate the base product name from official editions, revisions, collaborations, and special versions.
 
 - "model": Base product name only.
-  Examples: "Aria", "QuietComfort 35", "SA6", "Pilgrim", "Wyvern", "G20", "Zero"
+  Examples: "Aria", "QuietComfort 35", "SA6", "Pilgrim", "Wyvern", "G20", "Zero", "Chu II", "EW300"
 
-- "variant": Official edition, revision, retune, collaboration, or special version only.
-  Examples: "Snow Edition", "II", "MKII", "Noir", "Pro", "LTD", "Red", "Bass"
+- "variant": Official edition, revision, retune, collaboration, or official retail DSP release.
+  Examples: "Snow Edition", "II", "MKII", "Noir", "Pro", "LTD", "Red", "Bass", "DSP", "DSP Edition"
   - If no official variant exists → ""
 
-Do not place marketing names, colors, or unofficial descriptions into variant.
+Do not place marketing colorways or unofficial descriptions into variant unless they signify an official retuning.
 
 ==================================================
 id RULES
@@ -71,6 +96,7 @@ id RULES
   moondrop_aria_snow_edition
   bose_quietcomfort_35_ii
   truthear_zero_red
+  simgot_ew300_dsp
 
 ==================================================
 FIELD RULES
@@ -85,7 +111,7 @@ price_usd:
 - Original launch MSRP in USD only.
 - Never use sale, street, or discounted prices.
 - Integer only.
-- Round to the nearest $5.
+- Round to the nearest $5 (e.g., 12 -> 15, 99 -> 100, 149.99 -> 150).
 
 impedance & sensitivity:
 - Whole integers only.
@@ -99,7 +125,7 @@ form_factor – allowed values only:
 IEM, Wireless Earbuds (TWS), Earbuds (Wired), Wireless Over-Ear Headphones, Over-Ear Headphones (Wired)
 
 ==================================================
-TAGS RULES & APPROVED TAGS LIST
+TAGS RULES & APPROVED TAGS LIST (31 APPROVED TAGS)
 ==================================================
 Use ONLY these 31 approved tags:
 
@@ -112,27 +138,35 @@ Detailed, Resolving, Technical, Wide-Stage, Good-Imaging, Smooth, Reference, Ana
 Use Cases:
 Gaming, Competitive-Gaming, Studio-Monitoring
 
-Price Tiers:
+Price Tiers (Mandatory – Exactly 1 per entry):
 Budget, Mid-Tier, Premium, Flagship
 
 Release Types:
 Collab, Limited-Edition
 
-Tag Rules:
-- Minimum 4, maximum 12 tags per entry.
-- Every entry MUST contain EXACTLY ONE mandatory price tier tag derived strictly from price_usd:
-  - Budget:        $0 to $99
-  - Mid-Tier:      $100 to $499
-  - Premium:       $500 to $1,499
-  - Flagship:      $1,500+ (or the verified halo/flagship model for that brand)
-- Do NOT omit the price tier tag. Do NOT assign multiple price tier tags to one entry.
-- Every tag must be supported by measurements, specifications, or reputable reviews.
-- Do not invent new tags.
+TAGGING RULES & LOGIC:
+1. Total Count: Minimum 4, maximum 12 tags per entry.
+2. Mandatory Price Tier: Every entry MUST contain EXACTLY ONE price tier tag derived strictly from price_usd:
+   - Budget:        $0 to $99
+   - Mid-Tier:      $100 to $499
+   - Premium:       $500 to $1,499
+   - Flagship:      $1,500+ (or the verified halo/flagship model for that brand)
+   - Do NOT omit the price tier tag. Do NOT assign multiple price tier tags to one entry.
+3. Sound Signature & Technicality Determination:
+   - For sound signature and presentation tags, search reviewer consensus and frequency response measurement analyses (e.g., search: "<brand> <model> sound signature review tonality bass treble").
+   - Base tonal tags on verified target curve comparisons (Harman target, IEF Neutral, Diffuse Field) or reputable reviewer consensus.
+4. Mutual Exclusivity Guardrails:
+   - Do NOT assign contradictory tonal tags to the same product (e.g., do not pair "Basshead" with "Treblehead", "Dark" with "Bright", or "Neutral" with "V-Shaped").
+   - If an IEM has tuning switches or swappable nozzles, assign tags representing the stock / standard sound profile.
+5. Technicalities & Use Cases:
+   - Assign technicality tags ("Detailed", "Wide-Stage", "Good-Imaging") only when substantiated by reviews.
+   - Assign "Gaming", "Competitive-Gaming", or "Studio-Monitoring" only if explicitly designed for or heavily recommended by reputable technical reviewers for those applications.
+6. Do NOT invent new tags.
 
 files:
-- If a measurement file path was provided → place the exact, unedited path in the array
+- If a measurement file path was provided → place the exact, unedited path in the array.
 - If no file path was provided → []
-- Never rename, re-capitalize, or alter the path
+- Never rename, re-capitalize, or alter the path.
 
 ==================================================
 DRIVER VERIFICATION & CLASSIFICATION RULES
@@ -155,6 +189,7 @@ For EVERY product, specifically search for:
 - "product name bone conduction driver"
 - "product name vibration driver"
 - "product name piezoelectric driver"
+- "product name PZT driver"
 - "product name EST driver"
 - "product name electrostatic driver"
 - "product name MEMS driver"
@@ -174,7 +209,7 @@ Single driver technology:
 
 Multiple driver technologies:
 - Exactly 2 different driver technologies → driver_type = Hybrid
-  (e.g., 1DD + 1BA, 1DD + 1BC, 1DD + 1Planar, 1DD + 1EST)
+  (e.g., 1DD + 1BA, 1DD + 1BC, 1DD + 1Planar, 1DD + 1EST, 1DD + 1PZT)
 - 3 or more different driver technologies → driver_type = Tribrid
   (e.g., 1DD + 4BA + 2EST, 1DD + 1BA + 1BC, 1DD + 1BA + 1PZT)
 
@@ -199,15 +234,6 @@ driver_config: ""
 driver_type: ""
 
 ==================================================
-FINAL DRIVER CONSISTENCY CHECK
-==================================================
-Before outputting the JSON entry, verify:
-1. Does driver_config include every confirmed driver technology?
-2. Does driver_type represent the complete system?
-3. Are BC, EST, PZT, MEMS, or other secondary technologies accounted for?
-4. Does the classification follow the Hybrid/Tribrid technology count rules?
-
-==================================================
 FORM FACTOR & CONNECTOR CONSISTENCY RULES
 ==================================================
 Strict Allowed Values:
@@ -230,8 +256,9 @@ Mandatory Pairing & Disambiguation Rules:
    - IEMs containing EST drivers (e.g., Sonion micro-tweeters) connect via standard "2-pin" or "MMCX", NOT "Electrostatic".
 3. Flatheads vs. IEMs:
    - Non-sealing flathead earbuds must be classified as "Earbuds (Wired)".
-4. Hardwired Cables:
-   - Any non-detachable / hardwired earphone or headphone must be assigned connector "Fixed Cable".
+4. Hardwired vs Detachable Cables (including DSP IEMs):
+   - Any non-detachable / hardwired earphone or headphone must be assigned connector "Fixed Cable" (e.g., Moondrop Quarks DSP, Tanya DSP Type-C).
+   - Detachable IEMs with Type-C DSP cables must be labeled by their shell connector socket (e.g., "2-pin" or "MMCX").
 
 ==================================================
 MANDATORY RESEARCH & VERIFICATION PROCESS
@@ -252,6 +279,7 @@ EVIDENCE REQUIREMENT
 Above every completed entry, briefly note the key sources used, for example:
 // Sources: Official Moondrop product page + Linsoul (launch MSRP confirmed)
 // Driver config confirmed from manufacturer specifications
+// Sound profile tags verified via Crinacle / Squiglink review consensus
 
 ==================================================
 SECTIONAL PROCESSING RULE (ANTI-CUTOFF)

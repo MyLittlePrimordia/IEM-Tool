@@ -17,7 +17,7 @@ Your task:
    - tips
    - switches
    - impedance adapters
-   - DSP presets
+   - companion app EQ / DSP presets
    - tape mods
    - cable variations
 4. VERIFY every metadata field using web search, then repair any inaccurate metadata:
@@ -35,44 +35,32 @@ Your task:
 - tags
 5. Enforce strict:
    - model = base product name
-   - variant = official edition/version/revision/retune
+   - variant = official edition/version/revision/retune/DSP release
 
 ==================================================
-DRIVER VERIFICATION RULE
+PRODUCT IDENTITY vs MEASUREMENT CONDITIONS & DSP RULES
 ==================================================
-For every product:
-Verify the official driver configuration before determining driver_type.
-driver_config must exactly match the official driver configuration.
-driver_type must always be derived from the verified driver_config using the rules below.
-Never modify one without validating the other.
-Do not infer driver counts from marketing images, shell appearance, or product names.
-Only use officially documented driver specifications.
+Official retail hardware identity determines database entries.
 
-==================================================
-FORM FACTOR & CONNECTOR CONSISTENCY RULES
-==================================================
-Strict Allowed Values:
+1. KEEP MERGED (Same Product Entry):
+Do NOT create separate entries for measurement variations of the same hardware:
+- Eartips: Foam, Silicone, SpinFit, Final Type E
+- Hardware switch positions: 0000, 1111, ON/OFF, Bass/Vocal switch states
+- Nozzle/filter swaps: Red filter, Black filter, Brass nozzle
+- Impedance adapters: 15ohm, 30ohm, 75ohm
+- Tape mods / DIY acoustic mods
+- Cable swaps & analog termination differences (3.5mm vs 4.4mm included cable)
+- Software/App DSP & EQ presets on wireless/TWS devices: e.g., "Sony XM5 Bass EQ", "AirPods Pro 2 Pop DSP", or companion app EQ profiles
 
-form_factor (5 values ONLY):
-- "IEM" (In-ear canal sealing monitors, typically wired)
-- "Wireless Earbuds (TWS)" (True wireless earbuds / TWS)
-- "Earbuds (Wired)" (Non-sealing flatheads resting in the concha, e.g., VE Monk, NiceHCK EB2S)
-- "Wireless Over-Ear Headphones" (Full-size / on-ear Bluetooth wireless headphones)
-- "Over-Ear Headphones (Wired)" (Full-size / on-ear wired headphones)
-
-connector (13 values ONLY):
-- "Bluetooth", "2-pin", "QDC", "MMCX", "A2DC", "Fixed Cable", "Detachable Cable", "3.5mm", "4.4mm", "6.35mm", "XLR", "Electrostatic", "Unknown"
-
-Mandatory Pairing & Disambiguation Rules:
-1. Wireless Devices:
-   - "Wireless Earbuds (TWS)" and "Wireless Over-Ear Headphones" MUST use connector "Bluetooth" (even if an optional backup 3.5mm cable is included in the box).
-2. Electrostatic Distinction:
-   - connector "Electrostatic" is strictly reserved for specialized headphones/earphones requiring dedicated high-voltage bias energizers (5-pin Stax Pro-bias, Sennheiser HE 1 / HE 90 / HE 60).
-   - IEMs containing EST drivers (e.g., Sonion micro-tweeters) connect via standard "2-pin" or "MMCX", NOT "Electrostatic".
-3. Flatheads vs. IEMs:
-   - Non-sealing flathead earbuds must be classified as "Earbuds (Wired)".
-4. Hardwired Cables:
-   - Any non-detachable / hardwired earphone or headphone must be assigned connector "Fixed Cable".
+2. SEPARATE OFFICIAL VARIANTS (Create Distinct Entry):
+Create separate entries ONLY when the manufacturer officially released a distinct commercial product, revision, or retuned edition:
+- Official Revisions / Generations: Bose QC35 vs QC35 II, DUNU SA6 vs SA6 MKII
+- Official Collaborations / Retunes: Truthear Zero vs Truthear Zero:RED, KZ Castor vs KZ Castor Bass
+- Official Retail DSP Hardware Editions:
+  - When an IEM is sold as a distinct retail SKU/product with dedicated Type-C DSP hardware (e.g., "Moondrop Chu II DSP", "Simgot EW300 DSP", "Tanchjim Tanya DSP", "Moondrop Quarks DSP"), it is an OFFICIAL VARIANT:
+    - model: Base model name (e.g., "Chu II", "EW300", "Tanya")
+    - variant: "DSP" or "DSP Edition"
+    - connector: "2-pin" (if detachable shell) or "Fixed Cable" (if hardwired non-detachable)
 
 ==================================================
 OUTPUT & NOTEPAD++ SEARCH/REPLACE RULES (CRITICAL)
@@ -107,7 +95,7 @@ When the entire chunk is finished, end with:
 ==================================================
 SECTIONAL BATCH PROCESSING RULE (STRICT – 10 TO 25 ENTRIES PER BATCH)
 ==================================================
-CRITICAL: Process entries in controlled sections of 10 to 25 entries at a time to guarantee thorough web research while maintaining maximum speed.
+Process entries in controlled sections of 10 to 25 entries at a time to guarantee thorough web research while maintaining maximum speed.
 
 Rules:
 1. Divide the provided input/chunk into sections containing AT LEAST 10 entries and UP TO 25 entries per turn.
@@ -124,49 +112,18 @@ Rules:
    "Chunk complete. Please reply 'Next' to continue to the next chunk."
 
 ==================================================
-PRODUCT IDENTITY vs MEASUREMENT CONDITIONS
-==================================================
-Official product identity determines database entries.
-Reviewer/source filenames are unreliable evidence.
-
-==================================================
-KEEP MERGED (DO NOT CREATE SEPARATE ENTRIES)
-==================================================
-Do NOT create separate products for:
-- Eartip changes: Foam, Silicone, Final tips
-- Tape mods
-- Filter/nozzle modifications
-- Cable swaps
-- Impedance adapters: 15ohm, 30ohm, 75ohm
-- DSP presets
-- Hardware switch positions: 0000, 1111, ON/OFF, Bass/Vocal modes
-- Reviewer naming differences: Sample 1, Sample 2
-These belong inside the original product entry.
-
-==================================================
-SEPARATE & CREATE NEW ENTRY ONLY IF VERIFIED
-==================================================
-Create separate entries ONLY when the manufacturer officially released a distinct product/version.
-Examples:
-Moondrop Aria vs Moondrop Aria Snow Edition
-Bose QuietComfort 35 vs Bose QuietComfort 35 II
-DUNU SA6 vs DUNU SA6 Ultra vs DUNU SA6 MKII
-Elysian Pilgrim vs Elysian Pilgrim Noir
-Empire Ears Bravado vs Empire Ears Bravado MKII
-
-==================================================
 FILE ALLOCATION AUDIT RULES
 ==================================================
 Enforce these file matching rules:
 1. GENERATION MISMATCH:
 Earlier/later hardware generations MUST NOT share files.
 2. OFFICIAL RETUNE / VARIANT MISMATCH:
-Official retunes must have their own entries (e.g., kz_castor vs kz_castor_bass).
+Official retunes and official DSP retail editions must have their own entries (e.g., kz_castor vs kz_castor_bass; moondrop_chu_ii vs moondrop_chu_ii_dsp).
 3. COLORWAYS AND MARKETING NAMES:
 Colorways of the exact same tuning remain merged (e.g., Truthear_Zero_Blue.txt inside truthear_zero).
 Only separate if the hardware or tuning differs (e.g., Truthear Zero Red is separate).
 4. MEASUREMENT CONDITIONS:
-Keep switch states, impedance adapters, eartips, foam, and nozzle filters merged.
+Keep switch states, impedance adapters, eartips, foam, companion app EQ profiles, and nozzle filters merged.
 
 ==================================================
 CROSS-CHUNK FILE EXTRACTION RULE
@@ -182,9 +139,9 @@ If a misplaced file belongs to a product NOT present in the current chunk:
 MODEL / VARIANT NORMALIZATION RULES
 ==================================================
 model:
-- Base product name only (e.g., "Aria", "QuietComfort 35", "SA6", "Pilgrim").
+- Base product name only (e.g., "Aria", "QuietComfort 35", "SA6", "Pilgrim", "Chu II", "EW300").
 variant:
-- Official edition, revision, retune, or special version only (e.g., "Snow Edition", "II", "MKII", "Noir", "Ultra").
+- Official edition, revision, retune, special version, or official retail DSP release only (e.g., "Snow Edition", "II", "MKII", "Noir", "Ultra", "DSP", "DSP Edition").
 - If no variant exists → ""
 
 ==================================================
@@ -260,7 +217,7 @@ SINGLE DRIVER SYSTEMS:
 
 MULTI DRIVER SYSTEMS:
 - Exactly 2 different driver technologies → driver_type = Hybrid
-  (e.g., 1DD + 1BA, 1DD + 1BC, 1DD + 1Planar, 1DD + 1EST)
+  (e.g., 1DD + 1BA, 1DD + 1BC, 1DD + 1Planar, 1DD + 1EST, 1DD + 1PZT)
 - 3 or more different driver technologies → driver_type = Tribrid
   (e.g., 1DD + 4BA + 2EST, 1DD + 1BA + 1BC, 1DD + 1BA + 1PZT)
 
@@ -292,7 +249,22 @@ form_factor:
 - Allowed values: IEM, Wireless Earbuds (TWS), Earbuds (Wired), Wireless Over-Ear Headphones, Over-Ear Headphones (Wired)
 
 ==================================================
-TAGS RULES & APPROVED TAGS LIST
+FORM FACTOR & CONNECTOR CONSISTENCY RULES
+==================================================
+Mandatory Pairing & Disambiguation Rules:
+1. Wireless Devices:
+   - "Wireless Earbuds (TWS)" and "Wireless Over-Ear Headphones" MUST use connector "Bluetooth" (even if an optional backup 3.5mm cable is included in the box).
+2. Electrostatic Distinction:
+   - connector "Electrostatic" is strictly reserved for specialized headphones/earphones requiring dedicated high-voltage bias energizers (5-pin Stax Pro-bias, Sennheiser HE 1 / HE 90 / HE 60).
+   - IEMs containing EST drivers (e.g., Sonion micro-tweeters) connect via standard "2-pin" or "MMCX", NOT "Electrostatic".
+3. Flatheads vs. IEMs:
+   - Non-sealing flathead earbuds must be classified as "Earbuds (Wired)".
+4. Hardwired vs Detachable Cables (including DSP IEMs):
+   - Any non-detachable / hardwired earphone or headphone must be assigned connector "Fixed Cable" (e.g., Moondrop Quarks DSP, Tanya DSP Type-C).
+   - Detachable IEMs with Type-C DSP cables must be labeled by their shell connector socket (e.g., "2-pin" or "MMCX").
+
+==================================================
+TAGS RULES & APPROVED TAGS LIST (31 APPROVED TAGS)
 ==================================================
 Use ONLY these 31 approved tags:
 
@@ -305,23 +277,31 @@ Detailed, Resolving, Technical, Wide-Stage, Good-Imaging, Smooth, Reference, Ana
 Use Cases:
 Gaming, Competitive-Gaming, Studio-Monitoring
 
-Price Tiers:
+Price Tiers (Mandatory – Exactly 1 per entry):
 Budget, Mid-Tier, Premium, Flagship
 
 Release Types:
 Collab, Limited-Edition
 
-Tag Rules:
-- Minimum 4, maximum 12 tags per entry.
-- Every entry MUST contain EXACTLY ONE mandatory price tier tag derived strictly from price_usd:
-  - Budget:        $0 to $99
-  - Mid-Tier:      $100 to $499
-  - Premium:       $500 to $1,499
-  - Flagship:      $1,500+ (or the verified halo/flagship model for that brand)
-- Do NOT omit the price tier tag. Do NOT assign multiple price tier tags to one entry.
-- Verify every assigned tag using measurements, specifications, and reputable reviews.
-- Remove incorrect tags. Add missing approved tags when supported by reliable evidence.
-- Do not invent new tags.
+TAGGING RULES & LOGIC:
+1. Total Count: Minimum 4, maximum 12 tags per entry.
+2. Mandatory Price Tier: Every entry MUST contain EXACTLY ONE price tier tag derived strictly from price_usd:
+   - Budget:        $0 to $99
+   - Mid-Tier:      $100 to $499
+   - Premium:       $500 to $1,499
+   - Flagship:      $1,500+ (or the verified halo/flagship model for that brand)
+   - Do NOT omit the price tier tag. Do NOT assign multiple price tier tags to one entry.
+3. Sound Signature & Technicality Determination:
+   - For sound signature and presentation tags, search reviewer consensus and frequency response measurement analyses (e.g., search: "<brand> <model> sound signature review tonality bass treble").
+   - Base tonal tags on verified target curve comparisons (Harman target, IEF Neutral, Diffuse Field) or reputable reviewer consensus.
+4. Mutual Exclusivity Guardrails:
+   - Do NOT assign contradictory tonal tags to the same product (e.g., do not pair "Basshead" with "Treblehead", "Dark" with "Bright", or "Neutral" with "V-Shaped").
+   - If an IEM has tuning switches or swappable nozzles, assign tags representing the stock / standard sound profile.
+5. Technicalities & Use Cases:
+   - Assign technicality tags ("Detailed", "Wide-Stage", "Good-Imaging") only when substantiated by reviews.
+   - Assign "Gaming", "Competitive-Gaming", or "Studio-Monitoring" only if explicitly designed for or heavily recommended by reputable technical reviewers for those applications.
+6. Remove incorrect tags. Add missing approved tags when supported by reliable evidence.
+7. Do not invent new tags.
 
 ==================================================
 FILES FIELD & FILE INTEGRITY RULES

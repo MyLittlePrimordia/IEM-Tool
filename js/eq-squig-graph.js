@@ -102,7 +102,9 @@ const EQ_SquigGraphMethods = {
         drawSquiglinkGraphInternal: function() {
             const cv = document.getElementById("eq-squiglinkViz");
             if (!cv || cv.clientWidth === 0 || cv.clientHeight === 0) {
-                requestAnimationFrame(() => this.drawSquiglinkGraphInternal());
+                // Canvas is hidden/zero-size (e.g. tab not visible) - do not keep
+                // scheduling frames; drawCurve() will be called again once the
+                // graph becomes visible/sized (tab switch, resize, etc).
                 return;
             }
             const cc = cv.getContext("2d"); 
@@ -374,6 +376,14 @@ const EQ_SquigGraphMethods = {
 
             if (EQ_Module.graphMode === 'heatmap') {
                 cc.save();
+                // Heatmap gradients are identical across frames whenever the
+                // eq values are unchanged, so cache them per (y0, y1, sign)
+                // instead of allocating one per sample per frame.
+                if (!this._heatmapGradCache || this._heatmapGradCacheH !== h) {
+                    this._heatmapGradCache = {};
+                    this._heatmapGradCacheH = h;
+                    this._heatmapGradCount = 0;
+                }
                 for (let i = 0; i < steps; i++) {
                     const curX = (i / (steps - 1)) * w;
                     const dbVal = eqDb[i];
@@ -381,13 +391,22 @@ const EQ_SquigGraphMethods = {
                     const y0 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb, h);
                     const y1 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + dbVal, h);
                     
-                    const grad = cc.createLinearGradient(0, y0, 0, y1);
-                    if (dbVal > 0) {
-                        grad.addColorStop(0, 'rgba(16, 185, 129, 0.01)');
-                        grad.addColorStop(1, 'rgba(16, 185, 129, 0.1)');
-                    } else {
-                        grad.addColorStop(0, 'rgba(239, 68, 68, 0.01)');
-                        grad.addColorStop(1, 'rgba(239, 68, 68, 0.1)');
+                    const key = Math.round(y0) + ':' + Math.round(y1) + ':' + (dbVal > 0 ? 'p' : 'n');
+                    let grad = this._heatmapGradCache[key];
+                    if (!grad) {
+                        grad = cc.createLinearGradient(0, y0, 0, y1);
+                        if (dbVal > 0) {
+                            grad.addColorStop(0, 'rgba(16, 185, 129, 0.01)');
+                            grad.addColorStop(1, 'rgba(16, 185, 129, 0.1)');
+                        } else {
+                            grad.addColorStop(0, 'rgba(239, 68, 68, 0.01)');
+                            grad.addColorStop(1, 'rgba(239, 68, 68, 0.1)');
+                        }
+                        this._heatmapGradCache[key] = grad;
+                        if (++this._heatmapGradCount > 1000) {
+                            this._heatmapGradCache = {};
+                            this._heatmapGradCount = 0;
+                        }
                     }
                     cc.strokeStyle = grad;
                     cc.lineWidth = w / steps + 1;
