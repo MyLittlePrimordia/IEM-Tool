@@ -64,17 +64,9 @@ const EQ_ReverbMethods = {
         document.getElementById('rev-predelaymix-slider').value = Math.round(preset.predelaymix * 100);
         document.getElementById('rev-predelaymix-val').textContent = preset.predelaymix.toFixed(2);
 
-        // Update Convolver Buffer seamlessly
-            if (SharedAudio.ctx && SharedAudio.reverbNode) {
-                const key = this.reverbPresetSelected + '@' + (SharedAudio.ctx.sampleRate || 48000);
-                this._irCache = this._irCache || {};
-                let ir = this._irCache[key];
-                if (!ir) {
-                    ir = this.createImpulseResponse(SharedAudio.ctx, preset);
-                    this._irCache[key] = ir;
-                }
-                SharedAudio.reverbNode.buffer = ir;
-            }
+        // Update Convolver Buffer seamlessly (debounced - slider drags during
+        // preset cycles coalesce into a single rebuild)
+            this.scheduleImpulseRebuild();
 
             this.updateReverbDSP();
             if (window.syncGlobalSliders) window.syncGlobalSliders();
@@ -84,7 +76,42 @@ const EQ_ReverbMethods = {
         this.reverbParams[param] = parseFloat(val);
         const valEl = document.getElementById(`rev-${param}-val`);
         if (valEl) valEl.textContent = this.reverbParams[param].toFixed(2);
-        this.updateReverbDSP();
+        // mix/filter only touch live DSP nodes; everything else shapes the IR
+        // itself and needs the impulse response rebuilt (debounced).
+        if (param === 'mix' || param === 'filter') {
+            this.updateReverbDSP();
+        } else {
+            this.scheduleImpulseRebuild();
+        }
+    },
+
+    scheduleImpulseRebuild: function() {
+        if (this._irRebuildTimer) clearTimeout(this._irRebuildTimer);
+        this._irRebuildTimer = setTimeout(() => {
+            this._irRebuildTimer = null;
+            if (!SharedAudio.ctx || !SharedAudio.reverbNode) return;
+            const base = this.reverbPresets[this.reverbPresetSelected] || this.reverbPresets.small_room || {};
+            // Merge live slider params over the active preset defaults so a
+            // user tweak (damp/predelay/predelaymix...) is reflected in the IR.
+            const effective = {
+                size: this.reverbParams.size !== undefined ? this.reverbParams.size : (base.size || 0.4),
+                damp: this.reverbParams.damp !== undefined ? this.reverbParams.damp : (base.damp || 0.5),
+                fade: this.reverbParams.fade !== undefined ? this.reverbParams.fade : (base.fade || 0.2),
+                predelay: this.reverbParams.predelay !== undefined ? this.reverbParams.predelay : (base.predelay || 0),
+                predelaymix: this.reverbParams.predelaymix !== undefined ? this.reverbParams.predelaymix : (base.predelaymix || 0)
+            };
+            const key = 'custom@' + (SharedAudio.ctx.sampleRate || 48000) + '@' +
+                [effective.size, effective.damp, effective.fade, effective.predelay, effective.predelaymix]
+                    .map(v => +Number(v).toFixed(4)).join(',');
+            this._irCache = this._irCache || {};
+            let ir = this._irCache[key];
+            if (!ir) {
+                ir = this.createImpulseResponse(SharedAudio.ctx, effective);
+                this._irCache[key] = ir;
+            }
+            SharedAudio.reverbNode.buffer = ir;
+            this.updateReverbDSP();
+        }, 180);
     },
 
     createImpulseResponse: function(ctx, preset) {
@@ -104,6 +131,11 @@ const EQ_ReverbMethods = {
     const damping = preset.damp;
     const preDelay = preset.predelay;
     const preDelaySamples = Math.floor(preDelay * sampleRate);
+    // predelaymix blends the pre-delay region: 0 collapses the silent gap so
+    // the tail starts immediately (tight/small spaces), 1 applies the full
+    // delay. Reflections follow the same collapsed timeline.
+    const preDelayMix = Math.min(1, Math.max(0, preset.predelaymix || 0));
+    const tailDelaySamples = Math.floor(preDelaySamples * preDelayMix);
 
     // 1. Synthesize Early Reflections using prime-like spacing to prevent metallic ringing
     const reflections = [];
@@ -111,12 +143,12 @@ const EQ_ReverbMethods = {
     for (let r = 0; r < reflectionCount; r++) {
         // Non-integer exponent curves prevent resonant clustering
         const delayMs = 5 + Math.pow(r / (reflectionCount - 1), 1.5) * 85;
-        const delaySamples = Math.floor((delayMs / 1000) * sampleRate) + preDelaySamples;
+        const delaySamples = Math.floor((delayMs / 1000) * sampleRate) + tailDelaySamples;
         
         if (delaySamples < numSamples) {
             const pan = Math.sin(r * 1.7); // Alternating left-to-right spacing
             const decayEnv = Math.exp(-delayMs * 0.035);
-            const amp = decayEnv * (0.15 + Math.random() * 0.08);
+            const amp = decayEnv * (0.15 + Math.random() * 0.08) * (0.3 + 0.7 * preDelayMix);
             
             reflections.push({
                 sampleIdx: delaySamples,
@@ -142,7 +174,7 @@ const EQ_ReverbMethods = {
     let decayEnvelope = 1.0;
 
     for (let i = 0; i < numSamples; i++) {
-        if (i < preDelaySamples) {
+        if (i < tailDelaySamples) {
             left[i] = 0;
             right[i] = 0;
             continue;
@@ -152,7 +184,7 @@ const EQ_ReverbMethods = {
 
         // Smooth onset bloom (using a smoothstep curve)
         let bloomEnvelope = 1.0;
-        const tBloom = i - preDelaySamples;
+        const tBloom = i - tailDelaySamples;
         if (tBloom < bloomSamples) {
             const x = tBloom / bloomSamples;
             bloomEnvelope = x * x * (3 - 2 * x);

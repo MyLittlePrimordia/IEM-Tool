@@ -1780,6 +1780,11 @@ const EQ_PlaylistMethods = {
         },
         playPlaylistIndex: function(index) {
             if(index < 0 || index >= this.playlist.length) return;
+            // Swap token: rapid track changes within the 80ms source-swap
+            // window would otherwise play the stale track's blob after the
+            // newer one was picked (and analyze the wrong loudness).
+            this._playSeq = (this._playSeq || 0) + 1;
+            const seq = this._playSeq;
             const prevIndex = this.playlistIndex;
             this.playlistIndex = index;
             const infoText = document.getElementById("playlist-track-info");
@@ -1801,6 +1806,7 @@ const EQ_PlaylistMethods = {
             this._activeLoudnessGain = 1;
             
             setTimeout(() => {
+                if (seq !== this._playSeq) return;
                 // Free the previous track's blob URL at swap time — uploaded
                 // files otherwise pin their full buffer until playlist clear.
                 if (prevIndex !== index) {
@@ -1813,6 +1819,7 @@ const EQ_PlaylistMethods = {
                     this.audioEl.load();
                     this.audioEl.play()
                         .then(() => {
+                            if (seq !== this._playSeq) return;
                             // Restore back to the active slider value smoothly
                             const slider = document.getElementById("eq-musicVolumeSlider");
                             const vol = slider ? parseFloat(slider.value) / 100 : 0.5;
@@ -1820,6 +1827,7 @@ const EQ_PlaylistMethods = {
                             this._analyzeCurrentLoudness();
                         })
                         .catch(e => {
+                            if (seq !== this._playSeq) return;
                             console.log("Play interrupted: ", e);
                             const slider = document.getElementById("eq-musicVolumeSlider");
                             const vol = slider ? parseFloat(slider.value) / 100 : 0.5;
@@ -2155,17 +2163,9 @@ const EQ_ReverbMethods = {
         document.getElementById('rev-predelaymix-slider').value = Math.round(preset.predelaymix * 100);
         document.getElementById('rev-predelaymix-val').textContent = preset.predelaymix.toFixed(2);
 
-        // Update Convolver Buffer seamlessly
-            if (SharedAudio.ctx && SharedAudio.reverbNode) {
-                const key = this.reverbPresetSelected + '@' + (SharedAudio.ctx.sampleRate || 48000);
-                this._irCache = this._irCache || {};
-                let ir = this._irCache[key];
-                if (!ir) {
-                    ir = this.createImpulseResponse(SharedAudio.ctx, preset);
-                    this._irCache[key] = ir;
-                }
-                SharedAudio.reverbNode.buffer = ir;
-            }
+        // Update Convolver Buffer seamlessly (debounced - slider drags during
+        // preset cycles coalesce into a single rebuild)
+            this.scheduleImpulseRebuild();
 
             this.updateReverbDSP();
             if (window.syncGlobalSliders) window.syncGlobalSliders();
@@ -2175,7 +2175,42 @@ const EQ_ReverbMethods = {
         this.reverbParams[param] = parseFloat(val);
         const valEl = document.getElementById(`rev-${param}-val`);
         if (valEl) valEl.textContent = this.reverbParams[param].toFixed(2);
-        this.updateReverbDSP();
+        // mix/filter only touch live DSP nodes; everything else shapes the IR
+        // itself and needs the impulse response rebuilt (debounced).
+        if (param === 'mix' || param === 'filter') {
+            this.updateReverbDSP();
+        } else {
+            this.scheduleImpulseRebuild();
+        }
+    },
+
+    scheduleImpulseRebuild: function() {
+        if (this._irRebuildTimer) clearTimeout(this._irRebuildTimer);
+        this._irRebuildTimer = setTimeout(() => {
+            this._irRebuildTimer = null;
+            if (!SharedAudio.ctx || !SharedAudio.reverbNode) return;
+            const base = this.reverbPresets[this.reverbPresetSelected] || this.reverbPresets.small_room || {};
+            // Merge live slider params over the active preset defaults so a
+            // user tweak (damp/predelay/predelaymix...) is reflected in the IR.
+            const effective = {
+                size: this.reverbParams.size !== undefined ? this.reverbParams.size : (base.size || 0.4),
+                damp: this.reverbParams.damp !== undefined ? this.reverbParams.damp : (base.damp || 0.5),
+                fade: this.reverbParams.fade !== undefined ? this.reverbParams.fade : (base.fade || 0.2),
+                predelay: this.reverbParams.predelay !== undefined ? this.reverbParams.predelay : (base.predelay || 0),
+                predelaymix: this.reverbParams.predelaymix !== undefined ? this.reverbParams.predelaymix : (base.predelaymix || 0)
+            };
+            const key = 'custom@' + (SharedAudio.ctx.sampleRate || 48000) + '@' +
+                [effective.size, effective.damp, effective.fade, effective.predelay, effective.predelaymix]
+                    .map(v => +Number(v).toFixed(4)).join(',');
+            this._irCache = this._irCache || {};
+            let ir = this._irCache[key];
+            if (!ir) {
+                ir = this.createImpulseResponse(SharedAudio.ctx, effective);
+                this._irCache[key] = ir;
+            }
+            SharedAudio.reverbNode.buffer = ir;
+            this.updateReverbDSP();
+        }, 180);
     },
 
     createImpulseResponse: function(ctx, preset) {
@@ -2195,6 +2230,11 @@ const EQ_ReverbMethods = {
     const damping = preset.damp;
     const preDelay = preset.predelay;
     const preDelaySamples = Math.floor(preDelay * sampleRate);
+    // predelaymix blends the pre-delay region: 0 collapses the silent gap so
+    // the tail starts immediately (tight/small spaces), 1 applies the full
+    // delay. Reflections follow the same collapsed timeline.
+    const preDelayMix = Math.min(1, Math.max(0, preset.predelaymix || 0));
+    const tailDelaySamples = Math.floor(preDelaySamples * preDelayMix);
 
     // 1. Synthesize Early Reflections using prime-like spacing to prevent metallic ringing
     const reflections = [];
@@ -2202,12 +2242,12 @@ const EQ_ReverbMethods = {
     for (let r = 0; r < reflectionCount; r++) {
         // Non-integer exponent curves prevent resonant clustering
         const delayMs = 5 + Math.pow(r / (reflectionCount - 1), 1.5) * 85;
-        const delaySamples = Math.floor((delayMs / 1000) * sampleRate) + preDelaySamples;
+        const delaySamples = Math.floor((delayMs / 1000) * sampleRate) + tailDelaySamples;
         
         if (delaySamples < numSamples) {
             const pan = Math.sin(r * 1.7); // Alternating left-to-right spacing
             const decayEnv = Math.exp(-delayMs * 0.035);
-            const amp = decayEnv * (0.15 + Math.random() * 0.08);
+            const amp = decayEnv * (0.15 + Math.random() * 0.08) * (0.3 + 0.7 * preDelayMix);
             
             reflections.push({
                 sampleIdx: delaySamples,
@@ -2233,7 +2273,7 @@ const EQ_ReverbMethods = {
     let decayEnvelope = 1.0;
 
     for (let i = 0; i < numSamples; i++) {
-        if (i < preDelaySamples) {
+        if (i < tailDelaySamples) {
             left[i] = 0;
             right[i] = 0;
             continue;
@@ -2243,7 +2283,7 @@ const EQ_ReverbMethods = {
 
         // Smooth onset bloom (using a smoothstep curve)
         let bloomEnvelope = 1.0;
-        const tBloom = i - preDelaySamples;
+        const tBloom = i - tailDelaySamples;
         if (tBloom < bloomSamples) {
             const x = tBloom / bloomSamples;
             bloomEnvelope = x * x * (3 - 2 * x);
@@ -2787,12 +2827,14 @@ const EQ_LoudnessMethods = {
                 trebleBoost = (volumeDiff / 100) * 8.0 * (strength / 100);
             }
             
-            // Map Fletcher-Munson filters directly to worklet simulation indices 6 and 7
+            // Map Fletcher-Munson filters directly to worklet simulation indices 8 and 9.
+            // (Slots 6/7 belong to the tape-mod sim; 12-19 to hearing calibration —
+            // using 6/7 here silently clobbered the tape-mod filters.)
             SharedAudio.workletNode.port.postMessage({
                 type: 'updateSimulations',
                 sims: [
-                    { index: 6, bypassed: !this.loudnessActive, filterType: 'lowshelf', frequency: 100, gain: bassBoost, q: 0.7 },
-                    { index: 7, bypassed: !this.loudnessActive, filterType: 'highshelf', frequency: 7500, gain: trebleBoost, q: 0.7 }
+                    { index: 8, bypassed: !this.loudnessActive, filterType: 'lowshelf', frequency: 100, gain: bassBoost, q: 0.7 },
+                    { index: 9, bypassed: !this.loudnessActive, filterType: 'highshelf', frequency: 7500, gain: trebleBoost, q: 0.7 }
                 ]
             });
         },
@@ -4632,6 +4674,7 @@ const EQ_SquigGraphMethods = {
                     baseCurve._cmpSpline = PEQDB_Module.Spline.build(PEQDB_Module.getNormalizedData(baseCurve.data, baseCurve.name));
                     baseCurve._cmpSplineData = baseCurve.data;
                     baseCurve._cmpSplineAlignDb = PEQDB_Module.alignDb;
+                    baseCurve._cmpSplineVersion = (baseCurve._cmpSplineVersion || 0) + 1;
                 }
                 baseSpline = baseCurve._cmpSpline;
             }
@@ -4640,205 +4683,31 @@ const EQ_SquigGraphMethods = {
                     targetCurve._cmpSpline = PEQDB_Module.Spline.build(PEQDB_Module.getNormalizedData(targetCurve.data, targetCurve.name));
                     targetCurve._cmpSplineData = targetCurve.data;
                     targetCurve._cmpSplineAlignDb = PEQDB_Module.alignDb;
+                    targetCurve._cmpSplineVersion = (targetCurve._cmpSplineVersion || 0) + 1;
                 }
                 targetSpline = targetCurve._cmpSpline;
             }
 
-            if (EQ_Module.graphMode === 'heatmap') {
-                cc.save();
-                // Heatmap gradients are identical across frames whenever the
-                // eq values are unchanged, so cache them per (y0, y1, sign)
-                // instead of allocating one per sample per frame.
-                if (!this._heatmapGradCache || this._heatmapGradCacheH !== h) {
-                    this._heatmapGradCache = {};
-                    this._heatmapGradCacheH = h;
-                    this._heatmapGradCount = 0;
-                }
-                for (let i = 0; i < steps; i++) {
-                    const curX = (i / (steps - 1)) * w;
-                    const dbVal = eqDb[i];
-                    if (Math.abs(dbVal) < 0.1) continue;
-                    const y0 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb, h);
-                    const y1 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + dbVal, h);
-                    
-                    const key = Math.round(y0) + ':' + Math.round(y1) + ':' + (dbVal > 0 ? 'p' : 'n');
-                    let grad = this._heatmapGradCache[key];
-                    if (!grad) {
-                        grad = cc.createLinearGradient(0, y0, 0, y1);
-                        if (dbVal > 0) {
-                            grad.addColorStop(0, 'rgba(16, 185, 129, 0.01)');
-                            grad.addColorStop(1, 'rgba(16, 185, 129, 0.1)');
-                        } else {
-                            grad.addColorStop(0, 'rgba(239, 68, 68, 0.01)');
-                            grad.addColorStop(1, 'rgba(239, 68, 68, 0.1)');
-                        }
-                        this._heatmapGradCache[key] = grad;
-                        if (++this._heatmapGradCount > 1000) {
-                            this._heatmapGradCache = {};
-                            this._heatmapGradCount = 0;
-                        }
-                    }
-                    cc.strokeStyle = grad;
-                    cc.lineWidth = w / steps + 1;
-                    cc.beginPath();
-                    cc.moveTo(curX, y0);
-                    cc.lineTo(curX, y1);
-                    cc.stroke();
-                }
-                cc.restore();
-
-                cc.beginPath();
-                cc.strokeStyle = "rgba(37, 99, 235, 0.8)";
-                cc.lineWidth = 2.5;
-                for (let i = 0; i < steps; i++) {
-                    const curX = (i / (steps - 1)) * w;
-                    const y = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + eqDb[i], h);
-                    if (i === 0) cc.moveTo(curX, y); else cc.lineTo(curX, y);
-                }
-                cc.stroke();
-                
-                EQ_Module.drawNormalCurves(cc, w, h, minF, maxF, eqDb);
-            } 
-            else if (EQ_Module.graphMode === 'difference') {
-                cc.beginPath();
-                cc.strokeStyle = "rgba(255, 255, 255, 0.15)";
-                cc.lineWidth = 1.5;
-                cc.setLineDash([4, 4]);
-                const zeroY = EQ_Module.dbToY_squig(PEQDB_Module.alignDb, h);
-                cc.moveTo(0, zeroY);
-                cc.lineTo(w, zeroY);
-                cc.stroke();
-                cc.setLineDash([]);
-
-                if (baseSpline && targetSpline) {
-                    cc.beginPath();
-                    cc.strokeStyle = "rgba(239, 68, 68, 0.4)";
-                    cc.lineWidth = 1.5;
-                    cc.setLineDash([5, 5]);
-                    for (let i = 0; i < steps; i++) {
-                        const curX = (i / (steps - 1)) * w;
-                        const f = freqs[i];
-                        const baseDbVal = PEQDB_Module.Spline.evaluate(baseSpline, f);
-                        const targetDbVal = PEQDB_Module.Spline.evaluate(targetSpline, f);
-                        const y = EQ_Module.dbToY_squig((baseDbVal - targetDbVal) + PEQDB_Module.alignDb, h);
-                        if (i === 0) cc.moveTo(curX, y); else cc.lineTo(curX, y);
-                    }
-                    cc.stroke();
-                    cc.setLineDash([]);
-
-                    cc.beginPath();
-                    cc.strokeStyle = accentGreen;
-                    cc.lineWidth = 2.5;
-                    for (let i = 0; i < steps; i++) {
-                        const curX = (i / (steps - 1)) * w;
-                        const f = freqs[i];
-                        const baseDbVal = PEQDB_Module.Spline.evaluate(baseSpline, f);
-                        const targetDbVal = PEQDB_Module.Spline.evaluate(targetSpline, f);
-                        const y = EQ_Module.dbToY_squig((baseDbVal + eqDb[i] - targetDbVal) + PEQDB_Module.alignDb, h);
-                        if (i === 0) cc.moveTo(curX, y); else cc.lineTo(curX, y);
-                    }
-                    cc.stroke();
-                } else {
-                    cc.fillStyle = "rgba(255, 255, 255, 0.35)";
-                    cc.font = "11px 'Comic Sans MS', sans-serif";
-                    cc.textAlign = "center";
-                    cc.fillText("Load both Base & Target curves to plot the compensated difference.", w / 2, h / 2);
-                    cc.textAlign = "left";
-                }
-            } 
-            else if (EQ_Module.graphMode === 'quality') {
-                cc.save();
-                cc.fillStyle = "rgba(16, 185, 129, 0.03)";
-                const yGreenTop = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + 1.5, h);
-                const yGreenBottom = EQ_Module.dbToY_squig(PEQDB_Module.alignDb - 1.5, h);
-                cc.fillRect(0, yGreenTop, w, yGreenBottom - yGreenTop);
-
-                cc.fillStyle = "rgba(245, 158, 11, 0.02)";
-                const yYellowTop = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + 3.0, h);
-                const yYellowBottom = EQ_Module.dbToY_squig(PEQDB_Module.alignDb - 3.0, h);
-                cc.fillRect(0, yYellowTop, w, yGreenTop - yYellowTop);
-                cc.fillRect(0, yGreenBottom, w, yYellowBottom - yGreenBottom);
-                cc.restore();
-
-                cc.beginPath();
-                cc.strokeStyle = "rgba(255, 255, 255, 0.1)";
-                cc.lineWidth = 1;
-                const zeroY = this.dbToY_squig(PEQDB_Module.alignDb, h);
-                cc.moveTo(0, zeroY);
-                cc.lineTo(w, zeroY);
-                cc.stroke();
-
-                if (baseSpline && targetSpline) {
-                    let lastX = 0;
-                    let lastY = 0;
-                    let started = false;
-                    for (let i = 0; i < steps; i++) {
-                        const curX = (i / (steps - 1)) * w;
-                        const f = freqs[i];
-                        const baseDbVal = PEQDB_Module.Spline.evaluate(baseSpline, f);
-                        const targetDbVal = PEQDB_Module.Spline.evaluate(targetSpline, f);
-                        const err = (baseDbVal + eqDb[i]) - targetDbVal;
-                        const y = this.dbToY_squig(err + PEQDB_Module.alignDb, h);
-                        
-                        if (!started) {
-                            lastX = curX;
-                            lastY = y;
-                            started = true;
-                            continue;
-                        }
-                        
-                        cc.beginPath();
-                        cc.moveTo(lastX, lastY);
-                        cc.lineTo(curX, y);
-                        
-                        const absErr = Math.abs(err);
-                        if (absErr <= 1.5) {
-                            cc.strokeStyle = '#10b981'; 
-                        } else if (absErr <= 3.0) {
-                            cc.strokeStyle = '#f59e0b'; 
-                        } else {
-                            cc.strokeStyle = '#ef4444'; 
-                        }
-                        cc.lineWidth = 2.5;
-                        cc.stroke();
-                        
-                        lastX = curX;
-                        lastY = y;
-                    }
-                } else {
-                    cc.fillStyle = "rgba(255, 255, 255, 0.35)";
-                    cc.font = "11px 'Comic Sans MS', sans-serif";
-                    cc.textAlign = "center";
-                    cc.fillText("Load both Base & Target curves to plot target match deviations.", w / 2, h / 2);
-                    cc.textAlign = "left";
-                }
-            } 
-            else {
-                EQ_Module.drawNormalCurves(cc, w, h, minF, maxF, eqDb);
-            }
-
-            // Draw White Dashed DSP Filter Curve
-            if (!EQ_Module.isTuningLabActive) {
-                cc.save();
-                cc.beginPath();
-                cc.strokeStyle = "rgba(255, 255, 255, 0.95)"; 
-                cc.lineWidth = 2.0; 
-                cc.setLineDash([5, 5]); 
-                const stepX = w > 800 ? 2 : 1; 
-                for (var i = 0; i < w; i += stepX) {
-                    const eqIdx = Math.round((i / (w - 1)) * (steps - 1));
-                    const eqVal = eqDb ? (eqDb[Math.max(0, Math.min(steps - 1, eqIdx))] || 0) : 0;
-                    var yEq = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + eqVal, h);
-                    if (i === 0) cc.moveTo(i, yEq);
-                    else cc.lineTo(i, yEq);
-                }
-                if ((w - 1) % stepX !== 0) {
-                    const eqVal = eqDb ? (eqDb[steps - 1] || 0) : 0;
-                    cc.lineTo(w - 1, EQ_Module.dbToY_squig(PEQDB_Module.alignDb + eqVal, h));
-                }
-                cc.stroke();
-                cc.restore();
-            }
+            // The graphMode layer (curves/heatmap/dashed DSP line) only changes
+            // when the EQ model, splines, zoom, alignment, preamp, or mode
+            // changes — but drawCurve fires on every slider tick AND 20-60x/s
+            // during playback, so without caching it re-did ~1000 spline
+            // evals + strokes per frame. Signature below mirrors every input.
+            const splineState = (PEQDB_Module.STATE.activeCurves || []).map(c =>
+                `${c.uid}-${c.visible ? 1 : 0}-${c.offset}-${c.color}-${c.role}-${c._cmpSplineVersion || 0}-${c._splineVersion || 0}`
+            ).join('|');
+            const virtualState = (this.virtualBands || []).map(v => `${v.hz}:${v.g}:${v.q}:${v.type || 'peaking'}`).join('|');
+            const modeState = [
+                EQ_Module.graphMode,
+                EQ_Module.isTuningLabActive ? 1 : 0,
+                this._magCacheVersion, this._magCacheBypass, this._magCacheCheap,
+                this._magCacheFreqKey, this._magCacheNumPoints,
+                preVal, w, h, minF, maxF, min, max,
+                PEQDB_Module.alignHz, PEQDB_Module.alignDb,
+                splineState, virtualState
+            ].join('|');
+            this._renderModeLayer(cc, w, h, dpr, targetW, targetH, minF, maxF, min, max,
+                eqDb, steps, freqs, baseSpline, targetSpline, accentGreen, modeState);
 
             if (!EQ_Module.isTuningLabActive) {
                 var hoverEQ2 = EQ_Module.hoverEQNode;
@@ -5046,7 +4915,237 @@ const EQ_SquigGraphMethods = {
             }
         },
 
-                drawNormalCurves: function(cc, w, h, minF, maxF, eqDb) {
+        // Renders the graphMode layer (heatmap / difference / quality / normal
+        // curves + white dashed DSP line) into an offscreen cache canvas.
+        // drawCurve fires on every slider tick and 20-60x/s during playback;
+        // the cached layer is only re-rendered when `modeState` (EQ model,
+        // splines, zoom, alignment, preamp, mode) actually changed.
+        _renderModeLayer: function(cc, w, h, dpr, targetW, targetH, minF, maxF, min, max,
+                eqDb, steps, freqs, baseSpline, targetSpline, accentGreen, modeState) {
+            if (!this.modeCacheCanvas) {
+                this.modeCacheCanvas = document.createElement('canvas');
+                this.modeCacheCtx = this.modeCacheCanvas.getContext('2d');
+                this.modeDirty = true;
+            }
+            if (this.modeCacheCanvas.width !== targetW || this.modeCacheCanvas.height !== targetH) {
+                this.modeCacheCanvas.width = targetW;
+                this.modeCacheCanvas.height = targetH;
+                this.modeCacheCtx.resetTransform();
+                this.modeCacheCtx.scale(dpr, dpr);
+                this.modeDirty = true;
+            }
+            if (this.lastModeState !== modeState) {
+                this.modeDirty = true;
+                this.lastModeState = modeState;
+            }
+
+            if (this.modeDirty) {
+                const mcc = this.modeCacheCtx;
+                mcc.clearRect(0, 0, w, h);
+
+                if (EQ_Module.graphMode === 'heatmap') {
+                    mcc.save();
+                    // Heatmap gradients are identical across frames whenever the
+                    // eq values are unchanged, so cache them per (y0, y1, sign)
+                    // instead of allocating one per sample per frame.
+                    if (!this._heatmapGradCache || this._heatmapGradCacheH !== h) {
+                        this._heatmapGradCache = {};
+                        this._heatmapGradCacheH = h;
+                        this._heatmapGradCount = 0;
+                    }
+                    for (let i = 0; i < steps; i++) {
+                        const curX = (i / (steps - 1)) * w;
+                        const dbVal = eqDb[i];
+                        if (Math.abs(dbVal) < 0.1) continue;
+                        const y0 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb, h);
+                        const y1 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + dbVal, h);
+
+                        const key = Math.round(y0) + ':' + Math.round(y1) + ':' + (dbVal > 0 ? 'p' : 'n');
+                        let grad = this._heatmapGradCache[key];
+                        if (!grad) {
+                            grad = mcc.createLinearGradient(0, y0, 0, y1);
+                            if (dbVal > 0) {
+                                grad.addColorStop(0, 'rgba(16, 185, 129, 0.01)');
+                                grad.addColorStop(1, 'rgba(16, 185, 129, 0.1)');
+                            } else {
+                                grad.addColorStop(0, 'rgba(239, 68, 68, 0.01)');
+                                grad.addColorStop(1, 'rgba(239, 68, 68, 0.1)');
+                            }
+                            this._heatmapGradCache[key] = grad;
+                            if (++this._heatmapGradCount > 1000) {
+                                this._heatmapGradCache = {};
+                                this._heatmapGradCount = 0;
+                            }
+                        }
+                        mcc.strokeStyle = grad;
+                        mcc.lineWidth = w / steps + 1;
+                        mcc.beginPath();
+                        mcc.moveTo(curX, y0);
+                        mcc.lineTo(curX, y1);
+                        mcc.stroke();
+                    }
+                    mcc.restore();
+
+                    mcc.beginPath();
+                    mcc.strokeStyle = "rgba(37, 99, 235, 0.8)";
+                    mcc.lineWidth = 2.5;
+                    for (let i = 0; i < steps; i++) {
+                        const curX = (i / (steps - 1)) * w;
+                        const y = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + eqDb[i], h);
+                        if (i === 0) mcc.moveTo(curX, y); else mcc.lineTo(curX, y);
+                    }
+                    mcc.stroke();
+
+                    EQ_Module.drawNormalCurves(mcc, w, h, minF, maxF, eqDb);
+                }
+                else if (EQ_Module.graphMode === 'difference') {
+                    mcc.beginPath();
+                    mcc.strokeStyle = "rgba(255, 255, 255, 0.15)";
+                    mcc.lineWidth = 1.5;
+                    mcc.setLineDash([4, 4]);
+                    const zeroY = EQ_Module.dbToY_squig(PEQDB_Module.alignDb, h);
+                    mcc.moveTo(0, zeroY);
+                    mcc.lineTo(w, zeroY);
+                    mcc.stroke();
+                    mcc.setLineDash([]);
+
+                    if (baseSpline && targetSpline) {
+                        mcc.beginPath();
+                        mcc.strokeStyle = "rgba(239, 68, 68, 0.4)";
+                        mcc.lineWidth = 1.5;
+                        mcc.setLineDash([5, 5]);
+                        for (let i = 0; i < steps; i++) {
+                            const curX = (i / (steps - 1)) * w;
+                            const f = freqs[i];
+                            const baseDbVal = PEQDB_Module.Spline.evaluate(baseSpline, f);
+                            const targetDbVal = PEQDB_Module.Spline.evaluate(targetSpline, f);
+                            const y = EQ_Module.dbToY_squig((baseDbVal - targetDbVal) + PEQDB_Module.alignDb, h);
+                            if (i === 0) mcc.moveTo(curX, y); else mcc.lineTo(curX, y);
+                        }
+                        mcc.stroke();
+                        mcc.setLineDash([]);
+
+                        mcc.beginPath();
+                        mcc.strokeStyle = accentGreen;
+                        mcc.lineWidth = 2.5;
+                        for (let i = 0; i < steps; i++) {
+                            const curX = (i / (steps - 1)) * w;
+                            const f = freqs[i];
+                            const baseDbVal = PEQDB_Module.Spline.evaluate(baseSpline, f);
+                            const targetDbVal = PEQDB_Module.Spline.evaluate(targetSpline, f);
+                            const y = EQ_Module.dbToY_squig((baseDbVal + eqDb[i] - targetDbVal) + PEQDB_Module.alignDb, h);
+                            if (i === 0) mcc.moveTo(curX, y); else mcc.lineTo(curX, y);
+                        }
+                        mcc.stroke();
+                    } else {
+                        mcc.fillStyle = "rgba(255, 255, 255, 0.35)";
+                        mcc.font = "11px 'Comic Sans MS', sans-serif";
+                        mcc.textAlign = "center";
+                        mcc.fillText("Load both Base & Target curves to plot the compensated difference.", w / 2, h / 2);
+                        mcc.textAlign = "left";
+                    }
+                }
+                else if (EQ_Module.graphMode === 'quality') {
+                    mcc.save();
+                    mcc.fillStyle = "rgba(16, 185, 129, 0.03)";
+                    const yGreenTop = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + 1.5, h);
+                    const yGreenBottom = EQ_Module.dbToY_squig(PEQDB_Module.alignDb - 1.5, h);
+                    mcc.fillRect(0, yGreenTop, w, yGreenBottom - yGreenTop);
+
+                    mcc.fillStyle = "rgba(245, 158, 11, 0.02)";
+                    const yYellowTop = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + 3.0, h);
+                    const yYellowBottom = EQ_Module.dbToY_squig(PEQDB_Module.alignDb - 3.0, h);
+                    mcc.fillRect(0, yYellowTop, w, yGreenTop - yYellowTop);
+                    mcc.fillRect(0, yGreenBottom, w, yYellowBottom - yGreenBottom);
+                    mcc.restore();
+
+                    mcc.beginPath();
+                    mcc.strokeStyle = "rgba(255, 255, 255, 0.1)";
+                    mcc.lineWidth = 1;
+                    const zeroY = this.dbToY_squig(PEQDB_Module.alignDb, h);
+                    mcc.moveTo(0, zeroY);
+                    mcc.lineTo(w, zeroY);
+                    mcc.stroke();
+
+                    if (baseSpline && targetSpline) {
+                        let lastX = 0;
+                        let lastY = 0;
+                        let started = false;
+                        for (let i = 0; i < steps; i++) {
+                            const curX = (i / (steps - 1)) * w;
+                            const f = freqs[i];
+                            const baseDbVal = PEQDB_Module.Spline.evaluate(baseSpline, f);
+                            const targetDbVal = PEQDB_Module.Spline.evaluate(targetSpline, f);
+                            const err = (baseDbVal + eqDb[i]) - targetDbVal;
+                            const y = this.dbToY_squig(err + PEQDB_Module.alignDb, h);
+
+                            if (!started) {
+                                lastX = curX;
+                                lastY = y;
+                                started = true;
+                                continue;
+                            }
+
+                            mcc.beginPath();
+                            mcc.moveTo(lastX, lastY);
+                            mcc.lineTo(curX, y);
+
+                            const absErr = Math.abs(err);
+                            if (absErr <= 1.5) {
+                                mcc.strokeStyle = '#10b981';
+                            } else if (absErr <= 3.0) {
+                                mcc.strokeStyle = '#f59e0b';
+                            } else {
+                                mcc.strokeStyle = '#ef4444';
+                            }
+                            mcc.lineWidth = 2.5;
+                            mcc.stroke();
+
+                            lastX = curX;
+                            lastY = y;
+                        }
+                    } else {
+                        mcc.fillStyle = "rgba(255, 255, 255, 0.35)";
+                        mcc.font = "11px 'Comic Sans MS', sans-serif";
+                        mcc.textAlign = "center";
+                        mcc.fillText("Load both Base & Target curves to plot target match deviations.", w / 2, h / 2);
+                        mcc.textAlign = "left";
+                    }
+                }
+                else {
+                    EQ_Module.drawNormalCurves(mcc, w, h, minF, maxF, eqDb);
+                }
+
+                // Draw White Dashed DSP Filter Curve
+                if (!EQ_Module.isTuningLabActive) {
+                    mcc.save();
+                    mcc.beginPath();
+                    mcc.strokeStyle = "rgba(255, 255, 255, 0.95)";
+                    mcc.lineWidth = 2.0;
+                    mcc.setLineDash([5, 5]);
+                    const stepX = w > 800 ? 2 : 1;
+                    for (var i = 0; i < w; i += stepX) {
+                        const eqIdx = Math.round((i / (w - 1)) * (steps - 1));
+                        const eqVal = eqDb ? (eqDb[Math.max(0, Math.min(steps - 1, eqIdx))] || 0) : 0;
+                        var yEq = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + eqVal, h);
+                        if (i === 0) mcc.moveTo(i, yEq);
+                        else mcc.lineTo(i, yEq);
+                    }
+                    if ((w - 1) % stepX !== 0) {
+                        const eqVal = eqDb ? (eqDb[steps - 1] || 0) : 0;
+                        mcc.lineTo(w - 1, EQ_Module.dbToY_squig(PEQDB_Module.alignDb + eqVal, h));
+                    }
+                    mcc.stroke();
+                    mcc.restore();
+                }
+
+                this.modeDirty = false;
+            }
+
+            cc.drawImage(this.modeCacheCanvas, 0, 0, w, h);
+        },
+
+        drawNormalCurves: function(cc, w, h, minF, maxF, eqDb) {
             if (!PEQDB_Module || !PEQDB_Module.STATE.activeCurves) return;
             const steps = 1000;
             
@@ -5064,10 +5163,12 @@ const EQ_SquigGraphMethods = {
                         c._splineSourceData = c.data;
                         c._splineValidated = false;
                         c._splineFailed = false;
+                        c._splineVersion = (c._splineVersion || 0) + 1;
                     } else if (!c.cachedSpline && !c._splineFailed) {
                         c.cachedNormalized = PEQDB_Module.getNormalizedData(c.data, c.name);
                         c.cachedSpline = PEQDB_Module.Spline.build(c.cachedNormalized);
                         c._splineValidated = false;
+                        c._splineVersion = (c._splineVersion || 0) + 1;
                     }
                     const spline = c.cachedSpline;
                     if (!spline) {
@@ -6373,6 +6474,11 @@ window.updateExpandedAutoHide = function() {
             }
         },
         loadDynamicFonts: async function() {
+            // Session-scoped: every invocation re-fetches fonts.json and
+            // re-downloads every font file. Once resolved (success OR fallback)
+            // the result is stable for the app session, so skip the repeat work.
+            if (this._fontsSessionLoaded) return;
+            this._fontsSessionLoaded = true;
             try {
                 var res = await fetch('./fonts/fonts.json');
                 if (!res.ok) throw new Error("Could not find fonts.json");
@@ -14410,6 +14516,20 @@ startVisualizer: function() {
                     return;
                 }
 
+                // Pane visibility gate: the VU meters live in the Visualizer
+                // pane and the spectrum overlay in the EQ pane. When neither
+                // is visible the per-frame work (analyser reads, meter DOM
+                // writes, de-esser analysis) has no viewer — keep the loop
+                // alive but skip it. The anti-clip AGC interval is separate
+                // and safety-critical, so it intentionally keeps running.
+                const vizPane = document.getElementById('pane-visualizer');
+                const eqPane = document.getElementById('pane-eq');
+                const anyPaneVisible = (!vizPane || !vizPane.classList.contains('hidden')) || (!eqPane || !eqPane.classList.contains('hidden'));
+                if (!anyPaneVisible) {
+                    this.vizFrameId = requestAnimationFrame(drawViz);
+                    return;
+                }
+
                 if (!cachedBarsL || cachedBarsL.length === 0) {
                     refreshVizDomCache();
                 }
@@ -16217,13 +16337,48 @@ const DBCache = {
                 },
 
                 _bgRunning: false,
-                startBackgroundWarmup: function(dataset) {
+                startBackgroundWarmup: async function(dataset) {
 
-                    if (this.warming || PEQDB_Module.databaseFullyLoaded) return;
+                    if (this.warming || PEQDB_Module.databaseFullyLoaded || PEQDB_Module.dataMissing) return;
                     if (!dataset || dataset.length === 0) {
                         // Same boot race guard as startBackgroundLoading: never
                         // mark the DB "fully loaded" off an empty dataset — retry.
                         if (!PEQDB_Module.databaseFullyLoaded) PEQDB_Module.startBackgroundLoading();
+                        return;
+                    }
+
+                    // Probe for the measurement files BEFORE fanning out 4,980
+                    // curve fetches. If every probed primary file 404s, the
+                    // data/ directory is missing (e.g. gitignored asset folder)
+                    // and the warmup would otherwise storm the local server
+                    // with thousands of failing requests before giving up.
+                    const probeFiles = [];
+                    for (let i = 0; i < Math.min(dataset.length, 200) && probeFiles.length < 3; i++) {
+                        const it = dataset[i];
+                        const f = it && it.files && it.files[0];
+                        if (f && !probeFiles.includes(f)) probeFiles.push(f);
+                    }
+                    const probeResults = await Promise.all(probeFiles.map(async (f) => {
+                        try {
+                            // HEAD avoids downloading whole curve files just to
+                            // verify existence.
+                            const res = await fetch('./' + f.split('/').map(encodeURIComponent).join('/'), { method: 'HEAD' }).catch(() => null);
+                            return !!(res && res.ok);
+                        } catch (_) {
+                            return false;
+                        }
+                    }));
+                    if (probeFiles.length > 0 && probeResults.every(ok => !ok)) {
+                        PEQDB_Module.dataMissing = true;
+                        this.warming = false;
+                        console.warn("[CurveIndexer] Measurement data missing (all probed files 404) - indexing paused.");
+                        const indicator = document.getElementById('peqdb-indexing-indicator');
+                        if (indicator) {
+                            indicator.textContent = '⚠️ Measurement Data Missing - Indexing Paused';
+                            indicator.classList.remove('hidden');
+                        }
+                        const progressContainer = document.getElementById('find-progress-container');
+                        if (progressContainer) progressContainer.classList.add('hidden');
                         return;
                     }
                     this.warming = true;
@@ -17263,14 +17418,22 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
 
             const listContainer = document.getElementById("peqdb-list");
             if (listContainer) {
+                // Coalesce rapid scroll events into one render per frame
+                // (scroll can fire many times per frame while flinging).
+                let scrollRenderScheduled = false;
                 listContainer.addEventListener("scroll", () => {
-                    const scrollBuffer = 60;
-                    if (listContainer.scrollTop + listContainer.clientHeight >= listContainer.scrollHeight - scrollBuffer) {
-                        if (PEQDB_Module.listRenderLimit < PEQDB_Module.STATE.renderList.length) {
-                            PEQDB_Module.listRenderLimit += 40;
-                            PEQDB_Module.renderList(true);
+                    if (scrollRenderScheduled) return;
+                    scrollRenderScheduled = true;
+                    requestAnimationFrame(() => {
+                        scrollRenderScheduled = false;
+                        const scrollBuffer = 60;
+                        if (listContainer.scrollTop + listContainer.clientHeight >= listContainer.scrollHeight - scrollBuffer) {
+                            if (PEQDB_Module.listRenderLimit < PEQDB_Module.STATE.renderList.length) {
+                                PEQDB_Module.listRenderLimit += 40;
+                                PEQDB_Module.renderList(true);
+                            }
                         }
-                    }
+                    });
                 }, { passive: true });
             }
 
@@ -17714,12 +17877,18 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
                 list.appendChild(fragment);
             }
 
+            // Only scan the freshly built rows for marquee overflow instead of
+            // re-querying the entire list on every render (O(all rendered rows)
+            // per keystroke/append). Rows already animated keep their class and
+            // are skipped by the guard below anyway.
+            const newMarqueeTargets = Array.from(fragment.querySelectorAll('.db-title-text, .db-file-marquee-text'));
+
             setTimeout(() => {
                 const applyOrbitMarquee = (el) => {
                     if (!el || el.classList.contains('marquee-orbit-active')) return;
                     activateOrbitMarquee(el);
                 };
-                list.querySelectorAll('.db-title-text, .db-file-marquee-text').forEach(applyOrbitMarquee);
+                newMarqueeTargets.forEach(applyOrbitMarquee);
                 PEQDB_Module.applyOrbitMarqueeFn = applyOrbitMarquee;
             }, 80);
 
@@ -17977,7 +18146,24 @@ generateLeastSquaresAutoEQ: function() {
 // solves gains for the active band resolution, applies them to the UI/state,
 // and shows a completion toast. toastText overrides the default message;
 // pass null to use the generic "AutoEQ solved and loaded N bands" message.
-_solveAutoEQBands: function(targetCorrection, freqs, toastText) {
+_solveAutoEQBands: async function(targetCorrection, freqs, toastText) {
+            // The solve is heavy (bands x points x iterations of biquad math)
+            // and was fully synchronous — a 48-band solve froze the UI for
+            // seconds. Guard against overlapping solves (double-clicks) and
+            // let the chunked inner solve yield to the event loop.
+            if (this._autoEqSolving) return;
+            this._autoEqSolving = true;
+            try {
+                await this._solveAutoEQBandsInner(targetCorrection, freqs, toastText);
+            } catch (err) {
+                console.error("[PEQDB] AutoEQ solve failed:", err);
+                showToast("AutoEQ solve failed.", "⚠️");
+            } finally {
+                this._autoEqSolving = false;
+            }
+        },
+
+        _solveAutoEQBandsInner: async function(targetCorrection, freqs, toastText) {
             const points = freqs.length;
             const bandCount = PEQDB_Module.autoeqResolution || 10;
 
@@ -18078,6 +18264,8 @@ _solveAutoEQBands: function(targetCorrection, freqs, toastText) {
                         optimizedBands[b].gain = Math.max(-12, Math.min(12, idealGain));
                     }
                 }
+                // Yield every other sweep so the UI stays responsive.
+                if (iter % 2 === 1) await new Promise(r => setTimeout(r, 0));
             }
 
             // Newton-style refinement: the main pass is linear in the gain-1
@@ -18116,6 +18304,7 @@ _solveAutoEQBands: function(targetCorrection, freqs, toastText) {
                         band.gain = Math.max(-12, Math.min(12, band.gain + delta * 0.6));
                     }
                 }
+                await new Promise(r => setTimeout(r, 0));
             }
 
             let maxModelDb = 0;
@@ -19603,6 +19792,7 @@ toggleSearchMode: function(mode) {
         },
 
         abxStart: async function() {
+            if (this.abxIsActive) return;
             const audioA = document.getElementById('ab-audio-a');
             const audioB = document.getElementById('ab-audio-b');
             if (!audioA || !audioB || !audioA.src || !audioB.src) {
@@ -19646,6 +19836,7 @@ toggleSearchMode: function(mode) {
             this.abxNextTrial();
         },
         abxNextTrial: async function() {
+            if (!this.abxIsActive) return;
             if (this.abxTrialIndex >= this.abxTotalTrials) {
                 this.abxEndGame();
                 return;
@@ -19678,8 +19869,8 @@ toggleSearchMode: function(mode) {
 
             audioA.currentTime = 0;
             audioB.currentTime = 0;
-            audioA.play();
-            audioB.play();
+            audioA.play().catch(e => console.log("ABX play A interrupted:", e));
+            audioB.play().catch(e => console.log("ABX play B interrupted:", e));
 
             this.abPlaying = true;
         },
@@ -19716,9 +19907,14 @@ toggleSearchMode: function(mode) {
             this.abPlaying = false;
 
             this.abxTrialIndex++;
-            setTimeout(() => this.abxNextTrial(), 1000);
+            if (this._abxNextTimer) clearTimeout(this._abxNextTimer);
+            this._abxNextTimer = setTimeout(() => {
+                this._abxNextTimer = null;
+                this.abxNextTrial();
+            }, 1000);
         },
         abxEndGame: function() {
+            if (this._abxNextTimer) { clearTimeout(this._abxNextTimer); this._abxNextTimer = null; }
             this.abxIsActive = false;
             const percentage = Math.round((this.abxCorrect / this.abxTotalTrials) * 100);
 
@@ -19740,6 +19936,7 @@ toggleSearchMode: function(mode) {
             this.setABXControlsEnabled(true);
         },
         abxReset: function() {
+            if (this._abxNextTimer) { clearTimeout(this._abxNextTimer); this._abxNextTimer = null; }
             this.abxIsActive = false;
             this.abxTrialIndex = 0;
             this.abxCorrect = 0;
@@ -22885,6 +23082,18 @@ tagEmojis: {
                     this._selectCustomOptionPrefixed(prefix, key, selected.val, selected.label);
                 },
 
+                // Coalesce rapid filter/spec changes into a single re-scan (slider
+                // drags fire on every input event; a full rescan per tick would
+                // thrash the worker and main thread).
+                _debouncedRun: function(fn, key, delay) {
+                    const timerKey = '_deb_' + key;
+                    if (this[timerKey]) clearTimeout(this[timerKey]);
+                    this[timerKey] = setTimeout(() => {
+                        this[timerKey] = null;
+                        fn.call(this);
+                    }, delay || 250);
+                },
+
                 _selectCustomOptionPrefixed: function(prefix, key, value, htmlLabel) {
                     const input = document.getElementById(`${prefix}-filter-${key}`);
                     const label = document.getElementById(`label-${prefix}-filter-${key}`);
@@ -22896,9 +23105,9 @@ tagEmojis: {
                     // Once a tab has run, spec changes live-update the results instead
                     // of silently waiting for the user to re-press the button.
                     if (prefix === 'ug' && this._upgradeHasRun && this.selectedUpgradeBaseIemId) {
-                        this.renderUpgradePathway();
+                        this._debouncedRun(this.renderUpgradePathway, 'ug');
                     } else if (prefix === 'gk' && this._gkHasRun && this.selectedGkFlagshipId) {
-                        this.scanGiantKillers();
+                        this._debouncedRun(this.scanGiantKillers, 'gk');
                     }
                 },
 
@@ -23746,6 +23955,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
 
                 updateSliderUI: function(id) {
                     const el = document.getElementById(id);
+                    if (!el) return;
                     const val = parseFloat(el.value);
                     const display = document.getElementById(id + '-val');
                     if (!display) return;
@@ -23969,7 +24179,19 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
 
                         const datasetItems = PEQDB_Module.STATE.dataset || [];
 
-                        const tuningMatches = await this.runTuningScan(validItems, targetInterp, freqs);
+                        let tuningMatches;
+                        try {
+                            tuningMatches = await this.runTuningScan(validItems, targetInterp, freqs);
+                        } catch (err) {
+                            this._handleScanError(err);
+                            return;
+                        }
+                        if (tuningMatches === this.SCAN_SUPERSEDED) {
+                            // A newer scan owns the overlay now — release our
+                            // own busy flag, leave the shared UI alone.
+                            this.isScanning = false;
+                            return;
+                        }
 
                         tuningMatches.forEach(iem => {
                             const matchPct = iem.similarity;
@@ -24447,6 +24669,12 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     return canonicalList;
                 },
 
+                // Sentinel distinguishing "scan superseded by a newer request"
+                // from "scan genuinely failed" (null). A superseded scan must
+                // release its own busy state but NEVER touch the shared scanning
+                // overlay, because the newer scan now owns it.
+                SCAN_SUPERSEDED: {},
+
                 ensureFindWorker: function() {
                     if (this._findWorker) return this._findWorker;
                     if (typeof Worker === 'undefined') return null;
@@ -24499,7 +24727,8 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             }
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
-                            if (this._scanToken !== token) return resolve(null);
+                            clearTimeout(watchdog);
+                            if (this._scanToken !== token) return resolve(this.SCAN_SUPERSEDED);
                             if (!d.ok) { console.warn("[FindEngine] worker tuning failed:", d.error); return resolve(null); }
                             const list = (d.matches || []).slice();
                             // The worker only echoes slim payloads (no sourceData),
@@ -24516,10 +24745,19 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             console.warn("[FindEngine] worker error:", e && e.message);
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
+                            clearTimeout(watchdog);
                             resolve(null);
                         };
                         worker.addEventListener('message', onMsg);
                         worker.addEventListener('error', onErr);
+                        // Watchdog: a hung worker (or one that swallows its own
+                        // error event) would otherwise pin the scan promise
+                        // forever. Time out to the main-thread fallback.
+                        const watchdog = setTimeout(() => {
+                            worker.removeEventListener('message', onMsg);
+                            worker.removeEventListener('error', onErr);
+                            resolve(null);
+                        }, 30000);
                         try {
                             const slim = items.map(function(it) {
                                 return { id: it && it.id, name: it && it.name, data: it && it.data || null };
@@ -24541,6 +24779,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         } catch (e) {
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
+                            clearTimeout(watchdog);
                             resolve(null);
                         }
                     });
@@ -24552,6 +24791,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
 
                     const workerMatches = await this._runTuningViaWorker(token, items, targetInterp, freqs);
 
+                    if (workerMatches === this.SCAN_SUPERSEDED) return this.SCAN_SUPERSEDED;
                     if (workerMatches !== null && this._scanToken === token) {
                         return workerMatches;
                     }
@@ -24571,7 +24811,9 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         });
                     });
                     matches.sort((a, b) => b.similarity - a.similarity);
-                    return matches;
+                    // A newer scan may have started while the fallback ran —
+                    // its results must win, never this stale batch.
+                    return (this._scanToken === token) ? matches : this.SCAN_SUPERSEDED;
                 },
 
                 _runUpgradeViaWorker: function(token, items, baseInterp, freqs, goal) {
@@ -24583,7 +24825,8 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             if (d.type !== 'result') return;
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
-                            if (this._scanToken !== token) return resolve(null);
+                            clearTimeout(watchdog);
+                            if (this._scanToken !== token) return resolve(this.SCAN_SUPERSEDED);
                             if (!d.ok) { console.warn("[FindEngine] worker upgrade failed:", d.error); return resolve(null); }
                             resolve((d.matches || []).slice());
                         };
@@ -24591,10 +24834,18 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             console.warn("[FindEngine] worker error:", e && e.message);
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
+                            clearTimeout(watchdog);
                             resolve(null);
                         };
                         worker.addEventListener('message', onMsg);
                         worker.addEventListener('error', onErr);
+                        // Watchdog: a hung worker would otherwise pin the scan
+                        // promise forever — time out to the main-thread fallback.
+                        const watchdog = setTimeout(() => {
+                            worker.removeEventListener('message', onMsg);
+                            worker.removeEventListener('error', onErr);
+                            resolve(null);
+                        }, 30000);
                         try {
                             const slim = items.map(function(it) {
                                 return {
@@ -24608,6 +24859,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         } catch (e) {
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
+                            clearTimeout(watchdog);
                             resolve(null);
                         }
                     });
@@ -24619,6 +24871,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
 
                     const workerResults = await this._runUpgradeViaWorker(token, items, baseInterp, freqs, goal);
 
+                    if (workerResults === this.SCAN_SUPERSEDED) return this.SCAN_SUPERSEDED;
                     if (workerResults !== null && this._scanToken === token) {
                         return workerResults;
                     }
@@ -24644,11 +24897,19 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             matchedTag: this.hasGoalTag(tags, goal)
                         });
                     });
-                    return results;
+                    // A newer scan may have started while the fallback ran —
+                    // its results must win, never this stale batch.
+                    return (this._scanToken === token) ? results : this.SCAN_SUPERSEDED;
                 },
 
                 updateIndexingProgressBar: function() {
                     const progressContainer = document.getElementById('find-progress-container');
+                    if (PEQDB_Module.dataMissing) {
+                        // Never advertise a stuck 0% index when the measurement
+                        // files themselves are absent.
+                        if (progressContainer) progressContainer.classList.add('hidden');
+                        return;
+                    }
                     if (PEQDB_Module.databaseFullyLoaded) {
                         if (progressContainer) progressContainer.classList.add('hidden');
                         return;
@@ -24758,6 +25019,13 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             const targetInterp = CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]);
 
                             const matches = await this.runTuningScan(validItems, targetInterp, freqs);
+
+                            if (matches === this.SCAN_SUPERSEDED) {
+                                // A newer scan owns the overlay now — release
+                                // our own busy flag, leave the shared UI alone.
+                                this.isScanning = false;
+                                return;
+                            }
 
                             const deduplicatedMatches = [];
                             const seenNames = new Set();
@@ -25061,6 +25329,11 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                         showToast("Select a flagship IEM target in Step 1 first!", "⚠️");
                         return;
                     }
+                    // Re-entrancy guard: the scan is a long batched loop with
+                    // no cancellation — a second click would overlap it and
+                    // race the shared overlay/isScanning state.
+                    if (this._gkScanning) return;
+                    this._gkScanning = true;
 
                     this.isScanning = true;
                     const grid = document.getElementById('find-matches-grid');
@@ -25076,6 +25349,8 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                     if (title) title.textContent = "Hunting Giant-Killers...";
                     if (subtitle) subtitle.textContent = `Finding budget clones of ${this.selectedGkFlagshipName}...`;
 
+                    try {
+
                     const dataset = PEQDB_Module.STATE.dataset || [];
                     let flagshipItem = dataset.find(i => i.id === this.selectedGkFlagshipId);
                     if (!flagshipItem && this.iemDatabase) {
@@ -25085,13 +25360,17 @@ getDriveabilityStatus: function(impedance, sensitivity) {
 
                     if (!flagshipItem) {
                         if (overlay) overlay.classList.add('hidden');
-                        this.isScanning = false;
                         showToast("Flagship curve data not found.", "⚠️");
                         return;
                     }
 
                     if (!flagshipItem.data || flagshipItem.data.length < 2) {
                         await CurveIndexer.loadCurve(flagshipItem, 0);
+                        if (!flagshipItem.data || flagshipItem.data.length < 2) {
+                            if (overlay) overlay.classList.add('hidden');
+                            showToast("Flagship curve data could not be loaded.", "⚠️");
+                            return;
+                        }
                     }
 
                     const freqs = CurveUtils.generateLogGrid(100);
@@ -25103,7 +25382,9 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                     const selectedFormFactor = document.getElementById('gk-filter-formfactor')?.value || 'any';
                     const selectedConnector = document.getElementById('gk-filter-connector')?.value || 'any';
 
-                    const matches = [];
+                    // Phase 1: apply spec filters, collect candidates + what needs loading.
+                    const candidates = [];
+                    const needsLoad = [];
 
                     for (let i = 0; i < dataset.length; i++) {
                         const item = dataset[i];
@@ -25132,10 +25413,24 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                             else if (!dbConnStr.includes(targetConn)) continue;
                         }
 
+                        candidates.push({ item: item, price: price });
                         if (!item.data || item.data.length < 2) {
-                            await CurveIndexer.loadCurve(item, 0);
+                            needsLoad.push(item);
                         }
-                        if (!item.data) continue;
+                    }
+
+                    // Phase 2: batch-load curve data (25 concurrent) instead of
+                    // serializing one awaited fetch per candidate.
+                    const LOAD_BATCH = 25;
+                    for (let i = 0; i < needsLoad.length; i += LOAD_BATCH) {
+                        await Promise.all(needsLoad.slice(i, i + LOAD_BATCH).map(item => CurveIndexer.loadCurve(item, 0)));
+                    }
+
+                    // Phase 3: score everything that actually has curve data.
+                    const matches = [];
+                    candidates.forEach(entry => {
+                        const item = entry.item;
+                        if (!item.data || item.data.length < 2) return;
 
                         // Reuse the PEQDB 500-point cached interpolation when
                         // present — the giant-killer loop alone re-normalized
@@ -25160,11 +25455,11 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                                 isGiantKiller: true,
                                 flagshipName: this.selectedGkFlagshipName,
                                 flagshipPrice: this.selectedGkFlagshipPrice,
-                                price: price,
-                                savings: Math.max(0, Math.round(this.selectedGkFlagshipPrice - price))
+                                price: entry.price,
+                                savings: Math.max(0, Math.round(this.selectedGkFlagshipPrice - entry.price))
                             });
                         }
-                    }
+                    });
 
                     matches.sort((a, b) => b.similarity - a.similarity);
 
@@ -25172,10 +25467,14 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                     this.renderMatches(this._lastMatches);
 
                     if (overlay) overlay.classList.add('hidden');
-                    this.isScanning = false;
 
                     App.setFindSection('matches');
                     showToast(`Found ${matches.length} Giant-Killers under $${budgetLimit}!`, "🗡️");
+
+                    } finally {
+                        this.isScanning = false;
+                        this._gkScanning = false;
+                    }
                 },
 
                 selectedUpgradeBaseIemId: null,
@@ -25993,7 +26292,7 @@ applyGenreFilters: function(matches) {
                     if (btn) btn.innerHTML = goal.label;
 
                     if (this.selectedUpgradeBaseIemId && this._upgradeHasRun) {
-                        this.renderUpgradePathway();
+                        this._debouncedRun(this.renderUpgradePathway, 'ug');
                     }
                 },
 
@@ -26006,7 +26305,7 @@ applyGenreFilters: function(matches) {
                         if (btn) btn.innerHTML = this.upgradeGoalList[idx].label;
                     }
                     if (this.selectedUpgradeBaseIemId && this._upgradeHasRun) {
-                        this.renderUpgradePathway();
+                        this._debouncedRun(this.renderUpgradePathway, 'ug');
                     }
                 },
 
@@ -26094,7 +26393,7 @@ applyGenreFilters: function(matches) {
                 syncUgDualRange: function(kind) {
                     this._syncDualRangePrefixed('ug', kind);
                     if (this._upgradeHasRun && this.selectedUpgradeBaseIemId) {
-                        this.renderUpgradePathway();
+                        this._debouncedRun(this.renderUpgradePathway, 'ug');
                     }
                 },
 
@@ -26404,6 +26703,11 @@ applyGenreFilters: function(matches) {
 
                     if (!baseItem.data || baseItem.data.length < 2) {
                         await CurveIndexer.loadCurve(baseItem, 0);
+                        if (!baseItem.data || baseItem.data.length < 2) {
+                            if (overlay) overlay.classList.add('hidden');
+                            showToast("Base IEM curve data could not be loaded.", "⚠️");
+                            return;
+                        }
                     }
 
                     const freqs = CurveUtils.generateLogGrid(100);
@@ -26462,6 +26766,12 @@ applyGenreFilters: function(matches) {
                     }));
 
                     const upgradeResults = await this.runUpgradeScan(upgradeItems, baseInterp, freqs, goal);
+
+                    if (upgradeResults === this.SCAN_SUPERSEDED) {
+                        // A newer scan owns the overlay now — return without
+                        // touching the shared UI (no overlay hide, no render).
+                        return;
+                    }
 
                     const resultById = {};
                     upgradeResults.forEach(r => { if (r && r.id) resultById[r.id] = r; });
@@ -27148,7 +27458,7 @@ applyGenreFilters: function(matches) {
                         const isAdded = this.tasteFavorites.some(f => f.id === item.id);
 
                         html += `
-                            <div class="peqdb-row-item flex items-center justify-between p-1.5 cursor-pointer hover:bg-[var(--bg-card)] mb-1 transition-all select-none" onclick="FindEngine.addTasteFavorite('${item.id}')">
+                            <div class="peqdb-row-item flex items-center justify-between p-1.5 cursor-pointer hover:bg-[var(--bg-card)] mb-1 transition-all select-none" onclick="FindEngine.addTasteFavorite('${escJs(item.id)}')">
                                 <span class="text-xs text-stone-200 font-bold truncate flex-1 pr-2">${item.name}</span>
                                 ${isAdded ? '<span class="text-[9px] text-rose-400 font-black flex-shrink-0 ml-1">✓ Added</span>' : '<span class="text-[9px] text-[var(--accent-blue)] font-black flex-shrink-0 ml-1">+ Add</span>'}
                             </div>
@@ -27306,7 +27616,7 @@ applyGenreFilters: function(matches) {
                                     <span class="emoji-font vibrant-emoji text-lg flex-shrink-0 overflow-visible" style="line-height: 1.25;">❤️</span>
                                     <span class="text-xs font-black text-[var(--text-main)] truncate">${f.name}</span>
                                 </div>
-                                <button type="button" onclick="event.stopPropagation(); FindEngine.removeTasteFavorite('${f.id}')" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${f.name.replace(/"/g, '&quot;')}">✕</button>
+                                <button type="button" onclick="event.stopPropagation(); FindEngine.removeTasteFavorite('${escJs(f.id)}')" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${f.name.replace(/"/g, '&quot;')}">✕</button>
                             `;
                             container.appendChild(div);
                         } else {

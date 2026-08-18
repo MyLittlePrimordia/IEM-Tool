@@ -362,6 +362,7 @@ const EQ_SquigGraphMethods = {
                     baseCurve._cmpSpline = PEQDB_Module.Spline.build(PEQDB_Module.getNormalizedData(baseCurve.data, baseCurve.name));
                     baseCurve._cmpSplineData = baseCurve.data;
                     baseCurve._cmpSplineAlignDb = PEQDB_Module.alignDb;
+                    baseCurve._cmpSplineVersion = (baseCurve._cmpSplineVersion || 0) + 1;
                 }
                 baseSpline = baseCurve._cmpSpline;
             }
@@ -370,205 +371,31 @@ const EQ_SquigGraphMethods = {
                     targetCurve._cmpSpline = PEQDB_Module.Spline.build(PEQDB_Module.getNormalizedData(targetCurve.data, targetCurve.name));
                     targetCurve._cmpSplineData = targetCurve.data;
                     targetCurve._cmpSplineAlignDb = PEQDB_Module.alignDb;
+                    targetCurve._cmpSplineVersion = (targetCurve._cmpSplineVersion || 0) + 1;
                 }
                 targetSpline = targetCurve._cmpSpline;
             }
 
-            if (EQ_Module.graphMode === 'heatmap') {
-                cc.save();
-                // Heatmap gradients are identical across frames whenever the
-                // eq values are unchanged, so cache them per (y0, y1, sign)
-                // instead of allocating one per sample per frame.
-                if (!this._heatmapGradCache || this._heatmapGradCacheH !== h) {
-                    this._heatmapGradCache = {};
-                    this._heatmapGradCacheH = h;
-                    this._heatmapGradCount = 0;
-                }
-                for (let i = 0; i < steps; i++) {
-                    const curX = (i / (steps - 1)) * w;
-                    const dbVal = eqDb[i];
-                    if (Math.abs(dbVal) < 0.1) continue;
-                    const y0 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb, h);
-                    const y1 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + dbVal, h);
-                    
-                    const key = Math.round(y0) + ':' + Math.round(y1) + ':' + (dbVal > 0 ? 'p' : 'n');
-                    let grad = this._heatmapGradCache[key];
-                    if (!grad) {
-                        grad = cc.createLinearGradient(0, y0, 0, y1);
-                        if (dbVal > 0) {
-                            grad.addColorStop(0, 'rgba(16, 185, 129, 0.01)');
-                            grad.addColorStop(1, 'rgba(16, 185, 129, 0.1)');
-                        } else {
-                            grad.addColorStop(0, 'rgba(239, 68, 68, 0.01)');
-                            grad.addColorStop(1, 'rgba(239, 68, 68, 0.1)');
-                        }
-                        this._heatmapGradCache[key] = grad;
-                        if (++this._heatmapGradCount > 1000) {
-                            this._heatmapGradCache = {};
-                            this._heatmapGradCount = 0;
-                        }
-                    }
-                    cc.strokeStyle = grad;
-                    cc.lineWidth = w / steps + 1;
-                    cc.beginPath();
-                    cc.moveTo(curX, y0);
-                    cc.lineTo(curX, y1);
-                    cc.stroke();
-                }
-                cc.restore();
-
-                cc.beginPath();
-                cc.strokeStyle = "rgba(37, 99, 235, 0.8)";
-                cc.lineWidth = 2.5;
-                for (let i = 0; i < steps; i++) {
-                    const curX = (i / (steps - 1)) * w;
-                    const y = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + eqDb[i], h);
-                    if (i === 0) cc.moveTo(curX, y); else cc.lineTo(curX, y);
-                }
-                cc.stroke();
-                
-                EQ_Module.drawNormalCurves(cc, w, h, minF, maxF, eqDb);
-            } 
-            else if (EQ_Module.graphMode === 'difference') {
-                cc.beginPath();
-                cc.strokeStyle = "rgba(255, 255, 255, 0.15)";
-                cc.lineWidth = 1.5;
-                cc.setLineDash([4, 4]);
-                const zeroY = EQ_Module.dbToY_squig(PEQDB_Module.alignDb, h);
-                cc.moveTo(0, zeroY);
-                cc.lineTo(w, zeroY);
-                cc.stroke();
-                cc.setLineDash([]);
-
-                if (baseSpline && targetSpline) {
-                    cc.beginPath();
-                    cc.strokeStyle = "rgba(239, 68, 68, 0.4)";
-                    cc.lineWidth = 1.5;
-                    cc.setLineDash([5, 5]);
-                    for (let i = 0; i < steps; i++) {
-                        const curX = (i / (steps - 1)) * w;
-                        const f = freqs[i];
-                        const baseDbVal = PEQDB_Module.Spline.evaluate(baseSpline, f);
-                        const targetDbVal = PEQDB_Module.Spline.evaluate(targetSpline, f);
-                        const y = EQ_Module.dbToY_squig((baseDbVal - targetDbVal) + PEQDB_Module.alignDb, h);
-                        if (i === 0) cc.moveTo(curX, y); else cc.lineTo(curX, y);
-                    }
-                    cc.stroke();
-                    cc.setLineDash([]);
-
-                    cc.beginPath();
-                    cc.strokeStyle = accentGreen;
-                    cc.lineWidth = 2.5;
-                    for (let i = 0; i < steps; i++) {
-                        const curX = (i / (steps - 1)) * w;
-                        const f = freqs[i];
-                        const baseDbVal = PEQDB_Module.Spline.evaluate(baseSpline, f);
-                        const targetDbVal = PEQDB_Module.Spline.evaluate(targetSpline, f);
-                        const y = EQ_Module.dbToY_squig((baseDbVal + eqDb[i] - targetDbVal) + PEQDB_Module.alignDb, h);
-                        if (i === 0) cc.moveTo(curX, y); else cc.lineTo(curX, y);
-                    }
-                    cc.stroke();
-                } else {
-                    cc.fillStyle = "rgba(255, 255, 255, 0.35)";
-                    cc.font = "11px 'Comic Sans MS', sans-serif";
-                    cc.textAlign = "center";
-                    cc.fillText("Load both Base & Target curves to plot the compensated difference.", w / 2, h / 2);
-                    cc.textAlign = "left";
-                }
-            } 
-            else if (EQ_Module.graphMode === 'quality') {
-                cc.save();
-                cc.fillStyle = "rgba(16, 185, 129, 0.03)";
-                const yGreenTop = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + 1.5, h);
-                const yGreenBottom = EQ_Module.dbToY_squig(PEQDB_Module.alignDb - 1.5, h);
-                cc.fillRect(0, yGreenTop, w, yGreenBottom - yGreenTop);
-
-                cc.fillStyle = "rgba(245, 158, 11, 0.02)";
-                const yYellowTop = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + 3.0, h);
-                const yYellowBottom = EQ_Module.dbToY_squig(PEQDB_Module.alignDb - 3.0, h);
-                cc.fillRect(0, yYellowTop, w, yGreenTop - yYellowTop);
-                cc.fillRect(0, yGreenBottom, w, yYellowBottom - yGreenBottom);
-                cc.restore();
-
-                cc.beginPath();
-                cc.strokeStyle = "rgba(255, 255, 255, 0.1)";
-                cc.lineWidth = 1;
-                const zeroY = this.dbToY_squig(PEQDB_Module.alignDb, h);
-                cc.moveTo(0, zeroY);
-                cc.lineTo(w, zeroY);
-                cc.stroke();
-
-                if (baseSpline && targetSpline) {
-                    let lastX = 0;
-                    let lastY = 0;
-                    let started = false;
-                    for (let i = 0; i < steps; i++) {
-                        const curX = (i / (steps - 1)) * w;
-                        const f = freqs[i];
-                        const baseDbVal = PEQDB_Module.Spline.evaluate(baseSpline, f);
-                        const targetDbVal = PEQDB_Module.Spline.evaluate(targetSpline, f);
-                        const err = (baseDbVal + eqDb[i]) - targetDbVal;
-                        const y = this.dbToY_squig(err + PEQDB_Module.alignDb, h);
-                        
-                        if (!started) {
-                            lastX = curX;
-                            lastY = y;
-                            started = true;
-                            continue;
-                        }
-                        
-                        cc.beginPath();
-                        cc.moveTo(lastX, lastY);
-                        cc.lineTo(curX, y);
-                        
-                        const absErr = Math.abs(err);
-                        if (absErr <= 1.5) {
-                            cc.strokeStyle = '#10b981'; 
-                        } else if (absErr <= 3.0) {
-                            cc.strokeStyle = '#f59e0b'; 
-                        } else {
-                            cc.strokeStyle = '#ef4444'; 
-                        }
-                        cc.lineWidth = 2.5;
-                        cc.stroke();
-                        
-                        lastX = curX;
-                        lastY = y;
-                    }
-                } else {
-                    cc.fillStyle = "rgba(255, 255, 255, 0.35)";
-                    cc.font = "11px 'Comic Sans MS', sans-serif";
-                    cc.textAlign = "center";
-                    cc.fillText("Load both Base & Target curves to plot target match deviations.", w / 2, h / 2);
-                    cc.textAlign = "left";
-                }
-            } 
-            else {
-                EQ_Module.drawNormalCurves(cc, w, h, minF, maxF, eqDb);
-            }
-
-            // Draw White Dashed DSP Filter Curve
-            if (!EQ_Module.isTuningLabActive) {
-                cc.save();
-                cc.beginPath();
-                cc.strokeStyle = "rgba(255, 255, 255, 0.95)"; 
-                cc.lineWidth = 2.0; 
-                cc.setLineDash([5, 5]); 
-                const stepX = w > 800 ? 2 : 1; 
-                for (var i = 0; i < w; i += stepX) {
-                    const eqIdx = Math.round((i / (w - 1)) * (steps - 1));
-                    const eqVal = eqDb ? (eqDb[Math.max(0, Math.min(steps - 1, eqIdx))] || 0) : 0;
-                    var yEq = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + eqVal, h);
-                    if (i === 0) cc.moveTo(i, yEq);
-                    else cc.lineTo(i, yEq);
-                }
-                if ((w - 1) % stepX !== 0) {
-                    const eqVal = eqDb ? (eqDb[steps - 1] || 0) : 0;
-                    cc.lineTo(w - 1, EQ_Module.dbToY_squig(PEQDB_Module.alignDb + eqVal, h));
-                }
-                cc.stroke();
-                cc.restore();
-            }
+            // The graphMode layer (curves/heatmap/dashed DSP line) only changes
+            // when the EQ model, splines, zoom, alignment, preamp, or mode
+            // changes — but drawCurve fires on every slider tick AND 20-60x/s
+            // during playback, so without caching it re-did ~1000 spline
+            // evals + strokes per frame. Signature below mirrors every input.
+            const splineState = (PEQDB_Module.STATE.activeCurves || []).map(c =>
+                `${c.uid}-${c.visible ? 1 : 0}-${c.offset}-${c.color}-${c.role}-${c._cmpSplineVersion || 0}-${c._splineVersion || 0}`
+            ).join('|');
+            const virtualState = (this.virtualBands || []).map(v => `${v.hz}:${v.g}:${v.q}:${v.type || 'peaking'}`).join('|');
+            const modeState = [
+                EQ_Module.graphMode,
+                EQ_Module.isTuningLabActive ? 1 : 0,
+                this._magCacheVersion, this._magCacheBypass, this._magCacheCheap,
+                this._magCacheFreqKey, this._magCacheNumPoints,
+                preVal, w, h, minF, maxF, min, max,
+                PEQDB_Module.alignHz, PEQDB_Module.alignDb,
+                splineState, virtualState
+            ].join('|');
+            this._renderModeLayer(cc, w, h, dpr, targetW, targetH, minF, maxF, min, max,
+                eqDb, steps, freqs, baseSpline, targetSpline, accentGreen, modeState);
 
             if (!EQ_Module.isTuningLabActive) {
                 var hoverEQ2 = EQ_Module.hoverEQNode;
@@ -776,7 +603,237 @@ const EQ_SquigGraphMethods = {
             }
         },
 
-                drawNormalCurves: function(cc, w, h, minF, maxF, eqDb) {
+        // Renders the graphMode layer (heatmap / difference / quality / normal
+        // curves + white dashed DSP line) into an offscreen cache canvas.
+        // drawCurve fires on every slider tick and 20-60x/s during playback;
+        // the cached layer is only re-rendered when `modeState` (EQ model,
+        // splines, zoom, alignment, preamp, mode) actually changed.
+        _renderModeLayer: function(cc, w, h, dpr, targetW, targetH, minF, maxF, min, max,
+                eqDb, steps, freqs, baseSpline, targetSpline, accentGreen, modeState) {
+            if (!this.modeCacheCanvas) {
+                this.modeCacheCanvas = document.createElement('canvas');
+                this.modeCacheCtx = this.modeCacheCanvas.getContext('2d');
+                this.modeDirty = true;
+            }
+            if (this.modeCacheCanvas.width !== targetW || this.modeCacheCanvas.height !== targetH) {
+                this.modeCacheCanvas.width = targetW;
+                this.modeCacheCanvas.height = targetH;
+                this.modeCacheCtx.resetTransform();
+                this.modeCacheCtx.scale(dpr, dpr);
+                this.modeDirty = true;
+            }
+            if (this.lastModeState !== modeState) {
+                this.modeDirty = true;
+                this.lastModeState = modeState;
+            }
+
+            if (this.modeDirty) {
+                const mcc = this.modeCacheCtx;
+                mcc.clearRect(0, 0, w, h);
+
+                if (EQ_Module.graphMode === 'heatmap') {
+                    mcc.save();
+                    // Heatmap gradients are identical across frames whenever the
+                    // eq values are unchanged, so cache them per (y0, y1, sign)
+                    // instead of allocating one per sample per frame.
+                    if (!this._heatmapGradCache || this._heatmapGradCacheH !== h) {
+                        this._heatmapGradCache = {};
+                        this._heatmapGradCacheH = h;
+                        this._heatmapGradCount = 0;
+                    }
+                    for (let i = 0; i < steps; i++) {
+                        const curX = (i / (steps - 1)) * w;
+                        const dbVal = eqDb[i];
+                        if (Math.abs(dbVal) < 0.1) continue;
+                        const y0 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb, h);
+                        const y1 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + dbVal, h);
+
+                        const key = Math.round(y0) + ':' + Math.round(y1) + ':' + (dbVal > 0 ? 'p' : 'n');
+                        let grad = this._heatmapGradCache[key];
+                        if (!grad) {
+                            grad = mcc.createLinearGradient(0, y0, 0, y1);
+                            if (dbVal > 0) {
+                                grad.addColorStop(0, 'rgba(16, 185, 129, 0.01)');
+                                grad.addColorStop(1, 'rgba(16, 185, 129, 0.1)');
+                            } else {
+                                grad.addColorStop(0, 'rgba(239, 68, 68, 0.01)');
+                                grad.addColorStop(1, 'rgba(239, 68, 68, 0.1)');
+                            }
+                            this._heatmapGradCache[key] = grad;
+                            if (++this._heatmapGradCount > 1000) {
+                                this._heatmapGradCache = {};
+                                this._heatmapGradCount = 0;
+                            }
+                        }
+                        mcc.strokeStyle = grad;
+                        mcc.lineWidth = w / steps + 1;
+                        mcc.beginPath();
+                        mcc.moveTo(curX, y0);
+                        mcc.lineTo(curX, y1);
+                        mcc.stroke();
+                    }
+                    mcc.restore();
+
+                    mcc.beginPath();
+                    mcc.strokeStyle = "rgba(37, 99, 235, 0.8)";
+                    mcc.lineWidth = 2.5;
+                    for (let i = 0; i < steps; i++) {
+                        const curX = (i / (steps - 1)) * w;
+                        const y = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + eqDb[i], h);
+                        if (i === 0) mcc.moveTo(curX, y); else mcc.lineTo(curX, y);
+                    }
+                    mcc.stroke();
+
+                    EQ_Module.drawNormalCurves(mcc, w, h, minF, maxF, eqDb);
+                }
+                else if (EQ_Module.graphMode === 'difference') {
+                    mcc.beginPath();
+                    mcc.strokeStyle = "rgba(255, 255, 255, 0.15)";
+                    mcc.lineWidth = 1.5;
+                    mcc.setLineDash([4, 4]);
+                    const zeroY = EQ_Module.dbToY_squig(PEQDB_Module.alignDb, h);
+                    mcc.moveTo(0, zeroY);
+                    mcc.lineTo(w, zeroY);
+                    mcc.stroke();
+                    mcc.setLineDash([]);
+
+                    if (baseSpline && targetSpline) {
+                        mcc.beginPath();
+                        mcc.strokeStyle = "rgba(239, 68, 68, 0.4)";
+                        mcc.lineWidth = 1.5;
+                        mcc.setLineDash([5, 5]);
+                        for (let i = 0; i < steps; i++) {
+                            const curX = (i / (steps - 1)) * w;
+                            const f = freqs[i];
+                            const baseDbVal = PEQDB_Module.Spline.evaluate(baseSpline, f);
+                            const targetDbVal = PEQDB_Module.Spline.evaluate(targetSpline, f);
+                            const y = EQ_Module.dbToY_squig((baseDbVal - targetDbVal) + PEQDB_Module.alignDb, h);
+                            if (i === 0) mcc.moveTo(curX, y); else mcc.lineTo(curX, y);
+                        }
+                        mcc.stroke();
+                        mcc.setLineDash([]);
+
+                        mcc.beginPath();
+                        mcc.strokeStyle = accentGreen;
+                        mcc.lineWidth = 2.5;
+                        for (let i = 0; i < steps; i++) {
+                            const curX = (i / (steps - 1)) * w;
+                            const f = freqs[i];
+                            const baseDbVal = PEQDB_Module.Spline.evaluate(baseSpline, f);
+                            const targetDbVal = PEQDB_Module.Spline.evaluate(targetSpline, f);
+                            const y = EQ_Module.dbToY_squig((baseDbVal + eqDb[i] - targetDbVal) + PEQDB_Module.alignDb, h);
+                            if (i === 0) mcc.moveTo(curX, y); else mcc.lineTo(curX, y);
+                        }
+                        mcc.stroke();
+                    } else {
+                        mcc.fillStyle = "rgba(255, 255, 255, 0.35)";
+                        mcc.font = "11px 'Comic Sans MS', sans-serif";
+                        mcc.textAlign = "center";
+                        mcc.fillText("Load both Base & Target curves to plot the compensated difference.", w / 2, h / 2);
+                        mcc.textAlign = "left";
+                    }
+                }
+                else if (EQ_Module.graphMode === 'quality') {
+                    mcc.save();
+                    mcc.fillStyle = "rgba(16, 185, 129, 0.03)";
+                    const yGreenTop = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + 1.5, h);
+                    const yGreenBottom = EQ_Module.dbToY_squig(PEQDB_Module.alignDb - 1.5, h);
+                    mcc.fillRect(0, yGreenTop, w, yGreenBottom - yGreenTop);
+
+                    mcc.fillStyle = "rgba(245, 158, 11, 0.02)";
+                    const yYellowTop = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + 3.0, h);
+                    const yYellowBottom = EQ_Module.dbToY_squig(PEQDB_Module.alignDb - 3.0, h);
+                    mcc.fillRect(0, yYellowTop, w, yGreenTop - yYellowTop);
+                    mcc.fillRect(0, yGreenBottom, w, yYellowBottom - yGreenBottom);
+                    mcc.restore();
+
+                    mcc.beginPath();
+                    mcc.strokeStyle = "rgba(255, 255, 255, 0.1)";
+                    mcc.lineWidth = 1;
+                    const zeroY = this.dbToY_squig(PEQDB_Module.alignDb, h);
+                    mcc.moveTo(0, zeroY);
+                    mcc.lineTo(w, zeroY);
+                    mcc.stroke();
+
+                    if (baseSpline && targetSpline) {
+                        let lastX = 0;
+                        let lastY = 0;
+                        let started = false;
+                        for (let i = 0; i < steps; i++) {
+                            const curX = (i / (steps - 1)) * w;
+                            const f = freqs[i];
+                            const baseDbVal = PEQDB_Module.Spline.evaluate(baseSpline, f);
+                            const targetDbVal = PEQDB_Module.Spline.evaluate(targetSpline, f);
+                            const err = (baseDbVal + eqDb[i]) - targetDbVal;
+                            const y = this.dbToY_squig(err + PEQDB_Module.alignDb, h);
+
+                            if (!started) {
+                                lastX = curX;
+                                lastY = y;
+                                started = true;
+                                continue;
+                            }
+
+                            mcc.beginPath();
+                            mcc.moveTo(lastX, lastY);
+                            mcc.lineTo(curX, y);
+
+                            const absErr = Math.abs(err);
+                            if (absErr <= 1.5) {
+                                mcc.strokeStyle = '#10b981';
+                            } else if (absErr <= 3.0) {
+                                mcc.strokeStyle = '#f59e0b';
+                            } else {
+                                mcc.strokeStyle = '#ef4444';
+                            }
+                            mcc.lineWidth = 2.5;
+                            mcc.stroke();
+
+                            lastX = curX;
+                            lastY = y;
+                        }
+                    } else {
+                        mcc.fillStyle = "rgba(255, 255, 255, 0.35)";
+                        mcc.font = "11px 'Comic Sans MS', sans-serif";
+                        mcc.textAlign = "center";
+                        mcc.fillText("Load both Base & Target curves to plot target match deviations.", w / 2, h / 2);
+                        mcc.textAlign = "left";
+                    }
+                }
+                else {
+                    EQ_Module.drawNormalCurves(mcc, w, h, minF, maxF, eqDb);
+                }
+
+                // Draw White Dashed DSP Filter Curve
+                if (!EQ_Module.isTuningLabActive) {
+                    mcc.save();
+                    mcc.beginPath();
+                    mcc.strokeStyle = "rgba(255, 255, 255, 0.95)";
+                    mcc.lineWidth = 2.0;
+                    mcc.setLineDash([5, 5]);
+                    const stepX = w > 800 ? 2 : 1;
+                    for (var i = 0; i < w; i += stepX) {
+                        const eqIdx = Math.round((i / (w - 1)) * (steps - 1));
+                        const eqVal = eqDb ? (eqDb[Math.max(0, Math.min(steps - 1, eqIdx))] || 0) : 0;
+                        var yEq = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + eqVal, h);
+                        if (i === 0) mcc.moveTo(i, yEq);
+                        else mcc.lineTo(i, yEq);
+                    }
+                    if ((w - 1) % stepX !== 0) {
+                        const eqVal = eqDb ? (eqDb[steps - 1] || 0) : 0;
+                        mcc.lineTo(w - 1, EQ_Module.dbToY_squig(PEQDB_Module.alignDb + eqVal, h));
+                    }
+                    mcc.stroke();
+                    mcc.restore();
+                }
+
+                this.modeDirty = false;
+            }
+
+            cc.drawImage(this.modeCacheCanvas, 0, 0, w, h);
+        },
+
+        drawNormalCurves: function(cc, w, h, minF, maxF, eqDb) {
             if (!PEQDB_Module || !PEQDB_Module.STATE.activeCurves) return;
             const steps = 1000;
             
@@ -794,10 +851,12 @@ const EQ_SquigGraphMethods = {
                         c._splineSourceData = c.data;
                         c._splineValidated = false;
                         c._splineFailed = false;
+                        c._splineVersion = (c._splineVersion || 0) + 1;
                     } else if (!c.cachedSpline && !c._splineFailed) {
                         c.cachedNormalized = PEQDB_Module.getNormalizedData(c.data, c.name);
                         c.cachedSpline = PEQDB_Module.Spline.build(c.cachedNormalized);
                         c._splineValidated = false;
+                        c._splineVersion = (c._splineVersion || 0) + 1;
                     }
                     const spline = c.cachedSpline;
                     if (!spline) {

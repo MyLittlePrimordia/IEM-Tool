@@ -1112,6 +1112,11 @@ window.updateExpandedAutoHide = function() {
             }
         },
         loadDynamicFonts: async function() {
+            // Session-scoped: every invocation re-fetches fonts.json and
+            // re-downloads every font file. Once resolved (success OR fallback)
+            // the result is stable for the app session, so skip the repeat work.
+            if (this._fontsSessionLoaded) return;
+            this._fontsSessionLoaded = true;
             try {
                 var res = await fetch('./fonts/fonts.json');
                 if (!res.ok) throw new Error("Could not find fonts.json");
@@ -9149,6 +9154,20 @@ startVisualizer: function() {
                     return;
                 }
 
+                // Pane visibility gate: the VU meters live in the Visualizer
+                // pane and the spectrum overlay in the EQ pane. When neither
+                // is visible the per-frame work (analyser reads, meter DOM
+                // writes, de-esser analysis) has no viewer — keep the loop
+                // alive but skip it. The anti-clip AGC interval is separate
+                // and safety-critical, so it intentionally keeps running.
+                const vizPane = document.getElementById('pane-visualizer');
+                const eqPane = document.getElementById('pane-eq');
+                const anyPaneVisible = (!vizPane || !vizPane.classList.contains('hidden')) || (!eqPane || !eqPane.classList.contains('hidden'));
+                if (!anyPaneVisible) {
+                    this.vizFrameId = requestAnimationFrame(drawViz);
+                    return;
+                }
+
                 if (!cachedBarsL || cachedBarsL.length === 0) {
                     refreshVizDomCache();
                 }
@@ -10956,13 +10975,48 @@ const DBCache = {
                 },
 
                 _bgRunning: false,
-                startBackgroundWarmup: function(dataset) {
+                startBackgroundWarmup: async function(dataset) {
 
-                    if (this.warming || PEQDB_Module.databaseFullyLoaded) return;
+                    if (this.warming || PEQDB_Module.databaseFullyLoaded || PEQDB_Module.dataMissing) return;
                     if (!dataset || dataset.length === 0) {
                         // Same boot race guard as startBackgroundLoading: never
                         // mark the DB "fully loaded" off an empty dataset — retry.
                         if (!PEQDB_Module.databaseFullyLoaded) PEQDB_Module.startBackgroundLoading();
+                        return;
+                    }
+
+                    // Probe for the measurement files BEFORE fanning out 4,980
+                    // curve fetches. If every probed primary file 404s, the
+                    // data/ directory is missing (e.g. gitignored asset folder)
+                    // and the warmup would otherwise storm the local server
+                    // with thousands of failing requests before giving up.
+                    const probeFiles = [];
+                    for (let i = 0; i < Math.min(dataset.length, 200) && probeFiles.length < 3; i++) {
+                        const it = dataset[i];
+                        const f = it && it.files && it.files[0];
+                        if (f && !probeFiles.includes(f)) probeFiles.push(f);
+                    }
+                    const probeResults = await Promise.all(probeFiles.map(async (f) => {
+                        try {
+                            // HEAD avoids downloading whole curve files just to
+                            // verify existence.
+                            const res = await fetch('./' + f.split('/').map(encodeURIComponent).join('/'), { method: 'HEAD' }).catch(() => null);
+                            return !!(res && res.ok);
+                        } catch (_) {
+                            return false;
+                        }
+                    }));
+                    if (probeFiles.length > 0 && probeResults.every(ok => !ok)) {
+                        PEQDB_Module.dataMissing = true;
+                        this.warming = false;
+                        console.warn("[CurveIndexer] Measurement data missing (all probed files 404) - indexing paused.");
+                        const indicator = document.getElementById('peqdb-indexing-indicator');
+                        if (indicator) {
+                            indicator.textContent = '⚠️ Measurement Data Missing - Indexing Paused';
+                            indicator.classList.remove('hidden');
+                        }
+                        const progressContainer = document.getElementById('find-progress-container');
+                        if (progressContainer) progressContainer.classList.add('hidden');
                         return;
                     }
                     this.warming = true;
@@ -12002,14 +12056,22 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
 
             const listContainer = document.getElementById("peqdb-list");
             if (listContainer) {
+                // Coalesce rapid scroll events into one render per frame
+                // (scroll can fire many times per frame while flinging).
+                let scrollRenderScheduled = false;
                 listContainer.addEventListener("scroll", () => {
-                    const scrollBuffer = 60;
-                    if (listContainer.scrollTop + listContainer.clientHeight >= listContainer.scrollHeight - scrollBuffer) {
-                        if (PEQDB_Module.listRenderLimit < PEQDB_Module.STATE.renderList.length) {
-                            PEQDB_Module.listRenderLimit += 40;
-                            PEQDB_Module.renderList(true);
+                    if (scrollRenderScheduled) return;
+                    scrollRenderScheduled = true;
+                    requestAnimationFrame(() => {
+                        scrollRenderScheduled = false;
+                        const scrollBuffer = 60;
+                        if (listContainer.scrollTop + listContainer.clientHeight >= listContainer.scrollHeight - scrollBuffer) {
+                            if (PEQDB_Module.listRenderLimit < PEQDB_Module.STATE.renderList.length) {
+                                PEQDB_Module.listRenderLimit += 40;
+                                PEQDB_Module.renderList(true);
+                            }
                         }
-                    }
+                    });
                 }, { passive: true });
             }
 
@@ -12453,12 +12515,18 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
                 list.appendChild(fragment);
             }
 
+            // Only scan the freshly built rows for marquee overflow instead of
+            // re-querying the entire list on every render (O(all rendered rows)
+            // per keystroke/append). Rows already animated keep their class and
+            // are skipped by the guard below anyway.
+            const newMarqueeTargets = Array.from(fragment.querySelectorAll('.db-title-text, .db-file-marquee-text'));
+
             setTimeout(() => {
                 const applyOrbitMarquee = (el) => {
                     if (!el || el.classList.contains('marquee-orbit-active')) return;
                     activateOrbitMarquee(el);
                 };
-                list.querySelectorAll('.db-title-text, .db-file-marquee-text').forEach(applyOrbitMarquee);
+                newMarqueeTargets.forEach(applyOrbitMarquee);
                 PEQDB_Module.applyOrbitMarqueeFn = applyOrbitMarquee;
             }, 80);
 
@@ -12716,7 +12784,24 @@ generateLeastSquaresAutoEQ: function() {
 // solves gains for the active band resolution, applies them to the UI/state,
 // and shows a completion toast. toastText overrides the default message;
 // pass null to use the generic "AutoEQ solved and loaded N bands" message.
-_solveAutoEQBands: function(targetCorrection, freqs, toastText) {
+_solveAutoEQBands: async function(targetCorrection, freqs, toastText) {
+            // The solve is heavy (bands x points x iterations of biquad math)
+            // and was fully synchronous — a 48-band solve froze the UI for
+            // seconds. Guard against overlapping solves (double-clicks) and
+            // let the chunked inner solve yield to the event loop.
+            if (this._autoEqSolving) return;
+            this._autoEqSolving = true;
+            try {
+                await this._solveAutoEQBandsInner(targetCorrection, freqs, toastText);
+            } catch (err) {
+                console.error("[PEQDB] AutoEQ solve failed:", err);
+                showToast("AutoEQ solve failed.", "⚠️");
+            } finally {
+                this._autoEqSolving = false;
+            }
+        },
+
+        _solveAutoEQBandsInner: async function(targetCorrection, freqs, toastText) {
             const points = freqs.length;
             const bandCount = PEQDB_Module.autoeqResolution || 10;
 
@@ -12817,6 +12902,8 @@ _solveAutoEQBands: function(targetCorrection, freqs, toastText) {
                         optimizedBands[b].gain = Math.max(-12, Math.min(12, idealGain));
                     }
                 }
+                // Yield every other sweep so the UI stays responsive.
+                if (iter % 2 === 1) await new Promise(r => setTimeout(r, 0));
             }
 
             // Newton-style refinement: the main pass is linear in the gain-1
@@ -12855,6 +12942,7 @@ _solveAutoEQBands: function(targetCorrection, freqs, toastText) {
                         band.gain = Math.max(-12, Math.min(12, band.gain + delta * 0.6));
                     }
                 }
+                await new Promise(r => setTimeout(r, 0));
             }
 
             let maxModelDb = 0;
@@ -14342,6 +14430,7 @@ toggleSearchMode: function(mode) {
         },
 
         abxStart: async function() {
+            if (this.abxIsActive) return;
             const audioA = document.getElementById('ab-audio-a');
             const audioB = document.getElementById('ab-audio-b');
             if (!audioA || !audioB || !audioA.src || !audioB.src) {
@@ -14385,6 +14474,7 @@ toggleSearchMode: function(mode) {
             this.abxNextTrial();
         },
         abxNextTrial: async function() {
+            if (!this.abxIsActive) return;
             if (this.abxTrialIndex >= this.abxTotalTrials) {
                 this.abxEndGame();
                 return;
@@ -14417,8 +14507,8 @@ toggleSearchMode: function(mode) {
 
             audioA.currentTime = 0;
             audioB.currentTime = 0;
-            audioA.play();
-            audioB.play();
+            audioA.play().catch(e => console.log("ABX play A interrupted:", e));
+            audioB.play().catch(e => console.log("ABX play B interrupted:", e));
 
             this.abPlaying = true;
         },
@@ -14455,9 +14545,14 @@ toggleSearchMode: function(mode) {
             this.abPlaying = false;
 
             this.abxTrialIndex++;
-            setTimeout(() => this.abxNextTrial(), 1000);
+            if (this._abxNextTimer) clearTimeout(this._abxNextTimer);
+            this._abxNextTimer = setTimeout(() => {
+                this._abxNextTimer = null;
+                this.abxNextTrial();
+            }, 1000);
         },
         abxEndGame: function() {
+            if (this._abxNextTimer) { clearTimeout(this._abxNextTimer); this._abxNextTimer = null; }
             this.abxIsActive = false;
             const percentage = Math.round((this.abxCorrect / this.abxTotalTrials) * 100);
 
@@ -14479,6 +14574,7 @@ toggleSearchMode: function(mode) {
             this.setABXControlsEnabled(true);
         },
         abxReset: function() {
+            if (this._abxNextTimer) { clearTimeout(this._abxNextTimer); this._abxNextTimer = null; }
             this.abxIsActive = false;
             this.abxTrialIndex = 0;
             this.abxCorrect = 0;
@@ -17624,6 +17720,18 @@ tagEmojis: {
                     this._selectCustomOptionPrefixed(prefix, key, selected.val, selected.label);
                 },
 
+                // Coalesce rapid filter/spec changes into a single re-scan (slider
+                // drags fire on every input event; a full rescan per tick would
+                // thrash the worker and main thread).
+                _debouncedRun: function(fn, key, delay) {
+                    const timerKey = '_deb_' + key;
+                    if (this[timerKey]) clearTimeout(this[timerKey]);
+                    this[timerKey] = setTimeout(() => {
+                        this[timerKey] = null;
+                        fn.call(this);
+                    }, delay || 250);
+                },
+
                 _selectCustomOptionPrefixed: function(prefix, key, value, htmlLabel) {
                     const input = document.getElementById(`${prefix}-filter-${key}`);
                     const label = document.getElementById(`label-${prefix}-filter-${key}`);
@@ -17635,9 +17743,9 @@ tagEmojis: {
                     // Once a tab has run, spec changes live-update the results instead
                     // of silently waiting for the user to re-press the button.
                     if (prefix === 'ug' && this._upgradeHasRun && this.selectedUpgradeBaseIemId) {
-                        this.renderUpgradePathway();
+                        this._debouncedRun(this.renderUpgradePathway, 'ug');
                     } else if (prefix === 'gk' && this._gkHasRun && this.selectedGkFlagshipId) {
-                        this.scanGiantKillers();
+                        this._debouncedRun(this.scanGiantKillers, 'gk');
                     }
                 },
 
@@ -18485,6 +18593,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
 
                 updateSliderUI: function(id) {
                     const el = document.getElementById(id);
+                    if (!el) return;
                     const val = parseFloat(el.value);
                     const display = document.getElementById(id + '-val');
                     if (!display) return;
@@ -18708,7 +18817,19 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
 
                         const datasetItems = PEQDB_Module.STATE.dataset || [];
 
-                        const tuningMatches = await this.runTuningScan(validItems, targetInterp, freqs);
+                        let tuningMatches;
+                        try {
+                            tuningMatches = await this.runTuningScan(validItems, targetInterp, freqs);
+                        } catch (err) {
+                            this._handleScanError(err);
+                            return;
+                        }
+                        if (tuningMatches === this.SCAN_SUPERSEDED) {
+                            // A newer scan owns the overlay now — release our
+                            // own busy flag, leave the shared UI alone.
+                            this.isScanning = false;
+                            return;
+                        }
 
                         tuningMatches.forEach(iem => {
                             const matchPct = iem.similarity;
@@ -19186,6 +19307,12 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     return canonicalList;
                 },
 
+                // Sentinel distinguishing "scan superseded by a newer request"
+                // from "scan genuinely failed" (null). A superseded scan must
+                // release its own busy state but NEVER touch the shared scanning
+                // overlay, because the newer scan now owns it.
+                SCAN_SUPERSEDED: {},
+
                 ensureFindWorker: function() {
                     if (this._findWorker) return this._findWorker;
                     if (typeof Worker === 'undefined') return null;
@@ -19238,7 +19365,8 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             }
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
-                            if (this._scanToken !== token) return resolve(null);
+                            clearTimeout(watchdog);
+                            if (this._scanToken !== token) return resolve(this.SCAN_SUPERSEDED);
                             if (!d.ok) { console.warn("[FindEngine] worker tuning failed:", d.error); return resolve(null); }
                             const list = (d.matches || []).slice();
                             // The worker only echoes slim payloads (no sourceData),
@@ -19255,10 +19383,19 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             console.warn("[FindEngine] worker error:", e && e.message);
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
+                            clearTimeout(watchdog);
                             resolve(null);
                         };
                         worker.addEventListener('message', onMsg);
                         worker.addEventListener('error', onErr);
+                        // Watchdog: a hung worker (or one that swallows its own
+                        // error event) would otherwise pin the scan promise
+                        // forever. Time out to the main-thread fallback.
+                        const watchdog = setTimeout(() => {
+                            worker.removeEventListener('message', onMsg);
+                            worker.removeEventListener('error', onErr);
+                            resolve(null);
+                        }, 30000);
                         try {
                             const slim = items.map(function(it) {
                                 return { id: it && it.id, name: it && it.name, data: it && it.data || null };
@@ -19280,6 +19417,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         } catch (e) {
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
+                            clearTimeout(watchdog);
                             resolve(null);
                         }
                     });
@@ -19291,6 +19429,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
 
                     const workerMatches = await this._runTuningViaWorker(token, items, targetInterp, freqs);
 
+                    if (workerMatches === this.SCAN_SUPERSEDED) return this.SCAN_SUPERSEDED;
                     if (workerMatches !== null && this._scanToken === token) {
                         return workerMatches;
                     }
@@ -19310,7 +19449,9 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         });
                     });
                     matches.sort((a, b) => b.similarity - a.similarity);
-                    return matches;
+                    // A newer scan may have started while the fallback ran —
+                    // its results must win, never this stale batch.
+                    return (this._scanToken === token) ? matches : this.SCAN_SUPERSEDED;
                 },
 
                 _runUpgradeViaWorker: function(token, items, baseInterp, freqs, goal) {
@@ -19322,7 +19463,8 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             if (d.type !== 'result') return;
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
-                            if (this._scanToken !== token) return resolve(null);
+                            clearTimeout(watchdog);
+                            if (this._scanToken !== token) return resolve(this.SCAN_SUPERSEDED);
                             if (!d.ok) { console.warn("[FindEngine] worker upgrade failed:", d.error); return resolve(null); }
                             resolve((d.matches || []).slice());
                         };
@@ -19330,10 +19472,18 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             console.warn("[FindEngine] worker error:", e && e.message);
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
+                            clearTimeout(watchdog);
                             resolve(null);
                         };
                         worker.addEventListener('message', onMsg);
                         worker.addEventListener('error', onErr);
+                        // Watchdog: a hung worker would otherwise pin the scan
+                        // promise forever — time out to the main-thread fallback.
+                        const watchdog = setTimeout(() => {
+                            worker.removeEventListener('message', onMsg);
+                            worker.removeEventListener('error', onErr);
+                            resolve(null);
+                        }, 30000);
                         try {
                             const slim = items.map(function(it) {
                                 return {
@@ -19347,6 +19497,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         } catch (e) {
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
+                            clearTimeout(watchdog);
                             resolve(null);
                         }
                     });
@@ -19358,6 +19509,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
 
                     const workerResults = await this._runUpgradeViaWorker(token, items, baseInterp, freqs, goal);
 
+                    if (workerResults === this.SCAN_SUPERSEDED) return this.SCAN_SUPERSEDED;
                     if (workerResults !== null && this._scanToken === token) {
                         return workerResults;
                     }
@@ -19383,11 +19535,19 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             matchedTag: this.hasGoalTag(tags, goal)
                         });
                     });
-                    return results;
+                    // A newer scan may have started while the fallback ran —
+                    // its results must win, never this stale batch.
+                    return (this._scanToken === token) ? results : this.SCAN_SUPERSEDED;
                 },
 
                 updateIndexingProgressBar: function() {
                     const progressContainer = document.getElementById('find-progress-container');
+                    if (PEQDB_Module.dataMissing) {
+                        // Never advertise a stuck 0% index when the measurement
+                        // files themselves are absent.
+                        if (progressContainer) progressContainer.classList.add('hidden');
+                        return;
+                    }
                     if (PEQDB_Module.databaseFullyLoaded) {
                         if (progressContainer) progressContainer.classList.add('hidden');
                         return;
@@ -19497,6 +19657,13 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             const targetInterp = CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]);
 
                             const matches = await this.runTuningScan(validItems, targetInterp, freqs);
+
+                            if (matches === this.SCAN_SUPERSEDED) {
+                                // A newer scan owns the overlay now — release
+                                // our own busy flag, leave the shared UI alone.
+                                this.isScanning = false;
+                                return;
+                            }
 
                             const deduplicatedMatches = [];
                             const seenNames = new Set();
@@ -19800,6 +19967,11 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                         showToast("Select a flagship IEM target in Step 1 first!", "⚠️");
                         return;
                     }
+                    // Re-entrancy guard: the scan is a long batched loop with
+                    // no cancellation — a second click would overlap it and
+                    // race the shared overlay/isScanning state.
+                    if (this._gkScanning) return;
+                    this._gkScanning = true;
 
                     this.isScanning = true;
                     const grid = document.getElementById('find-matches-grid');
@@ -19815,6 +19987,8 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                     if (title) title.textContent = "Hunting Giant-Killers...";
                     if (subtitle) subtitle.textContent = `Finding budget clones of ${this.selectedGkFlagshipName}...`;
 
+                    try {
+
                     const dataset = PEQDB_Module.STATE.dataset || [];
                     let flagshipItem = dataset.find(i => i.id === this.selectedGkFlagshipId);
                     if (!flagshipItem && this.iemDatabase) {
@@ -19824,13 +19998,17 @@ getDriveabilityStatus: function(impedance, sensitivity) {
 
                     if (!flagshipItem) {
                         if (overlay) overlay.classList.add('hidden');
-                        this.isScanning = false;
                         showToast("Flagship curve data not found.", "⚠️");
                         return;
                     }
 
                     if (!flagshipItem.data || flagshipItem.data.length < 2) {
                         await CurveIndexer.loadCurve(flagshipItem, 0);
+                        if (!flagshipItem.data || flagshipItem.data.length < 2) {
+                            if (overlay) overlay.classList.add('hidden');
+                            showToast("Flagship curve data could not be loaded.", "⚠️");
+                            return;
+                        }
                     }
 
                     const freqs = CurveUtils.generateLogGrid(100);
@@ -19842,7 +20020,9 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                     const selectedFormFactor = document.getElementById('gk-filter-formfactor')?.value || 'any';
                     const selectedConnector = document.getElementById('gk-filter-connector')?.value || 'any';
 
-                    const matches = [];
+                    // Phase 1: apply spec filters, collect candidates + what needs loading.
+                    const candidates = [];
+                    const needsLoad = [];
 
                     for (let i = 0; i < dataset.length; i++) {
                         const item = dataset[i];
@@ -19871,10 +20051,24 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                             else if (!dbConnStr.includes(targetConn)) continue;
                         }
 
+                        candidates.push({ item: item, price: price });
                         if (!item.data || item.data.length < 2) {
-                            await CurveIndexer.loadCurve(item, 0);
+                            needsLoad.push(item);
                         }
-                        if (!item.data) continue;
+                    }
+
+                    // Phase 2: batch-load curve data (25 concurrent) instead of
+                    // serializing one awaited fetch per candidate.
+                    const LOAD_BATCH = 25;
+                    for (let i = 0; i < needsLoad.length; i += LOAD_BATCH) {
+                        await Promise.all(needsLoad.slice(i, i + LOAD_BATCH).map(item => CurveIndexer.loadCurve(item, 0)));
+                    }
+
+                    // Phase 3: score everything that actually has curve data.
+                    const matches = [];
+                    candidates.forEach(entry => {
+                        const item = entry.item;
+                        if (!item.data || item.data.length < 2) return;
 
                         // Reuse the PEQDB 500-point cached interpolation when
                         // present — the giant-killer loop alone re-normalized
@@ -19899,11 +20093,11 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                                 isGiantKiller: true,
                                 flagshipName: this.selectedGkFlagshipName,
                                 flagshipPrice: this.selectedGkFlagshipPrice,
-                                price: price,
-                                savings: Math.max(0, Math.round(this.selectedGkFlagshipPrice - price))
+                                price: entry.price,
+                                savings: Math.max(0, Math.round(this.selectedGkFlagshipPrice - entry.price))
                             });
                         }
-                    }
+                    });
 
                     matches.sort((a, b) => b.similarity - a.similarity);
 
@@ -19911,10 +20105,14 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                     this.renderMatches(this._lastMatches);
 
                     if (overlay) overlay.classList.add('hidden');
-                    this.isScanning = false;
 
                     App.setFindSection('matches');
                     showToast(`Found ${matches.length} Giant-Killers under $${budgetLimit}!`, "🗡️");
+
+                    } finally {
+                        this.isScanning = false;
+                        this._gkScanning = false;
+                    }
                 },
 
                 selectedUpgradeBaseIemId: null,
@@ -20732,7 +20930,7 @@ applyGenreFilters: function(matches) {
                     if (btn) btn.innerHTML = goal.label;
 
                     if (this.selectedUpgradeBaseIemId && this._upgradeHasRun) {
-                        this.renderUpgradePathway();
+                        this._debouncedRun(this.renderUpgradePathway, 'ug');
                     }
                 },
 
@@ -20745,7 +20943,7 @@ applyGenreFilters: function(matches) {
                         if (btn) btn.innerHTML = this.upgradeGoalList[idx].label;
                     }
                     if (this.selectedUpgradeBaseIemId && this._upgradeHasRun) {
-                        this.renderUpgradePathway();
+                        this._debouncedRun(this.renderUpgradePathway, 'ug');
                     }
                 },
 
@@ -20833,7 +21031,7 @@ applyGenreFilters: function(matches) {
                 syncUgDualRange: function(kind) {
                     this._syncDualRangePrefixed('ug', kind);
                     if (this._upgradeHasRun && this.selectedUpgradeBaseIemId) {
-                        this.renderUpgradePathway();
+                        this._debouncedRun(this.renderUpgradePathway, 'ug');
                     }
                 },
 
@@ -21143,6 +21341,11 @@ applyGenreFilters: function(matches) {
 
                     if (!baseItem.data || baseItem.data.length < 2) {
                         await CurveIndexer.loadCurve(baseItem, 0);
+                        if (!baseItem.data || baseItem.data.length < 2) {
+                            if (overlay) overlay.classList.add('hidden');
+                            showToast("Base IEM curve data could not be loaded.", "⚠️");
+                            return;
+                        }
                     }
 
                     const freqs = CurveUtils.generateLogGrid(100);
@@ -21201,6 +21404,12 @@ applyGenreFilters: function(matches) {
                     }));
 
                     const upgradeResults = await this.runUpgradeScan(upgradeItems, baseInterp, freqs, goal);
+
+                    if (upgradeResults === this.SCAN_SUPERSEDED) {
+                        // A newer scan owns the overlay now — return without
+                        // touching the shared UI (no overlay hide, no render).
+                        return;
+                    }
 
                     const resultById = {};
                     upgradeResults.forEach(r => { if (r && r.id) resultById[r.id] = r; });
@@ -21887,7 +22096,7 @@ applyGenreFilters: function(matches) {
                         const isAdded = this.tasteFavorites.some(f => f.id === item.id);
 
                         html += `
-                            <div class="peqdb-row-item flex items-center justify-between p-1.5 cursor-pointer hover:bg-[var(--bg-card)] mb-1 transition-all select-none" onclick="FindEngine.addTasteFavorite('${item.id}')">
+                            <div class="peqdb-row-item flex items-center justify-between p-1.5 cursor-pointer hover:bg-[var(--bg-card)] mb-1 transition-all select-none" onclick="FindEngine.addTasteFavorite('${escJs(item.id)}')">
                                 <span class="text-xs text-stone-200 font-bold truncate flex-1 pr-2">${item.name}</span>
                                 ${isAdded ? '<span class="text-[9px] text-rose-400 font-black flex-shrink-0 ml-1">✓ Added</span>' : '<span class="text-[9px] text-[var(--accent-blue)] font-black flex-shrink-0 ml-1">+ Add</span>'}
                             </div>
@@ -22045,7 +22254,7 @@ applyGenreFilters: function(matches) {
                                     <span class="emoji-font vibrant-emoji text-lg flex-shrink-0 overflow-visible" style="line-height: 1.25;">❤️</span>
                                     <span class="text-xs font-black text-[var(--text-main)] truncate">${f.name}</span>
                                 </div>
-                                <button type="button" onclick="event.stopPropagation(); FindEngine.removeTasteFavorite('${f.id}')" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${f.name.replace(/"/g, '&quot;')}">✕</button>
+                                <button type="button" onclick="event.stopPropagation(); FindEngine.removeTasteFavorite('${escJs(f.id)}')" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${f.name.replace(/"/g, '&quot;')}">✕</button>
                             `;
                             container.appendChild(div);
                         } else {

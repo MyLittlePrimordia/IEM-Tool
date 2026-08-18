@@ -67,12 +67,14 @@ const EQ_LoudnessMethods = {
                 trebleBoost = (volumeDiff / 100) * 8.0 * (strength / 100);
             }
             
-            // Map Fletcher-Munson filters directly to worklet simulation indices 6 and 7
+            // Map Fletcher-Munson filters directly to worklet simulation indices 8 and 9.
+            // (Slots 6/7 belong to the tape-mod sim; 12-19 to hearing calibration —
+            // using 6/7 here silently clobbered the tape-mod filters.)
             SharedAudio.workletNode.port.postMessage({
                 type: 'updateSimulations',
                 sims: [
-                    { index: 6, bypassed: !this.loudnessActive, filterType: 'lowshelf', frequency: 100, gain: bassBoost, q: 0.7 },
-                    { index: 7, bypassed: !this.loudnessActive, filterType: 'highshelf', frequency: 7500, gain: trebleBoost, q: 0.7 }
+                    { index: 8, bypassed: !this.loudnessActive, filterType: 'lowshelf', frequency: 100, gain: bassBoost, q: 0.7 },
+                    { index: 9, bypassed: !this.loudnessActive, filterType: 'highshelf', frequency: 7500, gain: trebleBoost, q: 0.7 }
                 ]
             });
         },

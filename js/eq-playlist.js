@@ -344,6 +344,11 @@ const EQ_PlaylistMethods = {
         },
         playPlaylistIndex: function(index) {
             if(index < 0 || index >= this.playlist.length) return;
+            // Swap token: rapid track changes within the 80ms source-swap
+            // window would otherwise play the stale track's blob after the
+            // newer one was picked (and analyze the wrong loudness).
+            this._playSeq = (this._playSeq || 0) + 1;
+            const seq = this._playSeq;
             const prevIndex = this.playlistIndex;
             this.playlistIndex = index;
             const infoText = document.getElementById("playlist-track-info");
@@ -365,6 +370,7 @@ const EQ_PlaylistMethods = {
             this._activeLoudnessGain = 1;
             
             setTimeout(() => {
+                if (seq !== this._playSeq) return;
                 // Free the previous track's blob URL at swap time — uploaded
                 // files otherwise pin their full buffer until playlist clear.
                 if (prevIndex !== index) {
@@ -377,6 +383,7 @@ const EQ_PlaylistMethods = {
                     this.audioEl.load();
                     this.audioEl.play()
                         .then(() => {
+                            if (seq !== this._playSeq) return;
                             // Restore back to the active slider value smoothly
                             const slider = document.getElementById("eq-musicVolumeSlider");
                             const vol = slider ? parseFloat(slider.value) / 100 : 0.5;
@@ -384,6 +391,7 @@ const EQ_PlaylistMethods = {
                             this._analyzeCurrentLoudness();
                         })
                         .catch(e => {
+                            if (seq !== this._playSeq) return;
                             console.log("Play interrupted: ", e);
                             const slider = document.getElementById("eq-musicVolumeSlider");
                             const vol = slider ? parseFloat(slider.value) / 100 : 0.5;
