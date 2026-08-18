@@ -62,17 +62,17 @@ No servers, no tracking, and no internet connection required.
 * **6 Audio Visualizers:** Neon Stars, Liquid Fiber Wave, Cosmic Vortex, Spectrum Bars, EQ Grid, and Aurora Ribbons.
 * **9 Retro Skins:** Slate *(Default)*, Parchment, Ember, Circuit, Byte, Cartridge, Arcade, Blush, and Bit with matching pixel fonts.
 
-| Theme | Name | Preview |
-| :--- | :--- | :---: |
-| `slate` | **Slate** *(Default)* | <img src="screenshots/SLATE.png" width="280" alt="Slate Theme"> |
-| `parchment` | **Parchment** | <img src="screenshots/PARCHMENT.png" width="280" alt="Parchment Theme"> |
-| `ember` | **Ember** | <img src="screenshots/EMBER.png" width="280" alt="Ember Theme"> |
-| `circuit` | **Circuit** | <img src="screenshots/CIRCUIT.png" width="280" alt="Circuit Theme"> |
-| `byte` | **Byte** | <img src="screenshots/BYTE.png" width="280" alt="Byte Theme"> |
-| `cartridge` | **Cartridge** | <img src="screenshots/CARTRIDGE.png" width="280" alt="Cartridge Theme"> |
-| `arcade` | **Arcade** | <img src="screenshots/ARCADE.png" width="280" alt="Arcade Theme"> |
-| `blush` | **Blush** | <img src="screenshots/BLUSH.png" width="280" alt="Blush Theme"> |
-| `bit` | **Bit** | <img src="screenshots/BIT.png" width="280" alt="Bit Theme"> |
+| Theme | Preview |
+| :--- | :---: |
+| **Slate** *(Default)* | <img src="screenshots/SLATE.png" width="280" alt="Slate Theme"> |
+| **Parchment** | <img src="screenshots/PARCHMENT.png" width="280" alt="Parchment Theme"> |
+| **Ember** | <img src="screenshots/EMBER.png" width="280" alt="Ember Theme"> |
+| **Circuit** | <img src="screenshots/CIRCUIT.png" width="280" alt="Circuit Theme"> |
+| **Byte** | <img src="screenshots/BYTE.png" width="280" alt="Byte Theme"> |
+| **Cartridge** | <img src="screenshots/CARTRIDGE.png" width="280" alt="Cartridge Theme"> |
+| **Arcade** | <img src="screenshots/ARCADE.png" width="280" alt="Arcade Theme"> |
+| **Blush** | <img src="screenshots/BLUSH.png" width="280" alt="Blush Theme"> |
+| **Bit** | <img src="screenshots/BIT.png" width="280" alt="Bit Theme"> |
 
 ---
 
