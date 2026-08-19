@@ -12,7 +12,7 @@ No servers, no tracking, and no internet connection required.
 * **Tuning Search:** Move bass, warmth, vocal, and treble sliders to find matching IEMs from the database.
 * **Spec Filters:** Filter by price ($0 to $3000), release year, driver configuration (DD, BA, Planar, EST, PZT, BC, MEMS), connectors, and tags.
 * **Taste Matcher:** Average up to 3 of your favorite IEMs to generate a combined target curve and find similar sets.
-* **Clone Hunter:** Pick a $500+ flagship IEM to find budget alternatives ($15 to $200) with matching frequency response curves.
+* **Gems:** Pick a $500+ flagship IEM to find budget alternatives ($15 to $200) with matching frequency response curves.
 * **Upgrade Pathway:** Select an IEM you own to generate a 3-tier upgrade ladder (*Starter*, *Leap*, *Endgame*).
 
 <p align="center">
@@ -23,6 +23,7 @@ No servers, no tracking, and no internet connection required.
 
 ### 2. 🎚️ EQ (Parametric Equalizer)
 * **Interactive FR Graph:** Drag EQ nodes or freehand draw custom target curves directly onto the graph.
+* **Database & Similar Finder:** Browse the measurement database or flip to Similar to surface IEMs matching the current graph.
 * **AutoEQ Engine:** One-click solver supporting 10 to 50 filter bands with anti-clip limiting and auto-gain compensation.
 * **Genre Target Overlay:** Real-time matching against music and game genre profiles. Use the stepper to cycle genres and AutoEQ directly to that profile.
 * **Audio Tools:** Crossfeed, stereo expander, loudness compensation, de-esser, and reverb simulator.

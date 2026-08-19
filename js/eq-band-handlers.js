@@ -94,21 +94,24 @@ const EQ_BandHandlerMethods = {
 
         handleGainNumInput: function(i, textVal) {
             const val = parseFloat(textVal) || 0.0;
-            const clampedVal = Math.max(-40, Math.min(40, val));
+            // Slider range is ±20 dB; clamp to it so the displayed value
+            // always matches what is actually applied to the audio path.
+            const clampedVal = Math.max(-20, Math.min(20, val));
             
             const numInput = document.getElementById(`eq-s${i}_num`);
             if (numInput) numInput.value = clampedVal.toFixed(1);
 
             const slider = document.getElementById(`eq-s${i}`);
             if (slider) {
-                slider.value = Math.max(-20, Math.min(20, clampedVal));
+                slider.value = clampedVal;
             }
             this.updateSlider(i);
         },
 
         handleQNumInput: function(i, textVal) {
             const val = parseFloat(textVal) || 1.0;
-            const clampedVal = Math.max(0.05, Math.min(20, val));
+            // Slider range is Q 0.1–10; clamp to it for the same reason.
+            const clampedVal = Math.max(0.1, Math.min(10, val));
 
             const numInput = document.getElementById(`eq-q_m${i}_num`);
             if (numInput) numInput.value = clampedVal.toFixed(2);

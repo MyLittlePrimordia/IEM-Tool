@@ -222,7 +222,12 @@ class DspProcessor extends AudioWorkletProcessor {
         this.targetPreampGain = 1.0;
 
         this.filters = Array.from({ length: 80 }, () => new BiquadFilter());
-        this.simFilters = Array.from({ length: 20 }, () => new BiquadFilter());
+        // Simulation slot map (must stay in sync with the renderer):
+        //   0-4   eartip sim          5   de-esser
+        //   6-7   tape-mod            8-9   loudness
+        //   10-11 DAC source sim      12-19 hearing calibration
+        //   20-21 gear sim            22-23 master tone
+        this.simFilters = Array.from({ length: 24 }, () => new BiquadFilter());
         this.xoFilters = Array.from({ length: 10 }, () => new BiquadFilter());
 
         this.activeFilters = [];
@@ -241,6 +246,19 @@ class DspProcessor extends AudioWorkletProcessor {
     }
 
     handleMessage(data) {
+        try {
+            this._handleMessageInner(data);
+        } catch (err) {
+            // A malformed message must never kill the audio worklet: report
+            // it back to the main thread and keep processing with the last
+            // good filter state.
+            try {
+                this.port.postMessage({ type: 'error', error: String(err && err.message ? err.message : err) });
+            } catch (_) {}
+        }
+    }
+
+    _handleMessageInner(data) {
         if (!data || typeof data !== 'object') return;
 
         if (data.type === 'init') {

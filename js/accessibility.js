@@ -17,9 +17,9 @@
             if (btn) {
                 btn.innerHTML = this.blueLightActive ? "🟠 Filter: ON" : "🌙 Filter: Off";
                 if (this.blueLightActive) {
-                    btn.classList.add('active-btn');
+                    btn.classList.add('is-on');
                 } else {
-                    btn.classList.remove('active-btn');
+                    btn.classList.remove('is-on');
                 }
             }
             
@@ -30,7 +30,6 @@
             
             localStorage.setItem('a11y_bluelight', this.blueLightActive ? 'true' : 'false');
         },
-        applyAll: function() {},
                 setChannelMode: function(mode) {
             const desiredMono = (mode === 'mono');
             if (window.isMonoMode !== desiredMono && window.toggleAudioMode) {
@@ -53,7 +52,5 @@
             this.setBalance(val);
             if (window.syncGlobalSliders) window.syncGlobalSliders();
             Mascot.update();
-        },
-        setNormalize: function(mode) {},
-        setLimiter: function(mode) {}
+        }
     };

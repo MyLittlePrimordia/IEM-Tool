@@ -38,14 +38,7 @@ const UIKit = {
         document.body.appendChild(wrap);
 
         const finish = (result) => {
-            wrap.classList.add('hidden');
-            if (this._keyHandler) {
-                document.removeEventListener('keydown', this._keyHandler);
-                this._keyHandler = null;
-            }
-            const resolve = this._resolver;
-            this._resolver = null;
-            if (resolve) resolve(result);
+            this._finish(result, wrap);
         };
 
         wrap.querySelector('#uikit-confirm-x').onclick = () => finish(false);
@@ -56,18 +49,42 @@ const UIKit = {
         wrap.addEventListener('click', (e) => { if (e.target === wrap) finish(false); });
         // Esc cancels, Enter confirms — only while this modal is the one
         // showing, and never while typing inside an input (keeps Enter from
-        // confirming the dialog mid-typing).
+        // confirming the dialog mid-typing). Attached via _attachKeyHandler
+        // so every confirm() re-binds it (finish() removes it per dialog).
+        this._attachKeyHandler(wrap);
+
+        this._modalEl = wrap;
+        return wrap;
+    },
+
+    // Shared per-dialog keydown handler: attached on every confirm() and
+    // removed by _finish(), so a stale handler never survives a dismissed
+    // dialog and a reopened one always responds to Esc/Enter.
+    _attachKeyHandler: function(wrap) {
+        if (this._keyHandler) {
+            document.removeEventListener('keydown', this._keyHandler);
+            this._keyHandler = null;
+        }
+        const self = this;
         this._keyHandler = (e) => {
             if (wrap.classList.contains('hidden')) return;
             const tag = (e.target && e.target.tagName) || '';
             if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-            if (e.key === 'Escape') finish(false);
-            else if (e.key === 'Enter') finish(true);
+            if (e.key === 'Escape') self._finish(false, wrap);
+            else if (e.key === 'Enter') self._finish(true, wrap);
         };
         document.addEventListener('keydown', this._keyHandler);
+    },
 
-        this._modalEl = wrap;
-        return wrap;
+    _finish: function(result, wrap) {
+        wrap.classList.add('hidden');
+        if (this._keyHandler) {
+            document.removeEventListener('keydown', this._keyHandler);
+            this._keyHandler = null;
+        }
+        const resolve = this._resolver;
+        this._resolver = null;
+        if (resolve) resolve(result);
     },
 
     confirm: function (opts) {
@@ -84,6 +101,7 @@ const UIKit = {
 
         wrap.classList.remove('hidden');
         wrap.classList.add('flex');
+        this._attachKeyHandler(wrap);
 
         return new Promise((resolve) => {
             // If a previous confirm() is somehow still pending, resolve it false

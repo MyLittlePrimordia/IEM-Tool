@@ -104,6 +104,14 @@ const EQ_ReverbMethods = {
                 [effective.size, effective.damp, effective.fade, effective.predelay, effective.predelaymix]
                     .map(v => +Number(v).toFixed(4)).join(',');
             this._irCache = this._irCache || {};
+            // FIFO cap: unbounded IR caching would pin one buffer per preset/
+            // param combo forever — cap at 8 (each IR is up to 4s of stereo
+            // floats) and evict the oldest entry on overflow.
+            const CACHE_CAP = 8;
+            const keys = Object.keys(this._irCache);
+            if (keys.length >= CACHE_CAP && !(key in this._irCache)) {
+                delete this._irCache[keys[0]];
+            }
             let ir = this._irCache[key];
             if (!ir) {
                 ir = this.createImpulseResponse(SharedAudio.ctx, effective);
@@ -198,7 +206,10 @@ const EQ_ReverbMethods = {
 
         // Dynamic Damping: high frequencies decay faster as time progresses.
         // Time in seconds is i / sampleRate (the loop counter is `i`).
-        const currentDamping = Math.min(0.997, damping * 0.72 + (i / sampleRate / duration) * 0.25);
+        // The denominator uses effectiveDuration (the actual buffer length)
+        // so the damping ramp covers the whole synthesized tail instead of
+        // ending early/overshooting when the IR was capped at 4 s.
+        const currentDamping = Math.min(0.997, damping * 0.72 + (i / sampleRate / effectiveDuration) * 0.25);
         const alpha = 1.0 - currentDamping;
 
         // Apply low-pass damping

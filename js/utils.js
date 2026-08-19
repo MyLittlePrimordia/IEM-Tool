@@ -20,7 +20,7 @@ const CurveUtils = {
             let sum = 0, count = 0;
             for (let i = 0; i < data.length; i++) {
                 if (data[i] && typeof data[i][0] === 'number' && typeof data[i][1] === 'number') {
-                    if (data[i][0] >= 500 && data[i][0] <= 2000) {
+                    if (data[i][0] >= MID_MEAN_BAND[0] && data[i][0] <= MID_MEAN_BAND[1]) {
                         sum += data[i][1];
                         count++;
                     }
@@ -111,7 +111,7 @@ const CurveUtils = {
             let low = 0, high = n - 1;
             while (low <= high) {
                 const mid = (low + high) >> 1;
-                if (x[mid] === val) { low = mid; break; }
+                if (x[mid] === val) { high = mid; break; }
                 if (x[mid] < val) low = mid + 1;
                 else high = mid - 1;
             }

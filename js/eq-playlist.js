@@ -20,42 +20,82 @@ const EQ_PlaylistMethods = {
         _trackKey: null,
         _loudnessInFlight: false,
 
+        // ===== Gapless Playback =====
+        // Two <audio> elements: the "active" one plays the current track while
+        // the "idle" one is preloaded with the next track. Advancing the track
+        // crossfades the idle element in (~120ms, gain arms sourceGain/gaplessGain
+        // in the DSP graph) so there is no silence gap between songs. Toggle via
+        // the Accessibility panel button (localStorage key "settings_gapless",
+        // "0" = off). Falls back to the old swap-with-gap path when the graph
+        // lacks the second arm, the standby isn't ready, or gapless is off.
+        _activeIsA: true,        // true  = this.audioEl is the active player
+                                 // false = this.gaplessEl is the active player
+        _standbyTrackIndex: null, // playlist index currently loaded in the idle element
+        _preloadedIndex: null,    // index of the track we expect to play next
+        _transitioning: false,    // a crossfade is in flight — suppress double-advance
+
         settingsLoudnessMatchEnabled: function() {
             return localStorage.getItem('settings_loudness_match') !== '0';
+        },
+
+_retargetActiveArm: function(gain, tc = 0.05) {
+            const arm = this._activeIsA ? this.sourceGain : this.gaplessGain;
+            if (arm && SharedAudio.ctx) {
+                arm.gain.setTargetAtTime(Math.max(0.05, Math.min(4, gain || 1)), SharedAudio.ctx.currentTime, tc);
+            }
         },
 
         // Analyze the currently loaded audio element (decodeAudioData offline) and
         // cache its loudness factor. Fallback: no change (1.0). Never throws.
         _analyzeCurrentLoudness: function() {
-            if (!this.audioEl || !this.audioEl.src || !this.audioEl.canPlayType) return;
+            const el = this._activeEl();
+            if (!el || !el.src || !el.canPlayType) return;
             if (!this.settingsLoudnessMatchEnabled()) {
                 // Feature off - don't fetch + fully decode the track, the gain
-                // nodes are gated by the setting anyway. Just reset to unity.
+                // arms are pinned to unity anyway. Just reset.
                 this._activeLoudnessGain = 1.0;
+                this._retargetActiveArm(1, 0.05);
                 return;
             }
-            if (this._loudnessInFlight) return;
+            if (this._loudnessInFlight) {
+                // Track changed while a previous measurement was decoding:
+                // remember we owe the new track a measurement and re-run it
+                // once the in-flight one finishes.
+                this._loudnessRerun = true;
+                return;
+            }
             
-            const el = this.audioEl;
             const key = this._targetTrackKey || String(el.src);
             const cached = this._loudnessGains[key];
             if (cached !== undefined) {
                 this._activeLoudnessGain = cached;
+                this._retargetActiveArm(cached, 0.05);
                 return;
             }
 
             this._loudnessInFlight = true;
             this._decodeAndMeasureLoudness(el.currentSrc || el.src).then(gain => {
-                this._loudnessGains[key] = (gain === null ? 1 : gain);
+                if (gain !== null) {
+                    // Cache only real measurements �?" a failed/failed-timing
+                    // result must not poison the cache for the rest of the
+                    // session (a later play would re-measure and fix it).
+                    this._loudnessGains[key] = gain;
+                }
                 if (this._targetTrackKey === key || this._targetTrackKey === null) {
-                    this._activeLoudnessGain = this._loudnessGains[key];
-                    this.fadeMusicVolume(document.getElementById('eq-musicVolumeSlider') ?
-                        parseFloat(document.getElementById('eq-musicVolumeSlider').value) / 100 : 0.5, 0.1);
+                    this._activeLoudnessGain = (gain === null ? 1 : gain);
+                    // Apply on the active element's arm only — the shared volume
+                    // node must not move while the old track's tail is fading.
+                    this._retargetActiveArm(gain === null ? 1 : gain, 0.1);
                 }
             }).catch(() => {
-                this._loudnessGains[key] = 1;
+                // Leave the cache untouched: transient failures shouldn't pin
+                // unity gain (or stale gains) for this track forever.
             }).finally(() => {
                 this._loudnessInFlight = false;
+                if (this._loudnessRerun) {
+                    this._loudnessRerun = false;
+                    this._analyzeCurrentLoudness();
+                }
             });
         },
 
@@ -163,7 +203,10 @@ const EQ_PlaylistMethods = {
         _deriveTrackKey: function(track) {
             if (!track) return null;
             if (track.key) return track.key;
-            return track.url || (track.name + '-' + (track.file ? track.file.size : ''));
+            // Include lastModified: re-uploading the same file name+size with
+            // different content must not reuse the stale loudness measurement.
+            const stamp = track.file ? (track.file.lastModified || '') : '';
+            return track.url || (track.name + '-' + (track.file ? track.file.size : '') + '-' + stamp);
         },
 
         // Lazily (re)create the object URL for a file-backed track. Revoking
@@ -185,8 +228,13 @@ const EQ_PlaylistMethods = {
 
         // Revoke a file-backed track's blob URL and remove it from the
         // registries so clearGhostFiles() doesn't double-revoke it.
+        // Only blob: URLs (created for uploaded files) are ever revoked —
+        // bundled audio.json tracks use plain path URLs that stay valid
+        // forever, so a playlist wrap-around (or prevTrack) can still load
+        // the track instead of coming up silent.
         _revokeTrackUrl: function(track) {
             if (!track || !track.url) return;
+            if (typeof track.url !== 'string' || track.url.indexOf('blob:') !== 0) return;
             const url = track.url;
             if (this._urlRegistry && track.key && this._urlRegistry[track.key] === url) {
                 delete this._urlRegistry[track.key];
@@ -311,7 +359,9 @@ const EQ_PlaylistMethods = {
                         this._targetTrackKey = this._deriveTrackKey(track);
                         this._activeKey = this._targetTrackKey;
                         this._activeLoudnessGain = 1;
-                        this._analyzeCurrentLoudness();
+                        // Loudness is measured lazily on first play instead of
+                        // at boot: the first track's full decode shouldn't
+                        // compete with page-load work when nothing is playing.
                         
                         const infoText = document.getElementById("playlist-track-info");
                         if (infoText) infoText.textContent = `(${startIndex + 1}/${this.playlist.length}) ${track.name}`;
@@ -320,6 +370,11 @@ const EQ_PlaylistMethods = {
                         const modalInfoText = document.getElementById("modal-track-name");
                         if (modalInfoText) modalInfoText.textContent = `(${startIndex + 1}/${this.playlist.length}) ${track.name}`;
                         this.updateMarquee();
+
+                        // Boot the gapless standby with the second track so the
+                        // very first skip is already seamless.
+                        this._preloadedIndex = null;
+                        this._preloadNextTrack();
                     }
                 }
             } catch(e) {
@@ -327,19 +382,268 @@ const EQ_PlaylistMethods = {
             }
         },
 
-        fadeMusicVolume: function(targetVal, duration = 0.015) {
+fadeMusicVolume: function(targetVal, duration = 0.015) {
             if (this.connected && this.graphBuilt && this.musicVolumeNode && SharedAudio.ctx) {
                 const now = SharedAudio.ctx.currentTime;
-                const loudGain = (this.settingsLoudnessMatchEnabled && this.settingsLoudnessMatchEnabled()) ? (this._activeLoudnessGain || 1) : 1;
-                this.musicVolumeNode.gain.setTargetAtTime(Math.max(0, Math.min(1, targetVal * loudGain)), now, duration);
-            } else if (this.audioEl) {
-                // Graph absent — mirror the fade on the element attribute directly.
-                this.audioEl.volume = Math.max(0, Math.min(1, targetVal));
+                // User volume only — per-track loudness match lives on the
+                // element gain arms (sourceGain/gaplessGain), so applying it
+                // here would boost BOTH tracks mid-crossfade.
+                this.musicVolumeNode.gain.setTargetAtTime(Math.max(0, Math.min(1, targetVal)), now, duration);
+            } else {
+                // Graph absent �?" mirror the fade on the active element attribute directly.
+                const active = this._activeEl();
+                if (active) active.volume = Math.max(0, Math.min(1, targetVal));
             }
         },
         fadeMasterGain: function(targetVal, duration = 0.015) {
             if (SharedAudio.masterGain && SharedAudio.ctx) {
                 setAudioParamSmooth(SharedAudio.masterGain.gain, targetVal);
+            }
+        },
+
+        gaplessEnabled: function() {
+            return localStorage.getItem('settings_gapless') !== '0';
+        },
+
+        crossfadeEnabled: function() {
+            return localStorage.getItem('settings_crossfade') === '1';
+        },
+
+        crossfadeSeconds: function() {
+            const raw = parseFloat(localStorage.getItem('settings_crossfade_secs'));
+            if (isNaN(raw)) return 6;
+            return Math.max(0.5, Math.min(12, raw));
+        },
+
+        // Effective overlap at track boundaries: the user crossfade when enabled,
+        // otherwise the tiny gapless seam (0.18s), otherwise 0 (hard swaps only).
+        _overlapSecs: function() {
+            if (this.crossfadeEnabled()) return this.crossfadeSeconds();
+            if (this.gaplessEnabled()) return 0.18;
+            return 0;
+        },
+
+        // The dual-element standby machinery is shared by gapless and crossfade —
+        // either feature being on is enough to keep the standby element preloaded.
+        _standbyReady: function() {
+            return (this.gaplessEnabled() || this.crossfadeEnabled()) && this.gaplessEl && this.gaplessGain && this.gaplessSource;
+        },
+
+        _activeEl: function() {
+            return this._activeIsA ? this.audioEl : this.gaplessEl;
+        },
+
+        _idleEl: function() {
+            return this._activeIsA ? this.gaplessEl : this.audioEl;
+        },
+
+        // Mirrors nextTrack()'s decision tree WITHOUT swapping sources, so the
+        // shuffle bag advances exactly once per track (preloading IS the advance).
+        _computeNextPlaylistIndex: function() {
+            if (this.repeatActive) return this.playlistIndex;
+            if (this.shuffleActive) return this._nextShuffledIndex();
+            return (this.playlistIndex + 1) % this.playlist.length;
+        },
+
+        // Load the next track into the idle element so it can be crossfaded in
+        // at the seam. Called after every track start (and at boot when gapless
+        // or crossfade is enabled). Never touches the active element.
+        _preloadNextTrack: function() {
+            if (!this._standbyReady() || !this.playlist || this.playlist.length === 0) return;
+            if (this.repeatActive && this.playlist.length === 1) {
+                // Single-track repeat: preloading is wasteful.
+                this._standbyTrackIndex = null;
+                this._preloadedIndex = null;
+                return;
+            }
+            const idle = this._idleEl();
+            if (!idle) return;
+            const nextIndex = this._computeNextPlaylistIndex();
+            const track = this.playlist[nextIndex];
+            if (!track) { this._standbyTrackIndex = null; this._preloadedIndex = null; return; }
+            const url = this._ensureTrackUrl(track);
+            if (!url) return;
+            idle.volume = 1.0;
+            if (idle.src !== url) { idle.src = url; idle.load(); }
+            this._standbyTrackIndex = nextIndex;
+            this._preloadedIndex = nextIndex;
+        },
+
+        // Crossfade the idle element (which holds track `index`) into the active
+        // slot. Returns true on success, false if the standby isn't usable (caller
+        // falls back to the hard swap path). Guards against double-advance via the
+        // `_transitioning` flag and the play-sequence token.
+        _crossfadeToStandby: function(seq, index, oldIndex) {
+            if (!this._standbyReady() || this._transitioning) return false;
+            const standby = this._idleEl();
+            if (!standby || this._standbyTrackIndex !== index || standby.readyState < 2) return false;
+
+            const ctx = SharedAudio.ctx;
+            if (!ctx) return false;
+            const now = ctx.currentTime;
+            const toB = this._activeIsA; // true = switching audioEl -> gaplessEl
+
+            this._transitioning = true;
+            const oldActive = this._activeEl();
+            const oldGain = this._activeIsA ? this.sourceGain : this.gaplessGain;
+            const newGain = toB ? this.gaplessGain : this.sourceGain;
+            // Overlap window: user crossfade length, or the tiny gapless seam.
+            // Exponential ramps (timeConstant ~ 1/3 of the window) fade smoothly
+            // and stay inaudible if the retired track's tail ends mid-fade.
+            const overlap = this._overlapSecs() || 0.18;
+            const tc = Math.max(0.03, overlap / 3);
+            // The incoming arm fades to the new track's loudness gain (cached
+            // value when known — a late measurement re-targets it smoothly).
+            const loudG = (this.settingsLoudnessMatchEnabled() && this._loudnessGains && this._loudnessGains[this._targetTrackKey] !== undefined) ? this._loudnessGains[this._targetTrackKey] : 1;
+            if (oldGain) oldGain.gain.setTargetAtTime(0, now, tc);
+            if (newGain) newGain.gain.setTargetAtTime(Math.max(0.05, Math.min(4, loudG)), now, tc);
+
+            standby.play().then(() => {
+                if (seq !== this._playSeq) return;
+                const slider = document.getElementById("eq-musicVolumeSlider");
+                const vol = slider ? parseFloat(slider.value) / 100 : 0.5;
+                this.fadeMusicVolume(vol, 0.05);
+                this._analyzeCurrentLoudness();
+            }).catch(() => {
+                // Playback blocked (e.g. paused mid-transition) — restore gains.
+                if (oldGain) oldGain.gain.setTargetAtTime(1, now, 0.01);
+                if (newGain) newGain.gain.setTargetAtTime(0, now, 0.01);
+                this._transitioning = false;
+            });
+
+            this.playlistIndex = index;
+            this._activeIsA = !this._activeIsA;
+            this._standbyTrackIndex = null;
+            this._preloadedIndex = null;
+
+            // Let the old element's tail play out (~150ms) so the crossfade
+            // actually overlaps, then retire it and point it at the next track.
+            setTimeout(() => {
+                // Always retire the old element and drop its arm — even if a
+                // newer playPlaylistIndex took over (seq mismatch), the old
+                // element must not keep bleeding audio into the graph.
+                try { oldActive.pause(); } catch (e) {}
+                if (oldGain) oldGain.gain.setTargetAtTime(0, ctx.currentTime, 0.01);
+                this._transitioning = false;
+                if (seq !== this._playSeq) return; // a newer switch owns the preload
+                const nextTrack = this.playlist[this.playlistIndex];
+                const prevTrack = this.playlist[oldIndex];
+                // Preload the following track into the retired element before
+                // revoking the old URL so the reference is never dangling.
+                const idle = this._idleEl();
+                if (idle) {
+                    const nextNext = this._computeNextPlaylistIndex();
+                    const t2 = this.playlist[nextNext];
+                    if (t2) {
+                        const u2 = this._ensureTrackUrl(t2);
+                        if (u2 && idle.src !== u2) { idle.src = u2; idle.load(); }
+                        this._standbyTrackIndex = nextNext;
+                        this._preloadedIndex = nextNext;
+                    }
+                }
+                if (prevTrack && nextTrack && prevTrack !== nextTrack) {
+                    this._revokeTrackUrl(prevTrack);
+                }
+            }, overlap * 1000 + 250);
+            return true;
+        },
+
+        // Toggle gapless playback from the Accessibility panel button.
+        toggleGapless: function() {
+            const on = !this.gaplessEnabled();
+            localStorage.setItem('settings_gapless', on ? '1' : '0');
+            this._applyGaplessButton();
+            if (on) {
+                // Re-sync the standby element with the current playlist position.
+                if (this.playlist && this.playlist.length > 0 && this.playlist[this.playlistIndex]) {
+                    this._preloadedIndex = null;
+                    this._preloadNextTrack();
+                }
+                showToast("Gapless Playback: ON", "🔗");
+            } else {
+                // Crossfade still needs the standby machinery — only tear it
+                // down when BOTH features are off.
+                if (!this.crossfadeEnabled()) this._teardownStandby();
+                showToast("Gapless Playback: Off", "🔗");
+            }
+        },
+
+        _applyGaplessButton: function() {
+            const btn = document.getElementById("a11y-gapless-btn");
+            if (!btn) return;
+            if (this.gaplessEnabled()) {
+                btn.classList.add('is-on');
+                btn.textContent = "🔗 Gapless: On";
+            } else {
+                btn.classList.remove('is-on');
+                btn.textContent = "🔗 Gapless: Off";
+            }
+        },
+
+        // Toggle crossfade playback (Settings -> Accessibility panel button).
+        // Takes over from the gapless seam with a longer, user-adjustable
+        // overlap between tracks. Duration via setCrossfadeSeconds.
+        toggleCrossfade: function() {
+            const on = !this.crossfadeEnabled();
+            localStorage.setItem('settings_crossfade', on ? '1' : '0');
+            this._applyCrossfadeButton();
+            if (on) {
+                if (this.playlist && this.playlist.length > 0 && this.playlist[this.playlistIndex]) {
+                    this._preloadedIndex = null;
+                    this._preloadNextTrack();
+                }
+                showToast("Crossfade: ON", "🎚️");
+            } else {
+                if (!this.gaplessEnabled()) this._teardownStandby();
+                showToast("Crossfade: Off", "🎚️");
+            }
+        },
+
+        setCrossfadeSeconds: function(val) {
+            const secs = Math.max(0.5, Math.min(12, parseFloat(val) || 6));
+            localStorage.setItem('settings_crossfade_secs', String(secs));
+            const display = document.getElementById("a11y-crossfade-display");
+            if (display) display.textContent = (secs % 1 === 0) ? secs + "s" : secs.toFixed(1) + "s";
+        },
+
+        _applyCrossfadeButton: function() {
+            const btn = document.getElementById("a11y-crossfade-btn");
+            if (!btn) return;
+            const on = this.crossfadeEnabled();
+            if (on) {
+                btn.classList.add('is-on');
+                btn.textContent = "🎚️ Crossfade: On";
+            } else {
+                btn.classList.remove('is-on');
+                btn.textContent = "🎚️ Crossfade: Off";
+            }
+            const slider = document.getElementById("a11y-crossfade-slider");
+            if (slider) {
+                slider.disabled = !on;
+                slider.classList.toggle('opacity-40', !on);
+                slider.value = this.crossfadeSeconds();
+                this.setCrossfadeSeconds(slider.value);
+            }
+        },
+
+        // Stop the dual-element machinery: clear the standby element, drop its
+        // gain arm, and pin whichever element is actually playing as the sole
+        // active player. Direction-aware so toggling off mid-fade never kills
+        // the track that is currently audible (B may be the active arm).
+        _teardownStandby: function() {
+            this._standbyTrackIndex = null;
+            this._preloadedIndex = null;
+            const idle = this._idleEl();
+            if (idle) { try { idle.pause(); } catch (e) {} }
+            const loudG = Math.max(0.05, Math.min(4, this._activeLoudnessGain || 1));
+            if (this._activeIsA) {
+                if (this.gaplessEl) { this.gaplessEl.removeAttribute('src'); this.gaplessEl.load(); }
+                if (this.gaplessGain) this.gaplessGain.gain.value = 0;
+                if (this.sourceGain) this.sourceGain.gain.value = loudG;
+            } else {
+                if (this.audioEl) { this.audioEl.removeAttribute('src'); this.audioEl.load(); }
+                if (this.sourceGain) this.sourceGain.gain.value = 0;
+                if (this.gaplessGain) this.gaplessGain.gain.value = loudG;
             }
         },
         playPlaylistIndex: function(index) {
@@ -362,12 +666,30 @@ const EQ_PlaylistMethods = {
             if(modalInfoText) modalInfoText.textContent = trackLabel;
             this.updateMarquee();
             
-            // Smoothly fade out current music track before swapping sources to eliminate popping
-            this.fadeMusicVolume(0, 0.015); // 15ms fade-out
-            
             this._targetTrackKey = this._deriveTrackKey(track);
             this._activeKey = this._targetTrackKey;
             this._activeLoudnessGain = 1;
+
+            // Gapless path first: if the idle element is already preloaded with
+            // this exact track, crossfade to it. The crossfade arms handle the
+            // seam, so we must NOT dip the shared volume the way the hard-swap
+            // path does below.
+            if (this._crossfadeToStandby(seq, index, prevIndex)) return;
+
+            // Rapid skip while a crossfade is still in flight: tear the old
+            // element's tail down NOW instead of letting it keep bleeding
+            // underneath the hard-swapped track for the rest of the overlap
+            // window (the pending crossfade timeout pauses it too late).
+            if (this._transitioning) {
+                const idle = this._idleEl();
+                if (idle) { try { idle.pause(); } catch (e) {} }
+                const idleArm = this._activeIsA ? this.gaplessGain : this.sourceGain;
+                if (idleArm && SharedAudio.ctx) idleArm.gain.setTargetAtTime(0, SharedAudio.ctx.currentTime, 0.01);
+                this._transitioning = false;
+            }
+
+            // Smoothly fade out current music track before swapping sources to eliminate popping
+            this.fadeMusicVolume(0, 0.015); // 15ms fade-out
             
             setTimeout(() => {
                 if (seq !== this._playSeq) return;
@@ -378,10 +700,18 @@ const EQ_PlaylistMethods = {
                     if (prevTrack && prevTrack !== track) this._revokeTrackUrl(prevTrack);
                 }
                 const trackUrl = this._ensureTrackUrl(track);
-                if (this.audioEl) {
-                    this.audioEl.src = trackUrl;
-                    this.audioEl.load();
-                    this.audioEl.play()
+                const active = this._activeEl();
+                if (active) {
+                    active.src = trackUrl;
+                    active.load();
+                    // Point the active arm at the (possibly stale) loudness gain;
+                    // _analyzeCurrentLoudness re-targets it to the true value.
+                    const activeArm = this._activeIsA ? this.sourceGain : this.gaplessGain;
+                    if (activeArm && SharedAudio.ctx) {
+                        activeArm.gain.setTargetAtTime(Math.max(0.05, Math.min(4, this._activeLoudnessGain || 1)), SharedAudio.ctx.currentTime, 0.02);
+                    }
+                    this._preloadNextTrack();
+                    active.play()
                         .then(() => {
                             if (seq !== this._playSeq) return;
                             // Restore back to the active slider value smoothly
@@ -416,6 +746,20 @@ const EQ_PlaylistMethods = {
                 this.audioEl.pause();
                 this.audioEl.src = '';
                 this.audioEl.load();
+            }
+            if (this.gaplessEl) {
+                this.gaplessEl.pause();
+                this.gaplessEl.removeAttribute('src');
+                this.gaplessEl.load();
+            }
+            this._activeIsA = true;
+            this._standbyTrackIndex = null;
+            this._preloadedIndex = null;
+            this._transitioning = false;
+            if (this.sourceGain) this.sourceGain.gain.value = 1;
+            if (this.gaplessGain) this.gaplessGain.gain.value = 0;
+            if (SharedAudio.workletNode) {
+                SharedAudio.workletNode.port.postMessage({ type: 'reset' });
             }
             this.clearGhostFiles();
             this.playlist = [];
@@ -478,35 +822,47 @@ const EQ_PlaylistMethods = {
         },
         prevTrack: function() {
             if (this.playlist.length === 0) return;
-            
+
+            // Prev is always a hard swap (the standby element holds the NEXT
+            // track, never the previous one). Reset the preload state so the
+            // recompute happens against the backward position.
+            if (this._standbyReady()) {
+                this._standbyTrackIndex = null;
+                this._preloadedIndex = null;
+            }
+
             if (this.shuffleActive) {
                 const prevIndex = this._prevShuffledIndex();
-                this.playlistIndex = prevIndex;
                 this.playPlaylistIndex(prevIndex);
                 return;
             }
 
-            this.playlistIndex = (this.playlistIndex - 1 + this.playlist.length) % this.playlist.length;
-            this.playPlaylistIndex(this.playlistIndex);
+            this.playPlaylistIndex((this.playlistIndex - 1 + this.playlist.length) % this.playlist.length);
         },
         nextTrack: function() {
             if (this.playlist.length === 0) return;
-            
+
             // Repeat-one takes priority over shuffle
             if (this.repeatActive) {
                 this.playPlaylistIndex(this.playlistIndex);
                 return;
             }
-            
-            if (this.shuffleActive) {
-                const nextIndex = this._nextShuffledIndex();
-                this.playlistIndex = nextIndex;
-                this.playPlaylistIndex(nextIndex);
+
+            // Gapless: the next track is already decided and preloaded by the
+            // last playPlaylistIndex — use it so the shuffle bag advances only
+            // once per track. Falls back to the computed index if the standby
+            // was invalidated (e.g. after a prev).
+            if (this._standbyReady() && this._preloadedIndex !== null && this._preloadedIndex !== this.playlistIndex) {
+                this.playPlaylistIndex(this._preloadedIndex);
                 return;
             }
 
-            this.playlistIndex = (this.playlistIndex + 1) % this.playlist.length;
-            this.playPlaylistIndex(this.playlistIndex);
+            if (this.shuffleActive) {
+                this.playPlaylistIndex(this._nextShuffledIndex());
+                return;
+            }
+
+            this.playPlaylistIndex((this.playlistIndex + 1) % this.playlist.length);
         },
 
 togglePlayState: async function() {
@@ -525,22 +881,32 @@ await ctx.resume();
             const modalPlayBtn = document.getElementById('modal-play-btn');
             
             const mobBtn = document.getElementById("mobile-play-btn");
-            const noSrc = !this.audioEl || !(this.audioEl.currentSrc || this.audioEl.getAttribute('src'));
+            // Play/pause must be decided on the ACTIVE element — with gapless
+            // or crossfade on, the B element (eq-audio-gapless) can be the one
+            // actually playing while the primary element sits idle/paused.
+            const active = this._activeEl();
+            const noSrc = !active || !(active.currentSrc || active.getAttribute('src'));
             if (noSrc && this.playlistIndex >= 0 && this.playlist[this.playlistIndex]) {
                 // Boot-loaded queue (footer fill) never touched the <audio> element —
                 // load the current track and start it before attempting to play.
                 this.playPlaylistIndex(this.playlistIndex);
                 return;
             }
-            if (this.audioEl.paused) {
+            if (!active || active.paused || this._pausePending) {
                 // Fade-in play
-                if (this.audioEl) {
-                    this.audioEl.volume = 1.0;
+                this._pausePending = false;
+                this._pauseSeq = (this._pauseSeq || 0) + 1;
+                if (active) {
+                    if (this.audioEl) this.audioEl.volume = 1.0;
+                    if (this.gaplessEl) this.gaplessEl.volume = 1.0;
                     this.fadeMusicVolume(0, 0.005); // Start silent
-                    this.audioEl.play().then(() => {
+                    active.play().then(() => {
                         const slider = document.getElementById("eq-musicVolumeSlider");
                         const vol = slider ? parseFloat(slider.value) / 100 : 0.5;
                         this.fadeMusicVolume(vol, 0.05); // Smooth 50ms fade-in
+                        // Lazy loudness measurement: only decode when playback
+                        // actually starts, never at boot or on pause.
+                        this._analyzeCurrentLoudness();
                     }).catch(e => console.log("Playback blocked or interrupted."));
                 }
                 if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
@@ -549,9 +915,15 @@ await ctx.resume();
             } else {
                                 // Fade-out pause
                 this.fadeMusicVolume(0, 0.015);
+                this._pausePending = true;
+                this._pauseSeq = (this._pauseSeq || 0) + 1;
+                const pauseSeq = this._pauseSeq;
                 setTimeout(() => {
-                    if (!this.audioEl.paused) {
-                        this.audioEl.pause();
+                    if (pauseSeq !== this._pauseSeq) return;
+                    this._pausePending = false;
+                    const active = this._activeEl();
+                    if (active && !active.paused) {
+                        active.pause();
                     }
                 }, 80); // Wait 80ms for the fade-out to complete before pausing
                 if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
@@ -568,13 +940,22 @@ await ctx.resume();
         },
 
         performCleanSeek: function(targetTime, targetScrubVal) {
-if (!this.audioEl) return;
+const active = this._activeEl();
+if (!active) return;
+
+// Seek token, separate from the play-swap token (_playSeq): a track change
+// pending inside its 80ms swap window must not have its fade-in cancelled
+// by a scrub, and a seek must not be cancelled by a track change either.
+this._seekSeq = (this._seekSeq || 0) + 1;
+const seq = this._seekSeq;
 
 // Fade out the music signal cleanly
 this.fadeMusicVolume(0, 0.008);
 
 setTimeout(() => {
-this.audioEl.currentTime = targetTime;
+if (seq !== this._seekSeq) return;
+const active = this._activeEl();
+if (active) active.currentTime = targetTime;
 
 const scrub = document.getElementById('playlist-scrub');
 const modalScrub = document.getElementById('modal-scrub');
@@ -583,6 +964,7 @@ if (modalScrub) modalScrub.value = targetScrubVal;
 
 // Allow HTML5 buffer fusions to settle, then fade back in
 setTimeout(() => {
+if (seq !== this._seekSeq) return;
 const slider = document.getElementById("eq-musicVolumeSlider");
 const vol = slider ? parseFloat(slider.value) / 100 : 0.5;
 this.fadeMusicVolume(vol, 0.015);
@@ -597,15 +979,14 @@ this.fadeMusicVolume(vol, 0.015);
             }
             this._lastVolPct = parseFloat(val);
             if (this.connected && this.graphBuilt && this.musicVolumeNode) {
-                if (this.audioEl) {
-                    this.audioEl.volume = 1.0; // Lock browser stream at maximum to prevent unsynced thread-stepping clicks
-                }
-                const loudGain = (this.settingsLoudnessMatchEnabled && this.settingsLoudnessMatchEnabled()) ? (this._activeLoudnessGain || 1) : 1;
-                setAudioParamSmooth(this.musicVolumeNode.gain, Math.max(0, Math.min(1, vol * loudGain)), 0.05);
-            } else if (this.audioEl) {
+                if (this.audioEl) this.audioEl.volume = 1.0; // Lock browser streams at maximum to prevent unsynced thread-stepping clicks
+                if (this.gaplessEl) this.gaplessEl.volume = 1.0;
+                setAudioParamSmooth(this.musicVolumeNode.gain, Math.max(0, Math.min(1, vol)), 0.05);
+            } else {
                 // DSP graph not built yet — fall back to the element volume so the
                 // slider always affects what you hear.
-                this.audioEl.volume = Math.max(0, Math.min(1, vol));
+                const active = this._activeEl();
+                if (active) active.volume = Math.max(0, Math.min(1, vol));
             }
 
             this.updateLoudnessDSP(); // Recalculate and apply loudness filters on volume slider movement

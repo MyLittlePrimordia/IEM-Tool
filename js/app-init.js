@@ -1,11 +1,17 @@
 
         (function() {
+            // Skip ranges already styled for their current value: the 1s tick
+            // otherwise re-reads each slider's computed style on every pass,
+            // even when nothing changed since the last update.
+            const _lastFill = new WeakMap();
             function updateFill(el) {
                 const min = parseFloat(el.min) || 0;
                 const max = parseFloat(el.max) || 100;
                 const val = parseFloat(el.value) || 0;
                 const pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
                 const target = pct + '%';
+                if (_lastFill.get(el) === val + '|' + target) return;
+                _lastFill.set(el, val + '|' + target);
                 if (el.style.getPropertyValue('--range-fill') !== target) {
                     el.style.setProperty('--range-fill', target);
                 }
@@ -19,11 +25,21 @@
             }
             window.addEventListener('DOMContentLoaded', initAll);
 
-            setInterval(initAll, 1000);
+            setInterval(initAll, 3000);
             // Skip the refresh entirely while the tab is hidden — the first
             // tick after focus resumes corrects any stale fill values.
             document.addEventListener('visibilitychange', () => {
                 if (!document.hidden) initAll();
+            });
+
+            // Best-effort worker cleanup on unload: background workers keep
+            // the renderer alive on some engines (e.g. Firefox's bfcache),
+            // pinning large structured-cloned datasets in memory.
+            window.addEventListener('pagehide', () => {
+                try {
+                    if (window.FindEngine && FindEngine._findWorker) FindEngine._findWorker.terminate();
+                    if (window.FindEngine && FindEngine.similarityWorker) FindEngine.similarityWorker.terminate();
+                } catch (_) {}
             });
         })();
 
@@ -56,16 +72,26 @@
                     input.focus();
                     input.select();
 
+                    let committed = false;
+                    const restore = () => { freqDisplay.textContent = slider.value + ' Hz'; };
                     const commitAndRestore = () => {
+                        committed = true;
                         const val = Math.max(MIN, Math.min(MAX, Math.round(parseFloat(input.value) || 0)));
                         commitValue(val);
+                        restore();
                     };
                     input.addEventListener('keydown', (e) => {
-                        if (e.key === 'Enter') { commitAndRestore(); input.blur(); }
-                        if (e.key === 'Escape') { freqDisplay.textContent = currentHz + ' Hz'; }
+                        if (e.key === 'Enter') { commitAndRestore(); }
+                        else if (e.key === 'Escape') { committed = true; restore(); }
                         e.stopPropagation();
                     });
-                    input.addEventListener('blur', commitAndRestore);
+                    input.addEventListener('blur', () => {
+                        if (committed) return;
+                        // An empty/invalid box restores the previous value
+                        // instead of silently committing 0 Hz.
+                        if (!input.value.trim() || isNaN(parseFloat(input.value))) { restore(); return; }
+                        commitAndRestore();
+                    });
                     input.addEventListener('click', (e) => e.stopPropagation());
                 });
             }

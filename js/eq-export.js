@@ -82,28 +82,37 @@ const EQ_ExportMethods = {
             const bandCount = PEQDB_Module.autoeqResolution || 10;
             
             // 1. Export Standard Bands (Up to 10)
+            // The DSP always applies all 10 standard + all 10 advanced bands
+            // regardless of autoeqResolution, so every non-flat band must be
+            // exported — a smaller bandCount only affects how many get a slot
+            // in the auto-EQ resolution, not what the user hears.
             const standardCountToExport = Math.min(10, bandCount);
             for (let i = 0; i < standardCountToExport; i++) {
                 exportBand(mainVals[i]);
             }
             
-            // 2. Export Advanced Bands (Up to 10)
-            if (bandCount > 10) {
-                const advancedCountToExport = Math.min(10, bandCount - 10);
-                for (let i = 0; i < advancedCountToExport; i++) {
-                    exportBand(advVals[i]);
-                }
+            // 2. Export Advanced Bands (all 10, when non-flat)
+            for (let i = 0; i < 10; i++) {
+                exportBand(advVals[i]);
             }
             
             // 3. Export under-the-hood virtual filters (Up to 30)
-            if (bandCount > 20 && this.virtualBands) {
-                const virtualCountToExport = Math.min(30, bandCount - 20);
+            if (this.virtualBands) {
+                const virtualCountToExport = Math.min(30, this.virtualBands.length);
                 for (let i = 0; i < virtualCountToExport; i++) {
                     const v = this.virtualBands[i];
                     if (v && v.g !== 0) {
-                        out += 'Filter ' + (fIdx++) + ': ON PK Fc ' + v.hz + ' Hz Gain ' + v.g.toFixed(1) + ' dB Q ' + v.q.toFixed(2) + '\n';
+                        const apoType = typeMap[v.type] || 'PK';
+                        out += 'Filter ' + (fIdx++) + ': ON ' + apoType + ' Fc ' + v.hz + ' Hz Gain ' + v.g.toFixed(1) + ' dB Q ' + v.q.toFixed(2) + '\n';
                     }
                 }
+            }
+            
+            // Peace GUI EQ text format has no slope field — warn when an
+            // exported shelf (or any cascaded band) would lose its slope.
+            const shelfWithSlope = (v) => v && (v.type === 'lowshelf' || v.type === 'highshelf') && (v.slope || 12) !== 12;
+            if (mainVals.some(shelfWithSlope) || advVals.some(shelfWithSlope) || (this.virtualBands || []).some(shelfWithSlope)) {
+                showToast("Note: export format can't encode shelf slope — using default 12 dB/oct.", "📜");
             }
             
             if (this.hearingCalEnabled) {
@@ -159,6 +168,15 @@ const EQ_ExportMethods = {
                         cumulativeDb += 20 * Math.log10(mag);
                     }
                 });
+                
+                if (self.virtualBands) {
+                    self.virtualBands.forEach(function(v) {
+                        if (v && v.g !== 0) {
+                            var mag = Math.max(1e-4, self.getBiquadMagnitude(v.type || 'peaking', f, v.hz, v.q, v.g));
+                            cumulativeDb += 20 * Math.log10(mag);
+                        }
+                    });
+                }
                 
                 if (self.hearingCalEnabled) {
                     [250, 500, 1000, 2000, 4000, 8000, 12000, 16000].forEach(function(freq, idx) {
@@ -495,6 +513,14 @@ const EQ_ExportMethods = {
                         cumulativeDb += 20 * Math.log10(mag);
                     }
                 });
+                if (self.virtualBands) {
+                    self.virtualBands.forEach(function(v) {
+                        if (v && v.g !== 0) {
+                            var mag = Math.max(1e-4, self.getBiquadMagnitude(v.type || 'peaking', f, v.hz, v.q, v.g));
+                            cumulativeDb += 20 * Math.log10(mag);
+                        }
+                    });
+                }
                 var gainVal = parseFloat(cumulativeDb.toFixed(2));
 
                 bandsText += "Band " + (idx + 1) + "\n   " + f + ": CF\n   " + gainVal + ": Boost/Cut\n";

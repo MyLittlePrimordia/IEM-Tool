@@ -12,24 +12,28 @@ const SafeStorage = {
         }
     }(),
     getItem: function(key) {
+        // Memory is the most recent write attempt: a value stored in memory
+        // (after a quota failure) must shadow the older value still on disk,
+        // otherwise an in-session write would silently read back as stale.
+        if (this.memoryStorage.hasOwnProperty(key)) return this.memoryStorage[key];
         if (this.isSupported) {
             try {
-                const val = localStorageBackup.getItem(key);
-                if (val === null && this.memoryStorage.hasOwnProperty(key)) {
-                    return this.memoryStorage[key];
-                }
-                return val;
+                return localStorageBackup.getItem(key);
             } catch (e) {
-                console.warn("[SafeStorage] Read failed; falling back to memory.", e);
-                return this.memoryStorage.hasOwnProperty(key) ? this.memoryStorage[key] : null;
+                console.warn("[SafeStorage] Read failed.", e);
+                return null;
             }
         }
-        return this.memoryStorage.hasOwnProperty(key) ? this.memoryStorage[key] : null;
+        return null;
     },
     setItem: function(key, value) {
         if (this.isSupported) {
             try {
                 localStorageBackup.setItem(key, value);
+                // Persisted on disk: drop any older in-memory copy so the disk
+                // value stays the source of truth and memory cannot shadow it.
+                delete this.memoryStorage[key];
+                return;
             } catch (e) {
                 // Quota/private-mode failures: keep the value in memory so a
                 // later read still returns it for this session instead of the
@@ -37,11 +41,9 @@ const SafeStorage = {
                 // on the next page load regardless, but in-session behavior
                 // must not lie about the save).
                 console.warn("[SafeStorage] Write limit exceeded; keeping value in memory.", e);
-                this.memoryStorage[key] = String(value);
             }
-        } else {
-            this.memoryStorage[key] = String(value);
         }
+        this.memoryStorage[key] = String(value);
     },
     removeItem: function(key) {
         if (this.isSupported) {

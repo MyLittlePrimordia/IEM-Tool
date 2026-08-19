@@ -36,19 +36,29 @@ const MIME_TYPES = {
   '.mka': 'audio/x-matroska'
 };
 
-// Static build artifacts are immutable once shipped (the app.bundle hash in
-// bundle-version.js busts them), so they can be cached aggressively. Data
-// files (html/json/gz/audio) stay no-store — they may be replaced on disk
-// while the app runs.
+// Caching rules:
+//  - Data files (html/json/gz/audio) stay no-store — they may be replaced on
+//    disk while the app runs.
+//  - bundle-version.js is fetched with a fixed ?v=1 URL, so it must never be
+//    cached; it is what busts the versioned bundles on update.
+//  - Versioned static assets (?v=... hash in the URL) are immutable once
+//    shipped — the bundle-version hash busts them.
+//  - Unversioned static assets (CSS, images) are revalidated on every load
+//    (no-cache), so files replaced in place by a new build are picked up.
+// In dev (unpackaged) nothing is cached so edits to js/css always show up on
+// reload.
 const CACHEABLE_EXTENSIONS = new Set([
   '.js', '.css', '.woff2', '.woff', '.ttf', '.otf', '.eot',
   '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico'
 ]);
 
-function cacheControlFor(ext) {
-  return CACHEABLE_EXTENSIONS.has(ext)
+function cacheControlFor(ext, url) {
+  if (!app.isPackaged) return 'no-store';
+  if (url && url.includes('bundle-version.js')) return 'no-cache, must-revalidate';
+  if (!CACHEABLE_EXTENSIONS.has(ext)) return 'no-store';
+  return (url && url.includes('?'))
     ? 'public, max-age=31536000, immutable'
-    : 'no-store';
+    : 'no-cache, must-revalidate';
 }
 
 let mainWindow;
@@ -58,16 +68,29 @@ function crashLogPath() {
   return path.join(app.getPath('userData'), 'crash.log');
 }
 
+const MAX_CRASH_LOG_BYTES = 2 * 1024 * 1024;
+
 function logCrash(err) {
   try {
     const line = `${new Date().toISOString()} ${(err && err.stack) || err}\n`;
-    fs.appendFileSync(crashLogPath(), line);
+    const logPath = crashLogPath();
+    // Rotate once the log grows past a reasonable size so it cannot balloon.
+    try {
+      if (fs.statSync(logPath).size > MAX_CRASH_LOG_BYTES) {
+        fs.renameSync(logPath, logPath + '.old');
+      }
+    } catch (_) {}
+    // Async append: a crash while logging must not block the process.
+    fs.appendFile(logPath, line, () => {});
   } catch (_) {}
 }
 
 process.on('uncaughtException', (err) => {
   logCrash(err);
   console.error('[IEM Tool] Uncaught exception:', err);
+  // The process is in an undefined state; exit cleanly after logging rather
+  // than continuing to run with a broken main process.
+  app.exit(1);
 });
 
 process.on('unhandledRejection', (reason) => {
@@ -75,18 +98,29 @@ process.on('unhandledRejection', (reason) => {
   console.error('[IEM Tool] Unhandled rejection:', reason);
 });
 
+function sendEmpty(res, status, extraHeaders) {
+  const headers = Object.assign({ 'Content-Length': '0' }, extraHeaders);
+  if (!res.headersSent) {
+    res.writeHead(status, headers);
+    res.end();
+  } else {
+    res.end();
+  }
+}
+
 function serveFile(filePath, stats, req, res) {
   const ext = path.extname(filePath).toLowerCase();
   const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
   const fileSize = stats.size;
   const range = req.headers.range;
+  const cacheControl = cacheControlFor(ext, req.url);
+  const isHead = req.method === 'HEAD';
 
   if (range) {
     // Single-range only per RFC 7233; suffix form bytes=-N returns the last N bytes.
     const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
     if (!match || (match[1] === '' && match[2] === '')) {
-      res.writeHead(416, { 'Content-Range': `bytes */${fileSize}`, 'Connection': 'close' });
-      res.end();
+      sendEmpty(res, 416, { 'Content-Range': `bytes */${fileSize}` });
       return;
     }
     let start = match[1] !== '' ? parseInt(match[1], 10) : null;
@@ -104,33 +138,42 @@ function serveFile(filePath, stats, req, res) {
     if (isNaN(end) || end > fileSize - 1) end = fileSize - 1;
 
     if (start > end || start >= fileSize) {
-      res.writeHead(416, { 'Content-Range': `bytes */${fileSize}`, 'Connection': 'close' });
-      res.end();
+      sendEmpty(res, 416, { 'Content-Range': `bytes */${fileSize}` });
       return;
     }
 
     const chunkSize = end - start + 1;
-    const stream = fs.createReadStream(filePath, { start, end });
-    res.writeHead(206, {
+    const headers = {
       'Content-Type': mimeType,
       'Content-Length': chunkSize,
       'Content-Range': `bytes ${start}-${end}/${fileSize}`,
       'Accept-Ranges': 'bytes',
-      'Cache-Control': cacheControlFor(ext),
-      'Connection': 'close'
-    });
+      'Cache-Control': cacheControl
+    };
+    if (isHead) {
+      res.writeHead(206, headers);
+      res.end();
+      return;
+    }
+    res.writeHead(206, headers);
+    const stream = fs.createReadStream(filePath, { start, end });
     stream.pipe(res);
     stream.on('error', () => { res.end(); });
     return;
   }
 
-  res.writeHead(200, {
+  const headers = {
     'Content-Type': mimeType,
     'Content-Length': fileSize,
     'Accept-Ranges': 'bytes',
-    'Cache-Control': cacheControlFor(ext),
-    'Connection': 'close'
-  });
+    'Cache-Control': cacheControl
+  };
+  if (isHead) {
+    res.writeHead(200, headers);
+    res.end();
+    return;
+  }
+  res.writeHead(200, headers);
   const stream = fs.createReadStream(filePath);
   stream.pipe(res);
   stream.on('error', () => { res.end(); });
@@ -144,30 +187,34 @@ function startLocalServer(rootDir) {
   return new Promise((resolve, reject) => {
     server = http.createServer((req, res) => {
       try {
-        const rawPath = decodeURIComponent(req.url.split('?')[0]);
-        let filePath = path.normalize(path.join(rootDir, rawPath));
+        const rawPath = req.url.split('?')[0];
+        let filePath;
+        try {
+          filePath = path.normalize(path.join(rootDir, decodeURIComponent(rawPath)));
+        } catch (e) {
+          // Malformed percent-encoding in the request target.
+          sendEmpty(res, 400);
+          return;
+        }
 
         const relativePath = path.relative(rootDir, filePath);
         const isSafe = (relativePath === '') || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
 
         if (!isSafe) {
-          res.writeHead(403, { 'Connection': 'close' });
-          res.end('Forbidden');
+          sendEmpty(res, 403);
           return;
         }
 
         fs.stat(filePath, (err, stats) => {
           if (err) {
-            res.writeHead(404, { 'Connection': 'close' });
-            res.end('Not found');
+            sendEmpty(res, 404);
             return;
           }
           if (stats.isDirectory()) {
             filePath = path.join(filePath, 'index.html');
             fs.stat(filePath, (dirErr, dirStats) => {
               if (dirErr) {
-                res.writeHead(404, { 'Connection': 'close' });
-                res.end('Not found');
+                sendEmpty(res, 404);
                 return;
               }
               serveFile(filePath, dirStats, req, res);
@@ -177,13 +224,13 @@ function startLocalServer(rootDir) {
           serveFile(filePath, stats, req, res);
         });
       } catch (e) {
-        res.writeHead(500, { 'Connection': 'close' });
-        res.end('Server error');
+        logCrash(e);
+        sendEmpty(res, 500);
       }
     });
 
     server.listen(0, '127.0.0.1', () => resolve(server.address().port));
-    server.on('error', reject);
+    server.on('error', (e) => { logCrash(e); reject(e); });
   });
 }
 
@@ -249,7 +296,12 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.on('window-all-closed', () => {
-  if (server) server.close();
+  if (server) {
+    server.close();
+    // Connections are kept alive now; destroy idle sockets so the process can
+    // actually exit instead of waiting on open keep-alive connections.
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+  }
   if (process.platform !== 'darwin') app.quit();
 });
 

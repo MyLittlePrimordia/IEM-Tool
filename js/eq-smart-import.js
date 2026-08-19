@@ -175,7 +175,7 @@ const EQ_SmartImportMethods = {
             // app's band types so NOTCH / shelf / LP / HP filters stay their own
             // type instead of silently becoming peaking filters.
             var s = ' ' + String(raw || '').toLowerCase().replace(/[()]/g, ' ') + ' ';
-            if (/\bnotch\b|\bno\s[,;]/.test(s)) return 'notch';
+            if (/\bnotch\b|\bno\b/.test(s)) return 'notch';
             if (/\blow\s*shelf\b|\blshelf\b|\blsc\b/.test(s)) return 'lowshelf';
             if (/\bhigh\s*shelf\b|\bhshelf\b|\bhsc\b/.test(s)) return 'highshelf';
             if (/\bhigh\s*pass\b|\bhipass\b|\bhighpass\b|\bhpq\b/.test(s)) return 'highpass';

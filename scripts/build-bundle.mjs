@@ -13,7 +13,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 // Source-of-truth load order (matches the pre-bundling <script> tags).
 const src = [
-  'js/utils.js','js/audio-engine.js','js/safe-storage.js','js/accessibility.js','js/ui-kit.js',
+  'js/utils.js','js/endgame-categories.js','js/audio-engine.js','js/safe-storage.js','js/accessibility.js','js/ui-kit.js',
   'js/shortcuts.js','js/eq-export.js',
   'js/eq-playlist.js','js/eq-reverb.js','js/eq-crossfeed.js','js/eq-crossover.js','js/eq-dynamics.js',
   'js/eq-loudness.js','js/eq-tempo.js','js/eq-smart-import.js','js/eq-hearing-cal.js','js/eq-viz-fullscreen.js',
@@ -39,6 +39,20 @@ writeFileSync(join(root, 'js', 'app.bundle.js'), raw);
 const version = createHash('sha256').update(raw).digest('hex').slice(0, 12);
 writeFileSync(join(root, 'js', 'bundle-version.js'), `window.BUNDLE_VERSION = ${JSON.stringify(version)};\n`);
 
+// Stamp the same hash into index.html's bundle-version.js <script src> so the
+// version file itself is cache-busted on real changes. Without this the tiny
+// version file (and the bundle it points at) could be served stale forever
+// from a browser cache that never sees a new URL.
+const indexPath = join(root, 'index.html');
+const indexSrc = readFileSync(indexPath, 'utf8');
+const marker = 'js/bundle-version.js?v=';
+const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const newIndexSrc = indexSrc.replace(new RegExp(escapedMarker + "[^\"']+"), marker + version);
+if (indexSrc.indexOf(marker) === -1) {
+  throw new Error('could not find "' + marker + '" script tag in index.html to stamp version');
+}
+writeFileSync(indexPath, newIndexSrc);
+
 console.log('built ' + src.length + ' files');
 console.log('app.bundle.js      :', Buffer.byteLength(raw, 'utf8'), 'bytes');
 console.log('bundle-version.js  :', version);
@@ -48,15 +62,29 @@ console.log('bundle-version.js  :', version);
 // this is running somewhere without registry access), skip minification
 // instead of failing the whole build - app.bundle.js + bundle-version.js are
 // still produced and the unpackaged app still runs.
+// If terser IS installed but minification fails, that's a real error: the
+// packaged app would ship a stale app.bundle.min.js, so the build must fail.
+let terserInstalled = true;
 try {
-  const { minify } = await import('terser');
-  const out = await minify(raw, { compress: true, mangle: true, toplevel: false, keep_fnames: false });
-  if (!out.code) throw new Error('minify failed');
-  writeFileSync(join(root, 'js', 'app.bundle.min.js'), out.code);
-  console.log('app.bundle.min.js  :', Buffer.byteLength(out.code, 'utf8'), 'bytes');
+  await import('terser');
 } catch (e) {
-  console.warn('\n[build-bundle] Skipped minified build (terser unavailable): ' + e.message);
+  terserInstalled = false;
+}
+if (!terserInstalled) {
+  console.warn('\n[build-bundle] Skipped minified build (terser unavailable)');
   console.warn('[build-bundle] Run `npm install` (terser is already listed as a devDependency)');
   console.warn('[build-bundle] then re-run this script to refresh app.bundle.min.js.');
   console.warn('[build-bundle] app.bundle.js and bundle-version.js were still rebuilt.\n');
+} else {
+  try {
+    const { minify } = await import('terser');
+    const out = await minify(raw, { compress: true, mangle: true, toplevel: false, keep_fnames: false });
+    if (!out.code) throw new Error('minify failed');
+    writeFileSync(join(root, 'js', 'app.bundle.min.js'), out.code);
+    console.log('app.bundle.min.js  :', Buffer.byteLength(out.code, 'utf8'), 'bytes');
+  } catch (e) {
+    console.error('\n[build-bundle] Minification FAILED: ' + e.message);
+    console.error('[build-bundle] app.bundle.min.js would be stale; aborting build.');
+    process.exit(1);
+  }
 }

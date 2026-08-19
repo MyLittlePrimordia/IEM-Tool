@@ -710,6 +710,9 @@
             transform: translate(-1px, -1px);
             box-shadow: 5px 5px 0px 0px var(--border-color) !important;
         }
+        #spatial-card:hover {
+            transform: none !important;
+        }
 
         button:not(.no-tactile), .category-pill, .tag, label.btn-label {
             border: 2px solid var(--border-color) !important;
@@ -3475,8 +3478,8 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
 
         .spatial-pad-container { position: relative; width: 100%; height: 260px; background: radial-gradient(circle at center, rgba(var(--accent-blue-rgb), 0.08) 0%, var(--bg-body) 100%); border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; cursor: none !important; touch-action: none !important;  transition: background var(--transition-speed), border-color var(--transition-speed); }
         .spatial-grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(var(--accent-blue-rgb), 0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--accent-blue-rgb), 0.14) 1px, transparent 1px); background-size: 12px 12px; }
-        .spatial-axis-h { position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: rgba(var(--accent-blue-rgb), 0.35); transition: background var(--transition-speed); }
-        .spatial-axis-v { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(var(--accent-blue-rgb), 0.35); transition: background var(--transition-speed); }
+        .spatial-axis-h { position: absolute; top: calc(50% - 1px); left: 0; right: 0; height: 2px; background: rgba(var(--accent-blue-rgb), 0.35); transition: background var(--transition-speed); }
+        .spatial-axis-v { position: absolute; left: calc(50% - 1px); top: 0; bottom: 0; width: 2px; background: rgba(var(--accent-blue-rgb), 0.35); transition: background var(--transition-speed); }
         .spatial-listener { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--text-secondary); font-size: 16px; pointer-events: none; }
         .spatial-source { position: absolute; width: 24px; height: 24px; transform: translate(-50%, -50%); pointer-events: none; transition: transform 0.1s ease; display: flex; align-items: center; justify-content: center; }
         .spatial-core { width: 7px; height: 7px; background-color: var(--accent-blue); border-radius: 50%; box-shadow: 0 0 8px var(--accent-blue); position: absolute; z-index: 10; }

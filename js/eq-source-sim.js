@@ -57,69 +57,6 @@ const EQ_SourceSimMethods = {
             }
             this.drawCurve();
         },
-        applySimulationToFilters: function(filterArray, offsetIndex) {
-            if (!filterArray || filterArray.length === 0) return;
-            if (!this.simState) return;
-            const tip = this.simState.tip;
-            
-            const strengthEl = document.getElementById('sim-tip-strength');
-            const strength = strengthEl ? parseFloat(strengthEl.value) / 100 : 0.5;
-            
-            const depth = this.simState.depth;
-            const seal = this.simState.seal;
-
-            // Smooth Web Audio parameter transition wrapper with absolute parameter validation
-            const setSmooth = (filter, type, freq, gain, q) => {
-                if (!filter || !filter.frequency || !filter.gain) return;
-                filter.type = type;
-                setAudioParamSmooth(filter.frequency, freq);
-                setAudioParamSmooth(filter.gain, gain);
-                setAudioParamSmooth(filter.Q, q);
-            };
-
-            // Set default / silent states smoothly
-            for (let k = 0; k < 5; k++) {
-                setSmooth(filterArray[offsetIndex + k], 'peaking', 1000, 0, 1.0);
-            }
-
-            const f1 = filterArray[offsetIndex + 0];
-            const f2 = filterArray[offsetIndex + 1];
-            const f3 = filterArray[offsetIndex + 2];
-            const f4 = filterArray[offsetIndex + 3];
-            const f5 = filterArray[offsetIndex + 4];
-
-            if (tip === 'foam') {
-                setSmooth(f1, 'highshelf', 6000, -3.0 * strength, 0.7);
-            } else if (tip === 'narrow') {
-                setSmooth(f1, 'lowshelf', 200, 2.0 * strength, 0.7);
-                setSmooth(f2, 'highshelf', 4000, -2.5 * strength, 0.7);
-            } else if (tip === 'wide') {
-                setSmooth(f1, 'lowshelf', 250, -1.5 * strength, 0.7);
-                setSmooth(f2, 'highshelf', 5000, 1.5 * strength, 0.7);
-            } else if (tip === 'double') {
-                setSmooth(f1, 'peaking', 7000, -4.0 * strength, 2.5);
-            } else if (tip === 'triple') {
-                setSmooth(f1, 'highshelf', 5000, -3.5 * strength, 0.7);
-                setSmooth(f2, 'peaking', 8000, -2.0 * strength, 1.5);
-            }
-
-            if (depth === 'shallow') {
-                setSmooth(f3, 'peaking', 6000, 3.0, 2.0);
-                setSmooth(f4, 'peaking', 8500, -4.0, 2.0);
-            } else if (depth === 'deep') {
-                setSmooth(f3, 'peaking', 8000, -4.0, 2.0);
-                setSmooth(f4, 'peaking', 11500, 4.0, 1.5);
-            }
-
-            if (seal === 'good') {
-                setSmooth(f5, 'lowshelf', 80, -2.5, 0.7);
-            } else if (seal === 'loose') {
-                setSmooth(f5, 'lowshelf', 150, -9.0, 0.7);
-            } else if (seal === 'broken') {
-                setSmooth(f5, 'lowshelf', 250, -18.0, 0.7);
-            }
-        },
-
         updateSelectorColors: function() {
             if (!this.simState) return;
             
@@ -308,17 +245,15 @@ const EQ_SourceSimMethods = {
             const gear = this.gearSimOptions[this.currentGearIdx || 0];
             if (!gear) return;
 
-            this.sourceSimLowF = gear.lowF;
-            this.sourceSimLowG = gear.lowG;
-            this.sourceSimHighF = gear.highF;
-            this.sourceSimHighG = gear.highG;
-
             if (SharedAudio.workletNode) {
                 SharedAudio.workletNode.port.postMessage({
                     type: 'updateSimulations',
                     sims: [
-                        { index: 10, bypassed: gear.lowG === 0, filterType: 'lowshelf', frequency: gear.lowF, gain: gear.lowG, q: 0.7 },
-                        { index: 11, bypassed: gear.highG === 0, filterType: 'highshelf', frequency: gear.highF, gain: gear.highG, q: 0.7 }
+                        // Gear sim lives at 20/21: slots 10/11 belong to the
+                        // DAC source sim — sharing them made the two last-write
+                        // clobber each other.
+                        { index: 20, bypassed: gear.lowG === 0, filterType: 'lowshelf', frequency: gear.lowF, gain: gear.lowG, q: 0.7 },
+                        { index: 21, bypassed: gear.highG === 0, filterType: 'highshelf', frequency: gear.highF, gain: gear.highG, q: 0.7 }
                     ]
                 });
             }

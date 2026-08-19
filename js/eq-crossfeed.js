@@ -39,17 +39,33 @@ const EQ_CrossfeedMethods = {
             const slider = document.getElementById('crossfeed-level');
             const levelVal = slider ? parseFloat(slider.value) : 0;
 
-            // Calibrate to a spacious, highly audible 58% maximum room bleed
-            const crossVal = (levelVal / 100) * 0.58;
+            // Per-mode presets: each speaker position varies the arrival
+            // (delay), the high-frequency rolloff (lowpass) and the bleed
+            // level. 'natural' keeps the historic behavior.
+            const MODE_PRESETS = {
+                natural:   { delayMs: 0.65, filterHz: 2000, level: 1.0 },
+                nearfield: { delayMs: 0.45, filterHz: 4200, level: 0.9 },
+                midfield:  { delayMs: 0.65, filterHz: 2000, level: 1.0 },
+                farfield:  { delayMs: 0.85, filterHz: 1400, level: 1.2 },
+                'near/mid': { delayMs: 0.55, filterHz: 3100, level: 0.95 },
+                'mid/far':  { delayMs: 0.75, filterHz: 1700, level: 1.1 }
+            };
+            const preset = MODE_PRESETS[this.speakerSimMode] || MODE_PRESETS.natural;
+
+            // When the crossfeed is switched OFF, fully neutralize the bleed
+            // path — the level slider value and stereo-expand level must not
+            // keep leaking audio across channels while off.
+            const isOff = (this.crossfeedState === 'off');
+            const crossVal = isOff ? 0 : (levelVal / 100) * 0.58 * preset.level;
             
             // Automatic volume compensation to prevent quiet drops
             const directVal = 1.0 - (crossVal * 0.35);
             
-            // 650 microsecond delay emulates a wide, expansive speaker soundstage
-            const delaySecs = 0.00065;
+            // Delay emulates the arrival time of the simulated speaker position
+            const delaySecs = preset.delayMs / 1000;
             
-            // 2.0kHz lowpass lets vocal sparkle and room echo bleed naturally for organic depth
-            const filterHz = 2000;
+            // Lowpass lets vocal sparkle and room echo bleed naturally for organic depth
+            const filterHz = preset.filterHz;
             
             // Apply parameters smoothly to the global output DSP graph
             setAudioParamSmooth(SharedAudio.crossGainL.gain, crossVal, 0.02);
@@ -58,7 +74,7 @@ const EQ_CrossfeedMethods = {
             setAudioParamSmooth(SharedAudio.directGainR.gain, directVal, 0.02);
 
             // Calculate and apply phase-inverted coefficients for Stereo Expansion
-            const expandVal = -(this.stereoExpandLevel / 100) * 0.65; // High-precision negative gain
+            const expandVal = isOff ? 0 : -(this.stereoExpandLevel / 100) * 0.65; // High-precision negative gain
             if (SharedAudio.expandGainL && SharedAudio.expandGainR) {
                 setAudioParamSmooth(SharedAudio.expandGainL.gain, expandVal, 0.02);
                 setAudioParamSmooth(SharedAudio.expandGainR.gain, expandVal, 0.02);

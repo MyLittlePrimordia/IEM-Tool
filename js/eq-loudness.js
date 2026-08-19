@@ -68,8 +68,9 @@ const EQ_LoudnessMethods = {
             }
             
             // Map Fletcher-Munson filters directly to worklet simulation indices 8 and 9.
-            // (Slots 6/7 belong to the tape-mod sim; 12-19 to hearing calibration —
-            // using 6/7 here silently clobbered the tape-mod filters.)
+            // (Slots 6/7 belong to the tape-mod sim; 12-19 to hearing calibration;
+            // 22/23 to the master tone — using shared slots silently clobbered
+            // each other's filters.)
             SharedAudio.workletNode.port.postMessage({
                 type: 'updateSimulations',
                 sims: [

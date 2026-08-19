@@ -32,7 +32,14 @@ const Shortcuts = {
     },
 
     _handleKeydown: function (e) {
+        // Respect handlers that already consumed the event (e.g. a modal).
+        if (e.defaultPrevented) return;
         if (Shortcuts._isTypingTarget(e.target)) return;
+        // Don't hijack keys while an interactive control (button, link) has
+        // focus: Space would otherwise both activate the control (native
+        // behavior) and trigger the playback binding.
+        const el = e.target;
+        if (el && (el.tagName === 'BUTTON' || el.tagName === 'A' || (el.getAttribute && el.getAttribute('role') === 'button'))) return;
         const key = e.key.toLowerCase();
         const match = Shortcuts._bindings.find(b => {
             if (!b.action) return false;

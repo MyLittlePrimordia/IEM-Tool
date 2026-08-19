@@ -13,6 +13,19 @@ const EQ_SquigGraphMethods = {
             if (btn) btn.classList.toggle('is-on', this.showSpectrumOverlay);
             this.drawCurve();
         },
+        effectivePreampDb: function() {
+            const preSlider = document.getElementById("eq-preampSlider");
+            const preVal = preSlider ? (parseFloat(preSlider.value) || 0) : 0;
+            let finalPreamp = preVal;
+            if (this.autoGainMatchActive && this.eqEnabled) {
+                finalPreamp += this.autoGainCompensationDb || 0;
+            }
+            if (this.hearingCalEnabled && this._hearingMaxBoost) {
+                finalPreamp -= this._hearingMaxBoost;
+            }
+            const headroom = (this.sourceSimGain !== undefined) ? this.sourceSimGain : 1.0;
+            return finalPreamp + 20 * Math.log10(headroom);
+        },
         drawSpectrumOverlay: function(cc, w, h, minF, maxF, accentBlueRgb) {
             if (!this.showSpectrumOverlay) return;
             const dataArray = this.previousDataArray || this.cachedDataArray;
@@ -110,10 +123,6 @@ const EQ_SquigGraphMethods = {
             const cc = cv.getContext("2d"); 
             const { w, h } = this.setupDPRCanvas(cv);
 
-            var targetMatchScoreText = "";
-            var targetMatchScoreColor = "#10b981";
-            var targetMatchSubText = "";
-
             // Read cached theme color variables directly without triggering a browser layout recalculation
             const accentBlueRgb = (document.documentElement.style.getPropertyValue('--accent-blue-rgb') || '59, 130, 246').trim();
             const accentGreen = (document.documentElement.style.getPropertyValue('--accent-green') || '#38a169').trim();
@@ -142,9 +151,15 @@ const EQ_SquigGraphMethods = {
             const min = PEQDB_Module.squigYMin || 60;
             const max = PEQDB_Module.squigYMax || 90;
 
-            // Generate a state signature of all static variables
-            const activeCurvesState = (PEQDB_Module.STATE.activeCurves || []).map(c => `${c.uid}-${c.visible}-${c.offset}-${c.color}`).join('|');
-            const currentStaticState = `${minF}-${maxF}-${min}-${max}-${PEQDB_Module.alignHz}-${PEQDB_Module.alignDb}-${this.deEsserEnabled}-${this.loudnessActive}-${this.simState.tip}-${this.simState.depth}-${this.simState.seal}-${activeCurvesState}`;
+            // Generate a state signature of all static variables. Each curve carries a
+            // per-curve _splineVersion that drawNormalCurves bumps whenever the
+            // spline is rebuilt — without it, a spline change that leaves uid/
+            // color/offset untouched would serve a stale static layer from cache.
+            const activeCurvesState = (PEQDB_Module.STATE.activeCurves || []).map(c => `${c.uid}-${c.visible}-${c.offset}-${c.color}-${c.role}-${c._splineVersion || 0}`).join('|');
+            // Only inputs that actually affect the static layer belong here:
+            // zoom, alignment, and the drawn curves. EQ model / sim state changes
+            // are handled by the mode layer's own signature.
+            const currentStaticState = `${minF}-${maxF}-${min}-${max}-${PEQDB_Module.alignHz}-${PEQDB_Module.alignDb}-${activeCurvesState}`;
 
             if (this.lastStaticState !== currentStaticState) {
                 this.staticDirty = true;
@@ -322,7 +337,7 @@ const EQ_SquigGraphMethods = {
             const freqs = EQ_Module.cachedSquigFreqs;
             const filterMag = EQ_Module.getCompositeFilterMagnitude(freqs, steps);
 
-            let preVal = (this.preampSliderEl) ? parseFloat(this.preampSliderEl.value) : 0;
+            let preVal = this.effectivePreampDb ? this.effectivePreampDb() : ((this.preampSliderEl) ? parseFloat(this.preampSliderEl.value) : 0);
             const preLin = Math.pow(10, preVal / 20); 
 
             // Reuse pre-allocated scratch buffers instead of allocating two new
@@ -399,7 +414,7 @@ const EQ_SquigGraphMethods = {
 
             if (!EQ_Module.isTuningLabActive) {
                 var hoverEQ2 = EQ_Module.hoverEQNode;
-                const preVal = (this.preampSliderEl) ? parseFloat(this.preampSliderEl.value) : 0;
+                const preVal = this.effectivePreampDb ? this.effectivePreampDb() : ((this.preampSliderEl) ? parseFloat(this.preampSliderEl.value) : 0);
                 const bandColors = ['#ef4444', '#f97316', '#f59e0b', '#10b981', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e'];
                 const liveFilters = this.getLiveFiltersState().main;
 
@@ -555,23 +570,6 @@ const EQ_SquigGraphMethods = {
 
                     curY += 26; // Extra clearance below 24px region emoji
 
-                    // LINE 2: Target Match Overall Score
-                    if (targetMatchScoreText) {
-                        cc.textAlign = "left";
-                        cc.fillStyle = targetMatchScoreColor;
-                        cc.font = this.getActiveCanvasFont(hudFontSize, 'bold');
-                        cc.fillText(targetMatchScoreText, hudX, curY);
-
-                        curY += 16;
-
-                        // LINE 3: Band Match Sub-Breakdown (Dedicated Row)
-                        cc.fillStyle = "rgba(255, 255, 255, 0.65)";
-                        cc.font = this.getActiveCanvasFont(hudFontSize, 'bold');
-                        cc.fillText(targetMatchSubText, hudX, curY);
-
-                        curY += rowHeight;
-                    }
-
                     // LINE 3: Curve dB Readouts (Same Font Size & Auto-Wrapping)
                     cc.textAlign = "left";
                     let dbX = hudX;
@@ -641,11 +639,13 @@ const EQ_SquigGraphMethods = {
                         this._heatmapGradCacheH = h;
                         this._heatmapGradCount = 0;
                     }
+                    const y0 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb, h);
                     for (let i = 0; i < steps; i++) {
                         const curX = (i / (steps - 1)) * w;
                         const dbVal = eqDb[i];
                         if (Math.abs(dbVal) < 0.1) continue;
-                        const y0 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb, h);
+                        // y0 depends only on alignDb + h: hoisted out of the
+                        // loop (was re-derived per sample on every frame).
                         const y1 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + dbVal, h);
 
                         const key = Math.round(y0) + ':' + Math.round(y1) + ':' + (dbVal > 0 ? 'p' : 'n');

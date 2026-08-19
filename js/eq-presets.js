@@ -127,11 +127,19 @@ const EQ_PresetMethods = {
                         if (qSlider) qSlider.value = qVal;
                     }
                     if (typeVal && this.bands[i]) {
-                        this.bands[i].type = typeVal;
+                        // handleTypeChange keeps the band card in sync: gain
+                        // row visibility/pointer-events and slider behavior
+                        // depend on the selected type.
+                        this.handleTypeChange(i, typeVal);
                         const typeBtn = document.getElementById(`eq-t_m${i}`);
                         if (typeBtn) {
                             const labelMap = { peaking: 'PK', lowshelf: 'LS', highshelf: 'HS', highpass: 'HP', lowpass: 'LP', notch: 'Notch' };
                             typeBtn.textContent = labelMap[typeVal] || 'PK';
+                        }
+                        const slopeBtn = document.getElementById(`eq-sl_m${i}`);
+                        if (slopeBtn) {
+                            const isSlopeVisible = ['lowshelf', 'highshelf', 'lowpass', 'highpass'].includes(typeVal);
+                            slopeBtn.classList.toggle('hidden', !isSlopeVisible);
                         }
                     }
                     if (slopeVal !== undefined && this.bands[i]) {
@@ -161,6 +169,33 @@ const EQ_PresetMethods = {
                         if (hzVal !== undefined) b.hz = hzVal;
                         if (qVal !== undefined) b.q = qVal;
                         if (typeVal) b.type = typeVal;
+                    }
+
+                    if (typeVal && this.advancedBands[i]) {
+                        // Mirror the main-band card sync (handleTypeChange):
+                        // the type button label and gain-row state must match
+                        // the restored type, not just the model.
+                        const typeBtn = document.getElementById(`eq-t_a${i}`);
+                        if (typeBtn) {
+                            const labelMap = { peaking: 'PK', lowshelf: 'LS', highshelf: 'HS', highpass: 'HP', lowpass: 'LP', notch: 'Notch' };
+                            typeBtn.textContent = labelMap[typeVal] || 'PK';
+                        }
+                        const gainRow = document.getElementById(`row-gain_a${i}`);
+                        const hasNoGain = ['highpass', 'lowpass', 'notch'].includes(typeVal);
+                        if (gainRow) {
+                            if (hasNoGain) {
+                                gainRow.style.opacity = '0.15';
+                                gainRow.style.pointerEvents = 'none';
+                                const gainNum = document.getElementById(`eq-a${i}_num`);
+                                if (gainNum) gainNum.value = 'N/A';
+                            } else {
+                                gainRow.style.opacity = '1';
+                                gainRow.style.pointerEvents = 'auto';
+                                const gainNum = document.getElementById(`eq-a${i}_num`);
+                                const gainSlider = document.getElementById("eq-a" + i);
+                                if (gainNum && gainSlider) gainNum.value = parseFloat(gainSlider.value).toFixed(1);
+                            }
+                        }
                     }
 
                     const aSlider = document.getElementById("eq-a" + i);
