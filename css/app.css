@@ -1050,6 +1050,8 @@
          }
 
          #pane-testlab input[type="range"]::-webkit-slider-thumb {
+             -webkit-appearance: none !important;
+             appearance: none !important;
              background: var(--accent-blue) !important;
              border: 2px solid #000000 !important;
              width: 12px !important;
@@ -1598,7 +1600,7 @@
         input[type="range"]:not(.dual-range) {
             -webkit-appearance: none;
             appearance: none;
-            background: #ffffff !important;
+            background: var(--bg-input);
             border: 2px solid #000000 !important;
             box-shadow: inset 1px 1px 0px 0px rgba(0, 0, 0, 0.35) !important;
             outline: none;
@@ -1625,8 +1627,8 @@
         }
 
         input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
+            -webkit-appearance: none !important;
+            appearance: none !important;
             width: 12px !important;
             height: 20px !important;
             border-radius: 0 !important;
@@ -1657,6 +1659,23 @@
             background: var(--accent-blue);
             border-radius: 0 !important;
         }
+        input[type="range"].iem-slider::-moz-range-progress,
+        input[type="range"].eq-slider-vertical::-moz-range-progress {
+            background: transparent !important;
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 12px !important;
+            height: 20px !important;
+            background: var(--accent-blue) !important;
+            border: 2px solid var(--border-color) !important;
+            border-radius: 0 !important;
+            box-shadow: 2px 2px 0px 0px var(--border-color) !important;
+            cursor: pointer;
+        }
+input[type="range"].iem-slider::-moz-range-progress,
+        input[type="range"].eq-slider-vertical::-moz-range-progress {
+            background: transparent !important;
+        }
         input[type="range"]::-moz-range-thumb {
             width: 12px !important;
             height: 20px !important;
@@ -1668,6 +1687,10 @@
         }
         input[type="range"]::-moz-range-thumb:hover {
             filter: brightness(1.15);
+        }
+        .find-scroll-area .text-xs,
+        .find-col-tools .text-xs {
+            line-height: 14px;
         }
 
         .dual-range-wrap {
@@ -1710,6 +1733,8 @@
             margin: 0;
             background: transparent !important;
             border: none !important;
+            -webkit-appearance: none;
+            appearance: none;
             pointer-events: none;
             z-index: 2;
         }
@@ -1727,6 +1752,8 @@
             border: none;
         }
         .dual-range-wrap input[type="range"].dual-range::-webkit-slider-thumb {
+            -webkit-appearance: none !important;
+            appearance: none !important;
             pointer-events: auto;
             width: 12px !important;
             height: 20px !important;
@@ -2303,25 +2330,26 @@
         #find-pick-grid {
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 8px;
             width: 100%;
             --pick-emoji: 20px;
         }
         .pick-group {
             display: flex;
             flex-direction: column;
-            gap: 2px;
+            gap: 4px;
             min-width: 0;
         }
         .pick-group-label {
             display: inline-flex;
             align-items: center;
-            gap: 4px;
-            font-size: 9.5px;
+            gap: 6px;
+            font-size: 12px;
             font-weight: 900;
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            line-height: 1.1;
+            line-height: 1.2;
+            padding: 2px 0;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -2544,6 +2572,35 @@ min-width: 200px;
         .find-pick-badge.on:hover {
             transform: scale(1.25);
             filter: drop-shadow(0 0 6px var(--accent-blue));
+        }
+        /* ---- multi-select spec chips (form factor / driver / connector) ---- */
+        .spec-chip-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(24px, 1fr));
+            gap: 2px;
+            margin: 0 2px;
+            width: 100%;
+        }
+        .spec-chip-grid .find-pick-badge {
+            min-height: 24px;
+        }
+        .spec-chip-grid .find-pick-badge img {
+            width: 24px;
+            height: 24px;
+            object-fit: contain;
+            pointer-events: none;
+        }
+        .spec-chip-grid .find-pick-badge .emoji-font {
+            font-size: 20px;
+            line-height: 1;
+        }
+        .spec-chip-grid .find-pick-badge:hover {
+            transform: scale(1.15);
+            filter: grayscale(0.5) opacity(0.9);
+        }
+        .spec-chip-grid .find-pick-badge.on:hover {
+            transform: scale(1.15);
+            filter: drop-shadow(0 0 5px var(--accent-blue));
         }
         /* ---- pick tag select FX (each tag gets its own signature move) ---- */
         .fx-play {
@@ -3863,8 +3920,8 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
         }
 
         .eq-band-card input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
+            -webkit-appearance: none !important;
+            appearance: none !important;
             width: 10px !important;
             height: 16px !important;
             border-radius: 0 !important;

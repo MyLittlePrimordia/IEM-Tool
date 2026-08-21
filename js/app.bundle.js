@@ -8274,22 +8274,22 @@ window.updateExpandedAutoHide = function() {
                     if (el.classList.contains('iem-slider') && min === -10 && max === 10) {
                         if (val >= 0) {
                             const activePercent = (val / 10) * 50;
-                            el.style.background = `linear-gradient(90deg, #ffffff 0%, #ffffff 50%, var(--accent-blue) 50%, var(--accent-blue) ${50 + activePercent}%, #ffffff ${50 + activePercent}%, #ffffff 100%)`;
+                            el.style.background = `linear-gradient(90deg, var(--bg-input) 0%, var(--bg-input) 50%, var(--accent-blue) 50%, var(--accent-blue) ${50 + activePercent}%, var(--bg-input) ${50 + activePercent}%, var(--bg-input) 100%)`;
                         } else {
                             const activePercent = (Math.abs(val) / 10) * 50;
-                            el.style.background = `linear-gradient(90deg, #ffffff 0%, #ffffff ${50 - activePercent}%, var(--accent-red) ${50 - activePercent}%, var(--accent-red) 50%, #ffffff 50%, #ffffff 100%)`;
+                            el.style.background = `linear-gradient(90deg, var(--bg-input) 0%, var(--bg-input) ${50 - activePercent}%, var(--accent-red) ${50 - activePercent}%, var(--accent-red) 50%, var(--bg-input) 50%, var(--bg-input) 100%)`;
                         }
                     } else if (el.classList.contains('eq-slider-vertical')) {
                         if (val >= 0) {
                             const activePercent = (val / 12) * 50;
-                            el.style.background = `linear-gradient(90deg, #ffffff 0%, #ffffff 50%, var(--accent-blue) 50%, var(--accent-blue) ${50 + activePercent}%, #ffffff ${50 + activePercent}%, #ffffff 100%)`;
+                            el.style.background = `linear-gradient(90deg, var(--bg-input) 0%, var(--bg-input) 50%, var(--accent-blue) 50%, var(--accent-blue) ${50 + activePercent}%, var(--bg-input) ${50 + activePercent}%, var(--bg-input) 100%)`;
                         } else {
                             const activePercent = (Math.abs(val) / 12) * 50;
-                            el.style.background = `linear-gradient(90deg, #ffffff 0%, #ffffff ${50 - activePercent}%, var(--accent-red) ${50 - activePercent}%, var(--accent-red) 50%, #ffffff 50%, #ffffff 100%)`;
+                            el.style.background = `linear-gradient(90deg, var(--bg-input) 0%, var(--bg-input) ${50 - activePercent}%, var(--accent-red) ${50 - activePercent}%, var(--accent-red) 50%, var(--bg-input) 50%, var(--bg-input) 100%)`;
                         }
                     } else {
                         const percent = ((val - min) / (max - min)) * 100;
-                        el.style.background = `linear-gradient(90deg, var(--accent-blue) ${percent}%, #ffffff ${percent}%)`;
+                        el.style.background = `linear-gradient(90deg, var(--accent-blue) ${percent}%, var(--bg-input) ${percent}%)`;
                     }
                 };
 
@@ -8837,7 +8837,7 @@ window.updateExpandedAutoHide = function() {
             this.updateAll();
         },
         formFactorOptions: ['IEM', 'Earbuds (Wired)', 'Wireless Earbuds (TWS)', 'Over-Ear Headphones (Wired)', 'Wireless Over-Ear Headphones'],
-        connectorOptions: ['2-pin', 'MMCX', 'QDC', 'A2DC', 'Fixed Cable', 'Detachable Cable', 'Bluetooth', '3.5mm', '4.4mm', '6.35mm', 'XLR', 'Electrostatic'],
+        connectorOptions: ['2-pin', 'MMCX', 'QDC', 'A2DC', 'Fixed Cable', 'Detachable Cable', 'Bluetooth', 'Proprietary', 'Electrostatic'],
         cycleFormFactor: function(dir) {
             this.formFactor = this.formFactor || 'IEM';
             let idx = this.formFactorOptions.indexOf(this.formFactor);
@@ -11479,7 +11479,7 @@ exportReviewCard: async function() {
             const connectorIconFiles = {
                 '2-pin': 'icons/2pin.png', 'MMCX': 'icons/mmcx.png', 'QDC': 'icons/qdc.png', 'A2DC': 'icons/a2dc.png',
                 'Fixed Cable': 'icons/fixed.png', 'Detachable Cable': 'icons/detach.png', 'Bluetooth': 'icons/bluetooth.png',
-                '3.5mm': 'icons/3.5mm.png', '4.4mm': 'icons/4.4mm.png', '6.35mm': 'icons/6.35mm.png', 'XLR': 'icons/xlr.png',
+                'Proprietary': 'icons/proprietary.png',
                 'Electrostatic': 'icons/electro.png'
             };
             const formIconImages = {};
@@ -17441,8 +17441,12 @@ const DBCache = {
                             localStorage.setItem('squig_db_indexed', 'true');
                             const indicator = document.getElementById('peqdb-indexing-indicator');
                             if (indicator) indicator.classList.add('hidden');
-                            const progressContainer = document.getElementById('find-progress-container');
-                            if (progressContainer) progressContainer.classList.add('hidden');
+                            if (window.FindEngine && FindEngine.hideIndexingProgressAfterMin) {
+                                FindEngine.hideIndexingProgressAfterMin();
+                            } else {
+                                const progressContainer = document.getElementById('find-progress-container');
+                                if (progressContainer) progressContainer.classList.add('hidden');
+                            }
                             if (window.FindEngine && FindEngine.updateIndexingProgressBar) {
                                 FindEngine.updateIndexingProgressBar();
                             }
@@ -24263,12 +24267,8 @@ tagEmojis: {
                     { val: 'Bluetooth', label: '<img src="icons/bluetooth.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> Bluetooth' },
                     { val: 'Detachable Cable', label: '<img src="icons/detach.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> Detachable Cable' },
                     { val: 'Fixed Cable', label: '<img src="icons/fixed.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> Fixed Cable' },
-                    { val: '3.5mm', label: '<img src="icons/3.5mm.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> 3.5mm' },
-                    { val: '4.4mm', label: '<img src="icons/4.4mm.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> 4.4mm' },
-                    { val: '6.35mm', label: '<img src="icons/6.35mm.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> 6.35mm' },
-                    { val: 'XLR', label: '<img src="icons/xlr.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> XLR' },
-                    { val: 'Electrostatic', label: '<img src="icons/electro.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> Electrostatic' },
-                    { val: 'Unknown', label: '<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none mr-1.5 anim-toggle-pop">❓</span> Unknown' }
+                    { val: 'Proprietary', label: '<img src="icons/proprietary.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> Proprietary' },
+                    { val: 'Electrostatic', label: '<img src="icons/electro.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> Electrostatic' }
                 ],
 
                 formFactorOptions: [
@@ -24305,6 +24305,239 @@ tagEmojis: {
                         if (v) list.push({ val: v.name, label: `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none mr-1.5 anim-toggle-pop">${v.emoji}</span> ${v.name}` });
                     });
                     return list;
+                },
+
+                // ---- Multi-select spec chips (form factor / driver / connector) ----
+                // State lives in the hidden inputs as JSON arrays: [] = no filter
+                // (all grayed out), ["DD","Planar"] = OR-union of selected chips.
+                readFilterList: function(prefix, key) {
+                    const el = document.getElementById(`${prefix}-filter-${key}`);
+                    if (!el) return [];
+                    const v = (el.value || '').trim();
+                    if (v === '' || v === 'any') return [];
+                    try {
+                        const arr = JSON.parse(v);
+                        return Array.isArray(arr) ? arr : [];
+                    } catch (e) {
+                        return [v];
+                    }
+                },
+
+                writeFilterList: function(prefix, key, list) {
+                    const el = document.getElementById(`${prefix}-filter-${key}`);
+                    if (el) el.value = JSON.stringify(list);
+                },
+
+                // Normalizes a filter value (raw input string / 'any' / array /
+                // JSON array string) into a plain list; [] means "no filter".
+                toFilterList: function(v) {
+                    if (v == null) return [];
+                    if (Array.isArray(v)) return v;
+                    const s = String(v).trim();
+                    if (s === '' || s === 'any') return [];
+                    try {
+                        const arr = JSON.parse(s);
+                        return Array.isArray(arr) ? arr : [s];
+                    } catch (e) {
+                        return [s];
+                    }
+                },
+
+                specChipLists: function(prefix, key) {
+                    if (key === 'driver') return this.driverOptions.filter(o => o.val !== 'any');
+                    if (key === 'connector') return this.connectorOptions.filter(o => o.val !== 'any');
+                    if (key === 'formfactor') return ((prefix === 'ug') ? this.ugFormFactorOptions : this.formFactorOptions).filter(o => o.val !== 'any');
+                    return [];
+                },
+
+                _chipIconFromLabel: function(label) {
+                    const img = String(label).match(/^<img[^>]*>/);
+                    if (img) return img[0];
+                    const em = String(label).match(/<span[^>]*>([^<]*)<\/span>/);
+                    if (em) return `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${em[1]}</span>`;
+                    return String(label);
+                },
+
+                _chipTooltip: function(label) {
+                    return String(label).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+                },
+
+                renderSpecChipGrid: function(prefix, key) {
+                    const grid = document.getElementById(`grid-${prefix}-filter-${key}`);
+                    if (!grid) return;
+                    const sel = this.readFilterList(prefix, key);
+                    const list = this.specChipLists(prefix, key);
+                    let html = '';
+                    for (const o of list) {
+                        const on = sel.indexOf(o.val) !== -1;
+                        html += `<button type="button" onclick="FindEngine.toggleSpecChip('${prefix}','${key}','${escJs(o.val)}')" data-tooltip="${esc(this._chipTooltip(o.label))}" data-value="${esc(o.val)}" class="no-tactile find-pick-badge spec-chip${on ? ' on' : ''}" aria-pressed="${on ? 'true' : 'false'}">${this._chipIconFromLabel(o.label)}</button>`;
+                    }
+                    grid.innerHTML = html;
+                },
+
+                renderAllSpecChipGrids: function() {
+                    ['find', 'gk', 'ug', 'eg'].forEach(p => {
+                        ['driver', 'connector', 'formfactor'].forEach(k => this.renderSpecChipGrid(p, k));
+                    });
+                },
+
+                clearSpecChips: function(prefix, key) {
+                    this.writeFilterList(prefix, key, []);
+                    this.renderSpecChipGrid(prefix, key);
+                    this._triggerSpecLiveUpdate(prefix);
+                },
+
+                toggleSpecChip: function(prefix, key, value) {
+                    const sel = this.readFilterList(prefix, key);
+                    const idx = sel.indexOf(value);
+                    const wasAdded = idx === -1;
+                    if (wasAdded) sel.push(value); else sel.splice(idx, 1);
+                    this.writeFilterList(prefix, key, sel);
+                    this.renderSpecChipGrid(prefix, key);
+                    if (wasAdded) this._applySpecSmartRules(prefix, key, value);
+                    this._triggerSpecLiveUpdate(prefix);
+                },
+
+                // Auto-corrects impossible pairings the moment a chip is toggled
+                // on (all rules are backed by actual database cross-tabs, so a
+                // combo left untouched is guaranteed to have entries). Every
+                // change ships with an undo toast.
+                _applySpecSmartRules: function(prefix, key, value) {
+                    const before = {
+                        driver: this.readFilterList(prefix, 'driver'),
+                        connector: this.readFilterList(prefix, 'connector'),
+                        formfactor: this.readFilterList(prefix, 'formfactor')
+                    };
+                    const changes = [];
+                    const wirelessFF = ['Wireless Earbuds (TWS)', 'Wireless Over-Ear Headphones'];
+                    const wiredConns = ['2-pin', 'MMCX', 'QDC', 'A2DC', 'Detachable Cable', 'Fixed Cable', 'Proprietary', 'Electrostatic'];
+
+                    if (key === 'formfactor') {
+                        let conns = this.readFilterList(prefix, 'connector');
+                        const removed = [];
+                        if (wirelessFF.indexOf(value) !== -1) {
+                            const dropped = conns.filter(c => wiredConns.indexOf(c) !== -1);
+                            conns = conns.filter(c => wiredConns.indexOf(c) === -1);
+                            if (conns.indexOf('Bluetooth') === -1) conns.push('Bluetooth');
+                            changes.push({ kind: 'connector', removed: dropped, added: ['Bluetooth'] });
+                        } else {
+                            if (conns.indexOf('Bluetooth') !== -1) removed.push('Bluetooth');
+                            conns = conns.filter(c => c !== 'Bluetooth');
+                            if (value === 'IEM' || value === 'Earbuds (Wired)') {
+                                if (conns.indexOf('Electrostatic') !== -1) removed.push('Electrostatic');
+                                conns = conns.filter(c => c !== 'Electrostatic');
+                            }
+                            if (removed.length) changes.push({ kind: 'connector', removed: removed, added: [] });
+                        }
+                        this.writeFilterList(prefix, 'connector', conns);
+                    } else if (key === 'connector') {
+                        let ffs = this.readFilterList(prefix, 'formfactor');
+                        const removed = [];
+                        if (value === 'Bluetooth') {
+                            const dropped = ffs.filter(f => wirelessFF.indexOf(f) !== -1);
+                            ffs = ffs.filter(f => wirelessFF.indexOf(f) === -1);
+                            if (dropped.length) changes.push({ kind: 'formfactor', removed: dropped, added: [] });
+                        } else if (value === 'Electrostatic') {
+                            const invalidFF = ['IEM', 'Earbuds (Wired)', 'Wireless Earbuds (TWS)', 'Wireless Over-Ear Headphones'];
+                            const dropped = ffs.filter(f => invalidFF.indexOf(f) !== -1);
+                            ffs = ffs.filter(f => invalidFF.indexOf(f) === -1);
+                            if (dropped.length) changes.push({ kind: 'formfactor', removed: dropped, added: [] });
+                        } else {
+                            const dropped = ffs.filter(f => wirelessFF.indexOf(f) !== -1);
+                            ffs = ffs.filter(f => wirelessFF.indexOf(f) === -1);
+                            if (dropped.length) changes.push({ kind: 'formfactor', removed: dropped, added: [] });
+                        }
+                        this.writeFilterList(prefix, 'formfactor', ffs);
+                    } else if (key === 'driver' && value === 'PZT') {
+                        const drv = this.readFilterList(prefix, 'driver');
+                        const added = [];
+                        if (drv.indexOf('Hybrid') === -1) { drv.push('Hybrid'); added.push('Hybrid'); }
+                        if (drv.indexOf('Tribrid') === -1) { drv.push('Tribrid'); added.push('Tribrid'); }
+                        this.writeFilterList(prefix, 'driver', drv);
+                        if (added.length) changes.push({ kind: 'driver', removed: [], added: added });
+                    }
+
+                    if (changes.length) {
+                        this.renderSpecChipGrid(prefix, 'driver');
+                        this.renderSpecChipGrid(prefix, 'connector');
+                        this.renderSpecChipGrid(prefix, 'formfactor');
+                        const parts = [];
+                        changes.forEach(ch => {
+                            const bits = [];
+                            if (ch.removed.length) bits.push(ch.removed.join(', ') + ' removed');
+                            if (ch.added.length) bits.push(ch.added.join(', ') + ' added');
+                            parts.push(bits.join(' · '));
+                        });
+                        showToast(`${parts.join(' — ')} · ${this._smartRuleReason(changes)}`, '🧩', {
+                            duration: 6000,
+                            action: {
+                                label: '↩ Undo',
+                                onClick: () => {
+                                    this.writeFilterList(prefix, 'driver', before.driver);
+                                    this.writeFilterList(prefix, 'connector', before.connector);
+                                    this.writeFilterList(prefix, 'formfactor', before.formfactor);
+                                    this.renderSpecChipGrid(prefix, 'driver');
+                                    this.renderSpecChipGrid(prefix, 'connector');
+                                    this.renderSpecChipGrid(prefix, 'formfactor');
+                                    this._triggerSpecLiveUpdate(prefix);
+                                }
+                            }
+                        });
+                    }
+                },
+
+                _smartRuleReason: function(changes) {
+                    for (const ch of changes) {
+                        if (ch.kind === 'connector' && ch.added.indexOf('Bluetooth') !== -1) return 'wireless form factors always use Bluetooth';
+                        if (ch.kind === 'connector' && ch.removed.indexOf('Bluetooth') !== -1) return 'Bluetooth pairs with wireless form factors only';
+                        if (ch.kind === 'connector' && ch.removed.indexOf('Electrostatic') !== -1) return 'Electrostatic connectors appear only on Over-Ear Headphones (Wired)';
+                        if (ch.kind === 'formfactor' && ch.removed.length) return 'that combination would return no matches';
+                        if (ch.kind === 'driver' && ch.added.length) return 'PZT only exists inside Hybrid/Tribrid configs';
+                    }
+                    return 'adjusted for a valid combination';
+                },
+
+                _triggerSpecLiveUpdate: function(prefix) {
+                    if (prefix === 'ug' && this._upgradeHasRun && this.selectedUpgradeBaseIemId) {
+                        this._debouncedRun(this.renderUpgradePathway, 'ug');
+                    } else if (prefix === 'gk' && this._gkHasRun && this.selectedGkFlagshipId) {
+                        this._debouncedRun(this.scanGiantKillers, 'gk');
+                    } else if (prefix === 'eg' && this._egHasRun) {
+                        this._debouncedRun(this.scanEndgameSets, 'eg');
+                    }
+                },
+
+                // ---- OR-union match semantics for the multi-select lists ----
+                matchesDriverList: function(db, vals) {
+                    if (!vals || vals.length === 0) return true;
+                    if (!db) return false;
+                    const type = db.driver_type || '';
+                    if (vals.indexOf(type) !== -1) return true;
+                    if (!type) {
+                        const techs = this.parseDriverConfig(db.driver_config);
+                        return techs.length === 1 && vals.indexOf(techs[0]) !== -1;
+                    }
+                    return false;
+                },
+
+                matchesConnectorList: function(db, vals) {
+                    if (!vals || vals.length === 0) return true;
+                    if (!db || !db.connector) return false;
+                    const dbArr = Array.isArray(db.connector) ? db.connector : [db.connector];
+                    const dbStr = dbArr.join(' ').toLowerCase();
+                    return vals.some(v => {
+                        const t = String(v).toLowerCase();
+                        if (t === 'mmcx') return dbStr.indexOf('mmcx') !== -1;
+                        if (t === '2-pin') return dbStr.indexOf('2-pin') !== -1 || dbStr.indexOf('2pin') !== -1 || dbStr.indexOf('0.78') !== -1;
+                        if (t === 'qdc') return dbStr.indexOf('qdc') !== -1;
+                        return dbStr.indexOf(t) !== -1;
+                    });
+                },
+
+                matchesFormFactorList: function(db, vals) {
+                    if (!vals || vals.length === 0) return true;
+                    const ff = String((db && db.form_factor) || 'IEM').toLowerCase().trim();
+                    return vals.some(v => ff === String(v).toLowerCase().trim());
                 },
 
                 cycleCustomOption: function(prefix, key, dir) {
@@ -24428,7 +24661,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     this._pickGroupList().forEach(group => {
                         if (!group.items.length) return;
                         html += `<div class="pick-group">
-                            <span class="pick-group-label ${group.cls || 'text-zinc-400'}">${group.emoji} ${group.title}</span>
+                            <span class="pick-group-label ${group.cls || 'text-zinc-400'}">${group.title}</span>
                             <div class="pick-group-grid">`;
                         group.items.forEach(p => {
                             const sel = findSel(p);
@@ -24561,12 +24794,8 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     "A2DC": '<img src="icons/a2dc.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
                     "Fixed Cable": '<img src="icons/fixed.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
                     "Detachable Cable": '<img src="icons/detach.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
-                    "3.5mm": '<img src="icons/3.5mm.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
-                    "4.4mm": '<img src="icons/4.4mm.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
-                    "6.35mm": '<img src="icons/6.35mm.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
-                    "XLR": '<img src="icons/xlr.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
-                    "Electrostatic": '<img src="icons/electro.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
-                    "Unknown": "❓"
+                    "Proprietary": '<img src="icons/proprietary.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
+                    "Electrostatic": '<img src="icons/electro.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">'
                 },
                 formFactorEmojis: {
                     'IEM': '<img src="icons/iem.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
@@ -24624,6 +24853,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
 
                     this.loadSavedTasteFavorites();
                     this.renderPickGrid();
+                    this.renderAllSpecChipGrids();
                     window.addEventListener('resize', () => this.fitPickGrid());
 
                     setTimeout(() => {
@@ -24756,26 +24986,14 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         if (itemPrice == null || isNaN(itemPrice) || itemPrice < f.priceLo || itemPrice > f.priceHi) return false;
                     }
 
-                    if (f.driver !== 'any' && f.driver !== '') {
-                        if (!this.driverFilterMatches(db, f.driver)) return false;
-                    }
+                    const driverList = this.toFilterList(f.driver);
+                    if (driverList.length && !this.matchesDriverList(db, driverList)) return false;
 
-                    if (f.connector !== 'any' && f.connector !== '') {
-                        if (!db.connector) return false;
-                        const targetConn = f.connector.toLowerCase().trim();
-                        const dbConnStr = Array.isArray(db.connector) ? db.connector.join(' ').toLowerCase() : String(db.connector).toLowerCase();
+                    const connList = this.toFilterList(f.connector);
+                    if (connList.length && !this.matchesConnectorList(db, connList)) return false;
 
-                        if (targetConn === 'mmcx' && !dbConnStr.includes('mmcx')) return false;
-                        else if (targetConn === '2-pin' && !dbConnStr.includes('2-pin') && !dbConnStr.includes('2pin') && !dbConnStr.includes('0.78')) return false;
-                        else if (targetConn === 'qdc' && !dbConnStr.includes('qdc')) return false;
-                        else if (!dbConnStr.includes(targetConn)) return false;
-                    }
-
-                    if (f.formFactor !== 'any' && f.formFactor !== '' && f.formFactor !== 'auto') {
-                        const itemFormFactor = String(db.form_factor || 'IEM').toLowerCase().trim();
-                        const targetFormFactor = f.formFactor.toLowerCase().trim();
-                        if (!itemFormFactor.includes(targetFormFactor) && !targetFormFactor.includes(itemFormFactor)) return false;
-                    }
+                    const ffList = this.toFilterList(f.formFactor);
+                    if (ffList.length && !this.matchesFormFactorList(db, ffList)) return false;
 
                     const metaPicks = (f.picks || []).filter(p => p.kind === 'meta');
                     if (metaPicks.length) {
@@ -26299,7 +26517,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         return;
                     }
                     if (PEQDB_Module.databaseFullyLoaded) {
-                        if (progressContainer) progressContainer.classList.add('hidden');
+                        this.hideIndexingProgressAfterMin();
                         return;
                     }
 
@@ -26331,10 +26549,30 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     if (text) text.textContent = percent + '%';
 
                     if (percent >= 100) {
-                        if (progressContainer) progressContainer.classList.add('hidden');
+                        this.hideIndexingProgressAfterMin();
                     } else {
+                        if (this._progressShownAt === undefined) this._progressShownAt = Date.now();
                         if (progressContainer) progressContainer.classList.remove('hidden');
                         if (status) status.textContent = `⚡ Indexing: ${indexedCount}/${totalCount} files cached...`;
+                    }
+                },
+
+                hideIndexingProgressAfterMin: function() {
+                    const progressContainer = document.getElementById('find-progress-container');
+                    if (!progressContainer || progressContainer.classList.contains('hidden')) return;
+                    if (this._progressShownAt === undefined) this._progressShownAt = Date.now();
+                    const minMs = 900;
+                    const elapsed = Date.now() - this._progressShownAt;
+                    const bar = document.getElementById('find-progress-bar');
+                    const text = document.getElementById('find-progress-text');
+                    if (bar) bar.style.width = '100%';
+                    if (text) text.textContent = '100%';
+                    if (elapsed >= minMs) {
+                        progressContainer.classList.add('hidden');
+                        this._progressShownAt = undefined;
+                    } else {
+                        if (this._progressHideTimer) clearTimeout(this._progressHideTimer);
+                        this._progressHideTimer = setTimeout(() => this.hideIndexingProgressAfterMin(), minMs - elapsed);
                     }
                 },
 
@@ -26450,6 +26688,16 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
 
                         if (!this.iemDatabase || this.iemDatabase.length === 0) {
                             showToast("Database failed to load — filters inactive.", "⚠️");
+                            this.isScanning = false;
+                            return;
+                        }
+
+                        // Pre-flight zero-check: estimate matches with the current
+                        // spec filters; a guaranteed-empty combo skips the scan
+                        // (and its overlay flash) entirely.
+                        const preflightCount = this.iemDatabase.filter(db => this.matchesSpecFilters(db, this.readSpecFilterValues())).length;
+                        if (preflightCount === 0) {
+                            showToast("No matches for these specs — try clearing a filter.", "🧩", { duration: 3200 });
                             this.isScanning = false;
                             return;
                         }
@@ -26832,9 +27080,9 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                     const targetInterp = CurveUtils.cubicSplineInterpolate(flagNorm, freqs);
 
                     const budgetLimit = parseFloat(document.getElementById('find-gk-budget-slider')?.value || 50);
-                    const selectedDriver = document.getElementById('gk-filter-driver')?.value || 'any';
-                    const selectedFormFactor = document.getElementById('gk-filter-formfactor')?.value || 'any';
-                    const selectedConnector = document.getElementById('gk-filter-connector')?.value || 'any';
+                    const selectedDrivers = this.readFilterList('gk', 'driver');
+                    const selectedFormFactors = this.readFilterList('gk', 'formfactor');
+                    const selectedConnectors = this.readFilterList('gk', 'connector');
 
                     // Phase 1: apply spec filters, collect candidates + what needs loading.
                     const candidates = [];
@@ -26849,23 +27097,11 @@ getDriveabilityStatus: function(impedance, sensitivity) {
 
                         if (!price || price > budgetLimit) continue;
 
-                        if (selectedDriver !== 'any' && !this.driverFilterMatches(dbEntry, selectedDriver)) continue;
+                        if (!this.matchesDriverList(dbEntry, selectedDrivers)) continue;
 
-                        if (selectedFormFactor !== 'any') {
-                            const ff = dbEntry ? (dbEntry.form_factor || 'IEM') : 'IEM';
-                            if (!ff.toLowerCase().includes(selectedFormFactor.toLowerCase())) continue;
-                        }
+                        if (!this.matchesFormFactorList(dbEntry, selectedFormFactors)) continue;
 
-                        if (selectedConnector !== 'any') {
-                            if (!dbEntry || !dbEntry.connector) continue;
-                            const targetConn = selectedConnector.toLowerCase().trim();
-                            const dbConnStr = Array.isArray(dbEntry.connector) ? dbEntry.connector.join(' ').toLowerCase() : String(dbEntry.connector).toLowerCase();
-
-                            if (targetConn === 'mmcx' && !dbConnStr.includes('mmcx')) continue;
-                            else if (targetConn === '2-pin' && !dbConnStr.includes('2-pin') && !dbConnStr.includes('2pin') && !dbConnStr.includes('0.78')) continue;
-                            else if (targetConn === 'qdc' && !dbConnStr.includes('qdc')) continue;
-                            else if (!dbConnStr.includes(targetConn)) continue;
-                        }
+                        if (!this.matchesConnectorList(dbEntry, selectedConnectors)) continue;
 
                         candidates.push({ item: item, price: price });
                         if (!item.data || item.data.length < 2) {
@@ -26993,9 +27229,9 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                         const dataset = PEQDB_Module.STATE.dataset || [];
                         const maxPrice = parseFloat(document.getElementById('find-endgame-budget-slider')?.value || 500);
 
-                        const selectedDriver = document.getElementById('eg-filter-driver')?.value || 'any';
-                        const selectedFormFactor = document.getElementById('eg-filter-formfactor')?.value || 'any';
-                        const selectedConnector = document.getElementById('eg-filter-connector')?.value || 'any';
+                        const selectedDrivers = this.readFilterList('eg', 'driver');
+                        const selectedFormFactors = this.readFilterList('eg', 'formfactor');
+                        const selectedConnectors = this.readFilterList('eg', 'connector');
 
                         // Phase 1: every item with a real price inside the budget.
                         // Unpriced entries are excluded entirely — none of the
@@ -27008,23 +27244,11 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                             const price = dbEntry && dbEntry.price_usd ? parseFloat(dbEntry.price_usd) : (item.price_usd ? parseFloat(item.price_usd) : null);
                             if (!price || price > maxPrice) continue;
 
-                            if (selectedDriver !== 'any' && !this.driverFilterMatches(dbEntry, selectedDriver)) continue;
+                            if (!this.matchesDriverList(dbEntry, selectedDrivers)) continue;
 
-                            if (selectedFormFactor !== 'any') {
-                                const ff = dbEntry ? (dbEntry.form_factor || 'IEM') : 'IEM';
-                                if (!ff.toLowerCase().includes(selectedFormFactor.toLowerCase())) continue;
-                            }
+                            if (!this.matchesFormFactorList(dbEntry, selectedFormFactors)) continue;
 
-                            if (selectedConnector !== 'any') {
-                                if (!dbEntry || !dbEntry.connector) continue;
-                                const targetConn = selectedConnector.toLowerCase().trim();
-                                const dbConnStr = Array.isArray(dbEntry.connector) ? dbEntry.connector.join(' ').toLowerCase() : String(dbEntry.connector).toLowerCase();
-
-                                if (targetConn === 'mmcx' && !dbConnStr.includes('mmcx')) continue;
-                                else if (targetConn === '2-pin' && !dbConnStr.includes('2-pin') && !dbConnStr.includes('2pin') && !dbConnStr.includes('0.78')) continue;
-                                else if (targetConn === 'qdc' && !dbConnStr.includes('qdc')) continue;
-                                else if (!dbConnStr.includes(targetConn)) continue;
-                            }
+                            if (!this.matchesConnectorList(dbEntry, selectedConnectors)) continue;
 
                             candidates.push(item);
                             if (!item.data || item.data.length < 2) {
@@ -28912,9 +29136,9 @@ applyGenreFilters: function(matches) {
                     const basePrice = baseDb && baseDb.price_usd ? parseFloat(baseDb.price_usd) : (baseItem.price_usd ? parseFloat(baseItem.price_usd) : 20);
                     const baseFormFactor = baseDb ? (baseDb.form_factor || 'IEM') : (baseItem.form_factor || 'IEM');
 
-                    const selectedFormFactor = document.getElementById('ug-filter-formfactor')?.value || 'any';
-                    const selectedDriver = document.getElementById('ug-filter-driver')?.value || 'any';
-                    const selectedConnector = document.getElementById('ug-filter-connector')?.value || 'any';
+                    const selectedFormFactors = this.readFilterList('ug', 'formfactor');
+                    const selectedDrivers = this.readFilterList('ug', 'driver');
+                    const selectedConnectors = this.readFilterList('ug', 'connector');
 
                     const priceMinEl = document.getElementById('ug-filter-price-min');
                     const priceMaxEl = document.getElementById('ug-filter-price-max');
@@ -28959,18 +29183,14 @@ applyGenreFilters: function(matches) {
                         if (candYear < ugYearMin || candYear > ugYearMax) continue;
 
                         const candFormFactor = candDb ? (candDb.form_factor || 'IEM') : (cand.form_factor || 'IEM');
-                        if (selectedFormFactor === 'auto') {
-                            if (candFormFactor.toLowerCase() !== baseFormFactor.toLowerCase()) continue;
-                        } else if (selectedFormFactor !== 'any') {
-                            if (candFormFactor.toLowerCase() !== selectedFormFactor.toLowerCase()) continue;
-                        }
+                        const ugWantsAuto = selectedFormFactors.indexOf('auto') !== -1;
+                        const ugFfRest = selectedFormFactors.filter(v => v !== 'auto');
+                        if (ugWantsAuto && candFormFactor.toLowerCase() !== baseFormFactor.toLowerCase()) continue;
+                        if (ugFfRest.length && !this.matchesFormFactorList(candDb, ugFfRest)) continue;
 
-                        if (selectedDriver !== 'any' && !this.driverFilterMatches(candDb, selectedDriver)) continue;
+                        if (!this.matchesDriverList(candDb, selectedDrivers)) continue;
 
-                        if (selectedConnector !== 'any') {
-                            const connStr = candDb && candDb.connector ? (Array.isArray(candDb.connector) ? candDb.connector.join(' ') : String(candDb.connector)) : '';
-                            if (!connStr.toLowerCase().includes(selectedConnector.toLowerCase())) continue;
-                        }
+                        if (!this.matchesConnectorList(candDb, selectedConnectors)) continue;
 
                         candidateEntries.push({ cand: cand, db: candDb, price: candPrice });
                     }
