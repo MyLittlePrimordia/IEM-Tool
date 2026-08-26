@@ -88,6 +88,34 @@ Standalone executables for managing database entries and measurement files:
 | **`Split Database.exe`** | Splits large JSON databases into smaller chunks to fit AI context windows for auditing. | Drag and drop `database.json` onto the `.exe`. Outputs to `/chunks`. |
 | **`Compress Database.exe`** | Compresses `database.json` into `database.json.gz` for faster in-app catalog loading. | Place next to `database.json` and run. |
 
+## 🔄 Updating the Catalog & Measurement Curves
+
+You do **not** need to redownload or reinstall the entire application to get newly added IEMs, headphones, and frequency response measurements. You can update your local database and curves independently in seconds:
+
+1. Head over to the **[📦 Official Database Repository](https://github.com/MyLittlePrimordia/Database)**.
+2. Click **Code** → **[Download ZIP](https://github.com/MyLittlePrimordia/Database/archive/refs/heads/main.zip)** (or `git pull` if cloned).
+3. Extract the archive and copy/overwrite the following into your **IEM Tool** directory:
+   * `database.json`
+   * `database.json.gz`
+   * `data/` *(folder containing all raw `.txt` measurement curve files)*
+
+   **Where to place them:**
+   * **Windows:** In the same folder as `IEM Tool.exe` (or inside the `resources/` folder if installed).
+   * **macOS:** Right-click `IEM Tool.app` → *Show Package Contents* → `Contents/Resources/`.
+   * **Linux:** In the same directory alongside the `AppImage` or executable.
+
+4. Relaunch **IEM Tool** — all newly added gear, graph curves, and auto-EQ target profiles will load automatically.
+
+---
+
+## 🔗 Ecosystem & Companion Tools
+
+| Repository | Description |
+| :--- | :--- |
+| **[🎧 IEM Tool](https://github.com/MyLittlePrimordia/IEM-Tool)** | The main desktop workspace for finding, tuning, testing, and reviewing IEMs. |
+| **[📦 Database](https://github.com/MyLittlePrimordia/Database)** | The central upstream repository hosting `database.json`, `database.json.gz`, and raw measurement curves. |
+| **[🛠️ Database Tool](https://github.com/MyLittlePrimordia/Database-Tool)** | A standalone Python/Tkinter desktop GUI for editing, auditing, and maintaining the catalog. |
+
 ---
 
 ## 💻 Development & Building
