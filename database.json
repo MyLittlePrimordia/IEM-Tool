@@ -2487,6 +2487,31 @@
     ]
   },
   {
+    "id": "aaw_canary_pro",
+    "brand": "AAW",
+    "model": "Canary",
+    "variant": "Pro",
+    "year": 2023,
+    "price_usd": 2300,
+    "driver_type": "Tribrid",
+    "driver_config": "2DD+8BA+4EST",
+    "impedance": 10,
+    "sensitivity": 100,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Punchy Bass",
+      "Resolving",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/CANARY PRO.txt"
+    ]
+  },
+  {
     "id": "aaw_halcyon",
     "brand": "AAW",
     "model": "Halcyon",
@@ -2785,6 +2810,31 @@
     ]
   },
   {
+    "id": "abyss_diana_dz",
+    "brand": "Abyss",
+    "model": "Diana",
+    "variant": "DZ",
+    "year": 2024,
+    "price_usd": 4000,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 50,
+    "sensitivity": 92,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Neutral",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DEN-FI/ABYSS DIANA DZ.txt"
+    ]
+  },
+  {
     "id": "abyss_diana_mr",
     "brand": "Abyss",
     "model": "Diana",
@@ -2806,6 +2856,81 @@
     ],
     "files": [
       "data/KR0MKA/ABYSS DIANA MR.txt"
+    ]
+  },
+  {
+    "id": "abyss_diana_phi",
+    "brand": "Abyss",
+    "model": "Diana",
+    "variant": "Phi",
+    "year": 2019,
+    "price_usd": 4000,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 32,
+    "sensitivity": 91,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Neutral",
+      "Punchy Bass",
+      "Resolving",
+      "Technical",
+      "Flagship"
+    ],
+    "files": [
+      "data/HANGOUT.AUDIO/ABYSS DIANA PHI.txt"
+    ]
+  },
+  {
+    "id": "abyss_diana_tc",
+    "brand": "Abyss",
+    "model": "Diana",
+    "variant": "TC",
+    "year": 2022,
+    "price_usd": 4500,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 69,
+    "sensitivity": 90,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Neutral",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DEN-FI/ABYSS DIANA TC.txt"
+    ]
+  },
+  {
+    "id": "abyss_diana_v2",
+    "brand": "Abyss",
+    "model": "Diana",
+    "variant": "V2",
+    "year": 2019,
+    "price_usd": 3000,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 42,
+    "sensitivity": 91,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Punchy Bass",
+      "Smooth",
+      "Warm",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/UNHEARD LAB/ABYSS DIANA V2.txt"
     ]
   },
   {
@@ -3293,6 +3418,30 @@
     ],
     "files": [
       "data/HANGOUT.AUDIO/ACOUSTUNE HS1790 TI.txt"
+    ]
+  },
+  {
+    "id": "acoustune_hs1900x_shinogi",
+    "brand": "Acoustune",
+    "model": "HS1900X",
+    "variant": "Shinogi",
+    "year": 2024,
+    "price_usd": 1150,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 24,
+    "sensitivity": 110,
+    "connector": "Proprietary",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Premium"
+    ],
+    "files": [
+      "data/EARPHONES ARCHIVE/ACOUSTUNE HS1900X SHINOGI.txt"
     ]
   },
   {
@@ -11971,6 +12120,54 @@
     ]
   },
   {
+    "id": "audio_technica_ath_im50",
+    "brand": "Audio-Technica",
+    "model": "ATH-IM50",
+    "variant": "",
+    "year": 2013,
+    "price_usd": 60,
+    "driver_type": "DD",
+    "driver_config": "2DD",
+    "impedance": 10,
+    "sensitivity": 108,
+    "connector": "Proprietary",
+    "form_factor": "IEM",
+    "tags": [
+      "Fun",
+      "Punchy Bass",
+      "Smooth",
+      "Warm",
+      "Budget"
+    ],
+    "files": [
+      "data/HU-FI/AUDIO-TECHNICA IM50.txt"
+    ]
+  },
+  {
+    "id": "audio_technica_ath_im70",
+    "brand": "Audio-Technica",
+    "model": "ATH-IM70",
+    "variant": "",
+    "year": 2013,
+    "price_usd": 110,
+    "driver_type": "DD",
+    "driver_config": "2DD",
+    "impedance": 10,
+    "sensitivity": 108,
+    "connector": "Proprietary",
+    "form_factor": "IEM",
+    "tags": [
+      "Fun",
+      "Punchy Bass",
+      "V-Shaped",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/EARPHONES ARCHIVE/AUDIO-TECHNICA ATH-IM70.txt"
+    ]
+  },
+  {
     "id": "audio_technica_ath_ls200",
     "brand": "Audio-Technica",
     "model": "ATH-LS200",
@@ -15659,7 +15856,7 @@
   },
   {
     "id": "beyerdynamic_amiron_100",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "Amiron",
     "variant": "100",
     "year": 2024,
@@ -15682,7 +15879,7 @@
   },
   {
     "id": "beyerdynamic_amiron_300",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "Amiron",
     "variant": "300",
     "year": 2024,
@@ -15705,7 +15902,7 @@
   },
   {
     "id": "beyerdynamic_amiron_home",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "Amiron",
     "variant": "Home",
     "year": 2016,
@@ -15731,7 +15928,7 @@
   },
   {
     "id": "beyerdynamic_amiron_wireless",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "Amiron",
     "variant": "Wireless",
     "year": 2018,
@@ -15756,7 +15953,7 @@
   },
   {
     "id": "beyerdynamic_aventho_300",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "Aventho",
     "variant": "300",
     "year": 2024,
@@ -15780,7 +15977,7 @@
   },
   {
     "id": "beyerdynamic_aventho_wireless",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "Aventho",
     "variant": "Wireless",
     "year": 2017,
@@ -15803,7 +16000,7 @@
   },
   {
     "id": "beyerdynamic_beat_byrd",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "Beat BYRD",
     "variant": "",
     "year": 2018,
@@ -15826,7 +16023,7 @@
   },
   {
     "id": "beyerdynamic_blue_byrd_2nd_gen",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "Blue Byrd",
     "variant": "2nd Gen",
     "year": 2021,
@@ -15849,7 +16046,7 @@
   },
   {
     "id": "beyerdynamic_custom_one_pro",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "Custom One",
     "variant": "Pro",
     "year": 2012,
@@ -15874,7 +16071,7 @@
   },
   {
     "id": "beyerdynamic_custom_studio",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "Custom Studio",
     "variant": "",
     "year": 2014,
@@ -15898,7 +16095,7 @@
   },
   {
     "id": "beyerdynamic_djx_1",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DJX-1",
     "variant": "",
     "year": 2004,
@@ -15921,7 +16118,7 @@
   },
   {
     "id": "beyerdynamic_dt_100",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 100",
     "variant": "",
     "year": 1965,
@@ -15946,7 +16143,7 @@
   },
   {
     "id": "beyerdynamic_dt_1350",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 1350",
     "variant": "",
     "year": 2011,
@@ -15970,7 +16167,7 @@
   },
   {
     "id": "beyerdynamic_dt_150",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 150",
     "variant": "",
     "year": 1970,
@@ -15996,7 +16193,7 @@
   },
   {
     "id": "beyerdynamic_dt_1770_pro",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 1770",
     "variant": "Pro",
     "year": 2015,
@@ -16023,7 +16220,7 @@
   },
   {
     "id": "beyerdynamic_dt_1770_pro_mkii",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 1770",
     "variant": "Pro MKII",
     "year": 2024,
@@ -16048,7 +16245,7 @@
   },
   {
     "id": "beyerdynamic_dt_177x_go",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 177X GO",
     "variant": "",
     "year": 2019,
@@ -16072,7 +16269,7 @@
   },
   {
     "id": "beyerdynamic_dt_1990_pro",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 1990",
     "variant": "Pro",
     "year": 2016,
@@ -16100,7 +16297,7 @@
   },
   {
     "id": "beyerdynamic_dt_1990_pro_mkii",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 1990",
     "variant": "Pro MKII",
     "year": 2024,
@@ -16126,7 +16323,7 @@
   },
   {
     "id": "beyerdynamic_dt_231",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 231",
     "variant": "",
     "year": 2003,
@@ -16149,7 +16346,7 @@
   },
   {
     "id": "beyerdynamic_dt_235",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 235",
     "variant": "",
     "year": 2005,
@@ -16173,7 +16370,7 @@
   },
   {
     "id": "beyerdynamic_dt_240_pro",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 240",
     "variant": "Pro",
     "year": 2017,
@@ -16198,7 +16395,7 @@
   },
   {
     "id": "beyerdynamic_dt_250",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 250",
     "variant": "",
     "year": 1999,
@@ -16225,7 +16422,7 @@
   },
   {
     "id": "beyerdynamic_dt_30_ie",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 30 IE",
     "variant": "",
     "year": 2026,
@@ -16249,7 +16446,7 @@
   },
   {
     "id": "beyerdynamic_dt_48_e",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 48",
     "variant": "E",
     "year": 1999,
@@ -16276,7 +16473,7 @@
   },
   {
     "id": "beyerdynamic_dt_700_pro_x",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 700",
     "variant": "Pro X",
     "year": 2021,
@@ -16303,7 +16500,7 @@
   },
   {
     "id": "beyerdynamic_dt_71_ie",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 71 IE",
     "variant": "",
     "year": 2025,
@@ -16327,7 +16524,7 @@
   },
   {
     "id": "beyerdynamic_dt_770_m",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 770",
     "variant": "M",
     "year": 2010,
@@ -16352,7 +16549,7 @@
   },
   {
     "id": "beyerdynamic_dt_770_pro",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 770",
     "variant": "Pro",
     "year": 1985,
@@ -16384,7 +16581,7 @@
   },
   {
     "id": "beyerdynamic_dt_770_pro_x_limited_edition",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 770",
     "variant": "Pro X Limited Edition",
     "year": 2024,
@@ -16411,7 +16608,7 @@
   },
   {
     "id": "beyerdynamic_dt_880",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 880",
     "variant": "",
     "year": 2003,
@@ -16423,12 +16620,12 @@
     "connector": "Fixed Cable",
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
-      "Reference",
-      "Neutral",
       "Detailed",
-      "Mid-Tier",
+      "Neutral",
+      "Reference",
       "Studio-Monitoring",
-      "Treblehead"
+      "Treblehead",
+      "Mid-Tier"
     ],
     "files": [
       "data/AURICULARES ARGENTINA/BEYERDYNAMIC DT 880.txt",
@@ -16443,8 +16640,33 @@
     ]
   },
   {
+    "id": "beyerdynamic_dt_880_pro",
+    "brand": "Beyerdynamic",
+    "model": "DT 880",
+    "variant": "Pro",
+    "year": 2008,
+    "price_usd": 200,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 250,
+    "sensitivity": 96,
+    "connector": "Fixed Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Neutral",
+      "Reference",
+      "Resolving",
+      "Studio-Monitoring",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/AURICULARES ARGENTINA/BEYERDYNAMIC DT 880PRO 250 OHMS.txt"
+    ]
+  },
+  {
     "id": "beyerdynamic_dt_900_pro_x",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 900",
     "variant": "Pro X",
     "year": 2021,
@@ -16473,7 +16695,7 @@
   },
   {
     "id": "beyerdynamic_dt_990_pro",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 990",
     "variant": "Pro",
     "year": 1991,
@@ -16506,7 +16728,7 @@
   },
   {
     "id": "beyerdynamic_dt_990_pro_black_edition",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DT 990",
     "variant": "Pro Black Edition",
     "year": 2019,
@@ -16532,7 +16754,7 @@
   },
   {
     "id": "beyerdynamic_dtx_300p",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DTX 300p",
     "variant": "",
     "year": 2011,
@@ -16555,7 +16777,7 @@
   },
   {
     "id": "beyerdynamic_dtx_350p",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "DTX 350p",
     "variant": "",
     "year": 2014,
@@ -16580,7 +16802,7 @@
   },
   {
     "id": "beyerdynamic_et1000",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "ET1000",
     "variant": "",
     "year": 1977,
@@ -16605,7 +16827,7 @@
   },
   {
     "id": "beyerdynamic_lagoon_anc",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "Lagoon ANC",
     "variant": "",
     "year": 2018,
@@ -16628,7 +16850,7 @@
   },
   {
     "id": "beyerdynamic_mmx_100",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "MMX 100",
     "variant": "",
     "year": 2021,
@@ -16651,7 +16873,7 @@
   },
   {
     "id": "beyerdynamic_mmx_150",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "MMX 150",
     "variant": "",
     "year": 2021,
@@ -16675,7 +16897,7 @@
   },
   {
     "id": "beyerdynamic_mmx_200_wireless",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "MMX 200",
     "variant": "Wireless",
     "year": 2023,
@@ -16698,7 +16920,7 @@
   },
   {
     "id": "beyerdynamic_mmx_300",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "MMX 300",
     "variant": "",
     "year": 2010,
@@ -16723,7 +16945,7 @@
   },
   {
     "id": "beyerdynamic_mmx_300_pro",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "MMX 300",
     "variant": "Pro",
     "year": 2024,
@@ -16749,7 +16971,7 @@
   },
   {
     "id": "beyerdynamic_t1",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "T1",
     "variant": "",
     "year": 2009,
@@ -16778,7 +17000,7 @@
   },
   {
     "id": "beyerdynamic_t1_2nd_generation",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "T1",
     "variant": "2nd Generation",
     "year": 2015,
@@ -16805,7 +17027,7 @@
   },
   {
     "id": "beyerdynamic_t1_3rd_generation",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "T1",
     "variant": "3rd Generation",
     "year": 2020,
@@ -16831,7 +17053,7 @@
   },
   {
     "id": "beyerdynamic_t5_3rd_generation",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "T5",
     "variant": "3rd Generation",
     "year": 2020,
@@ -16856,7 +17078,7 @@
   },
   {
     "id": "beyerdynamic_t50p",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "T50p",
     "variant": "",
     "year": 2010,
@@ -16880,7 +17102,7 @@
   },
   {
     "id": "beyerdynamic_t51i",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "T51i",
     "variant": "",
     "year": 2014,
@@ -16904,7 +17126,7 @@
   },
   {
     "id": "beyerdynamic_t5p",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "T5p",
     "variant": "",
     "year": 2010,
@@ -16931,7 +17153,7 @@
   },
   {
     "id": "beyerdynamic_t70",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "T70",
     "variant": "",
     "year": 2011,
@@ -16958,7 +17180,7 @@
   },
   {
     "id": "beyerdynamic_t70_p",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "T70",
     "variant": "P",
     "year": 2011,
@@ -16983,7 +17205,7 @@
   },
   {
     "id": "beyerdynamic_t90",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "T90",
     "variant": "",
     "year": 2012,
@@ -17009,7 +17231,7 @@
   },
   {
     "id": "beyerdynamic_tygr_300_r",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "TYGR 300",
     "variant": "R",
     "year": 2020,
@@ -17034,7 +17256,7 @@
   },
   {
     "id": "beyerdynamic_xelento",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "Xelento",
     "variant": "",
     "year": 2017,
@@ -17063,7 +17285,7 @@
   },
   {
     "id": "beyerdynamic_xelento_wireless",
-    "brand": "beyerdynamic",
+    "brand": "Beyerdynamic",
     "model": "Xelento",
     "variant": "Wireless",
     "year": 2018,
@@ -21103,6 +21325,31 @@
     ]
   },
   {
+    "id": "campfire_audio_black_star",
+    "brand": "Campfire Audio",
+    "model": "Black Star",
+    "variant": "",
+    "year": 2023,
+    "price_usd": 1000,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+3BA",
+    "impedance": 9,
+    "sensitivity": 94,
+    "connector": "MMCX",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Punchy Bass",
+      "Resolving",
+      "Smooth",
+      "Premium"
+    ],
+    "files": [
+      "data/ADEN/CAMPFIRE AUDIO BLACK STAR.txt"
+    ]
+  },
+  {
     "id": "campfire_audio_bonneville",
     "brand": "Campfire Audio",
     "model": "Bonneville",
@@ -22035,6 +22282,30 @@
     ],
     "files": [
       "data/HANGOUT.AUDIO/CANAL WORKS CW-U91.txt"
+    ]
+  },
+  {
+    "id": "canpur_cp32e",
+    "brand": "Canpur",
+    "model": "CP32E",
+    "variant": "",
+    "year": 2024,
+    "price_usd": 820,
+    "driver_type": "Hybrid",
+    "driver_config": "3BA+2EST",
+    "impedance": 10,
+    "sensitivity": 100,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Resolving",
+      "Smooth",
+      "Vocal-Focused",
+      "Premium"
+    ],
+    "files": [
+      "data/DCINSIDE/CANPUR CP32E.txt"
     ]
   },
   {
@@ -25502,6 +25773,30 @@
     ],
     "files": [
       "data/HANGOUT.AUDIO/CRAFT EARS AURUM.txt"
+    ]
+  },
+  {
+    "id": "craft_ears_craft_four",
+    "brand": "Craft Ears",
+    "model": "Craft Four",
+    "variant": "",
+    "year": 2020,
+    "price_usd": 600,
+    "driver_type": "BA",
+    "driver_config": "4BA",
+    "impedance": 10,
+    "sensitivity": 112,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Punchy Bass",
+      "Smooth",
+      "Vocal-Focused",
+      "Warm",
+      "Premium"
+    ],
+    "files": [
+      "data/EARPHONES ARCHIVE/CRAFT EARS CRAFT FOUR.txt"
     ]
   },
   {
@@ -33780,6 +34075,30 @@
     ]
   },
   {
+    "id": "empire_ears_zeus_xiv",
+    "brand": "Empire Ears",
+    "model": "Zeus",
+    "variant": "XIV",
+    "year": 2015,
+    "price_usd": 2100,
+    "driver_type": "BA",
+    "driver_config": "14BA",
+    "impedance": 21,
+    "sensitivity": 119,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Resolving",
+      "Vocal-Focused",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/PRECOGVISION/EMPIRE EARS ZEUS XIV.txt"
+    ]
+  },
+  {
     "id": "empire_ears_zeus_xr",
     "brand": "Empire Ears",
     "model": "Zeus",
@@ -39727,6 +40046,54 @@
     ]
   },
   {
+    "id": "final_audio_piano_forte_viii",
+    "brand": "Final Audio",
+    "model": "Piano Forte VIII",
+    "variant": "",
+    "year": 2012,
+    "price_usd": 900,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 108,
+    "connector": "Fixed Cable",
+    "form_factor": "Earbuds (Wired)",
+    "tags": [
+      "Bright",
+      "Detailed",
+      "Vocal-Focused",
+      "Wide-Stage",
+      "Premium"
+    ],
+    "files": [
+      "data/UNHEARD LAB/FINAL AUDIO PIANO FORTE VIII.txt"
+    ]
+  },
+  {
+    "id": "final_audio_piano_forte_x_g",
+    "brand": "Final Audio",
+    "model": "Piano Forte X",
+    "variant": "G",
+    "year": 2011,
+    "price_usd": 2600,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 108,
+    "connector": "Fixed Cable",
+    "form_factor": "Earbuds (Wired)",
+    "tags": [
+      "Detailed",
+      "Smooth",
+      "Warm",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DEN-FI/FINAL AUDIO PIANO FORTE X-G.txt"
+    ]
+  },
+  {
     "id": "final_audio_s4000",
     "brand": "Final Audio",
     "model": "S4000",
@@ -41331,6 +41698,30 @@
     ]
   },
   {
+    "id": "flipears_artha",
+    "brand": "Flipears",
+    "model": "Artha",
+    "variant": "",
+    "year": 2023,
+    "price_usd": 1500,
+    "driver_type": "BA",
+    "driver_config": "8BA",
+    "impedance": 16,
+    "sensitivity": 118,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Punchy Bass",
+      "Smooth",
+      "Vocal-Focused",
+      "Flagship"
+    ],
+    "files": [
+      "data/THEROLLO9/FLIPEARS ARTHA UU.txt"
+    ]
+  },
+  {
     "id": "flipears_artha_argentum",
     "brand": "Flipears",
     "model": "Artha",
@@ -42606,13 +42997,14 @@
     "connector": "Detachable Cable",
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
-      "Premium",
-      "Collab",
       "Balanced",
-      "Detailed"
+      "Collab",
+      "Detailed",
+      "Premium"
     ],
     "files": [
-      "data/HAWAII BAY BOY/FOSTEX MODHOUSE T60RP MKIII.txt"
+      "data/HAWAII BAY BOY/FOSTEX MODHOUSE T60RP MKIII.txt",
+      "data/KUULOKENURKKA/MODHOUSE AUDIO T60RP ARGON.txt"
     ]
   },
   {
@@ -48071,6 +48463,30 @@
     ],
     "files": [
       "data/ORATORY1990/HIFIMAN JADE II.txt"
+    ]
+  },
+  {
+    "id": "hifiman_re00",
+    "brand": "HIFIMAN",
+    "model": "RE00",
+    "variant": "",
+    "year": 2010,
+    "price_usd": 100,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 100,
+    "connector": "Fixed Cable",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Smooth",
+      "Vocal-Focused",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/ADEN/HIFIMAN RE-ZERO.txt"
     ]
   },
   {
@@ -58837,6 +59253,56 @@
     "files": [
       "data/INNERFIDELITY/KENNERTON MAGISTER.txt",
       "data/ORATORY1990/KENNERTON MAGISTER.txt"
+    ]
+  },
+  {
+    "id": "kennerton_odin",
+    "brand": "Kennerton",
+    "model": "Odin",
+    "variant": "",
+    "year": 2015,
+    "price_usd": 2250,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 35,
+    "sensitivity": 104,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Punchy Bass",
+      "Resolving",
+      "Warm",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/HANGOUT.AUDIO/KENNERTON ODIN.txt"
+    ]
+  },
+  {
+    "id": "kennerton_rognir",
+    "brand": "Kennerton",
+    "model": "Rognir",
+    "variant": "",
+    "year": 2021,
+    "price_usd": 3400,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 42,
+    "sensitivity": 100,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/BOIZOFF/KENNERTON ROGNIR.txt"
     ]
   },
   {
@@ -70448,29 +70914,6 @@
     ]
   },
   {
-    "id": "modhouse_audio_t60rp_argon",
-    "brand": "Modhouse Audio",
-    "model": "T60RP",
-    "variant": "Argon",
-    "year": 2020,
-    "price_usd": 500,
-    "driver_type": "Planar",
-    "driver_config": "1Planar",
-    "impedance": 50,
-    "sensitivity": 92,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Wide-Stage",
-      "Detailed",
-      "Premium",
-      "U-Shaped"
-    ],
-    "files": [
-      "data/KUULOKENURKKA/MODHOUSE AUDIO T60RP ARGON.txt"
-    ]
-  },
-  {
     "id": "modhouse_audio_tungsten",
     "brand": "Modhouse Audio",
     "model": "Tungsten",
@@ -72843,6 +73286,29 @@
       "data/HYPETHESONICS/MOONDROP S8.txt",
       "data/SQUIGLINK/MOONDROP S8.txt",
       "data/SUPER REVIEW/MOONDROP S8.txt"
+    ]
+  },
+  {
+    "id": "moondrop_shiroyuki",
+    "brand": "Moondrop",
+    "model": "ShiroYuki",
+    "variant": "",
+    "year": 2018,
+    "price_usd": 15,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 104,
+    "connector": "Fixed Cable",
+    "form_factor": "Earbuds (Wired)",
+    "tags": [
+      "Bright",
+      "Vocal-Focused",
+      "Wide-Stage",
+      "Budget"
+    ],
+    "files": [
+      "data/EARPHONES ARCHIVE/MOONDROP SHIRO-YUKI.txt"
     ]
   },
   {
@@ -76825,6 +77291,31 @@
     ]
   },
   {
+    "id": "noble_audio_ronin",
+    "brand": "Noble Audio",
+    "model": "Ronin",
+    "variant": "",
+    "year": 2023,
+    "price_usd": 3900,
+    "driver_type": "Hybrid",
+    "driver_config": "8BA+4EST",
+    "impedance": 17,
+    "sensitivity": 114,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Neutral",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/BLOOM AUDIO/NOBLE AUDIO RONIN.txt"
+    ]
+  },
+  {
     "id": "noble_audio_sage",
     "brand": "Noble Audio",
     "model": "Sage",
@@ -77095,6 +77586,30 @@
     ],
     "files": [
       "data/ORATORY1990/NOBLE AUDIO XM 1.txt"
+    ]
+  },
+  {
+    "id": "noble_audio_zephyr",
+    "brand": "Noble Audio",
+    "model": "Zephyr",
+    "variant": "",
+    "year": 2020,
+    "price_usd": 1450,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+2BA",
+    "impedance": 32,
+    "sensitivity": 108,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Punchy Bass",
+      "Smooth",
+      "Vocal-Focused",
+      "Premium"
+    ],
+    "files": [
+      "data/DUNG LE/NOBLE ZEPHYR.txt"
     ]
   },
   {
@@ -77480,6 +77995,31 @@
     ]
   },
   {
+    "id": "nostalgia_audio_camelot",
+    "brand": "Nostalgia Audio",
+    "model": "Camelot",
+    "variant": "",
+    "year": 2022,
+    "price_usd": 2600,
+    "driver_type": "Tribrid",
+    "driver_config": "2DD+4BA+4EST",
+    "impedance": 13,
+    "sensitivity": 114,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Punchy Bass",
+      "Resolving",
+      "Smooth",
+      "Flagship"
+    ],
+    "files": [
+      "data/ELISE AUDIO/NOSTALGIA AUDIO CAMELOT.txt"
+    ]
+  },
+  {
     "id": "nostalgia_audio_durandal",
     "brand": "Nostalgia Audio",
     "model": "Durandal",
@@ -77533,6 +78073,31 @@
     ],
     "files": [
       "data/JOYCES REVIEW/NOSTAGLGIA AUDIO PENDRAGON.txt"
+    ]
+  },
+  {
+    "id": "nostalgia_audio_tesseract",
+    "brand": "Nostalgia Audio",
+    "model": "Tesseract",
+    "variant": "",
+    "year": 2023,
+    "price_usd": 3500,
+    "driver_type": "Hybrid",
+    "driver_config": "10BA+6EST",
+    "impedance": 18,
+    "sensitivity": 118,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Neutral",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/ELISE AUDIO/NOSTALGIA AUDIO TESSERACT.txt"
     ]
   },
   {
@@ -83040,6 +83605,31 @@
     ]
   },
   {
+    "id": "pmg_audio_apx",
+    "brand": "PMG Audio",
+    "model": "APX",
+    "variant": "",
+    "year": 2024,
+    "price_usd": 6500,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD+8BA+2Planar",
+    "impedance": 5,
+    "sensitivity": 107,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/ELISE AUDIO/PMG APX.txt"
+    ]
+  },
+  {
     "id": "pmg_audio_apx_me",
     "brand": "PMG Audio",
     "model": "APX",
@@ -85811,6 +86401,31 @@
     ],
     "files": [
       "data/ORATORY1990/RAAL CA1A.txt"
+    ]
+  },
+  {
+    "id": "raal_immanis",
+    "brand": "Raal",
+    "model": "Immanis",
+    "variant": "",
+    "year": 2024,
+    "price_usd": 10000,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 32,
+    "sensitivity": 84,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Neutral",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/LISTENER/RAAL IMMANIS.txt"
     ]
   },
   {
@@ -100635,6 +101250,30 @@
     ],
     "files": [
       "data/HEADPHONE.COM LEGACY/SONY MDR DS6000.txt"
+    ]
+  },
+  {
+    "id": "sony_mdr_e888",
+    "brand": "Sony",
+    "model": "MDR-E888",
+    "variant": "",
+    "year": 1995,
+    "price_usd": 80,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 108,
+    "connector": "Fixed Cable",
+    "form_factor": "Earbuds (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Smooth",
+      "Vocal-Focused",
+      "Budget"
+    ],
+    "files": [
+      "data/EARPHONES ARCHIVE/SONY MDR-E888.txt"
     ]
   },
   {
@@ -122535,6 +123174,30 @@
     ]
   },
   {
+    "id": "westone_audio_um2",
+    "brand": "Westone Audio",
+    "model": "UM2",
+    "variant": "",
+    "year": 2005,
+    "price_usd": 300,
+    "driver_type": "BA",
+    "driver_config": "2BA",
+    "impedance": 27,
+    "sensitivity": 119,
+    "connector": "Fixed Cable",
+    "form_factor": "IEM",
+    "tags": [
+      "Punchy Bass",
+      "Smooth",
+      "Studio-Monitoring",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/HOBBY TALK/WESTONE UM2.txt"
+    ]
+  },
+  {
     "id": "westone_audio_um3x",
     "brand": "Westone Audio",
     "model": "UM3X",
@@ -125960,17 +126623,42 @@
     "connector": "Detachable Cable",
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
+      "Balanced",
+      "Detailed",
+      "Punchy Bass",
       "Resolving",
       "Technical",
-      "Flagship",
-      "Good-Imaging",
       "Wide-Stage",
-      "Detailed",
-      "Balanced"
+      "Flagship"
     ],
     "files": [
-      "data/KR0MKA/ZMF CALDERA.txt",
-      "data/KUULOKENURKKA/ZMF CALDERA.txt"
+      "data/DEN-FI/ZMF CALDERA OPEN.txt"
+    ]
+  },
+  {
+    "id": "zmf_caldera_closed",
+    "brand": "ZMF",
+    "model": "Caldera",
+    "variant": "Closed",
+    "year": 2024,
+    "price_usd": 3500,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 60,
+    "sensitivity": 95,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Punchy Bass",
+      "Resolving",
+      "Technical",
+      "Warm",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DEN-FI/ZMF CALDERA CLOSED.txt"
     ]
   },
   {
