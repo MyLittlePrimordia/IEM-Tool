@@ -8,14 +8,14 @@ INPUT HANDLING MODES
 The user may provide input in three ways:
 
 1. PRODUCT NAME ONLY (e.g., "Moondrop Chu 3", "Pula Arc", "BQEYZ Winter", "Letshuoer EJ10"):
-   - Research official technical specifications using the Multi-Source Confidence Protocol.
+   - Research official technical specifications using the Manufacturer & Multi-Source Hierarchy.
    - Normalize model name and official variant/generation.
    - Generate the complete JSON entry.
    - Set "files": [].
 
 2. MEASUREMENT FILE PATH & PRODUCT NAME (e.g., "data/SUPER REVIEW/MOONDROP CHU 3.txt"):
    - Extract the product name from the file path.
-   - Research official technical specifications.
+   - Research official technical specifications using the Manufacturer & Multi-Source Hierarchy.
    - Normalize model name and official variant/generation.
    - Place the exact, unedited file path into the "files" array.
 
@@ -48,6 +48,31 @@ Every generated entry MUST follow this exact JSON structure:
 Do NOT add, remove, rename, or reorder any fields.
 
 ==================================================
+STRICT ZERO-VALUE (0) RESTRICTIONS
+==================================================
+1. "impedance" and "sensitivity" are ONLY permitted to be 0 for "Wireless Earbuds (TWS)" entries.
+2. For ALL wired entries ("IEM", "Earbuds (Wired)", "Over-Ear Headphones (Wired)"), 0 is STRICTLY FORBIDDEN and indicates missing/unpopulated data. You MUST research and populate verified numerical specs for impedance (Ω) and sensitivity (dB/mW, dB/SPL, or dB/Vrms).
+3. "year" and "price_usd" must NEVER be 0. Research the verified launch year and original launch MSRP.
+4. "variant" is the ONLY field permitted to be an empty string ("") if no official variant exists.
+
+==================================================
+TRUSTED SOURCE HIERARCHY & POPULATION PROTOCOL
+==================================================
+When researching specifications online, strictly follow this authority hierarchy:
+
+1. TIER 1A: DIRECT MANUFACTURER SOURCES (HIGHEST SUPREME AUTHORITY)
+   - Official brand websites, official spec sheets, official product user manuals, and manufacturer product launch press releases (e.g., moondrop.com, sennheiser.com, dunu.com, fiio.com, sony.com).
+   - RULE: If a Tier 1A manufacturer source contradicts third-party retailers (e.g., manufacturer says launch MSRP is $30 in 2023, while Amazon/HiFiGo lists $19.99 in 2024), Tier 1A ALWAYS WINS and overrides all others.
+
+2. TIER 1B: VERIFIED AUTHORIZED DISTRIBUTORS & MEASUREMENT DATABASES
+   - Only used when Tier 1A manufacturer data is unavailable or defunct.
+   - Requires consensus of AT LEAST TWO matching Tier 1B sources (e.g., Linsoul + Head-Fi, or Squiglink + Audio Science Review).
+
+3. TIER 2: LOW / CONFLICTING THIRD-PARTY SOURCES
+   - Random marketplace listings, conflicting forum rumors, or unverified secondary sellers.
+   - RULE: Do NOT use Tier 2 data if it conflicts with known specs. Keep searching until Tier 1 consensus is established. Never guess.
+
+==================================================
 MODEL / VARIANT NORMALIZATION & ID RULES
 ==================================================
 Always isolate the root product family from official generations, revisions, collaborations, and retail DSP editions.
@@ -69,24 +94,9 @@ Always isolate the root product family from official generations, revisions, col
 3. "id" Formatting:
    - Lowercase alphanumeric characters and underscores ONLY.
    - If variant exists: brand_model_variant (e.g., "moondrop_chu_iii", "moondrop_chu_ii_dsp", "bose_quietcomfort_35_ii", "dunu_sa6_mkii", "truthear_zero_red")
-   - If variant is empty (""): brand_model (e.g., "moondrop_chu", "moondrop_aria", "tangzu_waner")
-   - NEVER leave a trailing underscore (e.g., NEVER "moondrop_chu_" or "tangzu_waner_").
+   - If variant is empty (""): brand_model (e.g., "moondrop_chu", "moondrop_aria", "tangzu_wan_er_s_g")
+   - NEVER leave a trailing underscore (e.g., NEVER "moondrop_chu_" or "tangzu_wan_er_").
    - Strip all symbols, periods, colons, hyphens, slashes, and apostrophes.
-
-==================================================
-MULTI-SOURCE CONSENSUS & CONFIDENCE PROTOCOL
-==================================================
-Before assigning any technical specification (price, drivers, impedance, sensitivity, connector), evaluate source confidence:
-
-1. HIGH CONFIDENCE (Required to fill specifications):
-   - Tier 1A: Confirmed via official manufacturer product page / spec sheet.
-   - Tier 1B: Confirmed across AT LEAST TWO independent trusted sources with matching data (e.g., Linsoul + Head-Fi; or Squiglink match + HiFiGo).
-   -> ACTION: Populate the field.
-
-2. LOW / MIXED CONFIDENCE (Discrepancies or single unverified forum post):
-   - Sources disagree (e.g., Site A says 16Ω, Site B says 32Ω; or Site A says 1DD+1BA, Site B says 1DD+2BA).
-   - Only a single unverified blog or forum rumor is found.
-   -> ACTION: Set the field to safe fallback: 0 for numbers, "" for strings. Never guess.
 
 ==================================================
 PRODUCT IDENTITY vs MEASUREMENT CONDITIONS & DSP
@@ -117,9 +127,9 @@ Create separate entries ONLY when the manufacturer officially released a distinc
 FIELD RULES & SPECIFICATIONS
 ==================================================
 brand: Official manufacturer name only.
-year: Original launch/release year (integer only, 1950 or later).
-price_usd: Original launch MSRP in USD only (Integer only, round to nearest $5: e.g., 99 -> 100).
-impedance & sensitivity: Whole integers only. Set to 0 if unverifiable.
+year: Original launch/release year (integer only, 1950 or later; NEVER 0).
+price_usd: Original launch MSRP in USD only (Integer only, rounded to nearest $5: e.g., $99 -> 100, $239 -> 240; NEVER 0).
+impedance & sensitivity: Whole integers only. ONLY permitted to be 0 for "Wireless Earbuds (TWS)". For wired entries, you MUST research verified specs (0 is forbidden).
 
 ==================================================
 FORM FACTOR & CONNECTOR CONSISTENCY MATRIX
@@ -133,18 +143,28 @@ connector (9 values ONLY):
 MANDATORY HARD PAIRING RULES:
 1. Wireless Devices:
    - "Wireless Earbuds (TWS)" and "Wireless Over-Ear Headphones" MUST use connector "Bluetooth" (even if a backup analog cable is included in the box).
+   - Neckband & Tethered Wireless Earphones: Wireless tethered/neckband earphones (e.g., BeatsX, Beats Flex, Blue Byrd, B&O Earset Wireless) MUST use form_factor "Wireless Earbuds (TWS)" and connector "Bluetooth" with impedance 0 and sensitivity 0, as no separate neckband category exists.
+
 2. Wired In-Ear Devices ("IEM" & "Earbuds (Wired)"):
    - Detachable IEMs/Earbuds: MUST record the SHELL SOCKET type ("2-pin", "MMCX", "QDC", "A2DC") or "Proprietary" for manufacturer-specific sockets with NO standard replacement-cable compatibility.
-   - Non-detachable hardwired IEMs/Earbuds: MUST use "Fixed Cable" (e.g., Moondrop Quarks, Tanya DSP, Chu I).
+   - Non-detachable hardwired IEMs/Earbuds: MUST use "Fixed Cable" (e.g., Moondrop Quarks, Tanya DSP, Chu I, FiiO FD11 fixed variants).
    - HARD FORBIDDEN: "IEM" and "Earbuds (Wired)" CANNOT use "Bluetooth", "Detachable Cable", or "Electrostatic".
+   
+   - Chi-Fi Shrouded/Hooded 2-Pin Rule (QDC vs 2-pin):
+     Brands such as KZ, CCA, TRN, CVJ, QKZ, CCZ, and TFZ frequently label their hooded/extruded sockets as "0.75mm 2-pin", "0.78mm hooded", or "Type-C 2-Pin" in marketing copy. If the IEM shell physically uses protruding/hooded plastic-shrouded sockets (KZ C-Pin / QDC / TFZ style), it MUST be classified as "QDC".
+     Only classify as "2-pin" if the socket is standard flat-flush or recessed (e.g., standard 0.78mm flush 2-pin like CCA Phoenix, Moondrop Aria).
+
 3. Wired Over-Ear Headphones:
-   - Use "Detachable Cable", "Fixed Cable", or "Electrostatic".
+   - Use "Detachable Cable", "Fixed Cable", "Proprietary", or "Electrostatic".
    - HARD FORBIDDEN: "Over-Ear Headphones (Wired)" CANNOT use "Bluetooth".
-4. Electrostatic Distinction:
-   - connector "Electrostatic" is strictly for headphones requiring high-voltage bias energizers (Stax, Sennheiser HE 1).
-   - IEMs containing Sonion EST drivers connect via standard "2-pin" or "MMCX", NEVER "Electrostatic".
-5. Proprietary Socket Examples (IEMs only):
-   - Brise Audio Fugaku, Etymotic ERX/EVO, Madoo Type 512/711, Noble XM1, Phonak PFE 232, Sleek SA6, PSB M4U 4, Hercules Noah.
+
+4. Proprietary Sockets (IEMs & Headphones):
+   - Strictly for manufacturer-specific sockets with NO universal 2-pin/MMCX compatibility (e.g., Linum Bax T2 on Westone Pro X series, Pentaconn Ear on Intime/Acoustune, Sennheiser IE 8/80/80S proprietary 2-pin, Brise Audio Fugaku, Etymotic ERX/EVO, Madoo Type 512/711, Noble XM1, Phonak PFE 232, Sleek SA6, PSB M4U 4, Hercules Noah).
+
+5. Electrostatic Distinction & Impedance:
+   - IEMs containing internal Sonion EST drivers connect via standard "2-pin" or "MMCX", NEVER "Electrostatic".
+   - Full-size or in-ear dedicated electrostatic earspeakers requiring high-voltage DC bias energizers (STAX, Warwick Acoustics, Sennheiser HE 60/90, KingSound) MUST use connector "Electrostatic".
+   - For electrostatic earspeakers, official manufacturer-rated impedance represents 10 kHz capacitive reactance (typically 100,000 Ω to 360,000 Ω). Do NOT replace verified high-impedance electrostatic specs with generic 32-ohm placeholders.
 
 ==================================================
 DRIVER CONFIGURATION & CLASSIFICATION RULES
@@ -152,26 +172,38 @@ DRIVER CONFIGURATION & CLASSIFICATION RULES
 Allowed driver_type values ONLY:
 DD, BA, BC, Planar, Hybrid, Tribrid, EST, MEMS, PZT
 
-STRICT WHITESPACE RULE FOR driver_config:
-- NO WHITESPACE around "+" (e.g., "1DD+1BA", "1DD+4BA+2EST", "2DD+4BA+1BC").
+STRICT WHITESPACE & ORDERING RULES FOR driver_config:
+- NO WHITESPACE around "+" (e.g., "1DD+2BA", "1DD+4BA+2EST", "2DD+4BA+1BC").
 - FORBIDDEN: "1DD + 1BA", "1DD + 4BA".
+- Mandatory Canonical Driver Ordering Sequence:
+  DD -> BA -> Planar -> EST -> MEMS -> PZT -> BC
+  (Example: "1DD+2BA+1Planar+2EST+1BC", NOT "1DD+1Planar+2BA+1BC+2EST")
 
 CLASSIFICATION LOGIC:
-1. Single Technology (ANY count of the same driver type):
+1. Per-Side Transducer Rule:
+   - All driver counts MUST reflect active transducers PER EARPIECE / PER SIDE ONLY (e.g., an IEM marketed as "10 Drivers HiFi Earphones" with 5 BAs per ear is "driver_config": "5BA", NOT "10BA").
+
+2. Single Technology (ANY count of the same driver type is NOT a Hybrid):
    - Any count of Dynamic Drivers (1DD, 2DD, 3DD, 4DD)         → driver_type = "DD"
    - Any count of Balanced Armatures (1BA, 2BA, 4BA, 8BA, 12BA) → driver_type = "BA"
    - Any count of Planars (1Planar, 2Planar)                   → driver_type = "Planar"
    - Any count of Bone Conduction (1BC, 2BC)                   → driver_type = "BC"
    - Any count of EST / MEMS / PZT alone                       → driver_type = "EST" / "MEMS" / "PZT"
 
-2. Multi-Technology Systems:
-   - Exactly 2 different technologies (e.g., 1DD+1BA, 1DD+1Planar, 1DD+1BC, 2DD+4BA) → driver_type = "Hybrid"
-   - 3 or more different technologies (e.g., 1DD+4BA+2EST, 1DD+2BA+1BC)              → driver_type = "Tribrid"
+3. Multi-Technology Systems:
+   - Exactly 2 different technologies (e.g., 1DD+1BA, 1DD+1Planar, 1DD+1BC, 2DD+4BA, 5BA+4EST) → driver_type = "Hybrid"
+   - 3 or more different technologies (e.g., 1DD+2BA+1Planar, 1DD+4BA+2EST+1BC)                 → driver_type = "Tribrid"
 
-Mandatory Secondary Driver Search:
-- Always search specifically for Bone Conduction (BC), Piezoelectric (PZT), EST, and MEMS.
-- Bone conduction MUST be a true physical audio transducer (do not classify haptic rumble motors as BC).
-- If unverified: driver_config: "" and driver_type: "".
+4. Acoustic Marketing Traps & Guardrails:
+   - "Dual Magnetic Circuit", "Dual Cavity", "Dual Chamber", or "Dual Voice Coil" describe internal magnetic/acoustic structure of a single dynamic driver → ALWAYS "1DD", NEVER "2DD".
+   - Only classify as "2DD" or "3DD" if there are physically 2 or 3 separate, distinct dynamic driver units inside each earpiece (e.g., Truthear Zero, KZ Castor, Soratune YI01, Reecho Spring).
+   - Passive Radiators (e.g., BQEYZ Cloud, Binary 1900, Binary Dynaquattro, Softears Enigma, Tanchjim Soda) are acoustic resonance elements, NOT active powered transducers. Do NOT count passive radiators in driver_config or driver_type (e.g., 1 dynamic driver + 1 passive unit = "1DD", driver_type "DD").
+   - Chi-Fi "Electret/EST" Trap: Low-voltage ceramic piezoelectric tweeters (e.g., KZ, CCA, Senfer, TRN) without dedicated active step-up transformers MUST be classified as "PZT", NEVER "EST". True "EST" in IEMs refers exclusively to electrostatic tweeters powered by dedicated internal step-up transformers (e.g., Sonion EST65/EST70).
+
+5. Secondary Driver Verification:
+   - Always search specifically for Bone Conduction (BC), Piezoelectric (PZT), EST, and MEMS.
+   - Bone conduction MUST be a true physical audio transducer (do not classify haptic rumble motors as BC).
+   - If unverified: driver_config: "" and driver_type: "".
 
 ==================================================
 TAGS RULES & APPROVED TAGS LIST (31 APPROVED TAGS)
@@ -237,19 +269,22 @@ PRE-OUTPUT SELF-CHECK CHECKLIST (MANDATORY)
 Before outputting EVERY entry, verify:
 1. model is root name only (e.g., "Chu") and variant holds generation/edition (e.g., "III").
 2. id format is brand_model_variant or brand_model (no trailing underscore when variant is empty).
-3. driver_config has NO SPACES around "+" (e.g., "1DD+2BA").
-4. driver_type correctly classifies single technologies (e.g., "2DD" is "DD", not "Hybrid").
-5. No forbidden conflicting tag pairs are present.
-6. Exactly ONE price tier tag matches price_usd.
-7. Form factor and connector strictly match the pairing matrix.
-8. Total tag count is between 4 and 12.
+3. driver_config has NO SPACES around "+" and strictly follows canonical order (DD -> BA -> Planar -> EST -> MEMS -> PZT -> BC).
+4. driver_config reflects active transducers PER EAR only, and driver_type correctly classifies single technologies (e.g., "2DD" is "DD", not "Hybrid") while ignoring passive radiators.
+5. "Dual-Magnetic" / "Dual-Cavity" dynamic units are correctly classified as "1DD".
+6. impedance and sensitivity are non-zero for wired entries (only permitted to be 0 for TWS).
+7. year and price_usd are verified and non-zero.
+8. No forbidden conflicting tag pairs are present.
+9. Exactly ONE price tier tag matches price_usd.
+10. Form factor and connector strictly match the pairing matrix (including QDC for shrouded Chi-Fi sockets and Bluetooth for neckbands).
+11. Total tag count is between 4 and 12.
 
 ==================================================
 SECTIONAL PROCESSING & OUTPUT FORMAT
 ==================================================
 - Process strictly 3 to 5 items per turn.
 - Output a 1-line source comment above each entry:
-  // Sources: [List verified sources or FR measurement curve analysis]
+  // Sources: [List verified Tier 1A manufacturer sources / Tier 1B sources or FR measurement curve analysis]
 - Output clean, copy-paste-ready JSON.
 - End each section with:
   "Section complete. Reply 'Continue' to process the next section."

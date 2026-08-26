@@ -25,9 +25,24 @@
   "build": {
     "appId": "com.mylittleprimordia.iemtool",
     "productName": "IEM Tool",
-    "asar": false,
+    "asar": true,
     "files": [
-      "**/*"
+      "main.js",
+      "preload.js",
+      "package.json",
+      "index.html",
+      "css/**/*",
+      "js/**/*",
+      "icons/**/*",
+      "fonts/**/*",
+      "data/**/*",
+      "audio/**/*",
+      "sounds/**/*",
+      "effects/**/*",
+      "database.json",
+      "database.json.gz",
+      "icon.*",
+      "favicon.png"
     ],
     "directories": {
       "output": "dist"

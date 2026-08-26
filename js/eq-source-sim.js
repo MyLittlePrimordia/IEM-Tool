@@ -1,6 +1,11 @@
 const EQ_SourceSimMethods = {
         applySourceSimulation: function() {
-            if (!this.graphBuilt) return;
+            if (!this.graphBuilt) {
+                if (this._queuePendingDsp) this._queuePendingDsp('simulation');
+                else { this._pendingDspQueue = this._pendingDspQueue || []; if (!this._pendingDspQueue.includes('simulation')) this._pendingDspQueue.push('simulation'); if (!this.graphBuilt) this.ensureDSPGraph && this.ensureDSPGraph().catch(()=>{}); }
+                this.drawCurve && this.drawCurve();
+                return;
+            }
             const dacName = IEM_Module.dacTiers[IEM_Module.currentDacIdx];
             
             let lowCutF = 10;
@@ -42,7 +47,15 @@ const EQ_SourceSimMethods = {
             this.sourceSimHighG = highCutG;
             this.sourceSimGain = headroomGain;
 
+            // Apply hardware headroom as a flat gain at the inputGainNode (before worklet).
+            // This replaces the old approach of baking headroom into the worklet preamp,
+            // which caused double-attenuation and conflated user preamp with hardware limits.
+            if (EQ_Module.inputGainNode) {
+                setAudioParamSmooth(EQ_Module.inputGainNode.gain, headroomGain, 0.02);
+            }
+
             // Send DAC simulation parameters to worklet simulation filters (indices 10 & 11)
+            // These are the frequency-dependent low/high shelf cuts only.
             if (SharedAudio.workletNode) {
                 SharedAudio.workletNode.port.postMessage({
                     type: 'updateSimulations',
@@ -52,7 +65,7 @@ const EQ_SourceSimMethods = {
                     ]
                 });
                 
-                // Triggers preamp update to handle dac headroom scaling
+                // Preamp no longer includes headroomGain; just refresh to sync UI
                 this.updatePreamp();
             }
             this.drawCurve();
@@ -139,7 +152,11 @@ const EQ_SourceSimMethods = {
             const displayEl = document.getElementById('sim-tip-strength-val');
             if (displayEl) displayEl.textContent = strengthVal + "%";
             
-            if (!this.graphBuilt || !SharedAudio.workletNode) return;
+            if (!this.graphBuilt || !SharedAudio.workletNode) {
+                if (this._queuePendingDsp) this._queuePendingDsp('simulation');
+                else { this._pendingDspQueue = this._pendingDspQueue || []; if (!this._pendingDspQueue.includes('simulation')) this._pendingDspQueue.push('simulation'); if (!this.graphBuilt) this.ensureDSPGraph && this.ensureDSPGraph().catch(()=>{}); }
+                return;
+            }
             
             const tip = this.simState.tip;
             const depth = this.simState.depth;
@@ -244,6 +261,11 @@ const EQ_SourceSimMethods = {
             if (!this.gearSimOptions) return;
             const gear = this.gearSimOptions[this.currentGearIdx || 0];
             if (!gear) return;
+            if (!this.graphBuilt || !SharedAudio.workletNode) {
+                if (this._queuePendingDsp) this._queuePendingDsp('gear');
+                else { this._pendingDspQueue = this._pendingDspQueue || []; if (!this._pendingDspQueue.includes('gear')) this._pendingDspQueue.push('gear'); if (!this.graphBuilt) this.ensureDSPGraph && this.ensureDSPGraph().catch(()=>{}); }
+                return;
+            }
 
             if (SharedAudio.workletNode) {
                 SharedAudio.workletNode.port.postMessage({

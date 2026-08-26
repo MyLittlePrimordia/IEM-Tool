@@ -880,7 +880,7 @@
                             <button type="button" onclick="FindEngine.cycleRightTab(1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">▶</button>
                         </div>
 
-                        <div id="find-right-panel-taste" class="find-right-panel flex flex-col gap-2 flex-1 min-h-0 overflow-y-auto px-2.5" style="scrollbar-width: thin;">
+                        <div id="find-right-panel-taste" class="find-right-panel flex flex-col gap-1.5 flex-1 min-h-0 overflow-hidden px-2">
                             <span class="text-xs font-black text-rose-400 uppercase tracking-wider block flex-shrink-0">❤️ Taste Matcher (Top 3)</span>
 
                             <div class="relative flex-shrink-0">
@@ -893,7 +893,7 @@
 
                             </div>
 
-                            <button id="find-taste-btn-scan" onclick="FindEngine.scanTasteMatches()" class="w-full h-10 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-black text-xs shadow transition-transform cursor-pointer flex items-center justify-center gap-2 border-2 border-black flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed" disabled>
+                            <button id="find-taste-btn-scan" onclick="FindEngine.scanTasteMatches()" class="w-full h-9 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-black text-xs shadow transition-transform cursor-pointer flex items-center justify-center gap-2 border-2 border-black flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed" disabled>
                             <span>❤️</span> FIND MY TASTE
                         </button>
 
@@ -905,7 +905,7 @@
                             </div>
                         </div>
 
-                        <div id="find-right-panel-giantkiller" class="find-right-panel hidden flex flex-col gap-2 flex-1 min-h-0 overflow-y-auto px-2.5" style="scrollbar-width: thin;">
+                        <div id="find-right-panel-giantkiller" class="find-right-panel hidden flex flex-col gap-1.5 flex-1 min-h-0 overflow-hidden px-2">
 
                             <div class="space-y-1 flex-shrink-0">
                                 <span class="text-xs font-black text-amber-500 uppercase tracking-wider block">1. Select Flagship IEM (tagged or $1000+)</span>
@@ -916,14 +916,11 @@
                                     <div id="find-gk-scroll" class="overflow-y-auto max-h-40 space-y-1 pr-2"></div>
                                 </div>
                                 </div>
-                                <div id="find-gk-flagship-slot" class="w-full h-9 border-2 border-dashed border-black bg-black/10 flex items-center justify-center select-none mt-1.5">
+                                <div id="find-gk-flagship-slot" class="w-full h-9 border-2 border-dashed border-black bg-black/10 flex flex-col items-center justify-center select-none mt-1.5">
                                     <span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Select Flagship Target</span>
                                 </div>
-                            </div>
-
-                            <div class="space-y-1.5 flex-shrink-0 pt-1">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-xs font-black text-emerald-400 uppercase tracking-wider">2. Max Budget Ceiling</span>
+                                <div class="flex justify-between items-center mt-1">
+                                    <span class="text-[9px] font-black text-zinc-400 uppercase tracking-wider">Budget Limit</span>
                                     <span id="find-gk-budget-val" class="font-mono text-emerald-400 text-xs font-bold">$50 Max</span>
                                 </div>
                                 <input type="range" id="find-gk-budget-slider" min="15" max="200" step="5" value="50" class="w-full cursor-pointer" oninput="FindEngine.updateGkBudgetDisplay(this.value)" onchange="FindEngine.rerunGiantKillersIfLive()">
@@ -937,26 +934,25 @@
                                     <input type="hidden" id="gk-filter-formfactor" value="[]">
                                     <span class="text-[9px] font-black uppercase tracking-wider text-zinc-400 block">Form Factor</span>
                                     <div id="grid-gk-filter-formfactor" class="spec-chip-grid"></div>
-
                                     <input type="hidden" id="gk-filter-driver" value="[]">
                                     <span class="text-[9px] font-black uppercase tracking-wider text-zinc-400 block">Driver Type</span>
                                     <div id="grid-gk-filter-driver" class="spec-chip-grid"></div>
-
                                     <input type="hidden" id="gk-filter-connector" value="[]">
                                     <span class="text-[9px] font-black uppercase tracking-wider text-zinc-400 block">Connector</span>
                                     <div id="grid-gk-filter-connector" class="spec-chip-grid"></div>
+
                                 </div>
                             </div>
 
-                            <div class="pt-1 border-t-[3px] border-black flex-shrink-0">
-                                <button id="find-gk-btn" onclick="FindEngine.scanGiantKillers()" class="w-full h-10 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-black text-xs shadow transition-transform cursor-pointer flex items-center justify-center gap-2 border-2 border-black flex-shrink-0">
+                            <div class="pt-1 flex-shrink-0">
+                                <button id="find-gk-btn" onclick="FindEngine.scanGiantKillers()" class="w-full h-9 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-black text-xs shadow transition-transform cursor-pointer flex items-center justify-center gap-2 border-2 border-black flex-shrink-0">
                                     <span>💎</span> FIND GEMS
                                 </button>
                             </div>
 
                         </div>
 
-                        <div id="find-right-panel-upgrade" class="find-right-panel hidden flex flex-col gap-2 flex-1 min-h-0 overflow-y-auto px-2.5" style="scrollbar-width: thin;">
+                        <div id="find-right-panel-upgrade" class="find-right-panel hidden flex flex-col gap-1.5 flex-1 min-h-0 overflow-hidden px-2">
 
                             <div class="space-y-1 flex-shrink-0">
                                 <span class="text-xs font-black text-amber-500 uppercase tracking-wider block">1. Select Owned / Loved IEM</span>
@@ -974,11 +970,13 @@
                             <div class="space-y-1 flex-shrink-0">
                                 <span class="text-xs font-black text-sky-400 uppercase tracking-wider block">2. Choose Upgrade Goal</span>
                                 <div class="flex items-center gap-1.5 w-full">
-                                    <button onclick="FindEngine.cycleGoalIndex(-1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                                    <button id="ug-goal-cycle-btn" onclick="FindEngine.cycleGoalIndex(1)" class="flex-1 h-8 bg-[var(--bg-input)] border-[3px] border-black text-[var(--text-main)] font-black text-xs flex items-center justify-center px-2.5 truncate cursor-pointer shadow-none">
-                                        <span class="emoji-font vibrant-emoji text-xl w-6 h-6 inline-flex items-center justify-center leading-none mr-1.5 anim-toggle-pop">🎧</span> Detail Upgrade
+                                    <button type="button" onclick="FindEngine.cycleGoalIndex(-1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
+                                    <button type="button" id="ug-goal-cycle-btn" onclick="FindEngine.cycleGoalIndex(1)" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none">
+                                        <span class="flex items-center justify-center gap-1.5 truncate text-[var(--text-main)] font-black uppercase tracking-wider">
+                                            <span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🎧</span> Detail Upgrade
+                                        </span>
                                     </button>
-                                    <button onclick="FindEngine.cycleGoalIndex(1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">▶</button>
+                                    <button type="button" onclick="FindEngine.cycleGoalIndex(1)" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">▶</button>
                                 </div>
                             </div>
 
@@ -1023,15 +1021,15 @@
                                 </div>
                             </div>
 
-<div class="pt-1 border-t-[3px] border-black flex-shrink-0">
-                                <button id="find-upgrade-btn" onclick="FindEngine.renderUpgradePathway()" class="w-full h-10 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-black text-xs shadow transition-transform cursor-pointer flex items-center justify-center gap-2 border-2 border-black flex-shrink-0">
+                            <div class="pt-1 flex-shrink-0">
+                                <button id="find-upgrade-btn" onclick="FindEngine.renderUpgradePathway()" class="w-full h-9 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-black text-xs shadow transition-transform cursor-pointer flex items-center justify-center gap-2 border-2 border-black flex-shrink-0">
                                     <span>🚀</span> FIND UPGRADES
                                 </button>
                             </div>
 
                         </div>
 
-                        <div id="find-right-panel-endgame" class="find-right-panel hidden flex flex-col gap-2 flex-1 min-h-0 overflow-y-auto px-2.5" style="scrollbar-width: thin;">
+                        <div id="find-right-panel-endgame" class="find-right-panel hidden flex flex-col gap-1.5 flex-1 min-h-0 overflow-hidden px-2">
 
                             <div class="space-y-1.5 flex-shrink-0 pt-1">
                                 <div class="flex justify-between items-center">
@@ -1061,13 +1059,13 @@
                                 </div>
                             </div>
 
-                            <div class="pt-1 border-t-[3px] border-black flex-shrink-0">
-                                <button id="find-endgame-btn" onclick="FindEngine.scanEndgameSets()" class="w-full h-10 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-black text-xs shadow transition-transform cursor-pointer flex items-center justify-center gap-2 border-2 border-black flex-shrink-0">
+                            <div class="pt-1 flex-shrink-0">
+                                <button id="find-endgame-btn" onclick="FindEngine.scanEndgameSets()" class="w-full h-9 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-black text-xs shadow transition-transform cursor-pointer flex items-center justify-center gap-2 border-2 border-black flex-shrink-0">
                                     <span>👑</span> Find My Endgame
                                 </button>
                             </div>
 
-                            <div class="p-2 bg-black/50 border-2 border-black text-[9px] font-bold text-zinc-400 leading-relaxed flex-shrink-0">
+                            <div class="p-1.5 bg-black/50 border-2 border-black text-[9px] font-bold text-zinc-400 leading-relaxed flex-shrink-0">
                                 <span class="text-sky-400 font-black uppercase tracking-wider block mb-0.5">How it works</span>
                                 One box per category — use the <span class="text-white font-black">◄ ►</span> arrows to cycle through the top candidates, with the <span class="text-amber-400 font-black">👑 Champion</span> (best score under budget) first. <span class="text-emerald-400 font-black">✅ Confirmed</span> = curve matches its tags, <span class="text-sky-400 font-black">🔬 Measured</span> = curve fits despite its tags, <span class="text-red-400 font-black">⚠️ Tag Conflict</span> = tags claim it but the curve disagrees. The <span class="text-amber-300 font-black">💎 Value</span> strip collects the best <span class="text-emerald-400 font-black">💥 Giant Killer</span> of every champion — ≥75% similar for under 40% of its price.
                             </div>
@@ -1377,8 +1375,8 @@
                                     <button id="eqAutoGainMatchBtn" onclick="EQ.toggleAutoGainMatch()" class="retro-switch-btn font-black text-xs h-8 flex items-center justify-center cursor-pointer truncate" title="Keeps volume steady when you turn the EQ on/off">
                                         GAIN: OFF
                                     </button>
-                                    <button id="eqToggleBtn" onclick="EQ.toggleEQ()" class="retro-switch-btn font-black text-xs h-8 flex items-center justify-center cursor-pointer truncate" title="Turn the EQ on or off">
-                                        EQ: OFF
+                                    <button id="eqToggleBtn" onclick="EQ.toggleEQ()" class="retro-switch-btn is-on font-black text-xs h-8 flex items-center justify-center cursor-pointer truncate" title="Turn the EQ on or off">
+                                        EQ: ON
                                     </button>
                                 </div>
                             </div>
@@ -1993,7 +1991,7 @@
                                 <div class="border-t-[3px] border-black my-3"></div>
 
                                 <div class="space-y-2">
-                                    <span class="text-xs font-black uppercase tracking-widest text-indigo-400 block">📡 Sweeps &amp; Signals</span>
+                                    <span class="text-xs font-black uppercase tracking-widest text-indigo-400 block">Sweeps &amp; Signals</span>
                                     <div class="grid grid-cols-2 gap-2" id="diagnostic-sweeps-grid">
                                         <button onclick="Mascot.triggerTemporaryExpression('sub_bass',2500); TestLab.playSweep(20, 60, 2)" class="btn-clear text-stone-200 font-bold text-xs h-8 px-1 truncate flex items-center justify-center gap-1">🌋 Sub Bass</button>
                                         <button onclick="Mascot.triggerTemporaryExpression('mid_bass',2200); TestLab.playSweep(60, 200, 2)" class="btn-clear text-stone-200 font-bold text-xs h-8 px-1 truncate flex items-center justify-center gap-1">🤤 Mid Bass</button>
@@ -2051,7 +2049,7 @@
 
                                 <div id="ab-panel-fade" class="space-y-2 flex flex-col pt-1">
                                     <div class="w-full select-none pt-0.5">
-                                        <span class="text-xs font-black uppercase tracking-widest text-amber-400 block whitespace-nowrap">🎚️ Crossfade</span>
+                                        <span class="text-xs font-black uppercase tracking-widest text-amber-400 block whitespace-nowrap">Crossfade</span>
                                     </div>
                                     <div class="flex items-center gap-2 px-1 w-full">
                                         <span class="text-xs font-black text-amber-500 bg-amber-900/20 px-2 py-0.5 border-2 border-black flex-shrink-0" id="label-a">A</span>
@@ -2071,7 +2069,7 @@
 
                                 <div id="ab-panel-game" class="flex flex-col gap-1.5 pt-0.5">
                                     <div class="w-full select-none pt-0.5">
-                                        <span class="text-xs font-black uppercase tracking-widest text-indigo-400 block whitespace-nowrap">🎮 Blind A/B/X Test</span>
+                                        <span class="text-xs font-black uppercase tracking-widest text-indigo-400 block whitespace-nowrap">Blind Test</span>
                                     </div>
                                     <div class="flex items-center gap-2 w-full">
                                         <button id="abx-trials-prev" onclick="TestLab.abxCycleTrials(-1)" class="btn-clear text-stone-200 font-black text-xs h-8 w-8 flex items-center justify-center cursor-pointer flex-shrink-0">◀</button>
@@ -2621,7 +2619,7 @@
 
         <canvas id="global-spores-canvas" style="position: fixed; inset: 0; pointer-events: none; z-index: 99999; display: none;"></canvas>
 
-        <script src="js/bundle-version.js?v=22c656a24007"></script>
+        <script src="js/bundle-version.js?v=35eac9c05d59"></script>
         <script>
           // Packaged builds serve the minified bundle via ?packaged=1.
           // Cache-bust with the content hash written by scripts/build-bundle.mjs

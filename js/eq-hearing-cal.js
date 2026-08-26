@@ -1,6 +1,12 @@
 const EQ_HearingCalMethods = {
             hearingCalEnabled: false,
             hearingOffsets: [0, 0, 0, 0, 0, 0, 0, 0], // Map to 250, 500, 1k, 2k, 4k, 8k, 12k, 16k
+            // MUST stay in sync with applyHearingCalibrationGains() below and the
+            // export loops (eq-export.js). getCompositeFilterMagnitude
+            // (app-core.js) keys its drawn hearing-cal block off this property,
+            // so leaving it undefined silently dropped the calibration from the
+            // graph while the worklet kept applying it.
+            hearingCalibrationFrequencies: [250, 500, 1000, 2000, 4000, 8000, 12000, 16000],
             resonanceCalEnabled: false,
             volumeCompEnabled: false,
             toggleResonanceCal: function() {
@@ -72,6 +78,12 @@ const EQ_HearingCalMethods = {
                     }
                 }
                 this._hearingMaxBoost = this.hearingCalEnabled ? maxBoost : 0;
+                if (!this.graphBuilt || !SharedAudio.workletNode) {
+                    if (this._queuePendingDsp) this._queuePendingDsp('hearing');
+                    else { this._pendingDspQueue = this._pendingDspQueue || []; if (!this._pendingDspQueue.includes('hearing')) this._pendingDspQueue.push('hearing'); if (!this.graphBuilt) this.ensureDSPGraph && this.ensureDSPGraph().catch(()=>{}); }
+                    this.updatePreamp();
+                    return;
+                }
 
                 if (SharedAudio.workletNode) {
                     const sims = [];

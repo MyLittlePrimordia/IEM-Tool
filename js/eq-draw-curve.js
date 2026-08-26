@@ -7,10 +7,16 @@ const EQ_DrawCurveMethods = {
         const now = Date.now();
         const isDragging = this.isDragging;
         
+        // Slider-driven tuning (preamp / master bass+treble / EQ band sliders)
+        // sets _liveDragUntil so these redraws get the same 16ms interaction
+        // budget as graph-node drags. Without it every slider tick fell into
+        // the 50ms idle bucket (~20fps), which read as visible lag.
+        const liveDrag = !!(this._liveDragUntil && performance.now() < this._liveDragUntil);
+        
         // Throttle every draw, not just during playback: the overlay can keep
         // scheduling frames while paused, and a visible graph pays for every
         // redraw. Node dragging keeps the 60 FPS interaction budget.
-        const limit = isDragging ? 16 : (this.showSpectrumOverlay ? 24 : 50);
+        const limit = (isDragging || liveDrag) ? 16 : (this.showSpectrumOverlay ? 24 : 50);
         if (now - this.lastDrawTime < limit) {
             // Trailing edge: guarantee the final state is drawn once the
             // throttle window closes, so the last update is never dropped

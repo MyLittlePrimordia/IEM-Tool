@@ -2330,26 +2330,31 @@ input[type="range"].iem-slider::-moz-range-progress,
         #find-pick-grid {
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 4px;
             width: 100%;
-            --pick-emoji: 20px;
+            /* Uniform icon size for every spec/tag badge in the Find > Specs
+               panel. Sized to fill the panel's spare vertical space without
+               introducing a scrollbar at typical window heights; all FX
+               decoration sizes below scale off this variable so they stay
+               proportional. Must match fitPickGrid() in app-core.js. */
+            --pick-emoji: 19px;
         }
         .pick-group {
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 2px;
             min-width: 0;
         }
         .pick-group-label {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 900;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             line-height: 1.2;
-            padding: 2px 0;
+            padding: 1px 0;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -2357,8 +2362,15 @@ input[type="range"].iem-slider::-moz-range-progress,
         }
         .pick-group-grid {
             display: grid;
-            grid-template-columns: repeat(12, 1fr);
-            gap: 3px;
+            /* auto-fill adapts the column count to the pane width. The old
+               fixed repeat(12, 1fr) forced 12 columns even when the pane was
+               too narrow for 12 x min-width badges, clipping the last icon of
+               every row against the right edge (hidden by overflow-x). */
+            grid-template-columns: repeat(auto-fill, minmax(26px, 1fr));
+            /* Fixed row height keeps tag rows pixel-identical to the spec
+               icon rows above, independent of emoji font metrics. */
+            grid-auto-rows: 26px;
+            gap: 2px;
             width: 100%;
         }
         /* ---- Genre-Target AutoEQ (🎯 dropdown on the EQ tab Match badges) ---- */
@@ -2543,10 +2555,13 @@ min-width: 200px;
         }
 
         .find-pick-badge {
-            display: flex;
+            display: inline-flex;
             align-items: center;
             justify-content: center;
-            min-width: 0;
+            width: 26px;
+            height: 26px;
+            min-width: 26px;
+            min-height: 26px;
             padding: 0;
             position: relative;
             background: transparent;
@@ -2555,52 +2570,93 @@ min-width: 200px;
             outline: none !important;
             cursor: pointer;
             user-select: none;
-            filter: grayscale(1) opacity(0.3);
-            transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275), filter 0.15s;
+            filter: grayscale(1) opacity(0.35);
+            transition: transform 0.12s ease-out, filter 0.12s ease-out;
+            box-sizing: border-box;
+            transform-origin: center center;
         }
         .find-pick-badge .emoji-font {
-            font-size: var(--pick-emoji, 20px);
+            font-size: 19px;
             line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
         .find-pick-badge:hover {
-            transform: scale(1.25);
-            filter: grayscale(0.5) opacity(0.9);
+            /* Hover feedback is filter-only. A transform scale here grows the
+               badge past its fixed grid row, which extends the scrollable
+               overflow of #find-scroll-area — flashing a vertical scrollbar
+               whose appearance/disappearance then re-wraps every auto-fill
+               column (icons visibly jump). Filters don't touch geometry. */
+            filter: grayscale(0.2) opacity(0.95);
         }
         .find-pick-badge.on {
             filter: none;
         }
         .find-pick-badge.on:hover {
-            transform: scale(1.25);
-            filter: drop-shadow(0 0 6px var(--accent-blue));
+            filter: drop-shadow(0 0 4px var(--accent-blue));
         }
         /* ---- multi-select spec chips (form factor / driver / connector) ---- */
+        /* Rendered as bare find-pick-badge buttons (icon only, no boxes) so
+           they match the Tuning/Music/Gaming/Other tag badges exactly with full symmetry. */
         .spec-chip-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(24px, 1fr));
+            /* Same uniform sizing as the tag badges (26px cells) so the whole
+               Specs panel shares one icon scale and fits without scrolling.
+               auto-fill prevents right-edge clipping on narrow panes. */
+            grid-template-columns: repeat(auto-fill, minmax(26px, 1fr));
+            grid-auto-rows: 26px;
             gap: 2px;
-            margin: 0 2px;
+            margin: 0;
             width: 100%;
+            box-sizing: border-box;
         }
         .spec-chip-grid .find-pick-badge {
-            min-height: 24px;
+            width: 26px;
+            height: 26px;
+            min-width: 26px;
+            min-height: 26px;
         }
         .spec-chip-grid .find-pick-badge img {
+            /* Icon PNGs carry transparent padding, so at the nominal badge
+               size their painted ink looks smaller than an emoji glyph in the
+               same cell. Oversize the box slightly (within the 26px cell) so
+               the visible ink matches the tag icons below. */
             width: 24px;
             height: 24px;
             object-fit: contain;
             pointer-events: none;
+            display: block;
         }
         .spec-chip-grid .find-pick-badge .emoji-font {
-            font-size: 20px;
+            font-size: 19px;
             line-height: 1;
         }
         .spec-chip-grid .find-pick-badge:hover {
-            transform: scale(1.15);
-            filter: grayscale(0.5) opacity(0.9);
+            filter: grayscale(0.2) opacity(0.95);
         }
         .spec-chip-grid .find-pick-badge.on:hover {
-            transform: scale(1.15);
-            filter: drop-shadow(0 0 5px var(--accent-blue));
+            filter: drop-shadow(0 0 4px var(--accent-blue));
+        }
+        #find-scroll-area,
+        #find-filter-drawer,
+        #ug-filter-drawer,
+        #eg-filter-drawer,
+        #gk-filter-drawer,
+        .pick-group-grid,
+        .spec-chip-grid {
+            overflow-x: hidden !important;
+            max-width: 100%;
+        }
+        /* The chip/tag grids clip their own ink: hover and click-FX
+           decorations (::before/::after, up to ~2.6x the badge size) must
+           never extend the scrollable overflow — any growth here toggles the
+           panel scrollbar and re-wraps every auto-fill column mid-hover.
+           (#find-scroll-area keeps its vertical scroll as the fallback for
+           very short windows; only the grids are hard-clipped.) */
+        .pick-group-grid,
+        .spec-chip-grid {
+            overflow-y: hidden !important;
         }
         /* ---- pick tag select FX (each tag gets its own signature move) ---- */
         .fx-play {

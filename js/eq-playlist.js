@@ -14,11 +14,28 @@ const EQ_PlaylistMethods = {
         // the user's music volume node. No UI. Toggle optional via
         // localStorage key "settings_loudness_match" ("0" to disable).
         _loudnessGains: {},      // key -> linear gain factor (1 = no change)
+        _loudnessGainOrder: [],  // LRU order, oldest first
+        _LOUDNESS_CACHE_MAX: 120,
         _activeKey: null,        // key of the currently loaded/playing track
         _targetTrackKey: null,
         _activeLoudnessGain: 1,
         _trackKey: null,
         _loudnessInFlight: false,
+        _evictLoudnessCacheIfNeeded: function() {
+            while (this._loudnessGainOrder.length > this._LOUDNESS_CACHE_MAX) {
+                const oldest = this._loudnessGainOrder.shift();
+                if (oldest && this._loudnessGains.hasOwnProperty(oldest)) delete this._loudnessGains[oldest];
+            }
+        },
+        _cacheLoudnessGain: function(key, gain) {
+            if (!this._loudnessGains.hasOwnProperty(key)) this._loudnessGainOrder.push(key);
+            else {
+                const idx = this._loudnessGainOrder.indexOf(key);
+                if (idx !== -1) { this._loudnessGainOrder.splice(idx, 1); this._loudnessGainOrder.push(key); }
+            }
+            this._loudnessGains[key] = gain;
+            this._evictLoudnessCacheIfNeeded();
+        },
 
         // ===== Gapless Playback =====
         // Two <audio> elements: the "active" one plays the current track while
@@ -76,10 +93,7 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             this._loudnessInFlight = true;
             this._decodeAndMeasureLoudness(el.currentSrc || el.src).then(gain => {
                 if (gain !== null) {
-                    // Cache only real measurements �?" a failed/failed-timing
-                    // result must not poison the cache for the rest of the
-                    // session (a later play would re-measure and fix it).
-                    this._loudnessGains[key] = gain;
+                    this._cacheLoudnessGain(key, gain);
                 }
                 if (this._targetTrackKey === key || this._targetTrackKey === null) {
                     this._activeLoudnessGain = (gain === null ? 1 : gain);
@@ -137,33 +151,39 @@ _retargetActiveArm: function(gain, tc = 0.05) {
         _decodeAndMeasureLoudness: async function(url) {
             try {
                 if (!url) return 1;
+                // Normalize to absolute URL so blob-worker fetch() resolves
+                // correctly (workers from blob: URLs have a blob: base, so
+                // relative "./audio/..." would otherwise fetch "blob:.../audio").
+                let absoluteUrl = url;
+                try { absoluteUrl = new URL(url, location.href).href; } catch (_) {}
 
                 // Worker path first: keeps the decode off the main thread.
                 if (typeof Worker === 'function') {
                     const workerGain = await new Promise((resolve) => {
                         try {
-                            const blob = new Blob([this._loudnessWorkerSrc()], { type: 'application/javascript' });
-                            const workerUrl = URL.createObjectURL(blob);
+                            if (!this._loudnessWorkerBlobUrl) {
+                                const blob = new Blob([this._loudnessWorkerSrc()], { type: 'application/javascript' });
+                                this._loudnessWorkerBlobUrl = URL.createObjectURL(blob);
+                            }
+                            const workerUrl = this._loudnessWorkerBlobUrl;
                             const worker = new Worker(workerUrl);
                             const done = (gain) => {
                                 clearTimeout(timer);
                                 worker.terminate();
-                                URL.revokeObjectURL(workerUrl);
                                 resolve(gain);
                             };
                             const timer = setTimeout(() => done(null), 60000);
                             worker.onmessage = (e) => done(e.data && e.data.ok ? e.data.gain : null);
                             worker.onerror = () => done(null);
-                            worker.postMessage({ url: url });
+                            worker.postMessage({ url: absoluteUrl });
                         } catch (e) {
                             resolve(null);
                         }
                     });
                     if (workerGain !== null) return workerGain;
-                    console.warn("[Playlist] Loudness worker unavailable, using main-thread measurement.");
                 }
 
-                const res = await fetch(url);
+                const res = await fetch(absoluteUrl);
                 if (!res.ok) return 1;
                 const arrayBuffer = await res.arrayBuffer();
                 const audioBuffer = await new Promise((resolve, reject) => {
@@ -245,6 +265,23 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             }
             track.url = null;
             URL.revokeObjectURL(url);
+        },
+
+        // Revoke all blob URLs in the current playlist and clear caches.
+        // Call when replacing the entire playlist to prevent leaks.
+        _clearAllBlobUrls: function() {
+            if (this.playlist) {
+                this.playlist.forEach(t => this._revokeTrackUrl(t));
+            }
+            if (this.objectUrlsCache) {
+                this.objectUrlsCache.forEach(u => {
+                    try { URL.revokeObjectURL(u); } catch (_) {}
+                });
+                this.objectUrlsCache = [];
+            }
+            if (this._urlRegistry) {
+                this._urlRegistry = {};
+            }
         },
 
         /**
@@ -504,6 +541,7 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
                 const vol = slider ? parseFloat(slider.value) / 100 : 0.5;
                 this.fadeMusicVolume(vol, 0.05);
                 this._analyzeCurrentLoudness();
+                if (window.syncGlobalSliders) window.syncGlobalSliders(slider);
             }).catch(() => {
                 // Playback blocked (e.g. paused mid-transition) — restore gains.
                 if (oldGain) oldGain.gain.setTargetAtTime(1, now, 0.01);
@@ -515,6 +553,20 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
             this._activeIsA = !this._activeIsA;
             this._standbyTrackIndex = null;
             this._preloadedIndex = null;
+            // Visual bug fix: knob moved but fill bar stayed stuck at previous
+            // track's percent. Reset scrub fill to 0 immediately on track swap
+            // so thumb and fill stay in sync even before the next timeupdate.
+            ['playlist-scrub','mobile-scrub','modal-scrub'].forEach(id => {
+                const s = document.getElementById(id);
+                if (!s) return;
+                s.value = 0;
+                if (window.paintSliderTrack) window.paintSliderTrack(s);
+                else if (window.syncGlobalSliders) window.syncGlobalSliders(s);
+                else {
+                    s.style.background = `linear-gradient(90deg, var(--accent-blue) 0%, var(--bg-input) 0%)`;
+                    s.style.setProperty('--range-fill', '0%');
+                }
+            });
 
             // Let the old element's tail play out (~150ms) so the crossfade
             // actually overlaps, then retire it and point it at the next track.
@@ -648,6 +700,7 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
         },
         playPlaylistIndex: function(index) {
             if(index < 0 || index >= this.playlist.length) return;
+            this.isSeeking = false;
             // Swap token: rapid track changes within the 80ms source-swap
             // window would otherwise play the stale track's blob after the
             // newer one was picked (and analyze the wrong loudness).
@@ -688,6 +741,21 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
                 this._transitioning = false;
             }
 
+            // Immediate scrub reset: prevent knob/fill desync where the thumb
+            // jumps to 0 for the new track while the old fill (e.g. 70%) lingers
+            // until the first timeupdate of the new track.
+            ['playlist-scrub','mobile-scrub','modal-scrub'].forEach(id => {
+                const s = document.getElementById(id);
+                if (!s) return;
+                s.value = 0;
+                if (window.paintSliderTrack) window.paintSliderTrack(s);
+                else if (window.syncGlobalSliders) window.syncGlobalSliders(s);
+                else {
+                    s.style.background = `linear-gradient(90deg, var(--accent-blue) 0%, var(--bg-input) 0%)`;
+                    s.style.setProperty('--range-fill', '0%');
+                }
+            });
+
             // Smoothly fade out current music track before swapping sources to eliminate popping
             this.fadeMusicVolume(0, 0.015); // 15ms fade-out
             
@@ -719,6 +787,8 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
                             const vol = slider ? parseFloat(slider.value) / 100 : 0.5;
                             this.fadeMusicVolume(vol, 0.08); // 80ms safety fade-in completely masks browser buffer pops!
                             this._analyzeCurrentLoudness();
+                            // Ensure visual fill bar stays in sync if slider value was changed programmatically
+                            if (window.syncGlobalSliders) window.syncGlobalSliders(slider);
                         })
                         .catch(e => {
                             if (seq !== this._playSeq) return;
@@ -726,6 +796,7 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
                             const slider = document.getElementById("eq-musicVolumeSlider");
                             const vol = slider ? parseFloat(slider.value) / 100 : 0.5;
                             this.fadeMusicVolume(vol, 0.02);
+                            if (window.syncGlobalSliders) window.syncGlobalSliders(slider);
                         });
                 }
             }, 80);
@@ -767,6 +838,7 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
             this._shuffleOrder = null;
             this._shufflePos = -1;
             this._loudnessGains = {};
+            this._loudnessGainOrder = [];
             this._activeKey = null;
             this._targetTrackKey = null;
             this._activeLoudnessGain = 1;
@@ -865,7 +937,29 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
             this.playPlaylistIndex((this.playlistIndex + 1) % this.playlist.length);
         },
 
-togglePlayState: async function() {
+        // Pause whatever the playlist is currently playing and reset the
+        // transport UI. Used by exclusive-playback features (A/B comparison)
+        // so two sources never drive the shared output chain simultaneously —
+        // mixing them corrupts level-matched comparisons, the VU/imbalance
+        // meters, de-esser tracking and the anti-clip AGC.
+        stopPlaylistPlayback: function() {
+            const active = this._activeEl ? this._activeEl() : this.audioEl;
+            const wasPlaying = !!(active && !active.paused);
+            [this.audioEl, this.gaplessEl].forEach(el => {
+                if (el && !el.paused) { try { el.pause(); } catch (e) {} }
+            });
+            this._pausePending = false;
+
+            const btn = document.getElementById("playlist-play-btn");
+            if (btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
+            const mobBtn = document.getElementById("mobile-play-btn");
+            if (mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
+            const modalPlayBtn = document.getElementById('modal-play-btn');
+            if (modalPlayBtn) modalPlayBtn.innerHTML = "<span>▶</span><span>Play</span>";
+            return wasPlaying;
+        },
+
+        togglePlayState: async function() {
 if (this.playlist.length === 0) {
 showToast("Load audio tracks first using the '📂 Upload' button.", "⚠️");
 return;
@@ -894,6 +988,10 @@ await ctx.resume();
             }
             if (!active || active.paused || this._pausePending) {
                 // Fade-in play
+                // Exclusive playback: an active A/B comparison must yield the
+                // shared output chain before playlist audio starts (mirror of
+                // toggleABPlay pausing the playlist).
+                if (window.TestLab && TestLab.pauseABPlayback) TestLab.pauseABPlayback();
                 this._pausePending = false;
                 this._pauseSeq = (this._pauseSeq || 0) + 1;
                 if (active) {
@@ -949,18 +1047,34 @@ if (!active) return;
 this._seekSeq = (this._seekSeq || 0) + 1;
 const seq = this._seekSeq;
 
+// Keep isSeeking latched until the media element reports the new position.
+// currentTime assignment is async — clearing the flag on mouseup let a
+// timeupdate repaint the OLD position first, making the thumb snap back.
+this.isSeeking = true;
+const releaseSeekHold = () => {
+    if (seq !== this._seekSeq) return;
+    this.isSeeking = false;
+};
+
 // Fade out the music signal cleanly
 this.fadeMusicVolume(0, 0.008);
 
 setTimeout(() => {
-if (seq !== this._seekSeq) return;
+if (seq !== this._seekSeq) { releaseSeekHold(); return; }
 const active = this._activeEl();
-if (active) active.currentTime = targetTime;
+if (active) {
+    active.currentTime = targetTime;
+    active.addEventListener('seeked', releaseSeekHold, { once: true });
+    setTimeout(releaseSeekHold, 600);
+}
 
-const scrub = document.getElementById('playlist-scrub');
-const modalScrub = document.getElementById('modal-scrub');
-if (scrub) scrub.value = targetScrubVal;
-if (modalScrub) modalScrub.value = targetScrubVal;
+['playlist-scrub','mobile-scrub','modal-scrub'].forEach(id => {
+const s = document.getElementById(id);
+if (!s) return;
+s.value = targetScrubVal;
+if (window.paintSliderTrack) window.paintSliderTrack(s);
+else if (window.syncGlobalSliders) window.syncGlobalSliders(s);
+});
 
 // Allow HTML5 buffer fusions to settle, then fade back in
 setTimeout(() => {

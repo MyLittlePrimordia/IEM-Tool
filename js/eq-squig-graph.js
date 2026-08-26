@@ -20,11 +20,20 @@ const EQ_SquigGraphMethods = {
             if (this.autoGainMatchActive && this.eqEnabled) {
                 finalPreamp += this.autoGainCompensationDb || 0;
             }
+            // MUST mirror updatePreamp() (app-core.js) exactly — these are the
+            // boost sources whose headroom is pulled back out of the master
+            // preamp. If they desync, the drawn curve no longer represents the
+            // audible signal.
             if (this.hearingCalEnabled && this._hearingMaxBoost) {
                 finalPreamp -= this._hearingMaxBoost;
             }
-            const headroom = (this.sourceSimGain !== undefined) ? this.sourceSimGain : 1.0;
-            return finalPreamp + 20 * Math.log10(headroom);
+            if (this.loudnessActive && this._loudnessMaxBoost) {
+                finalPreamp -= this._loudnessMaxBoost;
+            }
+            if (this._masterToneMaxBoost) {
+                finalPreamp -= this._masterToneMaxBoost;
+            }
+            return finalPreamp;
         },
         drawSpectrumOverlay: function(cc, w, h, minF, maxF, accentBlueRgb) {
             if (!this.showSpectrumOverlay) return;

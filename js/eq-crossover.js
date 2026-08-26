@@ -102,6 +102,49 @@ const EQ_CrossoverMethods = {
             this.drawCurve();
         },
 
+        // The 4 crossover frequency sliders have overlapping HTML ranges by
+        // design (e.g. freq1 max=250 vs freq2 min=150), so dragging two of
+        // them to their own independent extremes can invert their order --
+        // verified with the app's own biquad math this creates a ~40-60dB
+        // dead zone across the intended passband, not a subtle cosmetic
+        // issue. Pushes the OTHER frequencies out of the way of whichever
+        // one the user just moved (rather than clamping the one being
+        // dragged, which would fight the user's input mid-drag), then
+        // re-clamps every value to its own slider's min/max and refreshes
+        // the DOM so a pushed slider visibly reflects the correction.
+        _enforceCrossoverOrdering: function(changedKey) {
+            const order = ['crossoverFreq1', 'crossoverFreq2', 'crossoverFreq3', 'crossoverFreq4'];
+            const paramNames = ['freq1', 'freq2', 'freq3', 'freq4'];
+            const sliderMin = { crossoverFreq1: 40, crossoverFreq2: 150, crossoverFreq3: 1000, crossoverFreq4: 4000 };
+            const sliderMax = { crossoverFreq1: 250, crossoverFreq2: 1000, crossoverFreq3: 6000, crossoverFreq4: 14000 };
+            const MIN_RATIO = 1.05;
+            const changedIdx = order.indexOf(changedKey);
+            if (changedIdx === -1) return;
+
+            for (let i = changedIdx + 1; i < order.length; i++) {
+                const prevVal = this[order[i - 1]];
+                if (this[order[i]] < prevVal * MIN_RATIO) {
+                    this[order[i]] = Math.min(sliderMax[order[i]], prevVal * MIN_RATIO);
+                }
+            }
+            for (let i = changedIdx - 1; i >= 0; i--) {
+                const nextVal = this[order[i + 1]];
+                if (this[order[i]] > nextVal / MIN_RATIO) {
+                    this[order[i]] = Math.max(sliderMin[order[i]], nextVal / MIN_RATIO);
+                }
+            }
+
+            order.forEach((key, i) => {
+                if (key === changedKey) return;
+                this[key] = Math.max(sliderMin[key], Math.min(sliderMax[key], this[key]));
+                const paramName = paramNames[i];
+                const slider = document.getElementById(`xo-${paramName}-slider`);
+                const valEl = document.getElementById(`xo-${paramName}-val`);
+                if (slider) slider.value = this[key];
+                if (valEl) valEl.textContent = Math.round(this[key]) + " Hz";
+            });
+        },
+
         updateCrossoverParam: function(param, val) {
             const num = parseFloat(val);
             const valEl = document.getElementById(`xo-${param}-val`);
@@ -110,15 +153,19 @@ const EQ_CrossoverMethods = {
             if (param === 'freq1') {
                 this.crossoverFreq1 = num;
                 if (valEl) valEl.textContent = Math.round(num) + " Hz";
+                this._enforceCrossoverOrdering('crossoverFreq1');
             } else if (param === 'freq2') {
                 this.crossoverFreq2 = num;
                 if (valEl) valEl.textContent = Math.round(num) + " Hz";
+                this._enforceCrossoverOrdering('crossoverFreq2');
             } else if (param === 'freq3') {
                 this.crossoverFreq3 = num;
                 if (valEl) valEl.textContent = Math.round(num) + " Hz";
+                this._enforceCrossoverOrdering('crossoverFreq3');
             } else if (param === 'freq4') {
                 this.crossoverFreq4 = num;
                 if (valEl) valEl.textContent = Math.round(num) + " Hz";
+                this._enforceCrossoverOrdering('crossoverFreq4');
             } else if (param === 'trimLow') {
                 this.crossoverLowTrim = num;
                 if (trimEl) trimEl.textContent = (num >= 0 ? "+" : "") + num.toFixed(1) + " dB";
@@ -142,7 +189,11 @@ const EQ_CrossoverMethods = {
         },
 
         updateCrossoverDSP: function() {
-            if (!this.graphBuilt || !SharedAudio.workletNode) return;
+            if (!this.graphBuilt || !SharedAudio.workletNode) {
+                if (this._queuePendingDsp) this._queuePendingDsp('crossover');
+                else { this._pendingDspQueue = this._pendingDspQueue || []; if (!this._pendingDspQueue.includes('crossover')) this._pendingDspQueue.push('crossover'); if (!this.graphBuilt) this.ensureDSPGraph && this.ensureDSPGraph().catch(()=>{}); }
+                return;
+            }
 
             const type = this.crossoverType;
             const lG = Math.pow(10, this.crossoverLowTrim / 20);

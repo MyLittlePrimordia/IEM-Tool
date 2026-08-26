@@ -50,11 +50,6 @@ window.alphaKeyOf = function (it) {
 // as the user scrolls, show the letter of the section at the top, and hide the
 // bubble shortly after they stop. No A-Z column is rendered.
 // keyOf(scrollEl) returns the current letter (e.g. the topmost visible group's).
-// One shared document-level pointermove listener serves every alpha rail
-// (DB / IEM / GK columns), instead of one capturing listener per rail firing
-// getBoundingClientRect on every mouse move.
-const _alphaRailHosts = new Set();
-let _alphaRailPointerListener = null;
 window.makeAlphaRail = function (hostEl, scrollEl, keyOf) {
     if (!hostEl || !scrollEl || hostEl.querySelector('.alpha-bubble')) return null;
 
@@ -80,36 +75,27 @@ window.makeAlphaRail = function (hostEl, scrollEl, keyOf) {
 
     // Hide immediately as soon as the cursor leaves the list, so the centered
     // bubble doesn't linger over neighboring columns (e.g. the EQ graph).
-    if (!_alphaRailPointerListener) {
-        _alphaRailPointerListener = (e) => {
-            for (const host of _alphaRailHosts) {
-                const r = host.el.getBoundingClientRect();
-                if (e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left || e.clientX > r.right) {
-                    host.hide();
-                }
-            }
-        };
-        document.addEventListener('pointermove', _alphaRailPointerListener, true);
-    }
-    _alphaRailHosts.add({ el: hostEl, hide });
+    document.addEventListener('pointermove', (e) => {
+        const r = hostEl.getBoundingClientRect();
+        if (e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left || e.clientX > r.right) {
+            hide();
+        }
+    }, true);
 
     return bubble;
 };
 
 // Determine the letter of the topmost visible brand group in the DB list.
-// Rows are DOM-ordered with monotonically increasing tops, so the last group
-// within the threshold is found by binary search instead of a linear scan.
 function dbCurrentLetter(scrollEl) {
     const groups = scrollEl.querySelectorAll('[data-letter]');
     if (!groups.length) return null;
     const cTop = scrollEl.getBoundingClientRect().top;
-    let lo = 0, hi = groups.length - 1, best = 0;
-    while (lo <= hi) {
-        const mid = (lo + hi) >> 1;
-        if (groups[mid].getBoundingClientRect().top - cTop <= 6) { best = mid; lo = mid + 1; }
-        else hi = mid - 1;
+    let letter = groups[0].getAttribute('data-letter');
+    for (const g of groups) {
+        if (g.getBoundingClientRect().top - cTop <= 6) letter = g.getAttribute('data-letter');
+        else break;
     }
-    return groups[best].getAttribute('data-letter');
+    return letter;
 }
 
 // Determine the letter of the topmost visible row in the flagship picker.
@@ -117,13 +103,12 @@ function gkCurrentLetter(scrollEl) {
     const rows = scrollEl.querySelectorAll('[data-letter]');
     if (!rows.length) return null;
     const cTop = scrollEl.getBoundingClientRect().top;
-    let lo = 0, hi = rows.length - 1, best = 0;
-    while (lo <= hi) {
-        const mid = (lo + hi) >> 1;
-        if (rows[mid].getBoundingClientRect().top - cTop <= 2) { best = mid; lo = mid + 1; }
-        else hi = mid - 1;
+    let letter = rows[0].getAttribute('data-letter');
+    for (const r of rows) {
+        if (r.getBoundingClientRect().top - cTop <= 2) letter = r.getAttribute('data-letter');
+        else break;
     }
-    return rows[best].getAttribute('data-letter');
+    return letter;
 }
 
 // Wire the letter bubbles to the long, lettered lists.
@@ -155,19 +140,53 @@ window.bootstrapAlphabetIndex = function () {
         } catch (_) {}
     };
     window.addEventListener('error', (event) => {
-        const msg = (event.error && event.error.message) || event.message || 'Unknown error';
-        report(msg);
-        showDebugError(esc(String(msg)), 'Global Error Handler');
+        report((event.error && event.error.message) || event.message || 'Unknown error');
     });
     window.addEventListener('unhandledrejection', (event) => {
         const r = event.reason;
-        const msg = (r && r.message) ? r.message : String(r);
-        report(msg);
-        showDebugError(esc(String(msg)), 'Unhandled Promise Rejection');
+        report((r && r.message) ? r.message : String(r));
     });
 })();
 
-const SimilarCurvesCache = {
+    // Self-contained similarity scorer (no page globals) so it can be embedded
+    // in the blob worker string AND reused inline. Scores every candidate's
+    // `cachedInterp` against an already-interpolated target at `probes` (grid
+    // indices). A broadband level offset is removed using the mid-band mean so
+    // same-shape curves aren't punished for loudness, then a perceptually
+    // weighted MAE is mapped to a similarity %.
+    function computeSimilarityScores(targetInterp, dataset, probes, weights, midMask, threshold) {
+        const t = threshold || 8;
+        const matches = [];
+        for (let idx = 0; idx < dataset.length; idx++) {
+            const item = dataset[idx];
+            const cand = item.cachedInterp;
+            if (!cand) continue;
+            let wSum = 0, wErr = 0, wMid = 0, wMidW = 0;
+            for (let i = 0; i < probes.length; i++) {
+                const d = targetInterp[probes[i]] - cand[probes[i]];
+                const w = weights[i];
+                wSum += w;
+                wErr += w * Math.abs(d);
+                if (midMask[i]) { wMid += w * d; wMidW += w; }
+            }
+            const offset = wMidW > 0 ? wMid / wMidW : 0;
+            let adjErr = 0, adjW = 0;
+            for (let i = 0; i < probes.length; i++) {
+                const d = targetInterp[probes[i]] - cand[probes[i]];
+                adjErr += weights[i] * Math.abs(d - offset);
+                adjW += weights[i];
+            }
+            const mae = adjW > 0 ? adjErr / adjW : 0;
+            matches.push({
+                id: item.id, name: item.name, variant: item.variant, source: item.source,
+                similarity: Math.max(0, Math.min(100, 100 * (1 - (mae / t))))
+            });
+        }
+        matches.sort((a, b) => b.similarity - a.similarity);
+        return matches;
+    }
+
+    const SimilarCurvesCache = {
     results: null,
     targetHash: "",
     query: "",
@@ -208,11 +227,9 @@ const SimilarCurvesCache = {
             const alignDb = PEQDB_Module.alignDb || '75';
 
             // The matching basis is the live DSP composite (baseline + EQ
-            // response), so the fingerprint must always include the current EQ
-            // state — hashing only a loaded curve's points let band edits hit
-            // the cache and return stale results. The base curve is the
-            // composite's baseline; the target slot is not part of the DSP
-            // output.
+            // response), so the fingerprint must include the current EQ state —
+            // hashing only a loaded curve's id let band edits hit the cache and
+            // return stale results while the graph visibly changed.
             const realValues = EQ_Module.getRealValues();
             let contentHash = this.hashString(JSON.stringify([realValues.preVal, realValues.mainVals, realValues.advVals]));
             if (baseCurve) {
@@ -227,6 +244,11 @@ const SimilarCurvesCache = {
     isValid: function(currentQuery) {
         if (!this.results) return false;
         if (this.query !== currentQuery) return false;
+        // A dirty flag means something changed in a way the fingerprint cannot
+        // see (sculpt-point drags mutate activeTarget.data in place, leaving
+        // activeId/res/align untouched). Without this check the stale pre-drag
+        // match list kept rendering.
+        if (PEQDB_Module && PEQDB_Module.similarDirty) return false;
         if (this.targetHash !== this.getTargetFingerprint()) return false;
         return true;
     }
@@ -240,10 +262,17 @@ function showDebugError(message, source) {
         errDiv.style = 'position:fixed; bottom:20px; left:20px; right:20px; background:rgba(220,38,38,0.95); color:white; font-family:monospace; font-size:11px; padding:12px; border-radius:6px; z-index:9999; border:1px solid #ef4444; box-shadow:0 10px 30px rgba(0,0,0,0.55); overflow-y:auto; max-height:180px;';
         document.body.appendChild(errDiv);
     }
-    // Error messages are attacker-influenced strings (stack traces, thrown
-    // values) — escape before injecting into innerHTML.
-    errDiv.innerHTML = `<strong>⚠️ JS Runtime Exception:</strong> ${esc(String(message))} <br> <span style="opacity:0.85; font-size:10px; margin-top:4px; display:block;">${esc(String(source))}</span>`;
+    errDiv.innerHTML = `<strong>⚠️ JS Runtime Exception:</strong> ${message} <br> <span style="opacity:0.85; font-size:10px; margin-top:4px; display:block;">${source}</span>`;
 }
+
+window.addEventListener('error', function(e) {
+    showDebugError(e.message, `File: ${e.filename.split('/').pop()} | Line: ${e.lineno} | Col: ${e.colno}`);
+});
+
+window.addEventListener('unhandledrejection', function(e) {
+    const reason = e.reason instanceof Error ? e.reason.message : String(e.reason);
+    showDebugError(reason, 'Unhandled Promise Rejection');
+});
 
 var Mascot = window.Mascot || {
         currentExpression: 'idle',
@@ -392,8 +421,9 @@ var Mascot = window.Mascot || {
                 goofy: 'anim-mascot-goofy',
                 sleeping: 'anim-mascot-sleeping',
                 fire: 'anim-mascot-fire',
-hearnoevil: 'anim-mascot-hear-no-evil',
-    sparkle: 'anim-mascot-sparkle',
+                hearnoevil: 'anim-mascot-hear-no-evil',
+                mute: 'anim-mascot-hear-no-evil',
+                sparkle: 'anim-mascot-sparkle',
                 grin: 'anim-mascot-sparkle',
                 ab_a: 'anim-mascot-ab-a',
                 ab_b: 'anim-mascot-ab-b',
@@ -818,44 +848,6 @@ function getBandEnergy(dataArray, startBin, endBin) {
         };
     }
 
-    // Self-contained similarity scorer (no page globals) so it can be embedded
-    // in the blob worker string AND reused inline. Scores every candidate's
-    // `cachedInterp` against an already-interpolated target at `probes` (grid
-    // indices). A broadband level offset is removed using the mid-band mean so
-    // same-shape curves aren't punished for loudness, then a perceptually
-    // weighted MAE is mapped to a similarity %.
-    function computeSimilarityScores(targetInterp, dataset, probes, weights, midMask, threshold) {
-        const t = threshold || 8;
-        const matches = [];
-        for (let idx = 0; idx < dataset.length; idx++) {
-            const item = dataset[idx];
-            const cand = item.cachedInterp;
-            if (!cand) continue;
-            let wSum = 0, wErr = 0, wMid = 0, wMidW = 0;
-            for (let i = 0; i < probes.length; i++) {
-                const d = targetInterp[probes[i]] - cand[probes[i]];
-                const w = weights[i];
-                wSum += w;
-                wErr += w * Math.abs(d);
-                if (midMask[i]) { wMid += w * d; wMidW += w; }
-            }
-            const offset = wMidW > 0 ? wMid / wMidW : 0;
-            let adjErr = 0, adjW = 0;
-            for (let i = 0; i < probes.length; i++) {
-                const d = targetInterp[probes[i]] - cand[probes[i]];
-                adjErr += weights[i] * Math.abs(d - offset);
-                adjW += weights[i];
-            }
-            const mae = adjW > 0 ? adjErr / adjW : 0;
-            matches.push({
-                id: item.id, name: item.name, variant: item.variant, source: item.source,
-                similarity: Math.max(0, Math.min(100, 100 * (1 - (mae / t))))
-            });
-        }
-        matches.sort((a, b) => b.similarity - a.similarity);
-        return matches;
-    }
-
     function rafThrottle(func) {
         let scheduled = false;
         let lastArgs = null;
@@ -884,18 +876,6 @@ function getBandEnergy(dataArray, startBin, endBin) {
                 audioParam.value = value;
             }
         }
-    }
-
-    // Cached current theme accent color. Reads App.currentTheme (maintained by
-    // App.setGlobalTheme) instead of hitting localStorage on every canvas frame.
-    function getThemeAccent(fallback = '#787878') {
-        const id = (typeof App !== 'undefined' && App.currentTheme) ? App.currentTheme : ((typeof localStorage !== 'undefined' ? localStorage.getItem('settings_theme_id') : null) || 'slate');
-        if (getThemeAccent._cachedId !== id) {
-            getThemeAccent._cachedId = id;
-            const cfg = (typeof App !== 'undefined' && App.themeMap) ? (App.themeMap[id] || App.themeMap['slate']) : null;
-            getThemeAccent._cached = cfg ? (cfg.accent || fallback) : fallback;
-        }
-        return getThemeAccent._cached;
     }
 
     function showToast(message, icon = "ℹ️", opts) {
@@ -1035,38 +1015,16 @@ window.updateExpandedAutoHide = function() {
     }
 };
 
-    // Hoisted out of updateAll: these are constant tables rebuilt on every
-    // call (updateAll fires per slider input) otherwise.
-    const APP_ACOUSTIC_SLIDERS = [
-        'bass', 'sub-bass-extension', 'mid-bass-punch', 'bass-texture', 'bass-speed',
-        'lower-mids', 'upper-mids', 'vocals', 'vocal-fullness', 'mid-naturalness',
-        'treble-energy', 'treble-smooth', 'treble-extension', 'sibilance', 'treble-detail',
-        'soundstage-width', 'soundstage-depth', 'resolution-detail', 'macro-dynamics',
-        'imaging-precision', 'instrument-separation', 'timbre-coherence'
-    ];
-    const APP_ACOUSTIC_SLIDER_SET = new Set(APP_ACOUSTIC_SLIDERS);
-    const APP_DAC_IMPEDANCES = {
-        'Phone': 6.0,
-        'Laptop': 3.5,
-        'Dongle': 1.0,
-        'Desktop': 0.1
-    };
-    const APP_DAC_LIMITS = {
-        'Phone': { v: 0.4, p: 8 },
-        'Laptop': { v: 1.0, p: 30 },
-        'Dongle': { v: 2.0, p: 100 },
-        'Desktop': { v: 4.0, p: 1000 }
-    };
-
     const App = {
     domCache: new Map(),
     getEl: function(id) {
         if (!this.domCache.has(id)) {
-            const el = document.getElementById(id);
-            if (el) this.domCache.set(id, el);
-            return el;
+            this.domCache.set(id, document.getElementById(id));
         }
         return this.domCache.get(id);
+    },
+    saveWorkspaceState: function() {
+
     },
     mobileDrawerOpen: false,
     toggleMobileDrawer: function() {
@@ -1097,6 +1055,9 @@ window.updateExpandedAutoHide = function() {
             { "id": "blush", "name": "Blush", "emoji": "🌸", "variables": { "--accent-blue": "#c85a95", "--bg-body": "#1a1116", "--bg-window": "#22161d", "--bg-card": "#301e28", "--bg-sidebar": "#140e13", "--bg-input": "#191016", "--text-main": "#f8edf4", "--text-secondary": "#ac8497", "--border-color": "#000000" } },
             { "id": "bit", "name": "Bit", "emoji": "🪙", "variables": { "--accent-blue": "#ca9f33", "--bg-body": "#18150d", "--bg-window": "#201c11", "--bg-card": "#2e2918", "--bg-sidebar": "#13110a", "--bg-input": "#18150d", "--text-main": "#f7f4e8", "--text-secondary": "#ab9d78", "--border-color": "#000000" } }
         ],
+        loadDynamicThemes: function() {
+
+        },
         fontMap: {},
         fontMeta: [],
 
@@ -1141,11 +1102,6 @@ window.updateExpandedAutoHide = function() {
             }
         },
         loadDynamicFonts: async function() {
-            // Session-scoped: every invocation re-fetches fonts.json and
-            // re-downloads every font file. Once resolved (success OR fallback)
-            // the result is stable for the app session, so skip the repeat work.
-            if (this._fontsSessionLoaded) return;
-            this._fontsSessionLoaded = true;
             try {
                 var res = await fetch('./fonts/fonts.json');
                 if (!res.ok) throw new Error("Could not find fonts.json");
@@ -1302,16 +1258,28 @@ window.updateExpandedAutoHide = function() {
                         if (hasActiveSignal) {
                             TestLab.startImbalanceMeter();
                         }
-        } else {
-            TestLab.stopSpatialOrbitTimerOnly();
-            if (TestLab.imbalanceInterval) {
-                clearInterval(TestLab.imbalanceInterval);
-                TestLab.imbalanceInterval = null;
-            }
-            // Leaving the testlab must silence any tone/sweep still running,
-            // even if the user never hit the stop button.
-            if (window.Tone && Tone.toneStop && (Tone.osc || Tone.sweepTimer)) Tone.toneStop();
-        }
+                    } else {
+                        TestLab.stopSpatialOrbitTimerOnly();
+                        if (TestLab.imbalanceInterval) {
+                            clearInterval(TestLab.imbalanceInterval);
+                            TestLab.imbalanceInterval = null;
+                        }
+                        // Every Test Lab tone generator (resonance sweep,
+                        // hearing test, channel-balance tone, stereo leak
+                        // test, spatial/A-B playback) is designed to be
+                        // stopped by its own Stop control -- there was no
+                        // guard here, so navigating away mid-test left them
+                        // playing indefinitely with no visible way to reach
+                        // Stop. Burn-in is the one deliberate exception
+                        // (long-duration background signal), preserved via
+                        // stopAll's second argument.
+                        if (TestLab.resonanceInterval || TestLab.hearingOsc || TestLab.channelToneOsc ||
+                            TestLab.oscL || TestLab.oscR || TestLab.leakTestActive ||
+                            TestLab.spatialActive || TestLab.abPlaying ||
+                            (TestLab.activeNodes && TestLab.activeNodes.length > 0)) {
+                            TestLab.stopAll(false, true);
+                        }
+                    }
                 }
             } catch (error) {
                 console.error("Tab switching failed:", error);
@@ -1385,10 +1353,8 @@ window.updateExpandedAutoHide = function() {
         },
         setGlobalTheme: function(themeId) {
             try {
-                const safeThemeId = (this.themeMap && this.themeMap[themeId]) ? themeId : 'slate';
-                const t = safeThemeId === themeId ? this.themeMap[themeId] : this._defaultThemeEntry();
-                this.currentTheme = safeThemeId;
-                this._cachedThemeId = safeThemeId;
+                const t = (this.themeMap && this.themeMap[themeId]) ? this.themeMap[themeId] : this._defaultThemeEntry();
+                this.currentTheme = this.themeMap[themeId] ? themeId : 'slate';
 
                 const root = document.documentElement;
 
@@ -1398,14 +1364,14 @@ window.updateExpandedAutoHide = function() {
                     });
                 }
 
-                document.documentElement.className = 'theme-' + safeThemeId;
+                document.documentElement.className = 'theme-' + themeId;
 
                                 const accentColor = t.accent || (t.variables && t.variables['--accent-blue']) || '#787878';
                 const rgbStr = (typeof PEQDB_Module !== 'undefined' && PEQDB_Module.hexToRgb) ? PEQDB_Module.hexToRgb(accentColor) : '120, 120, 120';
                 root.style.setProperty('--accent-blue-rgb', rgbStr);
 
                 const expThemeSelector = document.getElementById('export-theme-selector');
-                if (expThemeSelector) expThemeSelector.value = safeThemeId;
+                if (expThemeSelector) expThemeSelector.value = themeId;
 
             ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings'].forEach(id => {
                 const b = document.getElementById(`tab-${id}-btn`);
@@ -1449,6 +1415,12 @@ window.updateExpandedAutoHide = function() {
                     window.syncGlobalSliders();
                 }
                 localStorage.setItem('settings_theme_id', themeId);
+                // Invalidate the visualizer's cached accent so the next frame
+                // re-resolves it (the draw loop no longer re-reads the theme
+                // from localStorage every frame).
+                if (typeof EQ_Module !== 'undefined') {
+                    EQ_Module._vizThemeDirty = true;
+                }
                 this.applyThemeTransition();
             } catch (error) {
                 console.error("Theme application failed:", error);
@@ -1486,15 +1458,8 @@ window.updateExpandedAutoHide = function() {
             const disp = document.getElementById('reading-size-display');
             if (disp) disp.textContent = pct + '%';
 
-            // The display updates immediately; the full-page fontSize reflow
-            // (which also re-renders the EQ graph) and the localStorage write
-            // are debounced to keep fast slider drags cheap.
-            if (this._readingScaleTimer) clearTimeout(this._readingScaleTimer);
-            this._readingScaleTimer = setTimeout(() => {
-                this._readingScaleTimer = null;
-                this.updateCombinedFontScale();
-                localStorage.setItem('settings_reading_scale', this.currentReadingScale);
-            }, 120);
+            this.updateCombinedFontScale();
+            localStorage.setItem('settings_reading_scale', val);
         },
         setGlobalFont: function(fontId) {
             try {
@@ -1976,10 +1941,7 @@ window.updateExpandedAutoHide = function() {
                 }
             };
             resizeCanvas();
-            if (!this._sporesResizeHandler) {
-                this._sporesResizeHandler = resizeCanvas;
-                window.addEventListener('resize', resizeCanvas);
-            }
+            window.addEventListener('resize', resizeCanvas);
 
             const particles = [];
             const maxParticles = 65;
@@ -2000,18 +1962,15 @@ window.updateExpandedAutoHide = function() {
                 if (!window.mushroomSporesActive) {
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                     canvas.style.display = 'none';
-                    this._sporesLoopStarted = false;
-                    if (this._sporesResizeHandler) {
-                        window.removeEventListener('resize', this._sporesResizeHandler);
-                        this._sporesResizeHandler = null;
-                    }
                     return;
                 }
 
                 canvas.style.display = 'block';
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-                const themeAccent = getThemeAccent();
+                const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
+                const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
+                const themeAccent = activeThemeConfig.accent || "#787878";
 
                 while (particles.length < maxParticles) {
                     particles.push(createParticle());
@@ -2055,15 +2014,7 @@ window.updateExpandedAutoHide = function() {
                 }
 
                 document.querySelectorAll('input:not([type="file"]):not([type="range"]):not([type="checkbox"]), select, textarea').forEach(el => {
-                    if (el.tagName === 'SELECT') {
-                        // defaultValue is '' when no <option selected> exists —
-                        // pick the first option explicitly so the select always
-                        // lands on a real value instead of an empty selection.
-                        const selOpt = el.querySelector('option[selected]');
-                        el.value = selOpt ? selOpt.value : (el.querySelector('option') ? el.querySelector('option').value : '');
-                    } else {
-                        el.value = el.defaultValue || '';
-                    }
+                    el.value = el.defaultValue || '';
                 });
 
                 document.querySelectorAll('input[type="range"]').forEach(el => {
@@ -2086,6 +2037,16 @@ window.updateExpandedAutoHide = function() {
         },
         initGlobalSliders: function() {
             try {
+                // Skip identical background rewrites: the playback rAF ticker and
+                // drag input events otherwise rebuild + reassign the same gradient
+                // string hundreds of times per second, forcing needless style
+                // recalcs that show up as drag jank.
+                const trackFillCache = new WeakMap();
+                const setTrackBg = (el, bg) => {
+                    if (trackFillCache.get(el) === bg) return;
+                    trackFillCache.set(el, bg);
+                    el.style.background = bg;
+                };
                 const updateTrack = (el) => {
                     const val = parseFloat(el.value);
                     const min = parseFloat(el.min || 0);
@@ -2096,24 +2057,29 @@ window.updateExpandedAutoHide = function() {
                     if (el.classList.contains('iem-slider') && min === -10 && max === 10) {
                         if (val >= 0) {
                             const activePercent = (val / 10) * 50;
-                            el.style.background = `linear-gradient(90deg, var(--bg-input) 0%, var(--bg-input) 50%, var(--accent-blue) 50%, var(--accent-blue) ${50 + activePercent}%, var(--bg-input) ${50 + activePercent}%, var(--bg-input) 100%)`;
+                            setTrackBg(el, `linear-gradient(90deg, #ffffff 0%, #ffffff 50%, var(--accent-blue) 50%, var(--accent-blue) ${50 + activePercent}%, #ffffff ${50 + activePercent}%, #ffffff 100%)`);
                         } else {
                             const activePercent = (Math.abs(val) / 10) * 50;
-                            el.style.background = `linear-gradient(90deg, var(--bg-input) 0%, var(--bg-input) ${50 - activePercent}%, var(--accent-red) ${50 - activePercent}%, var(--accent-red) 50%, var(--bg-input) 50%, var(--bg-input) 100%)`;
+                            setTrackBg(el, `linear-gradient(90deg, #ffffff 0%, #ffffff ${50 - activePercent}%, var(--accent-red) ${50 - activePercent}%, var(--accent-red) 50%, #ffffff 50%, #ffffff 100%)`);
                         }
                     } else if (el.classList.contains('eq-slider-vertical')) {
                         if (val >= 0) {
                             const activePercent = (val / 12) * 50;
-                            el.style.background = `linear-gradient(90deg, var(--bg-input) 0%, var(--bg-input) 50%, var(--accent-blue) 50%, var(--accent-blue) ${50 + activePercent}%, var(--bg-input) ${50 + activePercent}%, var(--bg-input) 100%)`;
+                            setTrackBg(el, `linear-gradient(90deg, #ffffff 0%, #ffffff 50%, var(--accent-blue) 50%, var(--accent-blue) ${50 + activePercent}%, #ffffff ${50 + activePercent}%, #ffffff 100%)`);
                         } else {
                             const activePercent = (Math.abs(val) / 12) * 50;
-                            el.style.background = `linear-gradient(90deg, var(--bg-input) 0%, var(--bg-input) ${50 - activePercent}%, var(--accent-red) ${50 - activePercent}%, var(--accent-red) 50%, var(--bg-input) 50%, var(--bg-input) 100%)`;
+                            setTrackBg(el, `linear-gradient(90deg, #ffffff 0%, #ffffff ${50 - activePercent}%, var(--accent-red) ${50 - activePercent}%, var(--accent-red) 50%, #ffffff 50%, #ffffff 100%)`);
                         }
                     } else {
                         const percent = ((val - min) / (max - min)) * 100;
-                        el.style.background = `linear-gradient(90deg, var(--accent-blue) ${percent}%, var(--bg-input) ${percent}%)`;
+                        setTrackBg(el, `linear-gradient(90deg, var(--accent-blue) ${percent}%, #ffffff ${percent}%)`);
                     }
                 };
+
+                // Shared painter for high-frequency callers (scrub timeupdate /
+                // drag input) so they restyle ONE element instead of running a
+                // full-page syncGlobalSliders pass on every mousemove frame.
+                window.paintSliderTrack = updateTrack;
 
                 const applyMagneticSnapping = (input) => {
                     let val = parseFloat(input.value);
@@ -2182,12 +2148,8 @@ window.updateExpandedAutoHide = function() {
                     }, { passive: false });
                 });
 
-                window.syncGlobalSliders = (onlyEl) => {
-                    // updateGauge clamps a single slider mid-drag; refreshing
-                    // every slider's track + lastDragVal on each clamp tick is
-                    // pure churn (dozens of querySelectorAll per second).
-                    const targets = onlyEl ? [onlyEl] : document.querySelectorAll('input[type="range"]');
-                    targets.forEach(input => {
+                window.syncGlobalSliders = () => {
+                    document.querySelectorAll('input[type="range"]').forEach(input => {
                         input.lastDragVal = parseFloat(input.value) || 0;
                         updateTrack(input);
                     });
@@ -2344,7 +2306,6 @@ window.updateExpandedAutoHide = function() {
                 }, { once: true, passive: true });
 
                 setInterval(() => {
-                    if (document.hidden) return;
                     if (window.Mascot && window.EQ && !EQ.vizLoopRunning) {
                         Mascot.update();
                     }
@@ -2659,7 +2620,7 @@ window.updateExpandedAutoHide = function() {
             this.updateAll();
         },
         formFactorOptions: ['IEM', 'Earbuds (Wired)', 'Wireless Earbuds (TWS)', 'Over-Ear Headphones (Wired)', 'Wireless Over-Ear Headphones'],
-        connectorOptions: ['2-pin', 'MMCX', 'QDC', 'A2DC', 'Fixed Cable', 'Detachable Cable', 'Bluetooth', 'Proprietary', 'Electrostatic'],
+        connectorOptions: ['2-pin', 'MMCX', 'QDC', 'A2DC', 'Fixed Cable', 'Detachable Cable', 'Bluetooth', '3.5mm', '4.4mm', '6.35mm', 'XLR', 'Electrostatic'],
         cycleFormFactor: function(dir) {
             this.formFactor = this.formFactor || 'IEM';
             let idx = this.formFactorOptions.indexOf(this.formFactor);
@@ -2735,13 +2696,7 @@ renderIemDbSearch: function(query) {
                 if (countEl) countEl.textContent = '0';
                 if (!this._iemDbSearchRetry) {
                     this._iemDbSearchRetry = true;
-                    setTimeout(() => {
-                        this._iemDbSearchRetry = false;
-                        // Re-read the live input: a query typed while the DB was
-                        // still loading must not be clobbered by an empty retry.
-                        const inp = document.getElementById('iem-db-search-input');
-                        this.renderIemDbSearch(inp ? inp.value : '');
-                    }, 900);
+                    setTimeout(() => { this._iemDbSearchRetry = false; this.renderIemDbSearch(''); }, 900);
                 }
                 return;
             }
@@ -2751,14 +2706,9 @@ renderIemDbSearch: function(query) {
                 matches = db;
             } else {
                 const tokens = q.split(/\s+/).filter(Boolean);
-                if (!this._iemSearchableCache) this._iemSearchableCache = new Map();
                 for (let i = 0; i < db.length; i++) {
                     const it = db[i];
-                    let searchable = this._iemSearchableCache.get(it);
-                    if (searchable === undefined) {
-                        searchable = `${it.brand || ''} ${it.model || ''} ${it.variant || ''} ${(it.tags || []).join(' ')} ${(it.name || '')}`.toLowerCase();
-                        this._iemSearchableCache.set(it, searchable);
-                    }
+                    const searchable = `${it.brand || ''} ${it.model || ''} ${it.variant || ''} ${(it.tags || []).join(' ')} ${(it.name || '')}`.toLowerCase();
                     if (tokens.every(t => searchable.includes(t))) matches.push(it);
                 }
             }
@@ -2840,34 +2790,27 @@ renderIemDbSearch: function(query) {
             const connectorEmoji = FindEngine.connectorEmojis[item.connector] || '🔌';
 
             const specIconsHtml = `
-                ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:9px;">$${esc(item.price_usd)}</span></span>` : ''}
-                ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:9px;">${esc(item.year)}</span></span>` : ''}
+                ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:9px;">$${item.price_usd}</span></span>` : ''}
+                ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:9px;">${item.year}</span></span>` : ''}
                 ${item.driver_type ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
                 ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${esc(item.connector)}">${connectorEmoji}</span>` : ''}
                 <span class="spec-icon-badge" data-tooltip="${esc(item.form_factor || 'In-Ear Monitor (IEM)')}">${formEmoji}</span>
             `;
             const getTagEmoji = (tagStr) => {
                 if (!tagStr) return '🏷️';
-                const emojiMatch = tagStr.match(/^(\p{Extended_Pictographic}|\p{Emoji})/u);
-                if (emojiMatch) return emojiMatch[0];
                 const cleanKey = tagStr.toLowerCase().trim().replace(/[\s_]+/g, '-');
                 const emojiMap = {
-                    'basshead': '💥', 'treble-head': '⚡', 'treblehead': '⚡', 'treble-head': '⚡', 'treble head': '⚡',
-                    'sub-bass': '🌊', 'sub bass': '🌊', 'punchy-bass': '🥊', 'punchy bass': '🥊',
-                    'warm': '🌿', 'warm-tilt': '🌿', 'neutral': '⚖️', 'v-shaped': '🔺', 'v-shape': '🔺',
-                    'u-shaped': '🧲', 'u-shape': '🧲', 'ushaped': '🧲', 'ushape': '🧲', 'balanced': '☯️',
-                    'bright': '✨', 'dark': '🌑', 'detailed': '💎', 'detail': '💎', 'resolving': '🔍',
-                    'technical': '🔬', 'wide-stage': '🏟️', 'soundstage': '🏟️', 'good-imaging': '🔭',
-                    'imaging': '🔭', 'smooth': '🧈', 'reference': '📐', 'studio-monitoring': '🎛️',
-                    'studio monitoring': '🎛️', 'studiomonitoring': '🎛️', 'studio-monitor': '🎛️', 'studio monitor': '🎛️',
-                    'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮',
-                    'competitive-gaming': '🏆', 'competitive gaming': '🏆', 'vocal-focused': '🗣️', 'vocal': '🎤',
-                    'budget': '💰', 'mid-tier': '🪙', 'mid tier': '🪙', 'premium': '👑', 'flagship': '🥇',
-                    'collab': '🤝', 'limited-edition': '🌟', 'limited edition': '🌟'
+                    'basshead': '💥', 'sub-bass': '🌊', 'punchy-bass': '🥊', 'warm': '🌿', 'warm-tilt': '🌿',
+                    'neutral': '⚖️', 'v-shaped': '🔺', 'balanced': '⚖️', 'bright': '✨', 'dark': '🌑',
+                    'detailed': '💎', 'detail': '💎', 'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️',
+                        'soundstage': '🏟️', 'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '🎯',
+                        'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮', 'competitive-gaming': '🏆',
+                        'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
+                        'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📼'
                 };
                 return emojiMap[cleanKey] || '🏷️';
             };
-            const tagsHtml = (item.tags || []).slice(0, 12).map(t => `<span class="spec-icon-badge" data-tooltip="${esc(t)}">${getTagEmoji(t)}</span>`).join('');
+            const tagsHtml = (item.tags || []).slice(0, 4).map(t => `<span class="spec-icon-badge" data-tooltip="${esc(t)}">${getTagEmoji(t)}</span>`).join('');
 
             const isActive = (this._iemDbActiveId === item.id);
             const rowAccentColor = isActive ? 'var(--accent-blue)' : 'var(--border-color)';
@@ -2950,7 +2893,7 @@ renderIemDbSearch: function(query) {
         cycleIemDbFile: function(id, dir) {
             const db = this.getIemDatabase();
             const item = db.find(x => x.id === id);
-            if (!item || !Array.isArray(item.files) || item.files.length < 1) return;
+            if (!item || !Array.isArray(item.files)) return;
             const fc = item.files.length;
             let cur = this._iemDbFileIdx[id] || 0;
             cur = (cur + dir + fc) % fc;
@@ -2970,77 +2913,54 @@ renderIemDbSearch: function(query) {
             const searchInput = document.getElementById('iem-db-search-input');
             if (searchInput) this.renderIemDbSearch(searchInput.value);
 
-            this.resetReviewForm();
-            showToast("Selection cleared — review reset.", "↩️");
-        },
-        resetReviewForm: function() {
-            this.sliderNodes.forEach(n => {
-                n.element.value = 0.0;
-                if (n.displayValueNode) n.displayValueNode.textContent = '0.0';
-            });
-            const brand = document.getElementById('brand'); if (brand) brand.value = '';
-            const model = document.getElementById('model'); if (model) model.value = '';
-            const price = document.getElementById('price'); if (price) price.value = '';
-            this.setListeningVolume('moderate');
-            const impedance = document.getElementById('impedance'); if (impedance) impedance.value = '5';
-            const impedanceSlider = document.getElementById('impedance-slider'); if (impedanceSlider) impedanceSlider.value = '5';
-            const sensitivity = document.getElementById('sensitivity'); if (sensitivity) sensitivity.value = '80';
-            const sensitivitySlider = document.getElementById('sensitivity-slider'); if (sensitivitySlider) sensitivitySlider.value = '80';
-            this.setFormFactor('IEM');
-            this.setConnector('2-pin');
-            this.selectedDriverTypes = {};
+            const snap = this._iemPreApplySnapshot || {};
+            document.getElementById('brand').value = snap.brand || '';
+            document.getElementById('model').value = snap.model || '';
+            document.getElementById('price').value = snap.price || '';
+            this.setListeningVolume(snap.listeningVolume || 'moderate');
+            document.getElementById('sensitivity').value = snap.sensitivity || '110';
+            if (snap.impedance != null) { const ie = document.getElementById('impedance'); if (ie) ie.value = snap.impedance; }
+            this.setFormFactor(snap.formFactor || 'IEM');
+            this.setConnector(snap.connector || '2-pin');
+            this.selectedDriverTypes = snap.selectedDriverTypes || {};
             this.runDriverAutoLogic();
+            if (snap.toneSliders) {
+                snap.toneSliders.forEach(entry => {
+                    const el = document.getElementById(entry.id);
+                    if (el) { el.value = entry.value; const dv = document.getElementById(entry.id + '-val'); if (dv) dv.textContent = entry.display; }
+                });
+            }
             this.selectedTags.clear(); this.selectedGenres.clear(); this.selectedBass.clear();
+            (snap.tags || []).forEach(t => this.selectedTags.add(t));
+            (snap.genres || []).forEach(t => this.selectedGenres.add(t));
+            (snap.bass || []).forEach(t => this.selectedBass.add(t));
             this.createTags('tonality-tags', this.tonalityTags, this.selectedTags);
             this.createTags('genre-tags', this.genreTags, this.selectedGenres);
             this.createTags('bass-tags', this.bassTags, this.selectedBass);
             this.renderReviewSelectedTags();
             this.updateAll();
+            showToast("Selection cleared — review restored.", "↩️");
         },
-        // Maps impedance/sensitivity to the "Ease of Drive" slider using the same
-        // voltage-requirement math as FindEngine.getDriveabilityStatus
-        // (vReq = sqrt(10^((115 - sens)/10) * imp / 1000)). Anchors sit on the
-        // badge thresholds: 0.45V phone-OK, 1.5V dongle, 3.5V portable amp;
-        // interpolated in log space so the slider stays continuous. Returns
-        // null when either spec is missing (drive slider stays untouched).
-        computeDriveSliderValue: function(impedance, sensitivity) {
-            const imp = parseFloat(impedance);
-            const sens = parseFloat(sensitivity);
-            if (isNaN(imp) || isNaN(sens) || imp <= 0) return null;
-            const vReq = Math.sqrt((Math.pow(10, (115 - sens) / 10) * imp) / 1000);
-            const anchors = [
-                [0.10, 10],
-                [0.45, 7],
-                [1.50, 3],
-                [3.50, 0],
-                [10.0, -8],
-                [50.0, -10]
-            ];
-            let value;
-            if (vReq <= anchors[0][0]) {
-                value = anchors[0][1];
-            } else if (vReq >= anchors[anchors.length - 1][0]) {
-                value = anchors[anchors.length - 1][1];
-            } else {
-                const logV = Math.log10(vReq);
-                value = 0;
-                for (let i = 1; i < anchors.length; i++) {
-                    if (vReq <= anchors[i][0]) {
-                        const x0 = anchors[i - 1][0], y0 = anchors[i - 1][1];
-                        const x1 = anchors[i][0], y1 = anchors[i][1];
-                        const t = (logV - Math.log10(x0)) / (Math.log10(x1) - Math.log10(x0));
-                        value = y0 + (y1 - y0) * t;
-                        break;
-                    }
-                }
-            }
-            return Math.max(-10, Math.min(10, Math.round(value * 10) / 10));
-        },
-
         applyDbEntryToReview: async function(itemId) {
             const db = this.getIemDatabase();
             const item = db.find(x => x.id === itemId);
             if (!item) { showToast("Database entry not found.", "⚠️"); return; }
+
+            this._iemPreApplySnapshot = {
+                brand: document.getElementById('brand') ? document.getElementById('brand').value : '',
+                model: document.getElementById('model') ? document.getElementById('model').value : '',
+                price: document.getElementById('price') ? document.getElementById('price').value : '',
+                listeningVolume: document.getElementById('listening-volume') ? document.getElementById('listening-volume').value : 'moderate',
+                impedance: document.getElementById('impedance') ? document.getElementById('impedance').value : '32',
+                sensitivity: document.getElementById('sensitivity') ? document.getElementById('sensitivity').value : '110',
+                formFactor: this.formFactor || 'IEM',
+                connector: this.connector || '2-pin',
+                selectedDriverTypes: Object.assign({}, this.selectedDriverTypes || {}),
+                tags: Array.from(this.selectedTags || []),
+                genres: Array.from(this.selectedGenres || []),
+                bass: Array.from(this.selectedBass || []),
+                toneSliders: this.sliderNodes ? this.sliderNodes.map(n => ({ id: n.element.id, value: n.element.value, display: n.displayValueNode ? n.displayValueNode.textContent : n.element.value })) : []
+            };
 
             const fileCount = Array.isArray(item.files) ? item.files.length : 0;
             const fileIdx = Math.max(0, Math.min(this._iemDbFileIdx[item.id] || 0, fileCount - 1));
@@ -3048,7 +2968,6 @@ renderIemDbSearch: function(query) {
 
             showToast(`Loading "${item.brand} ${item.model}${item.variant ? ' (' + item.variant + ')' : ''}" from database...`, "🔍");
             this._iemDbActiveId = item.id;
-            const requestedId = item.id;
             const searchInput = document.getElementById('iem-db-search-input');
             if (searchInput) this.renderIemDbSearch(searchInput.value);
             await this.ensureChartReady().catch(() => {});
@@ -3062,13 +2981,6 @@ renderIemDbSearch: function(query) {
                 } catch (e) { console.warn("[IEM DB Fill] curve load failed:", e); }
             }
 
-            // A newer selection may have been applied while we awaited the
-            // curve load — a slow IndexedDB read must not overwrite the newer
-            // fill's form values.
-            if (this._iemDbActiveId !== requestedId) return;
-
-            this.resetReviewForm();
-
             document.getElementById('brand').value = item.brand || '';
             document.getElementById('model').value = (item.model || '') + (item.variant ? ' ' + item.variant : '');
             document.getElementById('price').value = (item.price_usd != null ? item.price_usd : '');
@@ -3079,20 +2991,6 @@ renderIemDbSearch: function(query) {
             if (document.getElementById('sensitivity-slider')) document.getElementById('sensitivity-slider').value = Math.min(125, Math.max(80, Math.round(item.sensitivity || 80)));
             let impEl = document.getElementById('impedance');
             if (impEl) document.getElementById('impedance').dispatchEvent(new Event('input', { bubbles: true }));
-
-            // Ease-of-Drive slider: derived from the entry's impedance/sensitivity
-            // with the same voltage-requirement math as the Find tab badges.
-            // Wireless form factors have no impedance spec and can't be driven
-            // by external amps — their built-in DAC/amp maxes the slider out.
-            const isWireless = (item.form_factor === 'Wireless Earbuds (TWS)' || item.form_factor === 'Wireless Over-Ear Headphones');
-            const driveVal = isWireless ? 10 : this.computeDriveSliderValue(item.impedance, item.sensitivity);
-            if (driveVal !== null) {
-                const driveNode = (this.sliderNodes || []).find(n => n.element && n.element.id === 'ease-of-drive');
-                if (driveNode) {
-                    driveNode.element.value = driveVal.toFixed(1);
-                    if (driveNode.displayValueNode) driveNode.displayValueNode.textContent = (driveVal >= 0 ? "+" : "") + driveVal.toFixed(1);
-                }
-            }
 
             if (item.form_factor) this.setFormFactor(item.form_factor);
             if (item.connector) this.setConnector(item.connector);
@@ -3346,8 +3244,8 @@ renderIemDbSearch: function(query) {
             this.updateAll();
         },
         tonalityTags: [
-            {name: "⚖️ Neutral"}, {name: "✨ Bright"}, {name: "⚡ Treble-Head"}, {name: "🌿 Warm"}, {name: "🌑 Dark"},
-            {name: "🔺 V-Shaped"}, {name: "🧲 U-Shaped"}, {name: "🎛️ Studio-Monitoring"}, {name: "🎯 Mid-Forward"}, {name: "🌬️ Airy"},
+            {name: "⚖️ Neutral"}, {name: "✨ Bright"}, {name: "🌿 Warm"}, {name: "🌑 Dark"},
+            {name: "🔺 V-Shape"}, {name: "🪞 U-Shape"}, {name: "🎯 Mid-Forward"}, {name: "🌬️ Airy"},
             {name: "💎 Detailed"}, {name: "☁️ Smooth"}, {name: "🔥 Energetic"}, {name: "😌 Relaxed"}
         ],
         bassTags: [
@@ -3380,6 +3278,10 @@ renderIemDbSearch: function(query) {
             });
 
             this.debouncedUpdateAll = rafThrottle(() => this.updateAll());
+            // index.html's #lib-search oninput calls IEM.debouncedRenderLibrary(),
+            // which was never defined -- every keystroke threw and the
+            // Library search never filtered as you typed.
+            this.debouncedRenderLibrary = debounce(() => this.renderLibrary(), 180);
 
             this.updateDacUI(this.dacTiers[this.currentDacIdx]);
             this.renderReviewSelectedTags();
@@ -3484,7 +3386,7 @@ renderIemDbSearch: function(query) {
 
                         if (input) input.value = newValue;
                         IEM_Module.updateGauge(id, newValue);
-                        IEM_Module.debouncedUpdateAll();
+                        IEM_Module.updateAll();
                     });
                 };
 
@@ -3531,7 +3433,7 @@ renderIemDbSearch: function(query) {
             const normalized = (clamped - constraint.min) / (constraint.max - constraint.min);
             const rotation = (normalized * 180) - 90;
 
-            needle.style.transition = "transform .35s cubic-bezier(.22, 1, .36, 1)";
+            needle.style.transition = "transform .5s cubic-bezier(.22, 1, .36, 1)";
             needle.style.transform = `rotate(${rotation}deg)`;
 
             const impedance = id === "impedance" ? clamped : parseFloat(document.getElementById("impedance")?.value || 32);
@@ -3588,7 +3490,7 @@ renderIemDbSearch: function(query) {
             const slider = document.getElementById(`${id}-slider`);
             if (slider && parseFloat(slider.value) !== clamped) {
                 slider.value = clamped;
-                if (window.syncGlobalSliders) window.syncGlobalSliders(slider);
+                if (window.syncGlobalSliders) window.syncGlobalSliders();
             }
         },
         handleGaugeSlider: function(id, val) {
@@ -3611,7 +3513,7 @@ renderIemDbSearch: function(query) {
 
                 input.value = Math.round(snapVal);
                 this.updateGauge(id, snapVal);
-                this.debouncedUpdateAll();
+                this.updateAll();
             }
         },
         setDacPower: function(dacName) {
@@ -3634,8 +3536,7 @@ renderIemDbSearch: function(query) {
             { id: 'mids', label: 'Mids', emoji: '🎤' },
             { id: 'treble', label: 'Treble', emoji: '✨' },
             { id: 'stage', label: 'Stage', emoji: '🏟️' },
-            { id: 'fit', label: 'Fit', emoji: '🎧' },
-            { id: 'package', label: 'Package', emoji: '📦' }
+            { id: 'fit', label: 'Fit', emoji: '🎧' }
         ],
         activeSoundCharTab: 'bass',
         cycleSoundCharTab: function(dir) {
@@ -3662,15 +3563,9 @@ renderIemDbSearch: function(query) {
         },
 
         allReviewTags: [
-    "⚖️ Neutral", "💥 Basshead", "⚡ Treble-Head", "🌊 Sub-Bass", "🥊 Punchy Bass", 
-    "🌿 Warm", "🔺 V-Shaped", "🧲 U-Shaped", "☯️ Balanced", "✨ Bright", 
-    "🌑 Dark", "💎 Detailed", "🔍 Resolving", "🔬 Technical", "🏟️ Wide-Stage", 
-    "🔭 Good-Imaging", "🧈 Smooth", "📐 Reference", "🎛️ Studio-Monitoring", "🧠 Analytical", 
-    "🔥 Fun", "😌 Relaxed", "🎮 Gaming", "🏆 Competitive-Gaming", "🎤 Vocal-Focused", 
-    "💰 Budget", "🪙 Mid-Tier", "👑 Premium", "🥇 Flagship", "🤝 Collab", 
-    "🌟 Limited-Edition"
-],
-currentReviewTagIndex: 0,
+            "⚖️ Neutral", "💥 Basshead", "🌊 Sub-Bass", "🥊 Punchy Bass", "🌿 Warm", "🔺 V-Shaped", "☯️ Balanced", "✨ Bright", "🌑 Dark", "💎 Detailed", "🔍 Resolving", "🔬 Technical", "🏟️ Wide-Stage", "🔭 Good-Imaging", "🧈 Smooth", "📐 Reference", "🧠 Analytical", "🔥 Fun", "😌 Relaxed", "🎮 Gaming", "🏆 Competitive-Gaming", "🎤 Vocal-Focused", "💰 Budget", "🪙 Mid-Tier", "👑 Premium", "🥇 Flagship", "🤝 Collab", "🌟 Limited-Edition"
+        ],
+        currentReviewTagIndex: 0,
 
         cycleReviewTag: function(dir) {
             const total = this.allReviewTags.length;
@@ -3763,10 +3658,10 @@ currentReviewTagIndex: 0,
                     div.style.cssText = 'box-shadow: 2px 2px 0px 0px var(--border-color) !important;';
                     div.innerHTML = `
                         <div class="flex items-center gap-2 min-w-0 flex-1 overflow-visible">
-                            <span class="emoji-font vibrant-emoji ${animClass} text-2xl flex-shrink-0 leading-none" style="display: inline-block; transform-origin: center;">${esc(emoji)}</span>
-                            <span class="text-[9.5px] font-black text-[var(--text-main)] truncate leading-tight">${esc(text)}</span>
+                            <span class="emoji-font vibrant-emoji ${animClass} text-2xl flex-shrink-0 leading-none" style="display: inline-block; transform-origin: center;">${emoji}</span>
+                            <span class="text-[9.5px] font-black text-[var(--text-main)] truncate leading-tight">${text}</span>
                         </div>
-                        <button type="button" onclick="event.stopPropagation(); IEM.removeReviewTag('${escJs(tag)}')" class="w-4 h-4 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[9px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${esc(text)}">✕</button>
+                        <button type="button" onclick="event.stopPropagation(); IEM.removeReviewTag('${tag}')" class="w-4 h-4 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[9px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${text}">✕</button>
                     `;
                     container.appendChild(div);
                 } else {
@@ -3780,35 +3675,21 @@ currentReviewTagIndex: 0,
         updateBrandSuggestions: function(query) {
             const box = document.getElementById('brand-suggestions');
             if (!box) return;
-            // Debounce the per-keystroke rebuild (innerHTML + layout reads):
-            // burst-typed queries now collapse into one render.
-            if (this._brandSuggestTimer) clearTimeout(this._brandSuggestTimer);
-            this._brandSuggestTimer = setTimeout(() => {
-                this._brandSuggestTimer = null;
-                this._renderBrandSuggestions(query, box);
-            }, 120);
-        },
-        _renderBrandSuggestions: function(query, box) {
             const q = (query || '').trim();
 
             const db = (window.FindEngine && FindEngine.iemDatabase) || (window.CurveIndexer && CurveIndexer.catalog) || [];
-            // Cache the sorted unique brand list per dataset identity: rebuilding
-            // it on every keystroke was an O(n) scan + sort per input event.
-            if (!this._brandListCache || this._brandListCache.db !== db) {
-                const seen = new Set();
-                const brands = [];
-                for (let i = 0; i < db.length; i++) {
-                    const brand = db[i] && db[i].brand;
-                    if (!brand || seen.has(brand)) continue;
-                    seen.add(brand);
-                    brands.push(brand);
-                }
-                brands.sort((a, b) => a.localeCompare(b));
-                this._brandListCache = { db: db, brands: brands };
-            }
-            const allBrands = this._brandListCache.brands;
             const normQ = q.toLowerCase();
-            const matches = q.length < 1 ? allBrands : allBrands.filter(b => b.toLowerCase().includes(normQ));
+            const seen = new Set();
+            const matches = [];
+            for (let i = 0; i < db.length; i++) {
+                const brand = db[i] && db[i].brand;
+                if (!brand || seen.has(brand)) continue;
+                if (q.length < 1 || brand.toLowerCase().includes(normQ)) {
+                    seen.add(brand);
+                    matches.push(brand);
+                }
+            }
+            matches.sort((a, b) => a.localeCompare(b));
 
             if (matches.length === 0) { box.classList.add('hidden'); box.innerHTML = ''; return; }
 
@@ -3912,6 +3793,9 @@ currentReviewTagIndex: 0,
                 console.warn("Driver synth audio playback failed:", e);
             }
         },
+        addDriverConfig: function() {
+
+        },
         removeDriverConfig: function(type) {
             if (this.selectedDriverTypes && this.selectedDriverTypes[type] !== undefined) {
                 delete this.selectedDriverTypes[type];
@@ -4003,7 +3887,7 @@ currentReviewTagIndex: 0,
             const groups = [
                 {
                     label: 'Tonality',
-                    tags: ['⚖️ Neutral', '✨ Bright', '⚡ Treble-Head', '🌿 Warm', '🌑 Dark', '🔺 V-Shaped', '🧲 U-Shaped', '🎛️ Studio-Monitoring', '🎯 Mid-Forward', '🌬️ Airy', '💎 Detailed', '☁️ Smooth', '🔥 Energetic', '😌 Relaxed']
+                    tags: ['⚖️ Neutral', '✨ Bright', '🌿 Warm', '🌑 Dark', '🔺 V-Shape', '🪞 U-Shape', '🎯 Mid-Forward', '🌬️ Airy', '💎 Detailed', '☁️ Smooth', '🔥 Energetic', '😌 Relaxed']
                 },
                 {
                     label: 'Bass',
@@ -4140,6 +4024,29 @@ currentReviewTagIndex: 0,
                 container.appendChild(div);
             });
         },
+        downsampleImage: function(imgObj, maxDim = 400) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            let w = imgObj.width;
+            let h = imgObj.height;
+
+            if (w > maxDim || h > maxDim) {
+                if (w > h) {
+                    h = Math.round((h * maxDim) / w);
+                    w = maxDim;
+                } else {
+                    w = Math.round((w * maxDim) / h);
+                    h = maxDim;
+                }
+            }
+
+            canvas.width = w;
+            canvas.height = h;
+            ctx.drawImage(imgObj, 0, 0, w, h);
+
+            return canvas.toDataURL('image/jpeg', 0.75);
+        },
 
         handleImageUpload: function(e) {
         const file = e.target.files[0]; if (!file) return;
@@ -4206,7 +4113,8 @@ currentReviewTagIndex: 0,
         this.currentImageBlob = null;
         this.rawImageObj = null;
         this.processedCanvas = null;
-        document.getElementById('image-upload').value = '';
+        const uploadInput = document.getElementById('image-upload');
+        if (uploadInput) uploadInput.value = '';
 
         const canvas = document.getElementById('image-preview-canvas');
         if (canvas) {
@@ -4218,7 +4126,34 @@ currentReviewTagIndex: 0,
         document.getElementById('image-controls-bar').classList.add('hidden');
         document.getElementById('image-clear-btn').classList.add('hidden');
         document.getElementById('upload-placeholder').classList.remove('hidden');
+        this.updateConfidence();
     },
+        // Restore an image saved in a library profile or imported JSON. The
+        // stored value may be a data URL / path string OR a raw Blob (IndexedDB
+        // preserves Blobs; saveToLibrary stores currentImageBlob). Assigning a
+        // Blob to img.src coerces to "[object Blob]" and onload never fires, so
+        // Blob values get an object URL. Tracked for revocation on replace.
+        _restoreStoredImage: function(value) {
+            if (!value) { this.clearImage(); return; }
+            if (this.currentImage && this.currentImage.startsWith('blob:') && !(value instanceof Blob)) {
+                try { URL.revokeObjectURL(this.currentImage); } catch (_) {}
+            }
+            const isBlob = (typeof Blob !== 'undefined') && (value instanceof Blob);
+            this.currentImage = isBlob ? URL.createObjectURL(value) : value;
+            this.rawImageObj = new Image();
+            this.rawImageObj.onload = () => {
+                document.getElementById('image-preview-canvas').classList.remove('hidden');
+                document.getElementById('image-controls-bar').classList.remove('hidden');
+                document.getElementById('image-clear-btn').classList.remove('hidden');
+                document.getElementById('upload-placeholder').classList.add('hidden');
+                this.renderImagePreview();
+            };
+            this.rawImageObj.onerror = () => {
+                console.warn("[IEM] Stored image failed to load — clearing preview.");
+                this.clearImage();
+            };
+            this.rawImageObj.src = this.currentImage;
+        },
         initImageControls: function() {
             const wrapper = document.getElementById('image-preview-container');
             if (!wrapper) return;
@@ -4452,12 +4387,8 @@ currentReviewTagIndex: 0,
             const ctx = canvas.getContext('2d');
 
             const rect = canvas.parentNode.getBoundingClientRect();
-            // Only resize when the container size actually changed — resetting
-            // canvas.width/height every render clears the bitmap and reallocates.
-            if (rect.width > 0 && rect.height > 0 && (canvas.width !== Math.round(rect.width) || canvas.height !== Math.round(rect.height))) {
-                canvas.width = Math.round(rect.width);
-                canvas.height = Math.round(rect.height);
-            }
+            canvas.width = rect.width;
+            canvas.height = rect.height;
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -4484,8 +4415,17 @@ currentReviewTagIndex: 0,
             ctx.drawImage(img, 0, 0, drawW, drawH);
             ctx.restore();
         },
+        updateConfidence: function() {
+        },
         updateAll: function() {
             let totalScore = 0; let count = 0; let valMap = {};
+            const acousticSliders = [
+                'bass', 'sub-bass-extension', 'mid-bass-punch', 'bass-texture', 'bass-speed',
+                'lower-mids', 'upper-mids', 'vocals', 'vocal-fullness', 'mid-naturalness',
+                'treble-energy', 'treble-smooth', 'treble-extension', 'sibilance', 'treble-detail',
+                'soundstage-width', 'soundstage-depth', 'resolution-detail', 'macro-dynamics',
+                'imaging-precision', 'instrument-separation', 'timbre-coherence'
+            ];
             this.sliderNodes.forEach(node => {
                 let val = parseFloat(node.element.value);
 
@@ -4498,11 +4438,18 @@ currentReviewTagIndex: 0,
                 valMap[node.element.id] = normVal;
                 if (node.displayValueNode) {
                     node.displayValueNode.textContent = (val >= 0 ? "+" : "") + val.toFixed(1);
-                    if (APP_ACOUSTIC_SLIDER_SET.has(node.element.id)) {
+                    if (acousticSliders.includes(node.element.id)) {
                         totalScore += normVal;
                         count++;
                     }
                 }
+                // Repaint the bipolar fill here: DB profile fills, library loads
+                // and resets set .value programmatically (no input event fires),
+                // and the old polling tick that used to mask this gap was
+                // removed. paintSliderTrack skips identical gradients, so the
+                // per-node cost on manual drags is a string compare.
+                if (window.paintSliderTrack) window.paintSliderTrack(node.element);
+                else if (window.syncGlobalSliders) window.syncGlobalSliders(node.element);
             });
             const avg = (...ids) => ids.reduce((sum, id) => sum + (valMap[id] !== undefined ? valMap[id] : 5.0), 0) / ids.length;
 
@@ -4518,9 +4465,22 @@ currentReviewTagIndex: 0,
                 EQ.applySourceSimulation();
             }
 
+            const dacImpedances = {
+                'Phone': 6.0,
+                'Laptop': 3.5,
+                'Dongle': 1.0,
+                'Desktop': 0.1
+            };
+            const dacLimits = {
+                'Phone': { v: 0.4, p: 8 },
+                'Laptop': { v: 1.0, p: 30 },
+                'Dongle': { v: 2.0, p: 100 },
+                'Desktop': { v: 4.0, p: 1000 }
+            };
+
             const activeDacName = this.dacTiers[this.currentDacIdx];
-            const dac = APP_DAC_LIMITS[activeDacName] || APP_DAC_LIMITS['Dongle'];
-            const Rs = APP_DAC_IMPEDANCES[activeDacName] || 1.0;
+            const dac = dacLimits[activeDacName] || dacLimits['Dongle'];
+            const Rs = dacImpedances[activeDacName] || 1.0;
 
             let pReqIem, vReqIem;
             if (this.sensUnit === 'V') {
@@ -4602,7 +4562,8 @@ currentReviewTagIndex: 0,
                 statusNode.innerHTML = `<span class="${matchClass} text-sm sm:text-base">${matchText}</span>`;
             }
 
-            const maxRatio = Math.max(voltageRatio, powerRatio);            let compPercent = 100;
+            const maxRatio = Math.max(voltageRatio, powerRatio);
+            let compPercent = 100;
             let compColor = '#10b981';
 
             if (maxRatio <= 1.0) {
@@ -4627,6 +4588,10 @@ currentReviewTagIndex: 0,
             const powerIconEmoji = document.getElementById('power-icon-emoji');
             if (powerIconEmoji) {
                 powerIconEmoji.textContent = '🔋';
+            }
+
+            if (statusNode) {
+                statusNode.innerHTML = `<span class="${matchClass}">${matchText}</span>`;
             }
 
             const notesInput = document.getElementById('review-notes');
@@ -4688,9 +4653,7 @@ currentReviewTagIndex: 0,
             biasClass = unifiedBiasClass;
             if(badge) { badge.innerHTML = biasStr; badge.className = biasClass; }
 if(this.radarChart) {
-// setGlobalTheme caches the id on first boot, so this hot path
-                // never touches localStorage again.
-                const savedThemeId = (window.App && App._cachedThemeId) || localStorage.getItem('settings_theme_id') || 'slate';
+                const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
                 const activeThemeConfig = (window.App && App.themeMap && App.themeMap[savedThemeId]) || {};
                 const themeVars = activeThemeConfig.variables || {};
                 const accentColor = activeThemeConfig.accent || themeVars['--accent-blue'] || '#6488b0';
@@ -4709,12 +4672,7 @@ if(this.radarChart) {
                     avg('treble-energy', 'treble-smooth', 'treble-extension', 'sibilance', 'treble-detail'), valMap['resolution-detail'], avg('soundstage-width', 'soundstage-depth'),
                     valMap['imaging-precision'], valMap['macro-dynamics'], avg('vocals', 'mid-naturalness', 'treble-smooth', 'timbre-coherence'), avg('instrument-separation', 'timbre-coherence', 'ease-of-drive', 'driver-flex')
                 ];
-                // Skip the canvas re-render while the IEM pane is hidden —
-                // Chart.js still processes a full render for a detached
-                // canvas, which is pure waste on every rating tick.
-                if (this.radarChart.canvas && this.radarChart.canvas.offsetParent !== null) {
-                    this.radarChart.update('none');
-                }
+                this.radarChart.update('none');
             }
 
             if (window.EQ) {
@@ -4734,12 +4692,7 @@ if(this.radarChart) {
         const finalScore = this.updateAll(); const id = `${brand}-${model}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
         const sliderValues = {}; this.sliderNodes.forEach(n => { if (n.element.id) sliderValues[n.element.id] = n.element.value; });
 
-        // Radar snapshot: if the chart was never built (e.g. save invoked
-        // before the radar section initialized) persist an empty array rather
-        // than crashing on null .data.datasets.
-        const radarSnapshot = (this.radarChart && this.radarChart.data && this.radarChart.data.datasets && this.radarChart.data.datasets[0]) ? Array.from(this.radarChart.data.datasets[0].data) : [];
-
-        const profile = { id, brand, model, score: parseFloat(finalScore), price: document.getElementById('price').value, impedance: document.getElementById('impedance').value, sensitivity: document.getElementById('sensitivity').value, image: this.currentImageBlob || this.currentImage, notes: document.getElementById('review-notes').value, refVolume: document.getElementById('listening-volume').value, selectedTags: Array.from(this.selectedTags), selectedGenres: Array.from(this.selectedGenres), selectedBass: Array.from(this.selectedBass), sliders: sliderValues, selectedDriverTypes: this.selectedDriverTypes, formFactor: this.formFactor || 'IEM', connector: this.connector || '2-pin', timestamp: Date.now(), radarData: radarSnapshot, toneData: (typeof Tone_Module !== 'undefined' && Tone_Module.getState) ? Tone_Module.getState() : null, eqData: (typeof EQ_Module !== 'undefined' && EQ_Module.getRealValues) ? EQ_Module.getRealValues() : null };
+        const profile = { id, brand, model, score: parseFloat(finalScore), price: document.getElementById('price').value, impedance: document.getElementById('impedance').value, sensitivity: document.getElementById('sensitivity').value, sensUnit: this.sensUnit || 'mW', image: this.currentImageBlob || this.currentImage, notes: document.getElementById('review-notes').value, refVolume: document.getElementById('listening-volume').value, selectedTags: Array.from(this.selectedTags), selectedGenres: Array.from(this.selectedGenres), selectedBass: Array.from(this.selectedBass), sliders: sliderValues, selectedDriverTypes: this.selectedDriverTypes, formFactor: this.formFactor || 'IEM', connector: this.connector || '2-pin', timestamp: Date.now(), radarData: Array.from(this.radarChart.data.datasets[0].data), toneData: (typeof Tone_Module !== 'undefined' && Tone_Module.getState) ? Tone_Module.getState() : null, eqData: (typeof EQ_Module !== 'undefined' && EQ_Module.getRealValues) ? EQ_Module.getRealValues() : null };
 
         const success = await DBCache.saveReview(profile);
         if (success) {
@@ -4750,13 +4703,9 @@ if(this.radarChart) {
         }
     },
         renderLibrary: async function() {
-            // Generation guard: a slower (earlier) render must not append its
-            // stale rows after a newer one already replaced the tbody.
-            const gen = (this._libRenderGen = (this._libRenderGen || 0) + 1);
             const searchInput = document.getElementById('lib-search');
             const searchVal = (searchInput ? searchInput.value : '').toLowerCase();
             const rawLibrary = await this.getLibrary();
-            if (gen !== this._libRenderGen) return;
             const library = rawLibrary.filter(item => {
 
                 if (!item || !item.brand || !item.model) return false;
@@ -4801,8 +4750,6 @@ if(this.radarChart) {
                 const safeImg = esc(imgPath);
                 const safeBrand = esc(item.brand);
                 const safeModel = esc(item.model);
-                const safePrice = esc(item.price);
-                const safeRefVolume = esc(item.refVolume);
 
                 tr.innerHTML = `
                     <td class="px-4 py-3"><input type="checkbox" class="compare-cb accent-blue-500 w-4 h-4 cursor-pointer" value="${safeId}"></td>
@@ -4811,53 +4758,40 @@ if(this.radarChart) {
                         ${imgPath ? `<img src="${safeImg}" class="w-8 h-8 object-cover rounded border border-[var(--border-color)] bg-[#111]">` : '<div class="w-8 h-8 rounded border border-[var(--border-color)] bg-[#111] flex items-center justify-center text-zinc-650">🎧</div>'}
                         <div>
                             <div class="text-xs">${safeBrand} <span class="text-[var(--accent-blue)]">${safeModel}</span></div>
-                            <div class="text-xs text-[var(--text-secondary)] font-normal mt-0.5">$${safePrice || '---'} • Vol: ${safeRefVolume || 'N/A'}</div>
+                            <div class="text-xs text-[var(--text-secondary)] font-normal mt-0.5">$${item.price || '---'} • Vol: ${item.refVolume || 'N/A'}</div>
                         </div>
                     </td>
                     <td class="px-4 py-3 font-black text-md text-center text-[var(--accent-blue)]">${(item.score || 5.0).toFixed(1)}</td>
                     <td class="px-4 py-3 text-right">
-                        <button onclick="IEM.loadFromLibrary('${escJs(item.id)}')" class="px-3 py-1 bg-zinc-800 text-stone-200 rounded text-xs font-bold hover:bg-zinc-700 transition-colors shadow-sm">Load</button>
-                        <button onclick="IEM.deleteFromLibrary('${escJs(item.id)}')" class="ml-2.5 text-red-500 hover:text-red-400 cursor-pointer text-[8px]">❌</button>
+                        <button onclick="IEM.loadFromLibrary('${item.id}')" class="px-3 py-1 bg-zinc-800 text-stone-200 rounded text-xs font-bold hover:bg-zinc-700 transition-colors shadow-sm">Load</button>
+                        <button onclick="IEM.deleteFromLibrary('${item.id}')" class="ml-2.5 text-red-500 hover:text-red-400 cursor-pointer text-[8px]">❌</button>
                     </td>`;
                 fragment.appendChild(tr);
             });
 
             requestAnimationFrame(() => {
-                if (gen !== this._libRenderGen) return;
                 tbody.appendChild(fragment);
             });
-        },
-        debouncedRenderLibrary: function() {
-            if (this._renderLibraryTimer) clearTimeout(this._renderLibraryTimer);
-            this._renderLibraryTimer = setTimeout(() => {
-                this._renderLibraryTimer = null;
-                this.renderLibrary();
-            }, 120);
         },
         toggleLibraryModal: async function() { const modal = document.getElementById('library-modal'); if(modal.classList.contains('hidden')) { modal.classList.remove('hidden'); this.closeCompare(); await this.renderLibrary(); } else { modal.classList.add('hidden'); } },
         loadFromLibrary: async function(id) {
             const profile = await DBCache.getReview(id); if(!profile) return;
-            document.getElementById('brand').value = profile.brand || ''; document.getElementById('model').value = profile.model || ''; document.getElementById('price').value = profile.price || ''; this.setListeningVolume(profile.listening_volume || 'moderate'); document.getElementById('impedance').value = profile.impedance || '32'; document.getElementById('sensitivity').value = profile.sensitivity || '110'; document.getElementById('review-notes').value = profile.notes || ''; if(profile.refVolume) this.setListeningVolume(profile.refVolume);
+            document.getElementById('brand').value = profile.brand || ''; document.getElementById('model').value = profile.model || ''; document.getElementById('price').value = profile.price || ''; document.getElementById('impedance').value = profile.impedance || '32'; document.getElementById('sensitivity').value = profile.sensitivity || '110'; document.getElementById('review-notes').value = profile.notes || ''; if(profile.refVolume) this.setListeningVolume(profile.refVolume);
             if (profile.formFactor) this.setFormFactor(profile.formFactor);
             if (profile.connector) this.setConnector(profile.connector);
             if (profile.image) {
-                // Never carry the previous upload's blob over a profile load —
-                // saveToLibrary prefers currentImageBlob and would otherwise
-                // persist the OLD image on top of the loaded profile.
-                this.currentImageBlob = null;
-this.currentImage = profile.image;
-this.rawImageObj = new Image();
-this.rawImageObj.onload = () => {
-document.getElementById('image-preview-canvas').classList.remove('hidden');
-document.getElementById('image-controls-bar').classList.remove('hidden');
-document.getElementById('image-clear-btn').classList.remove('hidden');
-document.getElementById('upload-placeholder').classList.add('hidden');
-this.renderImagePreview();
-};
-this.rawImageObj.src = this.currentImage;
-} else {
-this.clearImage();
-}
+                this._restoreStoredImage(profile.image);
+            } else {
+                this.clearImage();
+            }
+
+            // Restore the sensitivity unit the profile was saved with — dB/mW
+            // and dB/V readings differ by ~10*log10(1000/Z), so guessing the
+            // unit silently corrupts every downstream power calculation.
+            if (profile.sensUnit && (profile.sensUnit === 'mW' || profile.sensUnit === 'V')) {
+                this.sensUnit = profile.sensUnit;
+                this.updateSensUnitUI();
+            }
 
             this.selectedDriverTypes = profile.selectedDriverTypes || {};
             this.runDriverAutoLogic();
@@ -4875,26 +4809,9 @@ if (profile.eqData && typeof EQ_Module !== 'undefined' && EQ_Module.loadValues) 
 else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.applyPreset('balanced');
             this.updateAll(); this.toggleLibraryModal();
         },
-        deleteFromLibrary: async function(id) {
-            const ok = await UIKit.confirm({
-                title: "Delete this profile?",
-                message: "You can undo this from the confirmation toast right after.",
-                confirmLabel: "Delete",
-                danger: true
-            });
-            if (!ok) return;
-            const profile = await DBCache.getReview(id);
-            await DBCache.deleteReview(id);
-            await this.renderLibrary();
-            showToast(`Deleted ${(profile && profile.brand) || 'profile'} ${(profile && profile.model) || ''}`.trim(), "🗑️", {
-                action: profile ? {
-                    label: "Undo",
-                    onClick: async () => { await DBCache.saveReview(profile); await this.renderLibrary(); showToast("Profile restored.", "↩️"); }
-                } : undefined
-            });
-        },
+        deleteFromLibrary: async function(id) { if(!confirm("Are you sure you want to delete this profile?")) return; await DBCache.deleteReview(id); await this.renderLibrary(); },
         compareSelected: async function() {
-            const checkboxes = document.querySelectorAll('.compare-cb:checked'); if(checkboxes.length < 2 || checkboxes.length > 4) { showToast("Please select between 2 and 4 IEMs to compare.", "⚠️"); return; }
+            const checkboxes = document.querySelectorAll('.compare-cb:checked'); if(checkboxes.length < 2 || checkboxes.length > 4) { alert("Please select between 2 and 4 IEMs to compare."); return; }
             const library = await this.getLibrary(); const selected = Array.from(checkboxes).map(cb => library.find(i => i.id === cb.value));
             document.getElementById('library-table').classList.add('hidden'); const compView = document.getElementById('compare-view'); const compGrid = document.getElementById('compare-grid');
             compGrid.innerHTML = '';
@@ -4914,42 +4831,27 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
 
                 const esc = (str) => String(str || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
                 const safeImg = esc(imgPath);
-                const safeBrand = esc(item.brand);
-                const safeModel = esc(item.model);
-                const safePrice = esc(item.price);
-                const safeScore = (item.score != null && !isNaN(item.score)) ? esc(Number(item.score).toFixed(1)) : '--';
-                const radar = (Array.isArray(item.radarData) && item.radarData.length) ? item.radarData : [];
-                const radarVal = (i) => (radar[i] != null && !isNaN(radar[i])) ? esc(Number(radar[i]).toFixed(1)) : '--';
 
-                _compHtml += `<div class="bg-[var(--bg-input)] border border-[var(--border-color)] rounded p-4 flex flex-col items-center shadow relative"><div class="absolute top-2 left-2 text-xs text-[var(--text-secondary)] font-mono border border-[var(--border-color)] px-1.5 rounded">$${safePrice || '--'}</div>${imgPath ? `<img src="${safeImg}" class="h-20 object-contain mb-3 rounded bg-[#111] p-1 border border-[var(--border-color)]">` : `<div class="h-20 w-20 bg-[#111] rounded flex items-center justify-center mb-3 text-zinc-650 border border-[var(--border-color)]">🎧</div>`}<h3 class="font-bold text-xs text-center leading-tight">${safeBrand}<br><span class="text-[var(--accent-blue)] text-sm">${safeModel}</span></h3><div class="text-3xl font-black mt-2 text-[var(--text-main)] tracking-tighter">${safeScore}</div><div class="w-full mt-4 space-y-1 text-xs font-semibold"><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Bass</span><span class="text-[var(--text-main)]">${radarVal(0)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Mids</span><span class="text-[var(--text-main)]">${radarVal(1)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Treble</span><span class="text-[var(--text-main)]">${radarVal(2)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Detail</span><span class="text-[var(--text-main)]">${radarVal(3)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Stage</span><span class="text-[var(--text-main)]">${radarVal(4)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Imaging</span><span class="text-[var(--text-main)]">${radarVal(5)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Dynamics</span><span class="text-[var(--text-main)]">${radarVal(6)}</span></div><div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">Tonality</span><span class="text-[var(--text-main)]">${radarVal(7)}</span></div><div class="flex justify-between"><span class="text-zinc-500">Technical</span><span class="text-[var(--text-main)]">${radarVal(8)}</span></div></div></div>`;
+                const radar = Array.isArray(item.radarData) ? item.radarData : [];
+                const rd = (i) => (typeof radar[i] === 'number' && isFinite(radar[i])) ? radar[i].toFixed(1) : '--';
+                const scoreVal = (typeof item.score === 'number' && isFinite(item.score)) ? item.score.toFixed(1) : '--';
+                const brandEsc = esc(item.brand); const modelEsc = esc(item.model);
+                const axes = [['Bass',0],['Mids',1],['Treble',2],['Detail',3],['Stage',4],['Imaging',5],['Dynamics',6],['Tonality',7],['Tech',8]];
+                const axisRows = axes.map(([label, i]) => `<div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">${label}</span><span class="text-[var(--text-main)]">${rd(i)}</span></div>`).join('');
+                _compHtml += `<div class="bg-[var(--bg-input)] border border-[var(--border-color)] rounded p-4 flex flex-col items-center shadow relative"><div class="absolute top-2 left-2 text-xs text-[var(--text-secondary)] font-mono border border-[var(--border-color)] px-1.5 rounded">$${esc(item.price || '--')}</div>${imgPath ? `<img src="${safeImg}" class="h-20 object-contain mb-3 rounded bg-[#111] p-1 border border-[var(--border-color)]">` : `<div class="h-20 w-20 bg-[#111] rounded flex items-center justify-center mb-3 text-zinc-650 border border-[var(--border-color)]">🎧</div>`}<h3 class="font-bold text-xs text-center leading-tight">${brandEsc}<br><span class="text-[var(--accent-blue)] text-sm">${modelEsc}</span></h3><div class="text-3xl font-black mt-2 text-[var(--text-main)] tracking-tighter">${scoreVal}</div><div class="w-full mt-4 space-y-1 text-xs font-semibold">${axisRows}</div></div>`;
             });
             compGrid.innerHTML = _compHtml;
             compView.classList.remove('hidden'); compView.classList.add('flex');
         },
         closeCompare: function() { document.getElementById('library-table').classList.remove('hidden'); document.getElementById('compare-view').classList.add('hidden'); document.getElementById('compare-view').classList.remove('flex'); },
-        resetAll: async function() {
-            const ok = await UIKit.confirm({
-                title: "Clear all workspace data?",
-                message: "This resets the current Review form and clears local settings. Your saved Library entries are kept.",
-                confirmLabel: "Clear",
-                danger: true
-            });
-            if (!ok) return;
+        resetAll: function() {
+            if(!confirm("Clear all current workspace data?")) return;
 
-            const preservedKeys = ['iem_library_v2'];
+            const preservedKeys = ['iem_library_v2', 'settings_theme_id', 'settings_font_id', 'settings_align_hz', 'settings_align_db'];
             const preserved = {};
-            try {
-                for (let i = 0; i < localStorage.length; i++) {
-                    const k = localStorage.key(i);
-                    if (k && (k.indexOf('settings_') === 0 || k === 'iem_library_v2')) {
-                        preserved[k] = localStorage.getItem(k);
-                    }
-                }
-                localStorage.clear();
-                Object.keys(preserved).forEach(k => { if (preserved[k]) localStorage.setItem(k, preserved[k]); });
-            } catch (e) {
-                console.warn("Reset: failed to preserve/restore settings.", e);
-            }
+            preservedKeys.forEach(k => { preserved[k] = localStorage.getItem(k); });
+            localStorage.clear();
+            preservedKeys.forEach(k => { if (preserved[k]) localStorage.setItem(k, preserved[k]); });
 
             this.sliderNodes.forEach(n => { n.element.value = 0.0; });
             document.getElementById('review-notes').value = '';
@@ -5056,22 +4958,14 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
             if (document.getElementById('review-notes')) document.getElementById('review-notes').value = data.notes || '';
 
             if (data.image) {
-                // Never carry the previous upload's blob over a profile load —
-                // saveToLibrary prefers currentImageBlob and would otherwise
-                // persist the OLD image on top of the loaded profile.
-                this.currentImageBlob = null;
-                this.currentImage = data.image;
-                this.rawImageObj = new Image();
-                this.rawImageObj.onload = () => {
-                    document.getElementById('image-preview-canvas').classList.remove('hidden');
-                    document.getElementById('image-controls-bar').classList.remove('hidden');
-                    document.getElementById('image-clear-btn').classList.remove('hidden');
-                    document.getElementById('upload-placeholder').classList.add('hidden');
-                    this.renderImagePreview();
-                };
-                this.rawImageObj.src = this.currentImage;
+                this._restoreStoredImage(data.image);
             } else {
                 this.clearImage();
+            }
+
+            if (data.sensUnit && (data.sensUnit === 'mW' || data.sensUnit === 'V')) {
+                this.sensUnit = data.sensUnit;
+                this.updateSensUnitUI();
             }
 
             this.selectedDriverTypes = data.selectedDriverTypes || {};
@@ -5301,7 +5195,7 @@ exportReviewCard: async function() {
             const connectorIconFiles = {
                 '2-pin': 'icons/2pin.png', 'MMCX': 'icons/mmcx.png', 'QDC': 'icons/qdc.png', 'A2DC': 'icons/a2dc.png',
                 'Fixed Cable': 'icons/fixed.png', 'Detachable Cable': 'icons/detach.png', 'Bluetooth': 'icons/bluetooth.png',
-                'Proprietary': 'icons/proprietary.png',
+                '3.5mm': 'icons/3.5mm.png', '4.4mm': 'icons/4.4mm.png', '6.35mm': 'icons/6.35mm.png', 'XLR': 'icons/xlr.png',
                 'Electrostatic': 'icons/electro.png'
             };
             const formIconImages = {};
@@ -5799,15 +5693,6 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
 
                 this.triggerInfographicDownload(canvas, brand, model);
             };
-            radarImg.onerror = () => {
-                // Radar glyph failed to rasterize (broken/empty source): still
-                // finish the export — draw a bordered placeholder box instead
-                // of silently dropping the download.
-                ctx.strokeStyle = currentTheme.border;
-                ctx.lineWidth = 2;
-                ctx.strokeRect(radarDrawX, radarDrawY, radarDrawSize, radarDrawSize);
-                this.triggerInfographicDownload(canvas, brand, model);
-            };
             radarImg.src = tempRadarSrc;
 
             ctx.fillStyle = currentTheme.bgCard;
@@ -6075,10 +5960,7 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
         },
         updateToneVolume: function() { const volEl = document.getElementById('tone-volume'); const vol = volEl ? parseFloat(volEl.value) : 50; const disp = document.getElementById('tone-vol-display'); if (disp) disp.innerText = vol + '%'; if(this.gain) { setAudioParamSmooth(this.gain.gain, vol / 100 * 0.2); } },
         toneTogglePlay: async function() {
-            if (this._toneStarting) return;
             if(this.osc) { this.toneStop(); return; }
-            this._toneStarting = true;
-            try {
             await EQ_Module.ensureDSPGraph();
             const ctx = SharedAudio.init(); await ctx.resume();
 
@@ -6099,9 +5981,6 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
             if (!EQ_Module.vizLoopRunning) {
                 EQ_Module.startVisualizer();
             }
-            } finally {
-                this._toneStarting = false;
-            }
         },
         toneStop: function() {
             if (this.sweepTimer) {
@@ -6119,7 +5998,6 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
             Mascot.update();
         },
 toneSweep: async function() {
-            if (this._sweepStarting) return;
 if (this.sweepTimer) {
 clearInterval(this.sweepTimer);
 this.sweepTimer = null;
@@ -6130,8 +6008,6 @@ btnSweep.classList.remove('active-yellow');
 }
 return;
 }
-            this._sweepStarting = true;
-            try {
             if (!this.osc) {
                 await this.toneTogglePlay();
             }
@@ -6146,8 +6022,7 @@ return;
                 const slider = document.getElementById('tone-slider');
                 if (slider) {
                     slider.value = this.current;
-                    const pct = Math.min(100, (this.current / 20000) * 100);
-                    slider.style.setProperty('--range-fill', pct + '%');
+                    if (window.syncGlobalSliders) window.syncGlobalSliders();
                 }
                 this.updateUI();
                 if(this.osc) setAudioParamSmooth(this.osc.frequency, this.current);
@@ -6166,9 +6041,6 @@ return;
                     Mascot.applyReactiveAnimation('vibing', 0.5);
                 }
                         }, 50);
-            } finally {
-                this._sweepStarting = false;
-            }
         },
         region: function(f) { if(f < 60) return "Sub Bass"; if(f < 120) return "Mid Bass"; if(f < 250) return "Upper Bass"; if(f < 2000) return "Midrange"; if(f < 5000) return "Upper Mids"; if(f < 10000) return "Treble"; return "Air"; },
         updateUI: function() {
@@ -6182,27 +6054,21 @@ return;
 
             const slider = document.getElementById("tone-slider");
             if (slider) {
-                const percent = (this.current / 20000) * 100;
-                slider.style.background = `linear-gradient(90deg, var(--accent-blue) ${percent}%, rgba(255, 255, 255, 0.08) ${percent}%)`;
+                if (window.paintSliderTrack) {
+                    window.paintSliderTrack(slider);
+                } else {
+                    const percent = (this.current / 20000) * 100;
+                    slider.style.background = `linear-gradient(90deg, var(--accent-blue) ${percent}%, #ffffff ${percent}%)`;
+                }
             }
         },
-        getState: function() { const volEl = document.getElementById('tone-volume'); return { freq: this.current, volume: volEl ? volEl.value : 50 }; },
+        getState: function() { return { freq: this.current, volume: document.getElementById('tone-volume').value }; },
         loadState: function(state) {
-            if (state) {
-                this.current = state.freq || 0;
-                const slider = document.getElementById('tone-slider'); if (slider) slider.value = this.current;
-                const vol = (state.volume != null) ? state.volume : 50;
-                const volEl = document.getElementById('tone-volume'); if (volEl) volEl.value = vol;
-                const volDisp = document.getElementById('tone-vol-display'); if (volDisp) volDisp.innerText = vol + '%';
-                if(this.gain) setAudioParamSmooth(this.gain.gain, vol / 100 * 0.2);
-            } else { this.reset(); }
+            if (state) { this.current = state.freq || 0; document.getElementById('tone-slider').value = this.current; document.getElementById('tone-volume').value = (state.volume || 50); document.getElementById('tone-vol-display').innerText = (state.volume || 50) + '%'; if(this.gain) setAudioParamSmooth(this.gain.gain, (state.volume || 50) / 100 * 0.2); } else { this.reset(); }
             this.updateUI();
         },
         reset: function() {
-            this.current = 0;
-            const slider = document.getElementById('tone-slider'); if (slider) slider.value = 0;
-            const volEl = document.getElementById('tone-volume'); if (volEl) volEl.value = 50;
-            const volDisp = document.getElementById('tone-vol-display'); if (volDisp) volDisp.innerText = '50%';
+            this.current = 0; document.getElementById('tone-slider').value = 0; document.getElementById('tone-volume').value = 50; document.getElementById('tone-vol-display').innerText = '50%';
             if(this.gain) setAudioParamSmooth(this.gain.gain, 50 / 100 * 0.2); this.updateUI();
         }
     };
@@ -6232,18 +6098,6 @@ const EQ_Module = {
                 if (!this.objectUrlsCache) this.objectUrlsCache = [];
                 this.objectUrlsCache.push(url);
 
-                // Bound the cache so long import sessions can't leak hundreds
-                // of object URLs. Only revoke entries no longer referenced by
-                // the registry (those may be actively queued in the playlist).
-                if (this.objectUrlsCache.length > 64) {
-                    const stale = this.objectUrlsCache.splice(0, this.objectUrlsCache.length - 64);
-                    const live = this._urlRegistry ? Object.values(this._urlRegistry) : [];
-                    stale.forEach(u => {
-                        if (live.includes(u)) return;
-                        try { URL.revokeObjectURL(u); } catch (_) {}
-                    });
-                }
-
                 newTracks.push({ file: f, url: url, name: f.name, key: key });
                 if (!this._urlRegistry) this._urlRegistry = {};
                 if (this._urlRegistry[key]) URL.revokeObjectURL(this._urlRegistry[key]);
@@ -6252,23 +6106,6 @@ const EQ_Module = {
         }
 
         if (newTracks.length > 0) {
-            // Importing your own tracks replaces the bundled audio.json
-            // playlist; importing into an all-uploaded playlist appends.
-            const hasBundledTracks = this.playlist.some(t => !t.file);
-            if (hasBundledTracks) {
-                (this.playlist || []).forEach(t => this._revokeTrackUrl(t));
-                this.playlist = [];
-                if (this.audioEl) { this.audioEl.pause(); this.audioEl.removeAttribute('src'); this.audioEl.load(); }
-                if (this.gaplessEl) { this.gaplessEl.pause(); this.gaplessEl.removeAttribute('src'); this.gaplessEl.load(); }
-                this._activeIsA = true;
-                this._standbyTrackIndex = null;
-                this._preloadedIndex = null;
-                this._transitioning = false;
-                if (this.sourceGain) this.sourceGain.gain.value = 1;
-                if (this.gaplessGain) this.gaplessGain.gain.value = 0;
-                this._shuffleOrder = null;
-                this._shufflePos = -1;
-            }
             this.playlist = this.playlist.concat(newTracks);
             this.playPlaylistIndex(this.playlist.length - newTracks.length);
             showToast(`Successfully loaded ${newTracks.length} audio tracks.`, "📂");
@@ -6713,35 +6550,29 @@ simState: { tip: 'off', depth: 'off', seal: 'off' },
                 const nextIdx = (curIdx + dir + total) % total;
                 this.tapeModState = this.tapeModOptions[nextIdx];
                 this.updateTapeModUI();
-                this.updateTapeSimDSP();
+                if (this.updateTapeModDSP) this.updateTapeModDSP();
                 this.drawCurve();
                 if (this.updateAudioConnections) this.updateAudioConnections();
             },
-            updateTapeSimDSP: function() {
-                if (!SharedAudio.workletNode) return;
-                let sims;
-                if (this.tapeModState === 'front') {
-                    sims = [
-                        { index: 6, bypassed: false, filterType: 'lowshelf', frequency: 120, gain: 6.0, q: 0.7 },
-                        { index: 7, bypassed: false, filterType: 'peaking', frequency: 35, gain: 2.5, q: 1.2 }
-                    ];
-                } else if (this.tapeModState === 'rear') {
-                    sims = [
-                        { index: 6, bypassed: false, filterType: 'lowshelf', frequency: 250, gain: 3.5, q: 0.7 },
-                        { index: 7, bypassed: false, filterType: 'peaking', frequency: 150, gain: 2.0, q: 1.0 }
-                    ];
-                } else if (this.tapeModState === 'full') {
-                    sims = [
-                        { index: 6, bypassed: false, filterType: 'lowshelf', frequency: 180, gain: 8.5, q: 0.8 },
-                        { index: 7, bypassed: false, filterType: 'peaking', frequency: 30, gain: 4.0, q: 1.5 }
-                    ];
-                } else {
-                    sims = [
-                        { index: 6, bypassed: true, filterType: 'lowshelf', frequency: 180, gain: 0, q: 0.8 },
-                        { index: 7, bypassed: true, filterType: 'peaking', frequency: 100, gain: 0, q: 1.0 }
-                    ];
+            updateTapeModDSP: function() {
+                if (!this.graphBuilt || !SharedAudio.workletNode) return;
+                const tapeMode = this.tapeModState;
+                let s6 = { index: 6, bypassed: true, filterType: 'lowshelf', frequency: 120, gain: 0, q: 0.7 };
+                let s7 = { index: 7, bypassed: true, filterType: 'peaking', frequency: 35, gain: 0, q: 1.2 };
+                if (tapeMode === 'front') {
+                    s6 = { index: 6, bypassed: false, filterType: 'lowshelf', frequency: 120, gain: 6.0, q: 0.7 };
+                    s7 = { index: 7, bypassed: false, filterType: 'peaking', frequency: 35, gain: 2.5, q: 1.2 };
+                } else if (tapeMode === 'rear') {
+                    s6 = { index: 6, bypassed: false, filterType: 'lowshelf', frequency: 250, gain: 3.5, q: 0.7 };
+                    s7 = { index: 7, bypassed: false, filterType: 'peaking', frequency: 150, gain: 2.0, q: 1.0 };
+                } else if (tapeMode === 'full') {
+                    s6 = { index: 6, bypassed: false, filterType: 'lowshelf', frequency: 180, gain: 8.5, q: 0.8 };
+                    s7 = { index: 7, bypassed: false, filterType: 'peaking', frequency: 30, gain: 4.0, q: 1.5 };
                 }
-                SharedAudio.workletNode.port.postMessage({ type: 'updateSimulations', sims });
+                SharedAudio.workletNode.port.postMessage({
+                    type: 'updateSimulations',
+                    sims: [s6, s7]
+                });
             },
             updateTapeModUI: function() {
                 const label = document.getElementById('label-tape-mod');
@@ -6857,8 +6688,15 @@ vizModalActive: false,
 
         eqPresets: null,
 
-        audioEl: null, source: null, preampNode: null, filters: [], advFilters: [], offlineCtx: null, mathFilters: [], eqEnabled: false, preventClipping: false, connected: false, graphBuilt: false,
+        audioEl: null, source: null, preampNode: null, filters: [], advFilters: [], offlineCtx: null, mathFilters: [], eqEnabled: true, preventClipping: false, connected: false, graphBuilt: false,
         vizIndex: 0, vizMode: 'waveform',
+        // Same headroom-tracking pattern as _hearingMaxBoost/_loudnessMaxBoost
+        // (see updatePreamp/effectivePreampDb) -- the master Bass/Treble
+        // shelves apply raw gain through the same worklet sim bank as
+        // hearing-cal and the loudness compensator, but had no equivalent
+        // preamp pull-back, so a +8dB shelf boost got none of the headroom
+        // protection the other two boost sources already receive.
+        _masterToneMaxBoost: 0,
         initDOMCache: function() {
             this.preampSliderEl = document.getElementById("eq-preampSlider");
             this.preampValEl = document.getElementById("eq-preampVal");
@@ -6891,25 +6729,7 @@ vizModalActive: false,
 
         init: function() {
             const self = this;
-            this.eqPresets = {
-            "relaxed": {"p":1,"m":[1.5,1.5,1,0,-1.5,-2,-2.5,-3,-2,-1],"a":[2,1.5,0.5,-0.5,-1.5,-2,-2,-2,-1,0]},
-            "party": {"p":-2.5,"m":[4.5,4,2,-0.5,-1,0.5,2.5,4,3,1.5],"a":[5,4,1.5,0,-0.5,1,2,3,2.5,1]},
-            "precision": {"p":-2,"m":[-3,-2,0,1.5,2.5,3,3.5,2.5,1.5,1],"a":[-3,-1,0.5,1.5,2.5,2.5,3,2,1,0.5]},
-            "storymode": {"p":-2,"m":[3,3,1.5,0,0.5,1,1.5,2.5,3,2],"a":[4,3,1,0,0.5,1,2,2.5,2,1]},
-            "casualgaming": {"p":-1,"m":[1.5,1.5,1,0.5,0.5,1,1.5,2,1.5,1],"a":[2,1.5,1,0.5,0.5,1,1.5,1.5,1,0.5]},
-            "tvshows": {"p":-1,"m":[-2,-1,0.5,1,2,2,1.5,1,0.5,0],"a":[-2,-1,0.5,1.5,2,1.5,1,0.5,0,0]},
-            "movienight": {"p":-2,"m":[4,3,1,0,-0.5,0.5,1.5,3,3,1.5],"a":[5,3.5,1,0,-0.5,0.5,2,2.5,2,1]},
-            "audiophile_imaging": {"p":-1.5,"m":[-1,-0.5,0,1,1.5,2,2.5,3,2,1],"a":[-1,-0.5,0,1,1.5,2,2,2,1.5,1]},
-            "timbre": {"p":-1,"m":[0.5,1,1.5,1,0.5,1,1.5,2,1,0.5],"a":[0.5,1,1,1,0.5,1,1,1.5,1,0.5]},
-            "caraudio": {"p":-3.5,"m":[6.5,5.5,4,2,0.5,-0.5,1,2.5,3.5,1.5],"a":[7,6,3,1.5,0,-0.5,1,2,2.5,1]},
-            "bass_party": {"p":-3,"m":[5.5,5,3.5,1,-0.5,0.5,2,3,3,1],"a":[6,5,3,1,-0.5,0.5,1.5,2,2,0.5]},
-            "bassboost": {"p":-2.5,"m":[4.5,3.5,1.5,0,0,0,0,0,0,0],"a":[5,3,0.5,0,0,0,0,0,0,0]},
-            "deeprumble": {"p":-2,"m":[5.5,4,2,0.5,0,0,0,0,0,0],"a":[6,4,1.5,0,0,0,0,0,0,0]},
-            "chill": {"p":-1,"m":[2,2.5,1.5,0.5,-0.5,-1,-1.5,-2,-1,0],"a":[3,2.5,1,0,-0.5,-1,-1,-1.5,-1,0]},
-            "vocals": {"p":-1,"m":[-2,-1,0.5,1.5,2.5,3.5,3,2,1,0.5],"a":[-2,-1,0.5,2,3,3,2,1.5,1,0.5]},
-            "bass_cannon": {"p":-4,"m":[7,7,5.5,3,1,0,0,0,0,0],"a":[8,7,4.5,2,0.5,0,0,0,0,0]},
-            "shaker": {"p":-3.5,"m":[5,6,4.5,2,0.5,0,0,0,1,2],"a":[6,6,3.5,1.5,0,0,0,0,1,1.5]}
-        };
+            this.eqPresets = JSON.parse('{"balanced":{"p":0,"m":[0,0,0,0,0,0,0,0,0,0],"a":[0,0,0,0,0,0,0,0,0,0]},"warm":{"p":-1,"m":[0,1.5,3,2,0,0,-1,-1.5,-2,0],"a":[1,2,3.5,2.5,0,0,0,-1,-2,0]},"vshape":{"p":-6.0,"m":[4,4.5,2,-1.5,-2,-1,1.5,3.5,4.5,2],"a":[5,4,1.5,-1,-2,-1,2,4,3,1]},"harman":{"p":-5.0,"m":[2,4.5,3,1,-0.5,-1,1.5,4.5,3.5,-1],"a":[3,4.5,2.5,0.5,-0.5,-1,1,3.5,3,0]},"rock":{"p":-3.0,"m":[3,2.5,1.5,-1,0.5,1,2,2.5,1.5,0],"a":[2,3,1.5,0,0.5,1,1.5,2,1.5,0]},"edm":{"p":-6.5,"m":[5,4,2.5,-1,-1.5,-0.5,1.5,3.5,4,2],"a":[6,4,1.5,-1,-1.5,0,2,3,3.5,1]},"hiphop":{"p":-2.5,"m":[2,4.5,3,1,-0.5,-1,1.5,4.5,3.5,-1],"a":[3,4.5,2.5,0.5,-0.5,-1,1,3.5,3,0]},"classical":{"p":-1.5,"m":[-1.5,-1,0.5,1,1.5,2,2.5,3,2.5,1.5],"a":[-2,-1,0.5,1.5,2,1.5,2,2.5,2,1]},"acoustic":{"p":-1.5,"m":[0.5,1,1.5,2.5,3,2.5,2,1.5,1,0.5],"a":[0,1,2,3,2.5,2,1.5,1,0.5,0]},"orchestra":{"p":-1.5,"m":[-1,-0.5,1,2,2.5,2.5,3,2.5,2,1],"a":[-1,0,1.5,2,2.5,2,2.5,2,1.5,0.5]},"relaxed":{"p":1,"m":[1.5,1.5,1,0,-1.5,-2,-2.5,-3,-2,-1],"a":[2,1.5,0.5,-0.5,-1.5,-2,-2,-2,-1,0]},"party":{"p":-2.5,"m":[4.5,4,2,-0.5,-1,0.5,2.5,4,3,1.5],"a":[5,4,1.5,0,-0.5,1,2,3,2.5,1]},"fps":{"p":-2,"m":[-4,-4,-2,0,0,1,2,3,1.5,0],"a":[-5,-3,0,0,1,1.5,4,2,1,0]},"competitive":{"p":-2.5,"m":[-5,-3,-1,1.5,2,2.5,3.5,4.5,2,0.5],"a":[-6,-4,0,1,2,3,4,3,1.5,0]},"footsteps":{"p":-2,"m":[-6,-4,-1,2.5,3.5,4,2.5,1,0,0],"a":[-7,-5,0,2.5,4,3,2,0.5,0,0]},"immersive":{"p":-2,"m":[4,3.5,1.5,0,-1,0,1,2,3,4],"a":[5,4,2,0,-1,0,1.5,2,2.5,3]},"gaming_imaging":{"p":-1.5,"m":[-2,-1,0,1.5,2,2.5,3,2.5,1.5,1],"a":[-2,-1,0,1,2,2.5,3,2,1,0.5]},"precision":{"p":-2,"m":[-3,-2,0,1.5,2.5,3,3.5,2.5,1.5,1],"a":[-3,-1,0.5,1.5,2.5,2.5,3,2,1,0.5]},"storymode":{"p":-2,"m":[3,3,1.5,0,0.5,1,1.5,2.5,3,2],"a":[4,3,1,0,0.5,1,2,2.5,2,1]},"casualgaming":{"p":-1,"m":[1.5,1.5,1,0.5,0.5,1,1.5,2,1.5,1],"a":[2,1.5,1,0.5,0.5,1,1.5,1.5,1,0.5]},"cinema":{"p":-2.5,"m":[4.5,3.5,1.5,-0.5,-1,0.5,2,3.5,4,2.5],"a":[5,3.5,1,-0.5,-1,1,2.5,3,3,2]},"dialogue":{"p":0,"m":[-6,-4,-2,1.5,3,3.5,2,0,-2,-5],"a":[-8,-5,-2,2,3.5,3,1.5,0,-1.5,-4]},"tvshows":{"p":-1,"m":[-2,-1,0.5,1,2,2,1.5,1,0.5,0],"a":[-2,-1,0.5,1.5,2,1.5,1,0.5,0,0]},"podcast":{"p":0,"m":[-5,-3,-1,1.5,3,3,1.5,0.5,-1,-3],"a":[-6,-4,-1,2,3,2.5,1,0.5,-0.5,-2]},"audiobook":{"p":0,"m":[-6,-4,-1,2,3.5,3,1,0.5,-2,-4],"a":[-7,-5,-1,2.5,3.5,2.5,1,0.5,-1,-3]},"streaming":{"p":-1.5,"m":[2,2,1,0.5,0.5,1,1.5,2.5,3,1.5],"a":[3,2,1,0.5,0.5,1,1.5,2,2,1]},"movienight":{"p":-2,"m":[4,3,1,0,-0.5,0.5,1.5,3,3,1.5],"a":[5,3.5,1,0,-0.5,0.5,2,2.5,2,1]},"analytical":{"p":0,"m":[-1.5,-1,-0.5,0,0.5,1,1.5,2,1,0.5],"a":[-2,-1,-0.5,0,0.5,1,1.5,1.5,1,0.5]},"detail":{"p":-1,"m":[0,0,0,0,0,1,2.5,3.5,2,0],"a":[0,0,0,0,0,1.5,4,2,2,1]},"airy":{"p":-1.5,"m":[0,0,0,0,0,0.5,1.5,3,4.5,3.5],"a":[0,0,0,0,0,0,1,3,4,2.5]},"soundstage":{"p":-2,"m":[1,1,0.5,0,-0.5,0.5,1.5,3.5,4,5],"a":[1,1,0.5,0,-0.5,0.5,1.5,3,3.5,4.5]},"audiophile_imaging":{"p":-1.5,"m":[-1,-0.5,0,1,1.5,2,2.5,3,2,1],"a":[-1,-0.5,0,1,1.5,2,2,2,1.5,1]},"reference":{"p":0,"m":[0,0,0,0,0,0.5,0.5,0,0,0],"a":[0,0,0,0,0,0,0,0,0,0]},"natural":{"p":-1,"m":[1,1,1.5,1.5,1,0.5,1,1.5,1,0.5],"a":[1,1,1,1.5,1,0.5,0.5,1,0.5,0]},"timbre":{"p":-1,"m":[0.5,1,1.5,1,0.5,1,1.5,2,1,0.5],"a":[0.5,1,1,1,0.5,1,1,1.5,1,0.5]},"transparent":{"p":-1,"m":[-1,-0.5,0.5,1,1.5,2,2.5,3,2,1.5],"a":[-1,-0.5,0.5,1,1.5,1.5,2,2.5,1.5,1]},"critlistening":{"p":-0.5,"m":[0,0,0,0.5,0.5,0.5,1,1,0.5,0],"a":[0,0,0,0.5,0.5,0.5,0.5,0.5,0.5,0]},"bass":{"p":-5.5,"m":[9.0,8.5,6.0,2.5,0,-1,-1.5,-1,-0.5,0],"a":[10.0,8.0,4.5,1.5,0,0,0,0,0,0]},"subbass":{"p":-3,"m":[6,5.5,3.5,1,0,0,0,0,0,0],"a":[7,5.5,2,0,0,0,0,0,0,0]},"punchy":{"p":-2,"m":[2,4.5,5.5,3.5,1,0,0,0,0,0],"a":[3,5,4,1.5,0,0,0,0,0,0]},"caraudio":{"p":-3.5,"m":[6.5,5.5,4,2,0.5,-0.5,1,2.5,3.5,1.5],"a":[7,6,3,1.5,0,-0.5,1,2,2.5,1]},"bass_party":{"p":-3,"m":[5.5,5,3.5,1,-0.5,0.5,2,3,3,1],"a":[6,5,3,1,-0.5,0.5,1.5,2,2,0.5]},"slam":{"p":-3,"m":[4,5.5,6,4,1.5,0.5,1.5,3,3.5,1.5],"a":[4.5,6,4.5,2,1,0.5,1,2,2.5,1]},"extremebass":{"p":-5,"m":[9,8.5,6.5,4,1.5,0,0,0.5,1.5,1],"a":[10,8.5,5,2.5,1,0,0,0,1,1]},"club":{"p":-3,"m":[5,5,4.5,2.5,1,0.5,1.5,2.5,2,1],"a":[5,5,4.5,2.5,1,0.5,1.5,2.5,2,1]},"bassboost":{"p":-2.5,"m":[4.5,3.5,1.5,0,0,0,0,0,0,0],"a":[5.0,3.0,0.5,0,0,0,0,0,0,0]},"deeprumble":{"p":-2,"m":[5.5,4.0,2.0,0.5,0,0,0,0,0,0],"a":[6,4,1.5,0,0,0,0,0,0,0]},"rpg":{"p":-1.5,"m":[1.5,1,0.5,0,0.5,1.5,2,2.5,2,1],"a":[2,1.5,0.5,0,0.5,1,1.5,2,1.5,1]},"racing":{"p":-2,"m":[3,3.5,2,0.5,-1,-0.5,1,2.5,2,1],"a":[3,3.5,1.5,0,-0.5,0.5,1.5,2,1.5,1]},"retro":{"p":-1,"m":[-2,-1,0.5,2,2.5,2,1.5,1,0.5,-1],"a":[-3,-1,1,2,2.5,2,1.5,1,0,-2]},"stealth":{"p":-2,"m":[-4,-3,-1,1.5,2,2.5,3.5,4,2.5,1],"a":[-5,-3,0,1,2.5,3,3.5,2.5,1.5,0.5]},"chill":{"p":-1,"m":[2,2.5,1.5,0.5,-0.5,-1,-1.5,-2,-1,0],"a":[3,2.5,1,0,-0.5,-1,-1,-1.5,-1,0]},"sports":{"p":-1.5,"m":[1,2,2.5,1,0,0.5,1.5,2,1,0],"a":[1,2,2,0.5,0,0.5,1,1.5,1,0]},"vintage":{"p":-1,"m":[0.5,1.5,2,2.5,2,1.5,1,0,-2,-4],"a":[1,2,2,2.5,1.5,1,0.5,0,-1,-3]},"documentary":{"p":0,"m":[-3,-1,0.5,1.5,2.5,3,2,1,0,-2],"a":[-4,-2,0,1,2,2.5,1.5,1,0,-1]},"anime":{"p":-1.5,"m":[1,2.5,2,0.5,1,2,2.5,3,2,1],"a":[1,2.5,1.5,0.5,1,1.5,2,2.5,1.5,0.5]},"vocals":{"p":-1,"m":[-2,-1,0.5,1.5,2.5,3.5,3,2,1,0.5],"a":[-2,-1,0.5,2,3,3,2,1.5,1,0.5]},"flat":{"p":0,"m":[0,0,0,0,0,0,0,0,0,0],"a":[0,0,0,0,0,0,0,0,0,0]},"bass_cannon":{"p":-4,"m":[7,7,5.5,3,1,0,0,0,0,0],"a":[8,7,4.5,2,0.5,0,0,0,0,0]},"shaker":{"p":-3.5,"m":[5,6,4.5,2,0.5,0,0,0,1,2],"a":[6,6,3.5,1.5,0,0,0,0,1,1.5]}}');
 
             const curatedPresets = {
 
@@ -7035,6 +6855,9 @@ vizModalActive: false,
             this.allocateResponseBuffers(150);
             this.injectDynamicPresetsOnLoad();
         this.audioEl = document.getElementById("eq-audio");
+        // Gapless/crossfade standby element ("B" arm). Grabbed here so the
+        // timeupdate/durationchange listeners below bind at boot; its
+        // MediaElementSource + gain arm are created later in _buildDSPGraph.
         this.gaplessEl = document.getElementById("eq-audio-gapless");
         if (!this.audioEl) {
             console.error("[EQ_Module.init] #eq-audio element not found — audio playback wiring skipped.");
@@ -7047,97 +6870,56 @@ vizModalActive: false,
                 });
 
                 this.audioEl.onplay = async () => {
-                    try {
-                        Mascot.update();
+                    Mascot.update();
 
-                        const btn = document.getElementById("playlist-play-btn");
-                        const mobBtn = document.getElementById("mobile-play-btn");
-                        if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
-                        if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
-                        const modalBtn = document.getElementById("modal-play-btn");
-                        if(modalBtn) modalBtn.innerHTML = "<span>⏸</span><span>Pause</span>";
+                    const btn = document.getElementById("playlist-play-btn");
+                    const mobBtn = document.getElementById("mobile-play-btn");
+                    if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
+                    if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
+                    const modalBtn = document.getElementById("modal-play-btn");
+                    if(modalBtn) modalBtn.innerHTML = "<span>⏸</span><span>Pause</span>";
 
-                        if (SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
-                            await SharedAudio.ctx.resume();
-                        }
-                        // On the normal path the MediaElementSource is created once in
-                        // ensureDSPGraph() before any playback starts (that's what fixes
-                        // the boot-mute). This branch is only a safety net for the rare
-                        // case where the graph was built without the element present.
-                        if(!this.connected) {
-                            await this.ensureDSPGraph();
-                            if (!this.source && this.audioEl) {
-                                this.source = SharedAudio.ctx.createMediaElementSource(this.audioEl);
+                    if (SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
+                        await SharedAudio.ctx.resume();
+                    }
+                    // On the normal path the MediaElementSource is created once in
+                    // ensureDSPGraph() before any playback starts (that's what fixes
+                    // the boot-mute). This branch is only a safety net for the rare
+                    // case where the graph was built without the element present.
+                    if(!this.connected) {
+                        await this.ensureDSPGraph();
+                        if (!this.source && this.audioEl && SharedAudio.ctx && this.inputGainNode) {
+                            this.source = SharedAudio.ctx.createMediaElementSource(this.audioEl);
+                            // Route through the same gain arm _buildDSPGraph uses
+                            // so per-track loudness match applies on this path too.
+                            if (!this.sourceGain) {
                                 this.sourceGain = SharedAudio.ctx.createGain();
-                                this.sourceGain.gain.value = 1;
-                                this.source.connect(this.sourceGain);
-                                this.sourceGain.connect(this.inputGainNode);
+                                this.sourceGain.gain.value = Math.max(0.05, Math.min(4, this._activeLoudnessGain || 1));
                             }
-                            if (this.audioEl) this.audioEl.volume = 1.0;
-                            if (this.gaplessEl) this.gaplessEl.volume = 1.0;
-                            this.connected = true;
+                            this.source.connect(this.sourceGain);
+                            this.sourceGain.connect(this.inputGainNode);
                         }
+                        if (this.audioEl) this.audioEl.volume = 1.0;
+                        this.connected = true;
+                    }
 
-                        if (!this.vizLoopRunning) {
-                            this.startVisualizer();
-                        }
-                    } catch (err) {
-                        console.error("[EQ_Module] onplay handler failed:", err);
+                    if (!this.vizLoopRunning) {
+                        this.startVisualizer();
                     }
                 };
-
-                const bindMediaEvents = (el) => {
-                    if (!el) return;
-                    el.addEventListener('play', () => {
-                        Mascot.update();
-                        EQ_Module.updateReverbDSP();
-                    });
-                    el.addEventListener('pause', () => {
-                        Mascot.update();
-                        EQ_Module.updateReverbDSP();
-                    });
-                    el.addEventListener('ended', () => {
-                        // Only the ACTIVE element may advance the track. The element
-                        // retired by a gapless crossfade still fires 'ended' after
-                        // we already switched — that must not skip ahead twice.
-                        if (el !== EQ_Module._activeEl()) return;
-                        Mascot.update();
-                        EQ_Module.updateReverbDSP();
-                        EQ_Module.nextTrack();
-                    });
-                    el.addEventListener('timeupdate', () => {
-                        if (el !== EQ_Module._activeEl()) return;
-                        const scrub = document.getElementById('playlist-scrub');
-                        if (scrub && el.duration && !EQ_Module.isSeeking) {
-                            scrub.value = (el.currentTime / el.duration) * 100;
-                        }
-                        const timeCur = document.getElementById('playlist-time-current');
-                        if (timeCur) {
-                            timeCur.textContent = EQ_Module.formatTime(el.currentTime);
-                        }
-                        // Gapless/crossfade: when the active track is within the
-                        // overlap window of its end and the standby is preloaded,
-                        // start the transition early so the next song is already
-                        // sounding at the exact boundary.
-                        const _ov = EQ_Module._overlapSecs();
-                        if (_ov > 0 &&
-                            el.duration && (el.duration - el.currentTime) < Math.max(_ov, 0.3) &&
-                            EQ_Module._preloadedIndex !== null &&
-                            EQ_Module._preloadedIndex !== EQ_Module.playlistIndex &&
-                            !EQ_Module._transitioning && !el.paused) {
-                            EQ_Module.playPlaylistIndex(EQ_Module._preloadedIndex);
-                        }
-                    });
-                    el.addEventListener('durationchange', () => {
-                        if (el !== EQ_Module._activeEl()) return;
-                        const timeDur = document.getElementById('playlist-time-duration');
-                        if (timeDur && el.duration) {
-                            timeDur.textContent = EQ_Module.formatTime(el.duration);
-                        }
-                    });
-                };
-                bindMediaEvents(this.audioEl);
-                bindMediaEvents(this.gaplessEl);
+                this.audioEl.addEventListener('play', () => {
+                    Mascot.update();
+                    EQ_Module.updateReverbDSP();
+                });
+                this.audioEl.addEventListener('pause', () => {
+                    Mascot.update();
+                    EQ_Module.updateReverbDSP();
+                });
+                this.audioEl.addEventListener('ended', () => {
+                    Mascot.update();
+                    EQ_Module.updateReverbDSP();
+                    this.nextTrack();
+                });
             }
 
             const eqFileInput = document.getElementById("eq-file");
@@ -7149,6 +6931,49 @@ vizModalActive: false,
                     e.target.value = '';
                 });
             }
+
+            const updateScrubDisplay = (activeEl) => {
+                if (!activeEl) return;
+                const dur = activeEl.duration;
+                const cur = activeEl.currentTime;
+                if (!this.isSeeking && dur && Number.isFinite(dur) && dur > 0) {
+                    const pct = Math.max(0, Math.min(100, (cur / dur) * 100));
+                    ['playlist-scrub', 'mobile-scrub', 'modal-scrub'].forEach(id => {
+                        const s = document.getElementById(id);
+                        if (!s) return;
+                        s.value = pct;
+                        if (window.paintSliderTrack) window.paintSliderTrack(s);
+                        else s.style.setProperty('--range-fill', pct + '%');
+                    });
+                }
+                const formatted = this.formatTime(cur || 0);
+                const timeCur = document.getElementById('playlist-time-current');
+                const mobTimeCur = document.getElementById('mobile-time-current');
+                const modalTimeCur = document.getElementById('modal-time-current');
+                if (timeCur) timeCur.textContent = formatted;
+                if (mobTimeCur) mobTimeCur.textContent = formatted;
+                if (modalTimeCur) modalTimeCur.textContent = formatted;
+            };
+
+            const attachTimeUpdate = (el) => {
+                if (!el) return;
+                el.addEventListener('timeupdate', () => updateScrubDisplay(el));
+                el.addEventListener('durationchange', () => {
+                    const dur = el.duration;
+                    if (dur && Number.isFinite(dur) && dur > 0) {
+                        const formatted = this.formatTime(dur);
+                        const timeDur = document.getElementById('playlist-time-duration');
+                        const mobTimeDur = document.getElementById('mobile-time-duration');
+                        const modalTimeDur = document.getElementById('modal-time-duration');
+                        if (timeDur) timeDur.textContent = formatted;
+                        if (mobTimeDur) mobTimeDur.textContent = formatted;
+                        if (modalTimeDur) modalTimeDur.textContent = formatted;
+                    }
+                });
+            };
+
+            attachTimeUpdate(this.audioEl);
+            if (this.gaplessEl) attachTimeUpdate(this.gaplessEl);
 
             const scrub = document.getElementById('playlist-scrub');
             const mobScrub = document.getElementById('mobile-scrub');
@@ -7163,71 +6988,95 @@ vizModalActive: false,
                 el.addEventListener('mousedown', startSeek);
                 el.addEventListener('touchstart', startSeek, { passive: true });
 
+                let scrubFlushPending = false;
                 el.addEventListener('input', () => {
                     this.isSeeking = true;
-                    const val = el.value;
-                    const timeCur = document.getElementById('playlist-time-current');
-                    const mobTimeCur = document.getElementById('mobile-time-current');
-                    const modalTimeCur = document.getElementById('modal-time-current');
-                    const activeDur = this._activeEl ? this._activeEl().duration : 0;
-                    if (activeDur) {
-                        const tempTime = (parseFloat(val) / 100) * activeDur;
-                        const formatted = this.formatTime(tempTime);
-                        if (timeCur) timeCur.textContent = formatted;
-                        if (mobTimeCur) mobTimeCur.textContent = formatted;
-                        if (modalTimeCur) modalTimeCur.textContent = formatted;
-                    }
+                    if (scrubFlushPending) return;
+                    scrubFlushPending = true;
+                    requestAnimationFrame(() => {
+                        scrubFlushPending = false;
+                        const val = parseFloat(el.value) || 0;
+                        if (window.paintSliderTrack) window.paintSliderTrack(el);
+                        else el.style.setProperty('--range-fill', val + '%');
+
+                        const active = (this._activeEl && this._activeEl()) || this.audioEl;
+                        if (active && active.duration) {
+                            const tempTime = (val / 100) * active.duration;
+                            const formatted = this.formatTime(tempTime);
+                            const timeCur = document.getElementById('playlist-time-current');
+                            const mobTimeCur = document.getElementById('mobile-time-current');
+                            const modalTimeCur = document.getElementById('modal-time-current');
+                            if (timeCur) timeCur.textContent = formatted;
+                            if (mobTimeCur) mobTimeCur.textContent = formatted;
+                            if (modalTimeCur) modalTimeCur.textContent = formatted;
+                        }
+                    });
                 });
 
                 el.addEventListener('change', () => {
-                    const activeDur = this._activeEl ? this._activeEl().duration : 0;
-                    if (activeDur) {
-                        const targetTime = (parseFloat(el.value) / 100) * activeDur;
-                        this.performCleanSeek(targetTime, el.value);
+                    const val = parseFloat(el.value) || 0;
+                    const active = (this._activeEl && this._activeEl()) || this.audioEl;
+                    if (active && active.duration) {
+                        const targetTime = (val / 100) * active.duration;
+                        // performCleanSeek owns isSeeking until the media
+                        // element actually reports the new position.
+                        this.performCleanSeek(targetTime, val);
+                    } else {
+                        setTimeout(() => { this.isSeeking = false; }, 100);
                     }
-                    setTimeout(() => { this.isSeeking = false; }, 100);
                 });
             };
 
             bindScrubEvents(scrub);
             bindScrubEvents(mobScrub);
+            bindScrubEvents(modalScrub);
 
-            if (modalScrub) {
-                modalScrub.addEventListener('mousedown', startSeek);
-                modalScrub.addEventListener('touchstart', startSeek, { passive: true });
+            window.addEventListener('mouseup', () => { this.isSeeking = false; });
+            window.addEventListener('touchend', () => { this.isSeeking = false; });
 
-                modalScrub.addEventListener('input', () => {
-                    this.isSeeking = true;
-                    const timeCur = document.getElementById('playlist-time-current');
-                    const modalTimeCur = document.getElementById('modal-time-current');
-                    const activeDur = this._activeEl ? this._activeEl().duration : 0;
-                    if (activeDur) {
-                        const tempTime = (parseFloat(modalScrub.value) / 100) * activeDur;
-                        const formatted = this.formatTime(tempTime);
-                        if (timeCur) timeCur.textContent = formatted;
-                        if (modalTimeCur) modalTimeCur.textContent = formatted;
-                    }
+            // rAF scrub ticker: timeupdate only fires ~4x/sec, which made the
+            // thumb crawl in visible 250ms steps. Paint per-frame instead;
+            // skipped entirely while paused, seeking, or dragging.
+            if (this._scrubRaf) cancelAnimationFrame(this._scrubRaf);
+            const paintPlaybackScrub = () => {
+                this._scrubRaf = requestAnimationFrame(paintPlaybackScrub);
+                if (this.isSeeking) return;
+                const active = (this._activeEl && this._activeEl()) || this.audioEl;
+                if (!active || active.paused || !active.duration || !Number.isFinite(active.duration)) return;
+                const pct = Math.max(0, Math.min(100, (active.currentTime / active.duration) * 100));
+                ['playlist-scrub', 'mobile-scrub', 'modal-scrub'].forEach(id => {
+                    const s = document.getElementById(id);
+                    if (!s) return;
+                    if (parseFloat(s.value) === pct) return;
+                    s.value = pct;
+                    if (window.paintSliderTrack) window.paintSliderTrack(s);
                 });
-
-                modalScrub.addEventListener('change', () => {
-                    const activeDur = this._activeEl ? this._activeEl().duration : 0;
-                    if (activeDur) {
-                        const targetTime = (parseFloat(modalScrub.value) / 100) * activeDur;
-                        this.performCleanSeek(targetTime, modalScrub.value);
-                    }
-                    setTimeout(() => { this.isSeeking = false; }, 100);
-                });
-            }
+            };
+            paintPlaybackScrub();
 
             const MathCtx = window.AudioContext || window.webkitAudioContext;
             const activeSampleRate = (window.SharedAudio && SharedAudio.ctx) ? SharedAudio.ctx.sampleRate : 44100;
             this.offlineCtx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 44100, activeSampleRate);
 
-            for(let i = 0; i < 70; i++) {
-                this.mathFilters.push(this.offlineCtx.createBiquadFilter());
+            // Idempotency guard: re-running init (boot retry, diagnostics) must
+            // not push a second set of 70 biquads and desync every mathFilters
+            // index from the band slots.
+            if (this.mathFilters.length === 0) {
+                for(let i = 0; i < 70; i++) {
+                    this.mathFilters.push(this.offlineCtx.createBiquadFilter());
+                }
             }
 
         this.buildEQ();
+
+        // Sync the master toggle to the real state at boot: eqEnabled defaults
+        // to true, so the button must read "EQ: ON" with .is-on applied. This
+        // guards against HTML/JS drift and any stale markup.
+        const eqToggleSyncBtn = document.getElementById("eqToggleBtn");
+        if (eqToggleSyncBtn) {
+            eqToggleSyncBtn.classList.toggle('is-on', !!this.eqEnabled);
+            eqToggleSyncBtn.textContent = this.eqEnabled ? "EQ: ON" : "EQ: OFF";
+        }
 
         this.togglePersonalityMode('simple');
         this.switchGraphViewport('squig');
@@ -7250,10 +7099,11 @@ vizModalActive: false,
                 let lastMaxY = 110;
 
             const getEQNodeAtCoords = (clickX, clickY, w, h, minF, maxF, min, max) => {
-const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignDb : 75.0;
-                    const preVal = EQ_Module.effectivePreampDb();
+                const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignDb : 75.0;
+                const preSlider = document.getElementById("eq-preampSlider");
+                const preVal = preSlider ? parseFloat(preSlider.value) : 0;
 
-                    for (let i = 0; i < EQ_Module.bands.length; i++) {
+                for (let i = 0; i < EQ_Module.bands.length; i++) {
                     const hz = parseFloat(document.getElementById("eq-f" + i)?.value || EQ_Module.bands[i].hz);
                     const g = parseFloat(document.getElementById("eq-s" + i)?.value || 0);
                     const nodeX = w * (Math.log10(hz / minF) / Math.log10(maxF / minF));
@@ -7281,7 +7131,6 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
                 if (PEQDB_Module.isDrawingModeActive) {
                     PEQDB_Module.isUserDrawing = true;
                     PEQDB_Module.drawnPoints = [[clickX, clickY]];
-                    PEQDB_Module.updateSearchModeButtons();
                     squigCanvas.style.cursor = 'crosshair';
                     return;
                 }
@@ -7408,7 +7257,8 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
                         if (isDraggingEQNode && EQ_Module.activeEQNode) {
                             const eqNode = EQ_Module.activeEQNode;
                             const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignDb : 75.0;
-                            const preVal = EQ_Module.effectivePreampDb();
+                            const preSlider = document.getElementById("eq-preampSlider");
+                            const preVal = preSlider ? parseFloat(preSlider.value) : 0;
 
                             let f = Math.pow(10, Math.log10(minF) + (clientX / w) * (Math.log10(maxF) - Math.log10(minF)));
                             f = Math.max(20, Math.min(20000, Math.round(f)));
@@ -7422,16 +7272,31 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
 
                             const hzNode = document.getElementById(prefix + eqNode.i);
                             if (hzNode) hzNode.value = Math.round(f);
-                            // Keep the graph drag and the log-frequency slider in
-                            // sync — previously dragging a node left the fs slider
-                            // showing its old value.
-                            const fsNode = document.getElementById('eq-fs_m' + eqNode.i);
-                            if (fsNode) fsNode.value = EQ_Module.logHzToSlider(Math.round(f));
+                            const fsNode = document.getElementById(eqNode.type === 'main' ? `eq-fs_m${eqNode.i}` : `eq-fs_a${eqNode.i}`);
+                            if (fsNode) fsNode.value = EQ_Module.logHzToSlider(f);
                             const gainNode = document.getElementById(gainPrefix + eqNode.i);
                             if (gainNode) gainNode.value = relativeGain.toFixed(1);
+                            const gainNumNode = document.getElementById(eqNode.type === 'main' ? `eq-s${eqNode.i}_num` : `eq-a${eqNode.i}_num`);
+                            if (gainNumNode) gainNumNode.value = relativeGain.toFixed(1);
 
                             EQ_Module.updateSlider(eqNode.i, eqNode.type);
+                            // updateAudioConnections posts the filter payload to
+                            // the worklet synchronously in this build, so the
+                            // graph drag reaches DSP immediately.
+                            if (EQ_Module.graphBuilt && SharedAudio.workletNode) {
+                                EQ_Module.updateAudioConnections();
+                            } else if (!EQ_Module.graphBuilt) {
+                                // Queue for when the worklet finishes booting
+                                EQ_Module._pendingDspQueue = EQ_Module._pendingDspQueue || [];
+                                if (!EQ_Module._pendingDspQueue.includes('filters')) EQ_Module._pendingDspQueue.push('filters');
+                                EQ_Module.ensureDSPGraph().catch(()=>{});
+                            }
                             EQ_Module.drawCurve();
+                            if (window.syncGlobalSliders) {
+                                if (hzNode) window.syncGlobalSliders(hzNode);
+                                if (gainNode) window.syncGlobalSliders(gainNode);
+                                if (fsNode) window.syncGlobalSliders(fsNode);
+                            }
                             return;
                         }
 
@@ -7540,6 +7405,13 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
 
                         PEQDB_Module.viewMinF = newMinF;
                         PEQDB_Module.viewMaxF = newMaxF;
+                        // newMinY/newMaxY were fully computed and clamped
+                        // above but never committed -- only horizontal
+                        // (frequency-axis) panning ever took visible
+                        // effect; dragging vertically moved the cursor but
+                        // nothing on the graph.
+                        PEQDB_Module.squigYMin = newMinY;
+                        PEQDB_Module.squigYMax = newMaxY;
 
                         self.drawCurve();
                     });
@@ -7579,7 +7451,6 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
                                     return { hz: p.hz, val: Math.max(min, Math.min(max, newVal)) };
                                 });
                                 PEQDB_Module.updateSculptTargetData();
-                                PEQDB_Module._similarTargetEverModified = true;
                                 if (PEQDB_Module.searchMode === 'similar') {
                                     PEQDB_Module.findSimilarCurves();
                                 }
@@ -7587,24 +7458,25 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
                         }
                         PEQDB_Module.drawnPoints = [];
                         EQ_Module.drawCurve();
-                        PEQDB_Module.updateSearchModeButtons();
                     }
                     if (isDraggingEQNode) {
                         isDraggingEQNode = false;
                         EQ_Module.isDragging = false;
                         EQ_Module.activeEQNode = null;
                         squigCanvas.style.cursor = 'default';
-                        PEQDB_Module.updateSearchModeButtons();
-                        if (PEQDB_Module.searchMode === 'similar' && PEQDB_Module.similarDirty) {
-                            PEQDB_Module._similarTargetEverModified = true;
-                            PEQDB_Module.findSimilarCurves();
-                        }
                     }
                     if (isDraggingSculptNode) {
                         isDraggingSculptNode = false;
                         PEQDB_Module.isDragging = false;
                         EQ_Module.isDragging = false;
                         squigCanvas.style.cursor = 'default';
+                        // Every mid-drag findSimilarCurves call bailed out via the
+                        // isDragging guard, and nothing re-ran the scan after
+                        // release — Similar-mode kept showing pre-drag matches.
+                        // The debounced rescan coalesces rapid re-drags.
+                        if (PEQDB_Module.searchMode === 'similar' && PEQDB_Module.debouncedFindSimilarCurves) {
+                            PEQDB_Module.debouncedFindSimilarCurves();
+                        }
                     }
                     if (isPanning) {
                         isPanning = false;
@@ -7646,9 +7518,6 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
                     PEQDB_Module.viewMaxF = 20000;
 
                     PEQDB_Module.updateAlignmentCfgActual();
-                    // Redraw immediately — the reset otherwise only shows on
-                    // the next mousemove.
-                    self.drawCurve();
                 });
 
                 squigCanvas.addEventListener('mousemove', e => {
@@ -7923,12 +7792,25 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
             this._magFiltersVersion++;
             this._magLiveTrackSetup = true;
 
+            // Any hands-on band change (sliders, number boxes, type/slope cycles,
+            // bypass toggles, graph-node drags) reshapes the DSP curve — unlock
+            // live Similar-mode matching. Without this the gate flag was only
+            // ever set by preamp/master-tone moves, so dragging bands left the
+            // Similar tab stuck at "0 matches" until something else moved the
+            // preamp (e.g. running AutoEQ).
+            if (!EQ_Module.isProgrammaticSliderUpdate && typeof PEQDB_Module !== 'undefined') {
+                PEQDB_Module._similarTargetEverModified = true;
+            }
+
             if (window.bypassedBands === undefined) window.bypassedBands = new Set();
 
             if (!this.eqEnabled && !EQ_Module.isProgrammaticSliderUpdate) {
                 this.eqEnabled = true;
                 const eqBtn = document.getElementById("eqToggleBtn");
-                if (eqBtn) eqBtn.classList.add('is-on');
+                if (eqBtn) {
+                    eqBtn.classList.add('is-on');
+                    eqBtn.textContent = "EQ: ON";
+                }
                 this.updateAudioConnections();
             }
 
@@ -7938,9 +7820,6 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
                 slider.style.setProperty('--track-percent', `${percent}%`);
             };
 
-                        let gainBefore = null;
-            let hzBefore = null;
-
             if (type === 'main') {
                 const slider = document.getElementById("eq-s" + i);
                 const qSlider = document.getElementById("eq-q_m" + i);
@@ -7949,16 +7828,16 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
                 const typeBtn = document.getElementById(`eq-t_m${i}`);
 
                 if (!slider || !qSlider || !fInput) return;
-                const bKey = 'm:' + i;
-                const bPrev = this._lastBandValues ? this._lastBandValues[bKey] : null;
-                gainBefore = bPrev ? bPrev.gain : null;
-                hzBefore = bPrev ? bPrev.hz : null;
 
                 const selectedType = typeBtn ? (this.bands[i].type || 'peaking') : 'peaking';
                 const hasNoGain = ['highpass', 'lowpass', 'notch'].includes(selectedType);
 
                 let gain = hasNoGain ? 0.0 : parseFloat(slider.value);
-                if (!EQ_Module.isProgrammaticSliderUpdate && !hasNoGain && Math.abs(gain) <= 0.4) {
+                // Dead-zone snapping is a live-drag nicety only. It must not run
+                // for programmatic loads (AutoEQ results, presets, imported
+                // profiles) or it would silently zero solved bands <= 0.4 dB
+                // after the solver had already committed them.
+                if (!hasNoGain && !EQ_Module.isProgrammaticSliderUpdate && Math.abs(gain) <= 0.4) {
                     gain = 0.0;
                     slider.value = "0.0";
                 }
@@ -7969,14 +7848,17 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
                     qSlider.value = "1.0";
                 }
 
+                // The number boxes are mirrors of the range sliders, which clamp
+                // to their min/max on assignment — so out-of-range typed values
+                // can never reach the DSP anyway. Always resync the box to the
+                // effective (clamped) value instead of letting the label claim a
+                // gain/Q that isn't actually applied.
                 const typedGainBox = document.getElementById(`eq-s${i}_num`);
-                const finalGain = gain;
                 if (!hasNoGain && typedGainBox && typedGainBox !== document.activeElement) {
                     typedGainBox.value = gain.toFixed(1);
                 }
 
                 const typedQBox = document.getElementById(`eq-q_m${i}_num`);
-                const finalQ = q;
                 if (typedQBox && typedQBox !== document.activeElement) {
                     typedQBox.value = q.toFixed(2);
                 }
@@ -7984,9 +7866,9 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
                 const hz = parseFloat(fInput.value) || this.bands[i].hz;
 
                 if (!hasNoGain) {
-                    setSliderFill(slider, Math.max(-20, Math.min(20, finalGain)), -20, 20);
+                    setSliderFill(slider, Math.max(-20, Math.min(20, gain)), -20, 20);
                 }
-                setSliderFill(qSlider, Math.max(0.1, Math.min(10, finalQ)), 0.1, 10);
+                setSliderFill(qSlider, Math.max(0.1, Math.min(10, q)), 0.1, 10);
                 if (fsSlider) {
                     setSliderFill(fsSlider, parseFloat(fsSlider.value), 0, 1000);
                 }
@@ -8001,11 +7883,11 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
                 const stdSlider = document.getElementById(`eq-s${i}-std`);
                 const stdValDisp = document.getElementById(`eq-s${i}-std-val`);
                 if (stdSlider) {
-                    stdSlider.value = finalGain;
-                    setSliderFill(stdSlider, finalGain, -20, 20);
+                    stdSlider.value = gain;
+                    setSliderFill(stdSlider, gain, -20, 20);
                 }
                 if (stdValDisp) {
-                    stdValDisp.textContent = (finalGain >= 0 ? "+" : "") + finalGain.toFixed(1) + " dB";
+                    stdValDisp.textContent = (gain >= 0 ? "+" : "") + gain.toFixed(1) + " dB";
                 }
                 const standardCard = document.getElementById(`standard_card_m${i}`);
                 if (standardCard) {
@@ -8016,21 +7898,12 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
                         standardCard.classList.remove('bypassed');
                     }
                 }
-                if (!this._lastBandValues) this._lastBandValues = {};
-                this._lastBandValues[bKey] = { gain: parseFloat(slider.value), hz: parseFloat(fInput.value) };
             } else {
                 const b = this.advancedBands[i];
                 const slider = document.getElementById("eq-a" + i);
                 const qSlider = document.getElementById("eq-q_a" + i);
 
-                if (slider) {
-                    const aKey = 'a:' + i;
-                    const aPrev = this._lastBandValues ? this._lastBandValues[aKey] : null;
-                    gainBefore = aPrev ? aPrev.gain : null;
-                    hzBefore = aPrev ? aPrev.hz : null;
-                    setSliderFill(slider, b.g !== undefined ? b.g : 0, -20, 20);
-                }
-                hzBefore = b.hz;
+                if (slider) setSliderFill(slider, b.g !== undefined ? b.g : 0, -20, 20);
                 if (qSlider) setSliderFill(qSlider, b.q !== undefined ? b.q : b.defaultQ, 0.1, 10);
 
                 this.recalculateAutoGainMatch();
@@ -8039,25 +7912,11 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
                 if (this.graphBuilt && !EQ_Module.isProgrammaticSliderUpdate) {
                     this.updateAudioConnections();
                 }
-                if (slider) {
-                    if (!this._lastBandValues) this._lastBandValues = {};
-                    this._lastBandValues['a:' + i] = { gain: parseFloat(slider.value), hz: b.hz };
-                }
             }
 
             this.drawCurve();
-            if (PEQDB_Module.updateSearchModeButtons) PEQDB_Module.updateSearchModeButtons();
-            if (!EQ_Module.isProgrammaticSliderUpdate) {
-                if (gainBefore !== null) {
-                    const gNow = parseFloat(document.getElementById(type === 'main' ? "eq-s" + i : "eq-a" + i)?.value ?? '');
-                    const hzNow = parseFloat(document.getElementById(type === 'main' ? "eq-f" + i : "eq-af" + i)?.value ?? '');
-                    if ((!Number.isNaN(gNow) && gNow !== gainBefore) || (!Number.isNaN(hzNow) && hzNow !== hzBefore)) {
-                        PEQDB_Module._similarTargetEverModified = true;
-                    }
-                }
-                if (PEQDB_Module.searchMode === 'similar' && PEQDB_Module.debouncedFindSimilarCurves) {
-                    PEQDB_Module.debouncedFindSimilarCurves();
-                }
+            if (!EQ_Module.isProgrammaticSliderUpdate && PEQDB_Module.searchMode === 'similar' && PEQDB_Module.debouncedFindSimilarCurves) {
+                PEQDB_Module.debouncedFindSimilarCurves();
             }
         },
 
@@ -8076,6 +7935,9 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
         },
 
         updatePreamp: function() {
+            // Live interaction window: grants the graph redraw the 16ms fast
+            // path while this slider is being moved (see eq-draw-curve.js).
+            this._liveDragUntil = performance.now() + 150;
             const preampSlider = document.getElementById("eq-preampSlider");
             let prevPreampVal = null;
             let val = null;
@@ -8089,6 +7951,13 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
                     preampSlider.value = "0.0";
                 }
 
+                if (!window.isProgrammaticPreampUpdate && prevPreampVal !== null && prevPreampVal !== val) {
+                    PEQDB_Module._similarTargetEverModified = true;
+                    if (PEQDB_Module.searchMode === 'similar' && PEQDB_Module.debouncedFindSimilarCurves) {
+                        PEQDB_Module.debouncedFindSimilarCurves();
+                    }
+                }
+
                 const preValEl = document.getElementById("eq-preampVal");
                 const preDispEl = document.getElementById("eq-preampDisplay");
                 if (preValEl && preValEl !== document.activeElement) {
@@ -8098,10 +7967,17 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
                     preDispEl.textContent = (val >= 0 ? "+" : "") + val.toFixed(1) + " dB";
                 }
 
-                const min = parseFloat(preampSlider.min || -20);
-                const max = parseFloat(preampSlider.max || 20);
-                const percent = ((val - min) / (max - min)) * 100;
-                preampSlider.style.background = `linear-gradient(90deg, var(--accent-blue) ${percent}%, rgba(255, 255, 255, 0.08) ${percent}%)`;
+                // Paint via the shared track painter so the unfilled remainder
+                // matches every other slider (#ffffff) — the old custom gradient
+                // used rgba(255,255,255,0.08), which read as a darker bar.
+                if (window.paintSliderTrack) {
+                    window.paintSliderTrack(preampSlider);
+                } else {
+                    const min = parseFloat(preampSlider.min || -20);
+                    const max = parseFloat(preampSlider.max || 20);
+                    const percent = ((val - min) / (max - min)) * 100;
+                    preampSlider.style.background = `linear-gradient(90deg, var(--accent-blue) ${percent}%, #ffffff ${percent}%)`;
+                }
 
                 if (!window.isProgrammaticPreampUpdate) {
                     window.userPreampTarget = val;
@@ -8119,33 +7995,38 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
                     finalPreamp += this.autoGainCompensationDb;
                 }
 
+                // Headroom compensation for boost-only sources. These MUST
+                // mirror effectivePreampDb() (eq-squig-graph.js) exactly, or
+                // the drawn curve and the audible output diverge:
+                //  - Hearing calibration: its peaking boosts are applied raw
+                //    in the worklet sim bank, so pull the master preamp down
+                //    by the largest boost.
+                //  - Equal-loudness compensator: bass/treble shelves reach up
+                //    to +14/+8 dB at low volumes; max() bounds the worst-case
+                //    overshoot without over-attenuating (the shelves act on
+                //    largely disjoint bands).
+                //  - Master Bass/Treble tone shelves: same worklet sim bank
+                //    as the two above (±8dB), previously uncompensated.
                 if (this.hearingCalEnabled && this._hearingMaxBoost) {
                     finalPreamp -= this._hearingMaxBoost;
                 }
-
-                const dacHeadroomGain = (this.sourceSimGain !== undefined) ? this.sourceSimGain : 1.0;
-                const finalGainLinear = Math.pow(10, finalPreamp / 20) * dacHeadroomGain;
+                if (this.loudnessActive && this._loudnessMaxBoost) {
+                    finalPreamp -= this._loudnessMaxBoost;
+                }
+                if (this._masterToneMaxBoost) {
+                    finalPreamp -= this._masterToneMaxBoost;
+                }
 
                 if (this.graphBuilt && SharedAudio.workletNode) {
                     SharedAudio.workletNode.port.postMessage({
                         type: 'updatePreamp',
-                        preampDb: 20 * Math.log10(finalGainLinear)
+                        preampDb: finalPreamp
                     });
                 }
             }
-            // Redraw coalesced: drag ticks fire this continuously, and the
-            // canvas repaint is the expensive part — the audio node update
-            // above stays immediate so the sound follows the finger.
-            if (this._preampDrawTimer) clearTimeout(this._preampDrawTimer);
-            this._preampDrawTimer = setTimeout(() => {
-                this._preampDrawTimer = null;
-                this.drawCurve();
-            }, 30);
-            if (!EQ_Module.isProgrammaticSliderUpdate && prevPreampVal !== null && prevPreampVal !== val) {
-                PEQDB_Module._similarTargetEverModified = true;
-                if (PEQDB_Module.searchMode === 'similar' && PEQDB_Module.debouncedFindSimilarCurves) {
-                    PEQDB_Module.debouncedFindSimilarCurves();
-                }
+            this.drawCurve();
+            if (!EQ_Module.isProgrammaticSliderUpdate && PEQDB_Module.searchMode === 'similar' && PEQDB_Module.debouncedFindSimilarCurves) {
+                PEQDB_Module.debouncedFindSimilarCurves();
             }
         },
         enablePreampEdit: function() {
@@ -8184,13 +8065,13 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
         },
 
         updateMasterTone: function(type, val) {
+            this._liveDragUntil = performance.now() + 150;
+            if (!EQ_Module.isProgrammaticSliderUpdate) PEQDB_Module._similarTargetEverModified = true;
             const value = parseFloat(val);
             const disp = document.getElementById(`eq-master${type.charAt(0).toUpperCase() + type.slice(1)}Val`);
             if (disp) {
                 disp.textContent = (value >= 0 ? "+" : "") + value.toFixed(1) + " dB";
             }
-
-            if (!this.graphBuilt || !SharedAudio.workletNode) return;
 
             const bassSlider = document.getElementById("eq-masterBass");
             const trebSlider = document.getElementById("eq-masterTreble");
@@ -8198,23 +8079,153 @@ const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignD
             const bassGain = bassSlider ? parseFloat(bassSlider.value) : 0.0;
             const trebGain = trebSlider ? parseFloat(trebSlider.value) : 0.0;
 
+            // Only positive (boost) values create headroom risk; a cut
+            // needs no compensation. max(), not sum(), matches the same
+            // reasoning as _loudnessMaxBoost -- these two shelves act on
+            // largely disjoint low/high bands, so bounding on the worst of
+            // the two avoids over-attenuating when only one is active.
+            this._masterToneMaxBoost = Math.max(0, bassGain, trebGain);
+            this.updatePreamp();
+
+            if (!this.graphBuilt || !SharedAudio.workletNode) return;
+
             SharedAudio.workletNode.port.postMessage({
                 type: 'updateSimulations',
                 sims: [
-                    // Master tone lives at 22/23: slots 8/9 belong to the
-                    // loudness match — sharing them made the two last-write
-                    // clobber each other.
                     { index: 22, bypassed: bassGain === 0, filterType: 'lowshelf', frequency: 105, gain: bassGain, q: 0.7 },
                     { index: 23, bypassed: trebGain === 0, filterType: 'highshelf', frequency: 8000, gain: trebGain, q: 0.7 }
                 ]
             });
-            // Coalesce the canvas repaint the same way updatePreamp does —
-            // audio updates above stay immediate per drag tick.
-            if (this._toneDrawTimer) clearTimeout(this._toneDrawTimer);
-            this._toneDrawTimer = setTimeout(() => {
-                this._toneDrawTimer = null;
-                this.drawCurve();
-            }, 30);
+            // updatePreamp() above already calls drawCurve() -- no need to
+            // redraw a second time here.
+        },
+
+        // Genre Target picker (the 🎯 button next to the Music/Gaming Match
+        // badges). The HTML panel/list/apply/close markup and CSS already
+        // existed in full -- these four onclick handlers were the only
+        // piece missing, so every click here previously threw with no UI
+        // feedback. Reuses FindEngine.genreFamilies (the same 16-family
+        // classifier that drives the *automatic* match badges) so picking
+        // "Rock" here targets the exact same tonal profile the badge would
+        // show if a curve naturally matched Rock.
+        _genreTargetState: { music: { open: false, listOpen: false, selectedIdx: -1 }, game: { open: false, listOpen: false, selectedIdx: -1 } },
+
+        toggleGenreTargetPicker: function(side) {
+            const st = this._genreTargetState[side];
+            st.open = !st.open;
+            const panel = document.getElementById(`${side}-genre-target-panel`);
+            if (panel) panel.classList.toggle('hidden', !st.open);
+            if (st.open) {
+                this._renderGenreTargetLabel(side);
+            } else {
+                st.listOpen = false;
+                const list = document.getElementById(`${side}-genre-target-list`);
+                if (list) list.classList.add('hidden');
+            }
+        },
+
+        closeGenreTargetPicker: function(side) {
+            const st = this._genreTargetState[side];
+            st.open = false;
+            st.listOpen = false;
+            const panel = document.getElementById(`${side}-genre-target-panel`);
+            if (panel) panel.classList.add('hidden');
+            const list = document.getElementById(`${side}-genre-target-list`);
+            if (list) list.classList.add('hidden');
+        },
+
+        toggleGenreTargetList: function(side) {
+            const st = this._genreTargetState[side];
+            const list = document.getElementById(`${side}-genre-target-list`);
+            if (!list) return;
+            st.listOpen = !st.listOpen;
+            list.classList.toggle('hidden', !st.listOpen);
+            if (st.listOpen) this._renderGenreTargetList(side);
+        },
+
+        _renderGenreTargetList: function(side) {
+            const list = document.getElementById(`${side}-genre-target-list`);
+            if (!list) return;
+            const st = this._genreTargetState[side];
+            const families = (typeof FindEngine !== 'undefined' && FindEngine.genreFamilies) ? FindEngine.genreFamilies : [];
+            list.innerHTML = '';
+            families.forEach((fam, i) => {
+                const variant = side === 'music' ? (fam.musicVariants && fam.musicVariants[0]) : (fam.gameVariants && fam.gameVariants[0]);
+                if (!variant) return;
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'genre-target-item' + (st.selectedIdx === i ? ' genre-target-item-active' : '');
+                const numSpan = document.createElement('span');
+                numSpan.className = 'genre-target-item-num';
+                numSpan.textContent = String(i + 1);
+                item.appendChild(numSpan);
+                item.appendChild(document.createTextNode(`${variant.emoji} ${variant.name}`));
+                item.onclick = () => {
+                    st.selectedIdx = i;
+                    st.listOpen = false;
+                    list.classList.add('hidden');
+                    this._renderGenreTargetLabel(side);
+                };
+                list.appendChild(item);
+            });
+            const count = families.length;
+            const countLabel = document.getElementById(`${side}-genre-target-count`);
+            if (countLabel) countLabel.textContent = count + ' genres';
+        },
+
+        _renderGenreTargetLabel: function(side) {
+            const st = this._genreTargetState[side];
+            const label = document.getElementById(`${side}-genre-target-label`);
+            const hint = document.getElementById(`${side}-genre-target-hint`);
+            const families = (typeof FindEngine !== 'undefined' && FindEngine.genreFamilies) ? FindEngine.genreFamilies : [];
+            const fam = families[st.selectedIdx];
+            const variant = fam ? (side === 'music' ? fam.musicVariants[0] : fam.gameVariants[0]) : null;
+            if (label) label.textContent = variant ? `${variant.emoji} ${variant.name}` : 'Choose a genre…';
+            if (hint) hint.textContent = variant
+                ? `Apply AutoEQ to push the active curve toward ${variant.name}'s tonal signature.`
+                : 'Pick a genre, then Apply AutoEQ.';
+        },
+
+        applyGenreTargetAutoEQ: function(side) {
+            const st = this._genreTargetState[side];
+            const families = (typeof FindEngine !== 'undefined' && FindEngine.genreFamilies) ? FindEngine.genreFamilies : [];
+            const fam = families[st.selectedIdx];
+            if (!fam) { showToast("Pick a genre first.", "⚠️"); return; }
+
+            const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
+            if (!baseCurve) { showToast("Load a curve into Base first.", "⚠️"); return; }
+
+            const variant = side === 'music' ? fam.musicVariants[0] : fam.gameVariants[0];
+            // fam.profile is the same [sub, warmth, vocal, treble, air] delta
+            // shape getEqBandDeltas() derives from a real 10-band FR (see
+            // FindEngine.getEqBandDeltas / nearestGenreFamilyIndex) --
+            // expanding it back out to those same band frequencies, plus
+            // 20Hz/20kHz endpoints so the curve interpolates cleanly across
+            // the full audible range instead of collapsing to 0 past the
+            // outermost defined point.
+            const [sub, warmth, vocal, treble, air] = fam.profile;
+            const data = [
+                [20, sub], [31, sub], [62, sub],
+                [125, warmth], [250, warmth],
+                [1000, vocal],
+                [2000, treble], [4000, treble],
+                [8000, air], [16000, air], [20000, air]
+            ];
+
+            PEQDB_Module.STATE.activeCurves = PEQDB_Module.STATE.activeCurves.filter(c => c.role !== 'target');
+            PEQDB_Module.STATE.activeCurves.push({
+                uid: 'target-genre-' + side + '-' + st.selectedIdx,
+                id: 'genre-' + side + '-' + st.selectedIdx,
+                name: (variant ? variant.name : 'Genre') + ' Target',
+                role: 'target',
+                color: side === 'music' ? '#2563eb' : '#f59e0b',
+                visible: true,
+                data: data
+            });
+
+            this.closeGenreTargetPicker(side);
+            PEQDB_Module.updateAll();
+            PEQDB_Module.generateLeastSquaresAutoEQ();
         },
 
                 getLiveAdvancedFiltersState: function() {
@@ -8238,7 +8249,8 @@ const adv = this.advancedBands.map((b, i) => {
                         hz: hzVal,
                         g: gVal,
                         q: qVal,
-                        type: b.type || 'peaking'
+                        type: b.type || 'peaking',
+                        slope: b.slope || 12
                     };
                 });
 return adv;
@@ -8255,7 +8267,7 @@ getLiveFiltersState: function() {
                     g: (isBypassed || !sEl) ? 0 : parseFloat(sEl.value),
                     q: qEl ? parseFloat(qEl.value) : b.defaultQ,
                     type: b.type || 'peaking',
-                    slope: b.slope
+                    slope: b.slope || 12
                 };
             });
             return { main };
@@ -8294,26 +8306,29 @@ getLiveFiltersState: function() {
             if (!this._magLiveTrackSetup) {
                 this._magLiveTrackSetup = true;
                 this._magFiltersVersion = 0;
-                // Cache the two elements this hot path reads every call —
-                // getElementById per call during 20-60x/s playback adds up.
-                this._magSimStrengthEl = document.getElementById('sim-tip-strength');
-                this._magLoudnessVolEl = document.getElementById("eq-musicVolumeSlider");
-                this._magMasterBassEl = document.getElementById('eq-masterBass');
-                this._magMasterTrebleEl = document.getElementById('eq-masterTreble');
                 const self = this;
                 document.addEventListener('input', (e) => {
                     const el = e.target;
                     if (el && el.id && /^(?:eq-q_a|eq-q_m|eq-af|eq-f|eq-s|eq-a)/.test(el.id)) self._magFiltersVersion++;
                 }, true);
             }
-            const simStrength = parseFloat((this._magSimStrengthEl || document.getElementById('sim-tip-strength'))?.value || 100) / 100;
-            const loudnessVol = parseFloat((this._magLoudnessVolEl || document.getElementById("eq-musicVolumeSlider"))?.value || 50);
-            const masterBassG = parseFloat((this._magMasterBassEl || document.getElementById('eq-masterBass'))?.value || 0);
-            const masterTrebleG = parseFloat((this._magMasterTrebleEl || document.getElementById('eq-masterTreble'))?.value || 0);
-            const deEsserFreq = Number.isFinite(this.deEsserCurrentFreq) ? this.deEsserCurrentFreq : ((this.deEsserFilter && this.deEsserFilter.frequency) ? this.deEsserFilter.frequency.value : 0);
+            const simStrength = parseFloat(document.getElementById('sim-tip-strength')?.value || 100) / 100;
+            const loudnessVol = parseFloat(document.getElementById("eq-musicVolumeSlider")?.value || 50);
+            // The de-esser notch FOLLOWS the detected sibilance peak in the audio
+            // path (updateSimulations index 5 receives deEsserCurrentFreq), so the
+            // drawn curve must use the same tracked value — deEsserFilter is a
+            // static {frequency:{value:6000}} placeholder that never changes, and
+            // keying the cache off it froze both the notch position and the cache.
+            const deEsserFreq = Number.isFinite(this.deEsserCurrentFreq)
+                ? this.deEsserCurrentFreq
+                : ((this.deEsserFilter && this.deEsserFilter.frequency) ? this.deEsserFilter.frequency.value : 6000);
             const bypassSize = window.bypassedBands ? window.bypassedBands.size : -1;
+            const masterBassVal = parseFloat(document.getElementById("eq-masterBass")?.value || 0);
+            const masterTrebVal = parseFloat(document.getElementById("eq-masterTreble")?.value || 0);
+            const hearingCalStr = (this.hearingCalEnabled && this.hearingOffsets) ? this.hearingOffsets.join(',') : 'off';
+            const gearIdx = (this.currentGearIdx !== undefined) ? this.currentGearIdx : 0;
             const cheapKey = [simStrength, loudnessVol, Number.isFinite(deEsserFreq) ? +deEsserFreq.toFixed(2) : 0,
-                this.deEsserEnabled ? 1 : 0, Math.round((this.deEsserReductionDb || 0) * 10) / 10,
+                this.deEsserEnabled ? 1 : 0, this.deEsserReductionDb || 0,
                 this.loudnessActive ? 1 : 0, this.loudnessCalibrationVol, this.loudnessStrength,
                 this.crossoverActive ? 1 : 0, this.crossoverType,
                 this.crossoverLowTrim, this.crossoverLowMidTrim, this.crossoverMidTrim,
@@ -8321,24 +8336,15 @@ getLiveFiltersState: function() {
                 this.crossoverFreq1, this.crossoverFreq2, this.crossoverFreq3, this.crossoverFreq4,
                 this.sourceSimLowG, this.sourceSimLowF, this.sourceSimHighG, this.sourceSimHighF,
                 this.simState.tip, this.simState.depth, this.simState.seal,
-                this.tapeModState || 'n',
-                this.hearingCalEnabled ? 1 : 0, this.hearingOffsets ? this.hearingOffsets.join(',') : '',
+                this.tapeModState ? JSON.stringify(this.tapeModState) : 'n',
+                masterBassVal, masterTrebVal, hearingCalStr, gearIdx,
                 this.virtualBands ? this.virtualBands.length : -1,
-                this.eqEnabled ? 1 : 0, masterBassG, masterTrebleG].join('|');
-
-            // freqs is a log-spaced array whose range changes when the graph is
-            // zoomed (viewMinF/viewMaxF). Its endpoints uniquely identify the
-            // scale, so include them in the key to keep zoom from reusing
-            // magnitudes computed for the previous range.
-            const freqKey = (numPoints > 0 && freqs && freqs.length >= numPoints)
-                ? `${freqs[0]}-${freqs[numPoints - 1]}`
-                : 'none';
+                this.eqEnabled ? 1 : 0].join('|');
 
             if (this._magCacheNumPoints === numPoints
                 && this._magCacheVersion === this._magFiltersVersion
                 && this._magCacheBypass === bypassSize
-                && this._magCacheCheap === cheapKey
-                && this._magCacheFreqKey === freqKey) {
+                && this._magCacheCheap === cheapKey) {
                 return filterMag;
             }
 
@@ -8346,44 +8352,57 @@ getLiveFiltersState: function() {
             this._magCacheBypass = bypassSize;
             this._magCacheCheap = cheapKey;
             this._magCacheNumPoints = numPoints;
-            this._magCacheFreqKey = freqKey;
-
-            // Every actual recompute bumps this generation counter. Consumers
-            // that cached a magnitude buffer by identity (e.g. FindEngine's
-            // live-response cache) can cheaply detect "the buffer changed" and
-            // recompute their own derived data instead of trusting the same
-            // buffer reference after a fresh fill.
-            this._magGeneration = (this._magGeneration || 0) + 1;
 
             const { main: mainState } = this.getLiveFiltersState();
             const advState = this.getLiveAdvancedFiltersState();
 
-            this._magMissingFilters = false;
             filterMag.fill(1.0);
 
-            // Global EQ bypass mirrors the DSP gate (isBypassed || !eqEnabled)
-            // applied to every band, so the drawn response flattens while the
-            // audio is flat instead of showing an EQ that isn't audible.
-            if (this.eqEnabled) {
-            this.bands.forEach((b, i) => {
+            // When the EQ is toggled OFF (bypass), the worklet skips the main,
+            // advanced and virtual band banks (updateAudioConnections ORs
+            // !eqEnabled into every band's bypassed flag) while sims stay
+            // audible — mirror exactly that here so the drawn curve matches.
+            const includeBands = this.eqEnabled !== false;
+
+            if (includeBands) this.bands.forEach((b, i) => {
                 const state = mainState[i];
                 const activeType = state.type || 'peaking';
                 const hasNoGain = ['highpass', 'lowpass', 'notch'].includes(activeType);
                 const rawG = hasNoGain ? 0.0 : state.g;
 
-                const activeSlope = b.slope || 12;
-                const cascadeNodesCount = activeSlope / 12;
+                // Slope only means anything for Shelf/HP/LP; a stale value
+                // left over from a previous type must not cascade multiple
+                // full-gain copies of a Peaking/Notch section (matches the
+                // same guard in updateAudioConnections()).
+                const slopeCapableForCascade = (activeType === 'lowshelf' || activeType === 'highshelf' || activeType === 'lowpass' || activeType === 'highpass');
+                const activeSlope = slopeCapableForCascade ? (b.slope || 12) : 12;
+                const cascadeNodesCount = Math.max(1, Math.round(activeSlope / 12));
+
+                // Native BiquadFilterNode ignores Q for lowshelf/highshelf
+                // (fixed slope S=1), while the worklet (dsp-processor.js) and
+                // getBiquadMagnitude implement RBJ Q-aware shelf alpha. Evaluate
+                // shelves through getBiquadMagnitude with the DSP's [0.3, 3.0]
+                // shelfQ clamp so the drawn curve matches what is audible and
+                // exported for every shelf Q the UI allows.
+                if (activeType === 'lowshelf' || activeType === 'highshelf') {
+                    const nodeGain = rawG / cascadeNodesCount;
+                    const shelfQ = Math.max(0.3, Math.min(3.0, Number.isFinite(state.q) ? state.q : 1.0));
+                    for (let j = 0; j < numPoints; j++) {
+                        let m = 1.0;
+                        for (let k = 0; k < cascadeNodesCount; k++) {
+                            m *= this.getBiquadMagnitude(activeType, freqs[j], state.hz, shelfQ, nodeGain);
+                        }
+                        filterMag[j] *= m;
+                    }
+                    return;
+                }
 
                 for (let k = 0; k < cascadeNodesCount; k++) {
                     const f = this.mathFilters[i];
-                    if (!f) { this._magMissingFilters = true; continue; }
                     f.type = activeType;
                     f.frequency.value = state.hz;
 
                     let nodeGain = rawG;
-                    if (activeType === 'lowshelf' || activeType === 'highshelf') {
-                        nodeGain = rawG / cascadeNodesCount;
-                    }
                     f.gain.value = nodeGain;
                     f.Q.value = state.q;
                     f.getFrequencyResponse(freqs, magRes, phaseRes);
@@ -8393,11 +8412,22 @@ getLiveFiltersState: function() {
                 }
             });
 
-this.advancedBands.forEach((b, i) => {
+            if (includeBands) this.advancedBands.forEach((b, i) => {
                 const state = advState[i];
+                const advType = state.type || 'peaking';
+
+                // Same shelf-Q parity as the main bands above (custom presets
+                // can restore LS/HS types on advanced bands).
+                if (advType === 'lowshelf' || advType === 'highshelf') {
+                    const advShelfQ = Math.max(0.3, Math.min(3.0, Number.isFinite(state.q) ? state.q : 1.0));
+                    for (let j = 0; j < numPoints; j++) {
+                        filterMag[j] *= this.getBiquadMagnitude(advType, freqs[j], state.hz, advShelfQ, state.g);
+                    }
+                    return;
+                }
+
                 const f = this.mathFilters[10 + i];
-                if (!f) { this._magMissingFilters = true; return; }
-                f.type = state.type || 'peaking';
+                f.type = advType;
                 f.frequency.value = state.hz;
                 f.gain.value = state.g;
                 f.Q.value = state.q;
@@ -8405,7 +8435,7 @@ this.advancedBands.forEach((b, i) => {
                 for(let j = 0; j < numPoints; j++) filterMag[j] *= magRes[j];
             });
 
-            if (this.virtualBands) {
+            if (includeBands && this.virtualBands) {
                 this.virtualBands.forEach((b, i) => {
                     const f = this.mathFilters[20 + i];
                     if (f) {
@@ -8418,7 +8448,6 @@ this.advancedBands.forEach((b, i) => {
                     }
                 });
             }
-            } // end eqEnabled gate
 
             if (this.sourceSimLowG !== undefined && this.sourceSimHighG !== undefined) {
                 const simLowF = this.sourceSimLowF || 10;
@@ -8430,25 +8459,6 @@ this.advancedBands.forEach((b, i) => {
                     const f = freqs[j];
                     if (simLowG !== 0) filterMag[j] *= this.getBiquadMagnitude('lowshelf', f, simLowF, 0.7, simLowG);
                     if (simHighG !== 0) filterMag[j] *= this.getBiquadMagnitude('highshelf', f, simHighF, 0.7, simHighG);
-                }
-            }
-
-            if (this.gearSimOptions && this.currentGearIdx) {
-                const gear = this.gearSimOptions[this.currentGearIdx];
-                if (gear) {
-                    for (let j = 0; j < numPoints; j++) {
-                        const f = freqs[j];
-                        if (gear.lowG !== 0) filterMag[j] *= this.getBiquadMagnitude('lowshelf', f, gear.lowF, 0.7, gear.lowG);
-                        if (gear.highG !== 0) filterMag[j] *= this.getBiquadMagnitude('highshelf', f, gear.highF, 0.7, gear.highG);
-                    }
-                }
-            }
-
-            if (masterBassG !== 0 || masterTrebleG !== 0) {
-                for (let j = 0; j < numPoints; j++) {
-                    const f = freqs[j];
-                    if (masterBassG !== 0) filterMag[j] *= this.getBiquadMagnitude('lowshelf', f, 105, 0.7, masterBassG);
-                    if (masterTrebleG !== 0) filterMag[j] *= this.getBiquadMagnitude('highshelf', f, 8000, 0.7, masterTrebleG);
                 }
             }
 
@@ -8511,23 +8521,50 @@ this.advancedBands.forEach((b, i) => {
                     simVal *= this.getBiquadMagnitude('peaking', f, 30, 1.5, 4.0);
                 }
 
-                if (this.hearingCalEnabled && Array.isArray(this.hearingOffsets)) {
-                    for (let h = 0; h < 8; h++) {
-                        const hGain = this.hearingOffsets[h] || 0;
-                        if (hGain !== 0) {
-                            simVal *= this.getBiquadMagnitude('peaking', f, [250, 500, 1000, 2000, 4000, 8000, 12000, 16000][h], 1.0, hGain);
+                filterMag[j] *= simVal;
+            }
+
+            if (this.gearSimOptions && this.gearSimOptions[gearIdx]) {
+                const gear = this.gearSimOptions[gearIdx];
+                if (gear.lowG !== 0 || gear.highG !== 0) {
+                    for (let j = 0; j < numPoints; j++) {
+                        const f = freqs[j];
+                        if (gear.lowG !== 0) filterMag[j] *= this.getBiquadMagnitude('lowshelf', f, gear.lowF, 0.7, gear.lowG);
+                        if (gear.highG !== 0) filterMag[j] *= this.getBiquadMagnitude('highshelf', f, gear.highF, 0.7, gear.highG);
+                    }
+                }
+            }
+
+            if (masterBassVal !== 0 || masterTrebVal !== 0) {
+                for (let j = 0; j < numPoints; j++) {
+                    const f = freqs[j];
+                    if (masterBassVal !== 0) filterMag[j] *= this.getBiquadMagnitude('lowshelf', f, 105, 0.7, masterBassVal);
+                    if (masterTrebVal !== 0) filterMag[j] *= this.getBiquadMagnitude('highshelf', f, 8000, 0.7, masterTrebVal);
+                }
+            }
+
+            if (this.hearingCalEnabled && this.hearingOffsets && this.hearingCalibrationFrequencies) {
+                const hFreqs = this.hearingCalibrationFrequencies;
+                for (let k = 0; k < hFreqs.length; k++) {
+                    const hGain = this.hearingOffsets[k] || 0;
+                    if (hGain !== 0) {
+                        const hf = hFreqs[k];
+                        for (let j = 0; j < numPoints; j++) {
+                            // Q must match the worklet sim (eq-hearing-cal.js q:1.0)
+                            // and the exports (Q 1.00) or the drawn curve would be
+                            // narrower than what the user actually hears.
+                            filterMag[j] *= this.getBiquadMagnitude('peaking', freqs[j], hf, 1.0, hGain);
                         }
                     }
                 }
-
-                filterMag[j] *= simVal;
             }
 
             if (this.loudnessActive) {
                 const currentVol = loudnessVol;
                 const volumeDiff = Math.max(0, this.loudnessCalibrationVol - currentVol);
-                const bassBoost = (volumeDiff / 100) * 14.0 * (this.loudnessStrength / 100);
-                const trebleBoost = (volumeDiff / 100) * 8.0 * (this.loudnessStrength / 100);
+                const norm = volumeDiff / 100;
+                const bassBoost = 14.0 * Math.pow(norm, 0.6) * (this.loudnessStrength / 100);
+                const trebleBoost = 8.0 * Math.pow(norm, 0.65) * (this.loudnessStrength / 100);
 
                 for (let j = 0; j < numPoints; j++) {
                     const f = freqs[j];
@@ -8552,52 +8589,32 @@ this.advancedBands.forEach((b, i) => {
                     const f = freqs[j];
 
                     const lowCutFreq = type === '5way' ? this.crossoverFreq1 : (type === '2way' ? this.crossoverFreq3 : this.crossoverFreq2);
-                    const magL = this.getBiquadMagnitude('lowpass', f, lowCutFreq, 0.707) *
-                                 this.getBiquadMagnitude('lowpass', f, lowCutFreq, 0.707) * lLin;
+                    const magL = Math.pow(this.getBiquadMagnitude('lowpass', f, lowCutFreq, 0.707, 0), 2) * lLin;
 
                     let magLM = 0;
                     if (type === '5way') {
-                        magLM = this.getBiquadMagnitude('highpass', f, this.crossoverFreq1, 0.707) *
-                                this.getBiquadMagnitude('highpass', f, this.crossoverFreq1, 0.707) *
-                                this.getBiquadMagnitude('lowpass', f, this.crossoverFreq2, 0.707) *
-                                this.getBiquadMagnitude('lowpass', f, this.crossoverFreq2, 0.707) * lmLin;
+                        magLM = Math.pow(this.getBiquadMagnitude('highpass', f, this.crossoverFreq1, 0.707, 0), 2) *
+                                Math.pow(this.getBiquadMagnitude('lowpass', f, this.crossoverFreq2, 0.707, 0), 2) * lmLin;
                     }
 
                     let magM = 0;
                     if (type === '3way' || type === '4way' || type === '5way') {
-                        magM = this.getBiquadMagnitude('highpass', f, this.crossoverFreq2, 0.707) *
-                               this.getBiquadMagnitude('highpass', f, this.crossoverFreq2, 0.707) *
-                               this.getBiquadMagnitude('lowpass', f, this.crossoverFreq3, 0.707) *
-                               this.getBiquadMagnitude('lowpass', f, this.crossoverFreq3, 0.707) * mLin;
+                        magM = Math.pow(this.getBiquadMagnitude('highpass', f, this.crossoverFreq2, 0.707, 0), 2) *
+                               Math.pow(this.getBiquadMagnitude('lowpass', f, this.crossoverFreq3, 0.707, 0), 2) * mLin;
                     }
 
                     let magHM = 0;
                     if (type === '4way' || type === '5way') {
-                        magHM = this.getBiquadMagnitude('highpass', f, this.crossoverFreq3, 0.707) *
-                                this.getBiquadMagnitude('highpass', f, this.crossoverFreq3, 0.707) *
-                                this.getBiquadMagnitude('lowpass', f, this.crossoverFreq4, 0.707) *
-                                this.getBiquadMagnitude('lowpass', f, this.crossoverFreq4, 0.707) * hmLin;
+                        magHM = Math.pow(this.getBiquadMagnitude('highpass', f, this.crossoverFreq3, 0.707, 0), 2) *
+                                Math.pow(this.getBiquadMagnitude('lowpass', f, this.crossoverFreq4, 0.707, 0), 2) * hmLin;
                     }
 
                     const highCutFreq = type === '2way' ? this.crossoverFreq3 : (type === '3way' ? this.crossoverFreq3 : this.crossoverFreq4);
-                    const magH = this.getBiquadMagnitude('highpass', f, highCutFreq, 0.707) *
-                                this.getBiquadMagnitude('highpass', f, highCutFreq, 0.707) * hLin;
+                    const magH = Math.pow(this.getBiquadMagnitude('highpass', f, highCutFreq, 0.707, 0), 2) * hLin;
 
                     const sumMag = magL + magLM + magM + magHM + magH;
                     filterMag[j] *= sumMag;
                 }
-            }
-
-            // Some filter stages can be absent while the graph is being
-            // rebuilt (mathFilters is sized lazily); surface that instead of
-            // silently drawing a partially-cached curve.
-            if (this._magMissingFilters && !this._magMissingWarned) {
-                this._magMissingWarned = true;
-                setTimeout(() => {
-                    if (this._magMissingFilters) {
-                        showToast("Some EQ filter stages are unavailable — the graph may be incomplete.", "⚠️");
-                    }
-                }, 500);
             }
 
             return filterMag;
@@ -8641,31 +8658,20 @@ this.advancedBands.forEach((b, i) => {
                         if (fInput) fInput.value = hz;
                         if (fsSlider) fsSlider.value = this.logHzToSlider(hz);
                         if (sSlider) sSlider.value = Math.max(-20, Math.min(20, g));
-                        if (sNum) sNum.value = Math.max(-20, Math.min(20, g)).toFixed(1);
+                        if (sNum) sNum.value = g.toFixed(1);
                         if (qSlider) qSlider.value = Math.max(0.1, Math.min(10, q));
-                        if (qNum) qNum.value = Math.max(0.1, Math.min(10, q)).toFixed(2);
+                        if (qNum) qNum.value = q.toFixed(2);
 
                         if (typeBtn) {
                             const labelMap = { peaking: 'PK', lowshelf: 'LS', highshelf: 'HS', highpass: 'HP', lowpass: 'LP', notch: 'Notch' };
                             typeBtn.textContent = labelMap[type] || 'PK';
                         }
 
-                        // Restore a shelf/HP/LP steepness if the source carried one
-                        // (mirrors the custom-preset round-trip).
-                        const slopeBtn = document.getElementById(`eq-sl_m${i}`);
-                        if (v.slope !== undefined && slopeBtn) {
-                            b.slope = v.slope;
-                            slopeBtn.textContent = v.slope + 'dB';
-                            if (['lowshelf', 'highshelf', 'lowpass', 'highpass'].includes(type)) {
-                                slopeBtn.classList.remove('hidden');
-                            }
-                        }
-
                         if (this.filters[i]) {
                             this.filters[i].type = type;
                             setAudioParamSmooth(this.filters[i].frequency, hz);
-                            setAudioParamSmooth(this.filters[i].gain, this.eqEnabled ? Math.max(-20, Math.min(20, g)) : 0);
-                            setAudioParamSmooth(this.filters[i].Q, Math.max(0.1, Math.min(10, q)));
+                            setAudioParamSmooth(this.filters[i].gain, this.eqEnabled ? g : 0);
+                            setAudioParamSmooth(this.filters[i].Q, q);
                         }
 
                                                 this.updateSlider(i);
@@ -8698,16 +8704,11 @@ this.advancedBands.forEach((b, i) => {
 
             EQ_Module.isProgrammaticSliderUpdate = false;
 
-            // Push the restored state to the worklet. Slider input events are
-            // suppressed during programmatic loads, so without this the live
-            // audio kept the previous profile while the graph showed the new
-            // one. (applyPreset does the same via updateAudioConnections.)
-            if (this.graphBuilt) {
-                this.updateAudioConnections();
-            }
+            // An imported/loaded profile reshaped the DSP curve even though it
+            // was applied programmatically — unlock Similar-mode matching.
+            PEQDB_Module._similarTargetEverModified = true;
 
             if (PEQDB_Module.searchMode === 'similar' && PEQDB_Module.debouncedFindSimilarCurves) {
-                PEQDB_Module._similarTargetEverModified = true;
                 PEQDB_Module.debouncedFindSimilarCurves();
             }
         },
@@ -8722,7 +8723,15 @@ this.advancedBands.forEach((b, i) => {
             const cosW = Math.cos(w);
             const sinW = Math.sin(w);
 
-            const w0 = 2 * Math.PI * f0 / activeFs;
+            // Clamp to 0.45xSR with a >=1 kHz margin from Nyquist. MUST stay
+            // identical to BiquadFilter.updateCoefficients (dsp-processor.js):
+            // this function draws/exports the response of the filters the
+            // worklet actually builds, so both sides must clamp f0 the same
+            // way. (At all standard audio rates 0.45xSR binds first; the
+            // matching margins keep them aligned at exotic low rates too.)
+            const maxF0 = Math.min(activeFs * 0.45, activeFs / 2 - 1000);
+            const safeF0 = Math.max(10, Math.min(maxF0, Number.isFinite(f0) ? f0 : 1000));
+            const w0 = 2 * Math.PI * safeF0 / activeFs;
             const cosW0 = Math.cos(w0);
             const sinW0 = Math.sin(w0);
             const A = Math.pow(10, G / 40);
@@ -8738,7 +8747,10 @@ this.advancedBands.forEach((b, i) => {
                 a1 = -2 * cosW0;
                 a2 = 1 - alpha / A;
             } else if (type === 'lowshelf') {
-                const innerSqrt = (A + 1 / A) * (1 / Math.max(0.1, Q) - 1) + 2;
+                // Clamp shelf slope exactly like the worklet (dsp-processor.js)
+                // so out-of-range Q values still draw/export what is audible.
+                const shelfQLow = Math.max(0.3, Math.min(3.0, Number.isFinite(Q) ? Q : 1.0));
+                const innerSqrt = (A + 1 / A) * (1 / shelfQLow - 1) + 2;
                 const alpha = (sinW0 / 2) * Math.sqrt(Math.max(0.001, innerSqrt));
 
                 b0 = A * ((A + 1) - (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha);
@@ -8748,7 +8760,8 @@ this.advancedBands.forEach((b, i) => {
                 a1 = -2 * ((A - 1) + (A + 1) * cosW0);
                 a2 = (A + 1) + (A - 1) * cosW0 - 2 * Math.sqrt(A) * alpha;
             } else if (type === 'highshelf') {
-                const innerSqrt = (A + 1 / A) * (1 / Math.max(0.1, Q) - 1) + 2;
+                const shelfQHigh = Math.max(0.3, Math.min(3.0, Number.isFinite(Q) ? Q : 1.0));
+                const innerSqrt = (A + 1 / A) * (1 / shelfQHigh - 1) + 2;
                 const alpha = (sinW0 / 2) * Math.sqrt(Math.max(0.001, innerSqrt));
 
                 b0 = A * ((A + 1) + (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha);
@@ -8802,72 +8815,38 @@ this.advancedBands.forEach((b, i) => {
             return Math.sqrt(numMag2 / Math.max(1e-12, denMag2));
         },
 
-        hzToX: function(hz) { return (Math.log10(hz) - Math.log10(20)) / Math.log10(20000 / 20) * 980; },
-        xToHz: function(x) { return 20 * Math.pow(10, (x / 980) * Math.log10(20000 / 20)); },
-        dbToY: function(db) { return 320 / 2 - (db / 12) * (320 / 2); },
-        yToDb: function(y) { return ((320 / 2 - y) / (320 / 2)) * 12; },
-
-        getFilterAtCoords: function(x, y) {
-            const updatedViz = document.getElementById("eq-largeResponseViz");
-            const rect = updatedViz.getBoundingClientRect();
-            const scaleX = 980 / rect.width;
-            const scaleY = 320 / rect.height;
-            const canvasX = x * scaleX;
-            const canvasY = y * scaleY;
-
-            for(let i=0; i<this.bands.length; i++) {
-                const hz = parseFloat(document.getElementById("eq-f"+i)?.value || this.bands[i].hz);
-                const g = parseFloat(document.getElementById("eq-s"+i)?.value || 0);
-                const handleX = this.hzToX(hz);
-                const handleY = 320 / 2 - (g / 12) * (320 / 2);
-                if (Math.hypot(handleX - canvasX, handleY - canvasY) < 24) return { type: 'main', i };
-            }
-            for(let i=0; i<this.advancedBands.length; i++) {
-                const hz = parseFloat(document.getElementById("eq-af"+i)?.value || this.advancedBands[i].hz);
-                const g = parseFloat(document.getElementById("eq-a"+i)?.value || 0);
-                const handleX = this.hzToX(hz);
-                const handleY = 320 / 2 - (g / 12) * (320 / 2);
-                if (Math.hypot(handleX - canvasX, handleY - canvasY) < 24) return { type: 'adv', i };
-            }
-            return null;
-        },
+        // hzToX/xToHz/dbToY/yToDb/getFilterAtCoords were removed here: they
+        // referenced a canvas ID (#eq-largeResponseViz) that doesn't exist
+        // anywhere in index.html, had zero callers outside this cluster,
+        // and used hardcoded 980x320 canvas dimensions that don't match
+        // the real EQ graph canvas (#eq-squiglinkViz, which is DPR-scaled
+        // and dynamically sized). The live hit-testing path is the
+        // closure-scoped getEQNodeAtCoords used by the graph's own
+        // mouse/touch handlers -- this was an orphaned duplicate, not a
+        // second code path anything depended on.
 
         updateMusicMatch: function() {
-            const resp = FindEngine.getLiveResponseDbs();
-            let maxDb = 0;
-            if (resp) {
-                for (let j = 0; j < resp.length; j++) {
-                    const a = Math.abs(resp[j]);
-                    if (a > maxDb) maxDb = a;
-                }
-            } else {
-                const faders = [];
-                for (let i = 0; i < 10; i++) {
-                    const gEl = document.getElementById('eq-s' + i);
-                    const fEl = document.getElementById('eq-f' + i);
-                    const g = gEl ? parseFloat(gEl.value) : 0.0;
-                    const hz = fEl ? parseFloat(fEl.value) : (this.bands[i] ? this.bands[i].hz : undefined);
-                    faders.push({ hz, g: isNaN(g) ? 0.0 : g });
-                }
-                maxDb = faders.reduce((sum, f) => sum + Math.abs(f.g), 0);
-                if (maxDb < 1.5) {
-                    this.setMusicMatchUI("🚫", "No Match", "text-zinc-500", "anim-match-breath");
-                    return;
-                }
-                const bestMatch = FindEngine.determineLiveMusicGenreMatch(faders, this.activePreset);
-                this.setMusicMatchUI(bestMatch.emoji, bestMatch.name, bestMatch.colorClass, bestMatch.animClass);
-                return;
+            const faders = [];
+            for (let i = 0; i < 10; i++) {
+                const el = document.getElementById('eq-s' + i);
+                faders.push(el ? parseFloat(el.value) : 0.0);
             }
 
-            if (maxDb < 1.5) {
+            const totalAbs = faders.reduce((sum, v) => sum + Math.abs(v), 0);
+            if (totalAbs < 1.5) {
                 this.setMusicMatchUI("🚫", "No Match", "text-zinc-500", "anim-match-breath");
                 return;
             }
 
-            const bestMatch = FindEngine.determineLiveMusicGenreMatch(resp, this.activePreset);
+            const bestMatch = FindEngine.determineLiveMusicGenreMatch(faders, this.activePreset);
             this.setMusicMatchUI(bestMatch.emoji, bestMatch.name, bestMatch.colorClass, bestMatch.animClass);
         },
         setMusicMatchUI: function(emoji, label, colorClass, animClass) {
+            // Runs from the graph draw path (~20-60x/s with the spectrum
+            // overlay active); skip every DOM write while the badge is unchanged.
+            const sig = emoji + '|' + label + '|' + colorClass + '|' + animClass;
+            if (this._musicMatchSig === sig) return;
+            this._musicMatchSig = sig;
             const emojiContainer = document.getElementById('music-match-emoji-container');
             const textContainer = document.getElementById('music-match-genre-text');
 
@@ -8894,6 +8873,9 @@ this.advancedBands.forEach((b, i) => {
             }
         },
         setGameMatchUI: function(emoji, label, colorClass, animClass) {
+            const sig = emoji + '|' + label + '|' + colorClass + '|' + animClass;
+            if (this._gameMatchSig === sig) return;
+            this._gameMatchSig = sig;
             const emojiContainer = document.getElementById('game-match-emoji-container');
             const textContainer = document.getElementById('game-match-genre-text');
 
@@ -8920,165 +8902,20 @@ this.advancedBands.forEach((b, i) => {
             }
         },
         updateGameMatch: function() {
-            const resp = FindEngine.getLiveResponseDbs();
-            let maxDb = 0;
-            if (resp) {
-                for (let j = 0; j < resp.length; j++) {
-                    const a = Math.abs(resp[j]);
-                    if (a > maxDb) maxDb = a;
-                }
-            } else {
-                const faders = [];
-                for (let i = 0; i < 10; i++) {
-                    const gEl = document.getElementById('eq-s' + i);
-                    const fEl = document.getElementById('eq-f' + i);
-                    const g = gEl ? parseFloat(gEl.value) : 0.0;
-                    const hz = fEl ? parseFloat(fEl.value) : (this.bands[i] ? this.bands[i].hz : undefined);
-                    faders.push({ hz, g: isNaN(g) ? 0.0 : g });
-                }
-                maxDb = faders.reduce((sum, f) => sum + Math.abs(f.g), 0);
-                if (maxDb < 1.5) {
-                    this.setGameMatchUI("🚫", "No Match", "text-zinc-500", "anim-match-breath");
-                    return;
-                }
-                const bestMatch = FindEngine.determineLiveGameGenreMatch(faders, this.activePreset);
-                this.setGameMatchUI(bestMatch.emoji, bestMatch.name, bestMatch.colorClass, bestMatch.animClass);
-                return;
+            const faders = [];
+            for (let i = 0; i < 10; i++) {
+                const el = document.getElementById('eq-s' + i);
+                faders.push(el ? parseFloat(el.value) : 0.0);
             }
 
-            if (maxDb < 1.5) {
+            const totalAbs = faders.reduce((sum, v) => sum + Math.abs(v), 0);
+            if (totalAbs < 1.5) {
                 this.setGameMatchUI("🚫", "No Match", "text-zinc-500", "anim-match-breath");
                 return;
             }
 
-            const bestMatch = FindEngine.determineLiveGameGenreMatch(resp, this.activePreset);
+            const bestMatch = FindEngine.determineLiveGameGenreMatch(faders, this.activePreset);
             this.setGameMatchUI(bestMatch.emoji, bestMatch.name, bestMatch.colorClass, bestMatch.animClass);
-        },
-
-        // ---- Genre-Target AutoEQ (🎯 stepper on the Music/Game Match badges) ----
-
-        genreTargetPickIdx: { music: 0, game: 0 },
-
-        // Same fader-deltas fallback used by updateMusicMatch/updateGameMatch,
-        // just returning the raw family INDEX (0-15) instead of a label, so the
-        // picker can default to whatever genre the badge is currently showing.
-        _liveGenreFamilyIndex: function(side) {
-            const resp = FindEngine.getLiveResponseDbs();
-            let deltas = null;
-            if (resp) {
-                deltas = FindEngine.getResponseDeltas(PEQDB_Module.DSP.FREQS, resp);
-            }
-            if (!deltas) {
-                const faders = [];
-                for (let i = 0; i < 10; i++) {
-                    const gEl = document.getElementById('eq-s' + i);
-                    const fEl = document.getElementById('eq-f' + i);
-                    const g = gEl ? parseFloat(gEl.value) : 0.0;
-                    const hz = fEl ? parseFloat(fEl.value) : (this.bands[i] ? this.bands[i].hz : undefined);
-                    faders.push({ hz, g: isNaN(g) ? 0.0 : g });
-                }
-                deltas = FindEngine.getEqBandDeltas(faders);
-            }
-            if (!deltas) return 0;
-            return side === 'game' ? FindEngine.nearestGameGenreFamilyIndex(deltas) : FindEngine.nearestGenreFamilyIndex(deltas);
-        },
-
-        toggleGenreTargetPicker: function(side) {
-            const panelId = side === 'game' ? 'game-genre-target-panel' : 'music-genre-target-panel';
-            const otherId = side === 'game' ? 'music-genre-target-panel' : 'game-genre-target-panel';
-            const panel = document.getElementById(panelId);
-            if (!panel) return;
-            const other = document.getElementById(otherId);
-            if (other) other.classList.add('hidden');
-
-            const wasHidden = panel.classList.contains('hidden');
-            if (wasHidden) {
-                this.genreTargetPickIdx[side] = this._liveGenreFamilyIndex(side);
-                this.renderGenreTargetPicker(side);
-                this.closeGenreTargetList();
-                panel.classList.remove('hidden');
-            } else {
-                panel.classList.add('hidden');
-            }
-        },
-
-        closeGenreTargetPicker: function(side) {
-            const panelId = side === 'game' ? 'game-genre-target-panel' : 'music-genre-target-panel';
-            const panel = document.getElementById(panelId);
-            if (panel) panel.classList.add('hidden');
-        },
-
-        setGenreTargetPick: function(side, value) {
-            const idx = parseInt(value, 10);
-            if (isNaN(idx)) return;
-            this.genreTargetPickIdx[side] = idx;
-            this.renderGenreTargetPicker(side);
-            this.closeGenreTargetList();
-        },
-
-        toggleGenreTargetList: function(side) {
-            this._ensureGenreTargetDocHandler();
-            const listId = side === 'game' ? 'game-genre-target-list' : 'music-genre-target-list';
-            const otherId = side === 'game' ? 'music-genre-target-list' : 'game-genre-target-list';
-            const list = document.getElementById(listId);
-            const other = document.getElementById(otherId);
-            if (other) other.classList.add('hidden');
-            if (list) list.classList.toggle('hidden');
-        },
-
-        closeGenreTargetList: function() {
-            const m = document.getElementById('music-genre-target-list');
-            const g = document.getElementById('game-genre-target-list');
-            if (m) m.classList.add('hidden');
-            if (g) g.classList.add('hidden');
-        },
-
-        _ensureGenreTargetDocHandler: function() {
-            if (this._genreTargetDocBound) return;
-            this._genreTargetDocBound = true;
-            const self = this;
-            document.addEventListener('click', (e) => {
-                if (e.target.closest('#music-genre-target-panel') || e.target.closest('#game-genre-target-panel')) return;
-                self.closeGenreTargetList();
-            });
-        },
-
-        renderGenreTargetPicker: function(side) {
-            const isGame = side === 'game';
-            const list = isGame ? FindEngine.gameGenreFamilies : FindEngine.genreFamilies;
-            const idx = this.genreTargetPickIdx[side] || 0;
-
-            const itemsEl = document.getElementById(side === 'game' ? 'game-genre-target-list' : 'music-genre-target-list');
-            if (itemsEl) {
-                let html = '';
-                list.forEach((family, i) => {
-                    const v = family ? (isGame ? family.gameVariants[0] : family.musicVariants[0]) : null;
-                    const name = v ? `${v.emoji} ${v.name}` : 'Genre ' + (i + 1);
-                    html += `<div class="genre-target-item${i === idx ? ' genre-target-item-active' : ''}" onclick="EQ.setGenreTargetPick('${side}', ${i})"><span class="genre-target-item-num">${i + 1}</span><span>${name}</span></div>`;
-                });
-                itemsEl.innerHTML = html;
-            }
-
-            const label = document.getElementById(side === 'game' ? 'game-genre-target-label' : 'music-genre-target-label');
-            const family = list[idx];
-            const variant = family ? (isGame ? family.gameVariants[0] : family.musicVariants[0]) : null;
-            if (label && variant) {
-                label.innerHTML = `<span class="emoji-font vibrant-emoji text-lg leading-none">${variant.emoji}</span> ${variant.name} <span class="genre-target-count">${idx + 1}/${list.length}</span>`;
-            }
-
-            const hint = document.getElementById(side === 'game' ? 'game-genre-target-hint' : 'music-genre-target-hint');
-            if (hint) {
-                const hasBase = (PEQDB_Module.STATE.activeCurves || []).some(c => c.role === 'base' && c.visible);
-                hint.innerHTML = hasBase
-                    ? 'Base curve loaded: genre shape applied as a correction on top of it.'
-                    : 'Tip: load your IEM\u2019s measured FR as a Base curve to correct its deviation while tuning.';
-            }
-        },
-
-        applyGenreTargetAutoEQ: function(side) {
-            const idx = this.genreTargetPickIdx[side] || 0;
-            PEQDB_Module.applyGenreAutoEQ(idx, side);
-            this.closeGenreTargetPicker(side);
         },
 
         changeGraphMode: function(mode) {
@@ -9114,8 +8951,7 @@ toggleVizFullscreen: function() {
                 if (trackName) trackName.textContent = currentTrackInfo;
 
                 if (modalPlayBtn) {
-                    const mActive = (this._activeEl && this._activeEl()) || this.audioEl;
-                    modalPlayBtn.innerHTML = (mActive && mActive.paused) ? "<span>▶️</span><span>Play</span>" : "<span>⏸️</span><span>Pause</span>";
+                    modalPlayBtn.innerHTML = this.audioEl.paused ? "<span>▶️</span><span>Play</span>" : "<span>⏸️</span><span>Pause</span>";
                 }
 
                 if (!this.vizLoopRunning) {
@@ -9128,72 +8964,22 @@ toggleVizFullscreen: function() {
         },
 
                 calculateTargetMatches: function() {
-            // Skipped when nothing changed: this runs on EVERY graph draw
-            // (20-60fps) and the genre badge only depends on the live response
-            // + active preset. getLiveResponseDbs returns a memoized array
-            // instance, so identity comparison makes the steady-state check
-            // near-free; recompute the hash only when the response changed.
-            const resp = FindEngine.getLiveResponseDbs();
-            const preset = this.activePreset || '';
-            let sig;
-            if (resp) {
-                if (resp !== this._lastMatchResp) {
-                    this._lastMatchResp = resp;
-                    let h = 0, sum = 0;
-                    for (let i = 0; i < resp.length; i++) {
-                        h = (h * 31 + Math.round(resp[i] * 10)) | 0;
-                        sum += Math.abs(resp[i]);
-                    }
-                    this._lastMatchRespSig = h + ':' + resp.length + ':' + sum.toFixed(2);
-                }
-                sig = 'r|' + this._lastMatchRespSig + '|' + preset;
-            } else {
-                sig = 'd|' + this._faderSig() + '|' + preset;
-            }
-            if (sig === this._lastTargetMatchSig) return;
-            this._lastTargetMatchSig = sig;
+
             this.updateMusicMatch();
             this.updateGameMatch();
         },
 
-        _faderSig: function() {
-            const parts = [];
-            for (let i = 0; i < 10; i++) {
-                const gEl = document.getElementById('eq-s' + i);
-                const fEl = document.getElementById('eq-f' + i);
-                parts.push((gEl ? gEl.value : '0') + '@' + (fEl ? fEl.value : ''));
-            }
-            for (let i = 0; i < this.advancedBands.length; i++) {
-                const gEl = document.getElementById('eq-a' + i);
-                const fEl = document.getElementById('eq-af' + i);
-                parts.push((gEl ? gEl.value : '0') + '@' + (fEl ? fEl.value : ''));
-            }
-            return parts.join(',');
-        },
-
 startVisualizer: function() {
-        // Guard first: a running loop must never be cancelled by a duplicate
-        // start (e.g. staggered device/analyser boot callbacks firing twice).
-        if (this.vizLoopRunning) return;
         if (this.vizFrameId) {
             cancelAnimationFrame(this.vizFrameId);
             this.vizFrameId = null;
         }
+        if (this.vizLoopRunning) return;
 
         if (!this.agcIntervalId) {
 
             let agcArrayL = new Uint8Array(SharedAudio.analyserL ? SharedAudio.analyserL.frequencyBinCount : 2048);
             let agcArrayR = new Uint8Array(SharedAudio.analyserR ? SharedAudio.analyserR.frequencyBinCount : 2048);
-            // Anti-clip limiter state: how far below the user's preamp target the
-            // AGC is currently holding, plus quiet-time bookkeeping for the slow
-            // gain-recovery ramp so a single loud transient doesn't duck the whole
-            // listening session (audit 4.2).
-            let agcDuckedDb = 0;
-            let agcQuietMs = 0;
-            let lastAgcToastAt = 0;
-            const AGC_RECOVERY_DB_PER_SEC = 0.1;  // gentle, inaudible recovery rate
-            const AGC_RECOVERY_QUIET_MS = 3000;   // require ~3s of quiet before recovering
-            const AGC_RECOVERY_FLOOR_PCT = 70.0;  // peak must stay under this to recover
             this.agcIntervalId = setInterval(() => {
                 if (document.hidden) return;
                 if (EQ_Module.preventClipping && SharedAudio.ctx && SharedAudio.analyserL && SharedAudio.analyserR) {
@@ -9221,10 +9007,7 @@ startVisualizer: function() {
                     const pctR = (maxR / 128) * 100;
                     const peakLevel = Math.max(pctL, pctR);
 
-                    const userPreampTarget = (typeof window.userPreampTarget === 'number') ? window.userPreampTarget : 0;
-
                     if (peakLevel > 94.0) {
-                        agcQuietMs = 0;
                         const excessDb = 20 * Math.log10(peakLevel / 93.0);
                         if (excessDb > 0.1) {
                             const preampSlider = document.getElementById("eq-preampSlider");
@@ -9236,45 +9019,8 @@ startVisualizer: function() {
                                 window.isProgrammaticPreampUpdate = true;
                                 EQ_Module.updatePreamp();
                                 window.isProgrammaticPreampUpdate = false;
-
-                                agcDuckedDb = Math.max(0, userPreampTarget - newPreamp);
-
-                                const now = Date.now();
-                                if (agcDuckedDb >= 0.5 && now - lastAgcToastAt > 4000) {
-                                    lastAgcToastAt = now;
-                                    showToast(`🛡 Anti-Clip: -${agcDuckedDb.toFixed(1)} dB`, "🛡️");
-                                }
                             }
                         }
-                    } else if (agcDuckedDb > 0.05) {
-                        // Gain-recovery ramp: only climb back once the signal has
-                        // stayed quiet for a while, and only as far as the user's
-                        // own preamp target (never above it). Per-tick step is
-                        // ~0.1 dB/sec, small enough to be inaudible as movement.
-                        if (peakLevel < AGC_RECOVERY_FLOOR_PCT) {
-                            agcQuietMs += 30;
-                        } else {
-                            agcQuietMs = 0;
-                        }
-                        if (agcQuietMs >= AGC_RECOVERY_QUIET_MS) {
-                            const preampSlider = document.getElementById("eq-preampSlider");
-                            if (preampSlider) {
-                                const currentPreamp = parseFloat(preampSlider.value) || 0;
-                                const step = AGC_RECOVERY_DB_PER_SEC * 0.03;
-                                const recovered = Math.min(userPreampTarget, currentPreamp + step);
-                                if (recovered > currentPreamp + 0.0005) {
-                                    preampSlider.value = recovered.toFixed(1);
-                                    window.isProgrammaticPreampUpdate = true;
-                                    EQ_Module.updatePreamp();
-                                    window.isProgrammaticPreampUpdate = false;
-                                    agcDuckedDb = Math.max(0, userPreampTarget - recovered);
-                                } else {
-                                    agcDuckedDb = 0;
-                                }
-                            }
-                        }
-                    } else {
-                        agcQuietMs = 0;
                     }
                 }
             }, 30);
@@ -9303,11 +9049,6 @@ startVisualizer: function() {
             let cachedPeaksL = null, cachedPeaksR = null;
             let cachedClips = null;
 
-            // The pane-visibility gate was getElementById'ing both panes on
-            // EVERY frame; the panes' ids are static, so cache the refs once.
-            const vizPaneRef = document.getElementById('pane-visualizer');
-            const eqPaneRef = document.getElementById('pane-eq');
-
             const refreshVizDomCache = () => {
                 cachedBarsL = document.getElementsByClassName('meter-bar-l-vu-vu');
                 cachedBarsR = document.getElementsByClassName('meter-bar-r-vu-vu');
@@ -9316,166 +9057,12 @@ startVisualizer: function() {
                 cachedClips = document.getElementsByClassName('vu-meter-clipping-text');
             };
 
-            const updateFooterMeters = () => {
-                if (SharedAudio.analyserL && SharedAudio.analyserR) {
-                    const binCountL = SharedAudio.analyserL.frequencyBinCount;
-                    const binCountR = SharedAudio.analyserR.frequencyBinCount;
-                    if (!this.cachedArrayL || this.cachedArrayL.length !== binCountL) {
-                        this.cachedArrayL = new Uint8Array(binCountL);
-                    }
-                    if (!this.cachedArrayR || this.cachedArrayR.length !== binCountR) {
-                        this.cachedArrayR = new Uint8Array(binCountR);
-                    }
-                    const arrayL = this.cachedArrayL;
-                    const arrayR = this.cachedArrayR;
-                    SharedAudio.analyserL.getByteTimeDomainData(arrayL);
-                    SharedAudio.analyserR.getByteTimeDomainData(arrayR);
-
-                    let maxL = 0, maxR = 0;
-                    for (let i = 0; i < arrayL.length; i++) {
-                        const valL = Math.abs(arrayL[i] - 128);
-                        const valR = Math.abs(arrayR[i] - 128);
-                        if (valL > maxL) maxL = valL;
-                        if (valR > maxR) maxR = valR;
-                    }
-
-                    let pctL = (maxL / 128) * 100;
-                    let pctR = (maxR / 128) * 100;
-                    if (pctL < 1.0) pctL = 0;
-                    if (pctR < 1.0) pctR = 0;
-
-                    if (this.meterCurrentL === undefined) this.meterCurrentL = 0;
-                    if (this.meterCurrentR === undefined) this.meterCurrentR = 0;
-
-                    const decayFactor = 0.92;
-                    this.meterCurrentL = (this.meterCurrentL || 0) * decayFactor + pctL * (1 - decayFactor);
-                    this.meterCurrentR = (this.meterCurrentR || 0) * decayFactor + pctR * (1 - decayFactor);
-
-                    if (isNaN(this.meterCurrentL)) this.meterCurrentL = 0;
-                    if (isNaN(this.meterCurrentR)) this.meterCurrentR = 0;
-
-                    if (this.meterCurrentL < 0.5) this.meterCurrentL = 0;
-                    if (this.meterCurrentR < 0.5) this.meterCurrentR = 0;
-
-                    const diffL = Math.abs(this.meterCurrentL - (this.lastMeterL || 0));
-                    const diffR = Math.abs(this.meterCurrentR - (this.lastMeterR || 0));
-
-                    if (diffL > 0.4) {
-                        this.lastMeterL = this.meterCurrentL;
-                        const barsL = cachedBarsL || document.getElementsByClassName('meter-bar-l-vu-vu');
-                        const targetWidth = this.meterCurrentL.toFixed(1) + "%";
-                        for (let i = 0; i < barsL.length; i++) {
-                            barsL[i].style.width = targetWidth;
-                        }
-                    }
-                    if (diffR > 0.4) {
-                        this.lastMeterR = this.meterCurrentR;
-                        const barsR = cachedBarsR || document.getElementsByClassName('meter-bar-r-vu-vu');
-                        const targetWidth = this.meterCurrentR.toFixed(1) + "%";
-                        for (let i = 0; i < barsR.length; i++) {
-                            barsR[i].style.width = targetWidth;
-                        }
-                    }
-
-                    const curTime = Date.now();
-                    const holdDuration = 1000;
-                    const decaySpeed = 1.2;
-
-                    if (this.meterCurrentL >= (this.peakL || 0)) {
-                        this.peakL = this.meterCurrentL;
-                        this.peakTimeL = curTime;
-                    } else {
-                        if (curTime - (this.peakTimeL || 0) > holdDuration) {
-                            this.peakL = Math.max(0, this.peakL - decaySpeed);
-                        }
-                    }
-
-                    if (this.meterCurrentR >= (this.peakR || 0)) {
-                        this.peakR = this.meterCurrentR;
-                        this.peakTimeR = curTime;
-                    } else {
-                        if (curTime - (this.peakTimeR || 0) > holdDuration) {
-                            this.peakR = Math.max(0, this.peakR - decaySpeed);
-                        }
-                    }
-
-                    const peaksHoldL = cachedPeaksL || document.getElementsByClassName('meter-bar-l-peak-hold');
-                    const targetPeakLeft = this.peakL.toFixed(1) + "%";
-                    for (let i = 0; i < peaksHoldL.length; i++) {
-                        peaksHoldL[i].style.left = targetPeakLeft;
-                    }
-
-                    const peaksHoldR = cachedPeaksR || document.getElementsByClassName('meter-bar-r-peak-hold');
-                    const targetPeakRight = this.peakR.toFixed(1) + "%";
-                    for (let i = 0; i < peaksHoldR.length; i++) {
-                        peaksHoldR[i].style.left = targetPeakRight;
-                    }
-
-                    const currentAutoGain = (SharedAudio.autoGainNode) ? SharedAudio.autoGainNode.gain.value : 1.0;
-                    const reductionDb = 20 * Math.log10(currentAutoGain);
-                    const isAttenuationActive = (reductionDb < -0.15);
-
-                    const clippingTexts = cachedClips || document.getElementsByClassName('vu-meter-clipping-text');
-                    for (let i = 0; i < clippingTexts.length; i++) {
-                        const el = clippingTexts[i];
-
-                        // Only swap the state classes — never replace className, or the
-                        // fixed width (w-16 / min-w-[64px]) gets stripped and the footer
-                        // right group reflows (scrub + peak meter jump right).
-                        el.classList.remove('text-emerald-400', 'text-amber-500', 'text-rose-500', 'animate-pulse', 'cursor-pointer');
-
-                        if (isAttenuationActive) {
-                            el.textContent = `${reductionDb.toFixed(1)} dB`;
-                            el.classList.add('text-amber-500', 'animate-pulse', 'cursor-pointer');
-                            el.title = "Anti-Clip AGC active. Automatically maintaining headroom.";
-                        } else {
-                            el.title = "";
-                            if (this.meterCurrentL > 94 || this.meterCurrentR > 94) {
-                                el.textContent = "⚡ Clipping";
-                                el.classList.add('text-rose-500', 'animate-pulse');
-                            } else if (this.meterCurrentL > 75 || this.meterCurrentR > 75) {
-                                el.textContent = "⚠️ Warning";
-                                el.classList.add('text-amber-500');
-                            } else {
-                                el.textContent = "Stable";
-                                el.classList.add('text-emerald-400');
-                            }
-                        }
-                    }
-                }
-            };
-
             const drawViz = () => {
-                // Hidden tab: keep the loop alive but skip ALL per-frame work
-                // (spectrum reads, curve redraws, DOM writes). rAF is already
-                // throttled in background tabs; this removes the remaining
-                // main-thread cost while audio keeps playing.
-                if (document.hidden) {
-                    this.vizFrameId = requestAnimationFrame(drawViz);
-                    return;
-                }
-
-                // Pane visibility gate: the spectrum overlay lives in the EQ
-                // pane and the canvas visualizer in the Visualizer pane. When
-                // neither is visible, skip the heavy per-frame work (spectrum
-                // reads, curve redraws, de-esser analysis) — but the footer
-                // VU meters are on screen on every tab, so they keep updating
-                // via the shared meter helper below. The anti-clip AGC
-                // interval is separate and safety-critical, so it
-                // intentionally keeps running.
-                const anyPaneVisible = (!vizPaneRef || !vizPaneRef.classList.contains('hidden')) || (!eqPaneRef || !eqPaneRef.classList.contains('hidden'));
-                const footerBar = document.getElementById('global-footer-bar');
-                const footerVisible = !!footerBar && !footerBar.classList.contains('hidden') && footerBar.style.opacity !== '0';
-                if (!anyPaneVisible && !footerVisible) {
-                    this.vizFrameId = requestAnimationFrame(drawViz);
-                    return;
-                }
-
                 if (!cachedBarsL || cachedBarsL.length === 0) {
                     refreshVizDomCache();
                 }
 
-                const isSoundActive = !(this._activeEl ? this._activeEl().paused : this.audioEl.paused) ||
+                const isSoundActive = !this.audioEl.paused ||
                                      (window.Tone && Tone.osc) ||
                                      (window.TestLab && (TestLab.activeNodes.length > 0 || TestLab.hearingOsc || TestLab.channelToneOsc));
 
@@ -9513,9 +9100,18 @@ startVisualizer: function() {
             this.vizLoopRunning = true;
             this.vizFrameId = requestAnimationFrame(drawViz);
 
-            if (!anyPaneVisible) {
-                updateFooterMeters();
-                return;
+            // While the user is scrubbing/dragging a slider, skip the heavy
+            // viz work on most frames so the drag keeps its frame budget;
+            // meters freeze imperceptibly (decay smoothing hides ~30ms gaps).
+            if (this.isSeeking) {
+                const nowMs = performance.now();
+                if (this._vizSeekThrottle === undefined || nowMs - this._vizSeekThrottle >= 34) {
+                    this._vizSeekThrottle = nowMs;
+                } else {
+                    return;
+                }
+            } else {
+                this._vizSeekThrottle = undefined;
             }
 
                 const bufferLength = SharedAudio.analyser ? SharedAudio.analyser.frequencyBinCount : 1024;
@@ -9565,7 +9161,132 @@ startVisualizer: function() {
                     }
                 }
 
-            updateFooterMeters();
+            if (SharedAudio.analyserL && SharedAudio.analyserR) {
+                const binCountL = SharedAudio.analyserL.frequencyBinCount;
+                const binCountR = SharedAudio.analyserR.frequencyBinCount;
+                if (!this.cachedArrayL || this.cachedArrayL.length !== binCountL) {
+                    this.cachedArrayL = new Uint8Array(binCountL);
+                }
+                if (!this.cachedArrayR || this.cachedArrayR.length !== binCountR) {
+                    this.cachedArrayR = new Uint8Array(binCountR);
+                }
+                const arrayL = this.cachedArrayL;
+                const arrayR = this.cachedArrayR;
+                SharedAudio.analyserL.getByteTimeDomainData(arrayL);
+                SharedAudio.analyserR.getByteTimeDomainData(arrayR);
+
+                let maxL = 0, maxR = 0;
+                for (let i = 0; i < arrayL.length; i++) {
+                    const valL = Math.abs(arrayL[i] - 128);
+                    const valR = Math.abs(arrayR[i] - 128);
+                    if (valL > maxL) maxL = valL;
+                    if (valR > maxR) maxR = valR;
+                }
+
+                let pctL = (maxL / 128) * 100;
+                let pctR = (maxR / 128) * 100;
+                if (pctL < 1.0) pctL = 0;
+                if (pctR < 1.0) pctR = 0;
+
+                if (this.meterCurrentL === undefined) this.meterCurrentL = 0;
+                if (this.meterCurrentR === undefined) this.meterCurrentR = 0;
+
+                const decayFactor = 0.92;
+                this.meterCurrentL = (this.meterCurrentL || 0) * decayFactor + pctL * (1 - decayFactor);
+                this.meterCurrentR = (this.meterCurrentR || 0) * decayFactor + pctR * (1 - decayFactor);
+
+                if (isNaN(this.meterCurrentL)) this.meterCurrentL = 0;
+                if (isNaN(this.meterCurrentR)) this.meterCurrentR = 0;
+
+                if (this.meterCurrentL < 0.5) this.meterCurrentL = 0;
+                if (this.meterCurrentR < 0.5) this.meterCurrentR = 0;
+
+                const diffL = Math.abs(this.meterCurrentL - (this.lastMeterL || 0));
+                const diffR = Math.abs(this.meterCurrentR - (this.lastMeterR || 0));
+
+                if (diffL > 0.4) {
+                    this.lastMeterL = this.meterCurrentL;
+                    const barsL = document.getElementsByClassName('meter-bar-l-vu-vu');
+                    const targetWidth = this.meterCurrentL.toFixed(1) + "%";
+                    for (let i = 0; i < barsL.length; i++) {
+                        barsL[i].style.width = targetWidth;
+                    }
+                }
+if (diffR > 0.4) {
+                    this.lastMeterR = this.meterCurrentR;
+                    const barsR = document.getElementsByClassName('meter-bar-r-vu-vu');
+                    const targetWidth = this.meterCurrentR.toFixed(1) + "%";
+                    for (let i = 0; i < barsR.length; i++) {
+                        barsR[i].style.width = targetWidth;
+                    }
+                }
+
+                const curTime = Date.now();
+                const holdDuration = 1000;
+                const decaySpeed = 1.2;
+
+                if (this.meterCurrentL >= (this.peakL || 0)) {
+                    this.peakL = this.meterCurrentL;
+                    this.peakTimeL = curTime;
+                } else {
+                    if (curTime - (this.peakTimeL || 0) > holdDuration) {
+                        this.peakL = Math.max(0, this.peakL - decaySpeed);
+                    }
+                }
+
+                if (this.meterCurrentR >= (this.peakR || 0)) {
+                    this.peakR = this.meterCurrentR;
+                    this.peakTimeR = curTime;
+                } else {
+                    if (curTime - (this.peakTimeR || 0) > holdDuration) {
+                        this.peakR = Math.max(0, this.peakR - decaySpeed);
+                    }
+                }
+
+                const peaksHoldL = document.getElementsByClassName('meter-bar-l-peak-hold');
+                const targetPeakLeft = this.peakL.toFixed(1) + "%";
+                for (let i = 0; i < peaksHoldL.length; i++) {
+                    peaksHoldL[i].style.left = targetPeakLeft;
+                }
+
+                const peaksHoldR = document.getElementsByClassName('meter-bar-r-peak-hold');
+                const targetPeakRight = this.peakR.toFixed(1) + "%";
+                for (let i = 0; i < peaksHoldR.length; i++) {
+                    peaksHoldR[i].style.left = targetPeakRight;
+                }
+
+                const currentAutoGain = (SharedAudio.autoGainNode) ? SharedAudio.autoGainNode.gain.value : 1.0;
+                const reductionDb = 20 * Math.log10(currentAutoGain);
+                const isAttenuationActive = (reductionDb < -0.15);
+
+                const clippingTexts = document.getElementsByClassName('vu-meter-clipping-text');
+                for (let i = 0; i < clippingTexts.length; i++) {
+                    const el = clippingTexts[i];
+
+                    // Only swap the state classes — never replace className, or the
+                    // fixed width (w-16 / min-w-[64px]) gets stripped and the footer
+                    // right group reflows (scrub + peak meter jump right).
+                    el.classList.remove('text-emerald-400', 'text-amber-500', 'text-rose-500', 'animate-pulse', 'cursor-pointer');
+
+                    if (isAttenuationActive) {
+                        el.textContent = `${reductionDb.toFixed(1)} dB`;
+                        el.classList.add('text-amber-500', 'animate-pulse', 'cursor-pointer');
+                        el.title = "Anti-Clip AGC active. Automatically maintaining headroom.";
+                    } else {
+                        el.title = "";
+                        if (this.meterCurrentL > 94 || this.meterCurrentR > 94) {
+                            el.textContent = "⚡ Clipping";
+                            el.classList.add('text-rose-500', 'animate-pulse');
+                        } else if (this.meterCurrentL > 75 || this.meterCurrentR > 75) {
+                            el.textContent = "⚠️ Warning";
+                            el.classList.add('text-amber-500');
+                        } else {
+                            el.textContent = "Stable";
+                            el.classList.add('text-emerald-400');
+                        }
+                    }
+                }
+            }
 
                 if (isSoundActive && !Mascot.isGeniusActive && !Mascot.isOverrideActive && Mascot.currentExpression !== 'deaf' && Mascot.currentExpression !== 'mute' && !(window.TestLab && (TestLab.leakTestActive || TestLab.channelToneOsc || TestLab.resonanceActive || TestLab.hearingOsc)) && !(window.Tone && Tone.osc)) {
 
@@ -9580,11 +9301,20 @@ startVisualizer: function() {
 
                 if (this.deEsserEnabled) {
 
-                    const binWidth = (SharedAudio.ctx && SharedAudio.ctx.sampleRate) ? SharedAudio.ctx.sampleRate / 2048 : 21.53;
-
                     let midSum = 0;
-                    const midStartBin = Math.round(500 / binWidth);
-                    const midEndBin = Math.round(2000 / binWidth);
+                    // FFT-bin geometry must be derived from the live context.
+                    // The old hardcoded values (23/93/186/372, binWidth 21.53)
+                    // assumed 44.1 kHz + fftSize 2048; at 48 kHz they shifted the
+                    // scan window to ~4.4-8.7 kHz and mislocated sibilance peaks
+                    // by ~9% (bin 280 is 6563 Hz real vs 6028 Hz computed).
+                    // These formulas reproduce the old bins exactly at 44.1 kHz:
+                    // round(500/21.53)=23, round(2000/21.53)=93,
+                    // round(4000/21.53)=186, round(8000/21.53)=372.
+                    const deEsserSr = (SharedAudio.ctx && SharedAudio.ctx.sampleRate) || 44100;
+                    const deEsserFft = (SharedAudio.analyser && SharedAudio.analyser.fftSize) || 2048;
+                    const binWidth = deEsserSr / deEsserFft;
+                    const midStartBin = Math.max(1, Math.round(500 / binWidth));
+                    const midEndBin = Math.min(dataArray.length - 1, Math.round(2000 / binWidth));
                     for (let i = midStartBin; i < midEndBin; i++) {
                         midSum += dataArray[i];
                     }
@@ -9592,8 +9322,8 @@ startVisualizer: function() {
 
                     let maxVal = 0;
                     let peakBin = Math.round(6000 / binWidth);
-                    const startBin = Math.round(4000 / binWidth);
-                    const endBin = Math.round(8000 / binWidth);
+                    const startBin = Math.max(1, Math.round(4000 / binWidth));
+                    const endBin = Math.min(dataArray.length - 1, Math.round(8000 / binWidth));
                     for (let i = startBin; i < endBin; i++) {
                         if (dataArray[i] > maxVal) {
                             maxVal = dataArray[i];
@@ -9605,7 +9335,12 @@ startVisualizer: function() {
                     const relativeMargin = 0.08;
                     const isSibilant = (sibilancePeak > (midAverage + relativeMargin)) && (sibilancePeak > 0.12);
                     const lastReduction = this.deEsserReductionDb;
-                    const lastFreq = this.deEsserFilter.frequency.value;
+                    // Compare against the PREVIOUS frame's tracked value. The old
+                    // source here was the static deEsserFilter placeholder
+                    // (always 6000), so once deEsserCurrentFreq settled anywhere
+                    // else, freqChanged stayed true every frame and redrew the
+                    // full graph at ~60 fps for as long as playback ran.
+                    const lastFreq = Number.isFinite(this.deEsserCurrentFreq) ? this.deEsserCurrentFreq : 6000;
 
                     let targetFreq = 6000;
                     let targetGain = 0;
@@ -9691,9 +9426,8 @@ startVisualizer: function() {
                     modalTrackName.textContent = mainTrackName.textContent;
                 }
 
-                const activeEl = (this._activeEl && this._activeEl()) || this.audioEl;
-                if (activeEl && !this.isSeeking) {
-                    const formattedCur = this.formatTime(activeEl.currentTime);
+                if (this.audioEl && !this.isSeeking) {
+                    const formattedCur = this.formatTime(this.audioEl.currentTime);
                     const mobTimeCur = document.getElementById('mobile-time-current');
                     const mobScrub = document.getElementById('mobile-scrub');
                     const mobTimeDur = document.getElementById('mobile-time-duration');
@@ -9702,13 +9436,13 @@ startVisualizer: function() {
                     if (mobTimeCur) mobTimeCur.textContent = formattedCur;
                     if (modalTimeCur) modalTimeCur.textContent = formattedCur;
 
-                    if (activeEl.duration) {
-                        const pct = (activeEl.currentTime / activeEl.duration) * 100;
+                    if (this.audioEl.duration) {
+                        const pct = (this.audioEl.currentTime / this.audioEl.duration) * 100;
                         if (scrub) scrub.value = pct;
                         if (mobScrub) mobScrub.value = pct;
                         if (modalScrub) modalScrub.value = pct;
 
-                        const formattedDur = this.formatTime(activeEl.duration);
+                        const formattedDur = this.formatTime(this.audioEl.duration);
                         if (timeDur) timeDur.textContent = formattedDur;
                         if (mobTimeDur) mobTimeDur.textContent = formattedDur;
                         if (modalTimeDur) modalTimeDur.textContent = formattedDur;
@@ -9790,7 +9524,20 @@ startVisualizer: function() {
                     for (let i = 0; i < bufferLength; i++) totalEnergy += dataArray[i];
                     totalEnergy = (totalEnergy / bufferLength) / 255;
 
-                    const themeAccent = getThemeAccent();
+                    // Theme lookup + hex→rgb conversion are loop-invariant per
+                    // theme. Resolve once and cache; App.setGlobalTheme bumps
+                    // _vizThemeDirty so a live theme switch re-resolves on the
+                    // next frame instead of paying localStorage + parse costs
+                    // at 60 fps.
+                    if (!this._vizTheme || this._vizThemeDirty) {
+                        const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
+                        const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
+                        const accent = activeThemeConfig.accent === '#ffffff' ? '#ffffff' : (activeThemeConfig.accent || "#787878");
+                        this._vizTheme = { accent: accent, rgb: PEQDB_Module.hexToRgb(accent) };
+                        this._vizThemeDirty = false;
+                    }
+                    const themeAccent = this._vizTheme.accent;
+                    const themeRgb = this._vizTheme.rgb;
 
                     const mode = EQ_Module.vizModes[EQ_Module.vizModeIndex];
 
@@ -9813,7 +9560,7 @@ startVisualizer: function() {
 
                         const barCount = 48;
                         const barWidth = w / barCount;
-                        const rgb = PEQDB_Module.hexToRgb(themeAccent);
+                        const rgb = themeRgb;
 
                         if (!this.vintagePeaks || this.vintagePeaks.length !== barCount) {
                             this.vintagePeaks = new Float32Array(barCount).fill(0);
@@ -9883,7 +9630,7 @@ startVisualizer: function() {
                             const ringCount = 10;
                             const cx = w / 2;
                             const cy = h / 2;
-                            const rgb = PEQDB_Module.hexToRgb(themeAccent);
+                            const rgb = themeRgb;
                             const maxRadius = Math.hypot(cx, cy);
 
                             if (this.tunnelPhase === undefined) this.tunnelPhase = 0;
@@ -9952,7 +9699,7 @@ startVisualizer: function() {
                         hCtx.fillRect(hCvs.width - speed, 0, speed, hCvs.height);
 
                         const numBins = hCvs.height;
-                        const rgb = PEQDB_Module.hexToRgb(themeAccent);
+                        const rgb = themeRgb;
 
                         const startBin = 3;
                         const maxMappedBin = Math.floor(bufferLength * 0.42);
@@ -10013,7 +9760,7 @@ startVisualizer: function() {
 
                                 const frame = this.fullWaterfallHistory[r];
                                 const opacity = 0.2 + z * 0.8;
-                                const colorRgb = PEQDB_Module.hexToRgb(themeAccent);
+                                const colorRgb = themeRgb;
 
                                 fctx.strokeStyle = `rgba(${colorRgb}, ${opacity})`;
                                 fctx.fillStyle = '#000000';
@@ -10050,7 +9797,7 @@ startVisualizer: function() {
                             fctx.fillRect(0, 0, w, h);
 
                             fctx.save();
-                            const rgb = PEQDB_Module.hexToRgb(themeAccent);
+                            const rgb = themeRgb;
                             fctx.strokeStyle = `rgba(${rgb}, ${0.15 + midrange * 0.35})`;
                             fctx.lineWidth = 1.2;
 
@@ -10100,44 +9847,103 @@ startVisualizer: function() {
                             break;
                         }
                     }
+
+                    if (window.mushroomSporesActive) {
+                        if (!this.sporeParticles || this.sporeParticles.length === 0) {
+                            this.sporeParticles = [];
+                            for (let i = 0; i < 40; i++) {
+                                this.sporeParticles.push({
+                                    x: Math.random() * w,
+                                    y: h + Math.random() * 100,
+                                    size: Math.random() * 3 + 1,
+                                    speedY: Math.random() * -0.8 - 0.3,
+                                    wobble: Math.random() * Math.PI
+                                });
+                            }
+                        }
+
+                        fctx.save();
+                        this.sporeParticles.forEach(spore => {
+                            spore.y += spore.speedY;
+                            spore.wobble += 0.02;
+
+                            const dx = spore.x + Math.sin(spore.wobble) * 15;
+
+                            if (spore.y < -10) {
+                                spore.y = h + 10;
+                                spore.x = Math.random() * w;
+                            }
+
+                            const themeColor = themeAccent || "#3b82f6";
+                            fctx.fillStyle = themeColor;
+                            fctx.shadowBlur = 6;
+                            fctx.shadowColor = themeColor;
+
+                            fctx.globalAlpha = 0.25 + (treble * 0.5);
+                            fctx.beginPath();
+                            fctx.arc(dx, spore.y, spore.size, 0, Math.PI * 2);
+                            fctx.fill();
+                        });
+                        fctx.restore();
+                    }
                 }
             };
             drawViz();
         },
 
+        _dspBuildPromise: null,
         ensureDSPGraph: async function() {
             if (this.graphBuilt) return;
-            // Single-flight guard: concurrent callers (boot chain, resume-on-
-            // gesture handlers, slider-driven rebuilds) each re-ran the whole
-            // connect graph, double-wiring nodes and racing `graphBuilt`. Share
-            // one promise instead — the winner builds, the rest await the same
-            // result, and a failed build resets so the next call retries.
-            if (this._graphPromise) return this._graphPromise;
-            this._graphPromise = (async () => {
+            // Re-entrancy guard. Callers fire this concurrently (document click
+            // handler, playback hook, drag flush, queued DSP tags). Each awaited
+            // addModule independently and built a SECOND worklet graph; the media
+            // source stayed wired to the first node while SharedAudio.workletNode
+            // pointed at the orphan, so every updateFilters message reached a
+            // filter bank that was never in the signal path — dragging EQ nodes
+            // changed nothing audibly.
+            if (!this._dspBuildPromise) {
+                this._dspBuildPromise = this._buildDSPGraph().catch((err) => {
+                    console.error("[AudioEngine] DSP graph build failed:", err);
+                });
+            }
+            await this._dspBuildPromise;
+            this._dspBuildPromise = null;
+        },
+
+        _buildDSPGraph: async function() {
             const ctx = SharedAudio.init();
-            await ctx.resume();
+            // Do NOT await ctx.resume() here. In browsers, an AudioContext created
+            // before any user gesture stays 'suspended' and resume()'s promise
+            // remains PENDING (never resolves or rejects) until playback is
+            // allowed. Boot-time callers (queued DSP tags, visualizer setup) hit
+            // this before any click, wedging _dspBuildPromise on a forever-pending
+            // promise — after which every later ensureDSPGraph() caller (including
+            // togglePlayState for bundled tracks) queued behind it forever. That is
+            // why imported files (which bypass ensureDSPGraph) played while the
+            // built-in playlist stayed silent in browser testing. Fire-and-forget
+            // instead: each playback path resumes the context inside its own user
+            // gesture (togglePlayState, onplay handler).
+            ctx.resume().catch(() => {});
 
             try {
                 await ctx.audioWorklet.addModule('js/dsp-processor.js');
                 console.log("[AudioEngine] AudioWorklet dsp-processor module loaded successfully.");
             } catch (err) {
                 console.error("[AudioEngine] Failed to load AudioWorklet module. Falling back to native structures.", err);
-                showDebugError("AudioWorklet failed to load. Running in bypass mode (EQ disabled, playback only).", "dsp-processor.js");
-                this.dspFallback = true;
+                showDebugError("AudioWorklet failed to load. Check console/network paths.", "dsp-processor.js");
+                return;
             }
 
-            if (!this.dspFallback) {
-                SharedAudio.workletNode = new AudioWorkletNode(ctx, 'dsp-processor', {
-                    numberOfInputs: 1,
-                    numberOfOutputs: 1,
-                    outputChannelCount: [2]
-                });
+            SharedAudio.workletNode = new AudioWorkletNode(ctx, 'dsp-processor', {
+                numberOfInputs: 1,
+                numberOfOutputs: 1,
+                outputChannelCount: [2]
+            });
 
-                SharedAudio.workletNode.port.postMessage({
-                    type: 'init',
-                    sampleRate: ctx.sampleRate
-                });
-            }
+            SharedAudio.workletNode.port.postMessage({
+                type: 'init',
+                sampleRate: ctx.sampleRate
+            });
 
             this.inputGainNode = ctx.createGain();
             this.inputGainNode.gain.value = 1.0;
@@ -10147,11 +9953,9 @@ startVisualizer: function() {
             const initialVol = volSlider ? (parseFloat(volSlider.value) / 100) : 0.5;
             this.musicVolumeNode.gain.value = initialVol;
 
-            this.inputGainNode.connect(this.dspFallback ? SharedAudio.compressorFilter : SharedAudio.workletNode);
+            this.inputGainNode.connect(SharedAudio.workletNode);
 
-            if (!this.dspFallback) {
-                SharedAudio.workletNode.connect(SharedAudio.compressorFilter);
-            }
+            SharedAudio.workletNode.connect(SharedAudio.compressorFilter);
             SharedAudio.compressorFilter.connect(SharedAudio.compressor);
             SharedAudio.compressor.connect(SharedAudio.compressorGain);
             SharedAudio.compressorGain.connect(SharedAudio.autoGainNode);
@@ -10200,30 +10004,57 @@ startVisualizer: function() {
             // graph owns volume from the very first millisecond of playback.
             if (this.audioEl && !this.source) {
                 this.source = ctx.createMediaElementSource(this.audioEl);
-                // Per-element gain arm for the gapless crossfade (active element).
-                this.sourceGain = ctx.createGain();
-                this.sourceGain.gain.value = 1;
+                // Primary element routes through the sourceGain arm so
+                // per-track loudness matching and crossfade fades have a gain
+                // to ride on (eq-playlist.js _retargetActiveArm /
+                // _crossfadeToStandby read this arm).
+                if (!this.sourceGain) {
+                    this.sourceGain = ctx.createGain();
+                    this.sourceGain.gain.value = Math.max(0.05, Math.min(4, this._activeLoudnessGain || 1));
+                }
                 this.source.connect(this.sourceGain);
                 this.sourceGain.connect(this.inputGainNode);
                 this.audioEl.volume = 1.0;
-                // Second arm + element for gapless: the standby track preloads
-                // here silently (gain 0) and is crossfaded in at the seam.
-                const gaplessEl = document.getElementById('eq-audio-gapless');
-                if (gaplessEl) {
-                    this.gaplessEl = gaplessEl;
-                    this.gaplessSource = ctx.createMediaElementSource(gaplessEl);
-                    this.gaplessGain = ctx.createGain();
-                    this.gaplessGain.gain.value = 0;
-                    this.gaplessSource.connect(this.gaplessGain);
-                    this.gaplessGain.connect(this.inputGainNode);
-                    gaplessEl.volume = 1.0;
-                }
                 this.connected = true;
             }
 
+            // Gapless/crossfade standby arm: the B element (eq-audio-gapless)
+            // preloads the next track and is crossfaded in at the seam. Both
+            // arms must share this DSP graph or the standby would be either
+            // silent or always-on top of the active track. Guarded because
+            // createMediaElementSource throws when called twice on one
+            // element, and _buildDSPGraph can re-run after a failed attempt.
+            if (!this._gaplessWired && this.gaplessEl) {
+                try {
+                    this.gaplessSource = ctx.createMediaElementSource(this.gaplessEl);
+                    if (!this.gaplessGain) this.gaplessGain = ctx.createGain();
+                    this.gaplessGain.gain.value = 0;
+                    this.gaplessSource.connect(this.gaplessGain);
+                    this.gaplessGain.connect(this.inputGainNode);
+                    this.gaplessEl.volume = 1.0;
+                    this._gaplessWired = true;
+                } catch (e) {
+                    console.warn("[AudioEngine] Gapless standby wiring failed:", e);
+                }
+            }
+
             this.graphBuilt = true;
-            if (this.dspFallback) {
-                showToast("AudioWorklet unavailable — EQ bypassed, playback fallback active", "⚠️");
+            // Flush coalesced DSP state that arrived while the graph was building
+            if (this._pendingDspQueue && this._pendingDspQueue.length) {
+                const q = [...new Set(this._pendingDspQueue)];
+                this._pendingDspQueue = [];
+                for (const tag of q) {
+                    try {
+                        if (tag === 'filters') this.updateAudioConnections();
+                        else if (tag === 'crossover') this.updateCrossoverDSP();
+                        else if (tag === 'loudness') this.updateLoudnessDSP();
+                        else if (tag === 'simulation') this.updateSimulation();
+                        else if (tag === 'gear') this.applyGearSimDSP();
+                        else if (tag === 'hearing') this.applyHearingCalibrationGains();
+                        else if (tag === 'tape') this.updateTapeModDSP();
+                        else if (tag === 'masterTone') this.updateMasterTone('bass', document.getElementById('eq-masterBass')?.value || 0);
+                    } catch(_) {}
+                }
             }
             this.updateAudioConnections();
 
@@ -10232,6 +10063,7 @@ startVisualizer: function() {
             this.advancedBands.forEach((_, i) => this.updateSlider(i, 'adv'));
             this.updateSimulation();
             if (this.applyGearSimDSP) this.applyGearSimDSP();
+            if (this.updateTapeModDSP) this.updateTapeModDSP();
             this.updateLoudnessDSP();
             this.updateCrossoverDSP();
 
@@ -10239,30 +10071,23 @@ startVisualizer: function() {
             if (ratioSlider) {
                 this.updateCompressorParam('ratio', parseFloat(ratioSlider.value) / 10);
             }
-            })().catch((err) => {
-                console.error("[AudioEngine] DSP graph build failed:", err);
-                this.graphBuilt = false;
-                throw err;
-            }).finally(() => {
-                this._graphPromise = null;
-            });
-            return this._graphPromise;
+
+            // With the standby arm live, preload the next track so the first
+            // skip after boot is already seamless (no-op when gapless and
+            // crossfade are both disabled — _standbyReady() gates it).
+            if (this._preloadNextTrack) this._preloadNextTrack();
         },
 
+        _pendingDspQueue: [],
+        _queuePendingDsp: function(tag) {
+            if (!this._pendingDspQueue.includes(tag)) this._pendingDspQueue.push(tag);
+            if (!this.graphBuilt) this.ensureDSPGraph().catch(()=>{});
+        },
         updateAudioConnections: function() {
-            // Coalesced: burst calls (e.g. per-frame slider sweeps) collapse into
-            // a single 30ms-flushed payload while the final state always lands.
-            if (!this.graphBuilt || !SharedAudio.workletNode) return;
-            if (this._audioConnFlushTimer) return;
-            const self = this;
-            this._audioConnFlushTimer = setTimeout(function() {
-                self._audioConnFlushTimer = null;
-                self._sendAudioConnections();
-            }, 30);
-        },
-
-        _sendAudioConnections: function() {
-            if (!this.graphBuilt || !SharedAudio.workletNode) return;
+            if (!this.graphBuilt || !SharedAudio.workletNode) {
+                this._queuePendingDsp('filters');
+                return;
+            }
 
             const payload = [];
 
@@ -10279,8 +10104,16 @@ startVisualizer: function() {
                 const rawQ = parseFloat(document.getElementById("eq-q_m" + i)?.value);
                 const q = Number.isFinite(rawQ) ? rawQ : b.defaultQ;
 
-                const activeSlope = b.slope || 12;
-                const cascadeNodesCount = activeSlope / 12;
+                // Slope (cascade count) only means anything for Shelf/HP/LP
+                // sections; a stale value on Peaking/Notch would silently
+                // cascade multiple full-gain copies of the same filter.
+                // handleTypeChange() resets b.slope on every type change,
+                // but this is the actual DSP trust boundary, so it is
+                // re-enforced here too (e.g. against a hand-authored preset
+                // that round-trips a mismatched type+slope pair).
+                const slopeCapable = (type === 'lowshelf' || type === 'highshelf' || type === 'lowpass' || type === 'highpass');
+                const activeSlope = slopeCapable ? (b.slope || 12) : 12;
+                const cascadeNodesCount = Math.max(1, Math.round(activeSlope / 12));
 
                 for (let k = 0; k < 4; k++) {
                     const idx = (i * 4) + k;
@@ -10394,6 +10227,14 @@ startVisualizer: function() {
                     setAudioParamSmooth(this.advFilters[i].gain, targetGain, 0.01);
                 }
             });
+
+            if (this.virtualFilters && this.virtualBands) {
+                this.virtualFilters.forEach((f, i) => {
+                    const b = this.virtualBands[i];
+                    const targetGain = (this.eqEnabled && b) ? (b.g || 0) : 0;
+                    setAudioParamSmooth(f.gain, targetGain, 0.01);
+                });
+            }
 
             this.drawCurve();
         },
@@ -10559,9 +10400,13 @@ switchCategory: function(catId) {
             this.advancedBands.forEach((_, i) => this.updateSlider(i, 'adv'));
 
             if (window.syncGlobalSliders) window.syncGlobalSliders();
+
+            // Generated PEQ reshaped the DSP curve programmatically — unlock
+            // live Similar-mode matching.
+            PEQDB_Module._similarTargetEverModified = true;
         },
 
-        clearAudio: function() { this.audioEl.pause(); this.audioEl.removeAttribute("src"); this.audioEl.load(); if (this.gaplessEl) { this.gaplessEl.pause(); this.gaplessEl.removeAttribute("src"); this.gaplessEl.load(); } this._standbyTrackIndex = null; this._preloadedIndex = null; this._activeIsA = true; if (this.sourceGain) this.sourceGain.gain.value = 1; if (this.gaplessGain) this.gaplessGain.gain.value = 0; document.getElementById("eq-file").value = ""; this.audioEl.volume = 0.5; },
+        clearAudio: function() { this.audioEl.pause(); this.audioEl.removeAttribute("src"); this.audioEl.load(); document.getElementById("eq-file").value = ""; this.audioEl.volume = 0.5; },
         resetEQ: function() {
             this.activePreset = null;
             EQ_Module.isProgrammaticSliderUpdate = true;
@@ -10630,6 +10475,11 @@ switchCategory: function(catId) {
             });
 
             this.virtualBands = [];
+            if (this.virtualFilters) {
+                this.virtualFilters.forEach(f => {
+                    setAudioParamSmooth(f.gain, 0);
+                });
+            }
 
             const preSlider = document.getElementById("eq-preampSlider");
             if (preSlider) preSlider.value = "0.0";
@@ -10674,10 +10524,6 @@ switchCategory: function(catId) {
 
             this.drawCurve();
             if (window.syncGlobalSliders) window.syncGlobalSliders();
-            PEQDB_Module._similarTargetEverModified = true;
-            if (PEQDB_Module.searchMode === 'similar' && PEQDB_Module.debouncedFindSimilarCurves) {
-                PEQDB_Module.debouncedFindSimilarCurves();
-            }
         },
 
     };
@@ -10741,6 +10587,7 @@ switchCategory: function(catId) {
 const DBCache = {
             DB_NAME: "squig_database_cache",
             DB_VERSION: 3,
+                STORE_NAME: "processed_curves",
                 db: null,
                 init: function() {
                     return new Promise((resolve) => {
@@ -10769,6 +10616,9 @@ const DBCache = {
                             req.onupgradeneeded = (e) => {
                                 try {
                                     const db = e.target.result;
+                                    if (!db.objectStoreNames.contains(this.STORE_NAME)) {
+                                        db.createObjectStore(this.STORE_NAME, { keyPath: "id" });
+                                    }
                                     if (!db.objectStoreNames.contains("iem_reviews")) {
                                         db.createObjectStore("iem_reviews", { keyPath: "id" });
                                     }
@@ -10899,12 +10749,10 @@ const DBCache = {
                             req.onupgradeneeded = (e) => {
                                 const db = e.target.result;
 
-                                // Create the store if missing instead of deleting it:
-                                // wiping the cache on every version bump discards
-                                // thousands of parsed curves for no benefit.
-                                if (!db.objectStoreNames.contains(this.STORE_NAME)) {
-                                    db.createObjectStore(this.STORE_NAME, { keyPath: "path" });
+                                if (db.objectStoreNames.contains(this.STORE_NAME)) {
+                                    db.deleteObjectStore(this.STORE_NAME);
                                 }
+                                db.createObjectStore(this.STORE_NAME, { keyPath: "path" });
                             };
                             req.onsuccess = (e) => { this.db = e.target.result; safeResolve(true); };
                             req.onerror = () => safeResolve(false);
@@ -10916,24 +10764,24 @@ const DBCache = {
                 _dbGetAll: function() {
                     return new Promise((resolve) => {
                         if (!this.db) return resolve([]);
-                        // No timeout race here: a slow-but-working read used to be
-                        // silently discarded after 1.5s, which threw away the whole
-                        // warm cache and forced ~5,000 re-fetches on the next boot.
-                        // Errors still resolve (tx onerror/onabort), so boot can
-                        // never hang, but a genuine result is never dropped.
+                        const timeoutId = setTimeout(() => {
+                            console.warn("[CurveIndexer] _dbGetAll timed out.");
+                            resolve([]);
+                        }, 1500);
+
                         try {
                             const tx = this.db.transaction(this.STORE_NAME, "readonly");
                             const req = tx.objectStore(this.STORE_NAME).getAll();
-                            req.onsuccess = () => resolve(req.result || []);
-                            req.onerror = () => {
-                                console.warn("[CurveIndexer] _dbGetAll failed.", req.error);
-                                resolve([]);
+                            req.onsuccess = () => {
+                                clearTimeout(timeoutId);
+                                resolve(req.result || []);
                             };
-                            tx.onabort = () => {
-                                console.warn("[CurveIndexer] _dbGetAll transaction aborted.");
+                            req.onerror = () => {
+                                clearTimeout(timeoutId);
                                 resolve([]);
                             };
                         } catch (e) {
+                            clearTimeout(timeoutId);
                             resolve([]);
                         }
                     });
@@ -10949,47 +10797,6 @@ const DBCache = {
                             tx.onerror = () => resolve(false);
                         } catch (e) { resolve(false); }
                     });
-                },
-
-                _dbPutBatch: function(records) {
-                    return new Promise((resolve) => {
-                        if (!this.db || !records || records.length === 0) return resolve(true);
-                        try {
-                            const tx = this.db.transaction(this.STORE_NAME, "readwrite");
-                            const store = tx.objectStore(this.STORE_NAME);
-                            for (let i = 0; i < records.length; i++) store.put(records[i]);
-                            tx.oncomplete = () => resolve(true);
-                            tx.onerror = () => resolve(false);
-                        } catch (e) { resolve(false); }
-                    });
-                },
-
-                // Fire-and-forget write queue: loadCurve no longer opens one
-                // readwrite transaction per curve (~5,000 transactions during
-                // warmup); records are coalesced into batches flushed on a
-                // single transaction each.
-                _writeQueue: [],
-                _writeFlushScheduled: false,
-                _queueWrite: function(record) {
-                    if (!this.db) return;
-                    this._writeQueue.push(record);
-                    if (this._writeQueue.length >= 200) {
-                        this._flushWriteQueue();
-                        return;
-                    }
-                    if (this._writeFlushScheduled) return;
-                    this._writeFlushScheduled = true;
-                    const self = this;
-                    setTimeout(() => {
-                        self._writeFlushScheduled = false;
-                        self._flushWriteQueue();
-                    }, 0);
-                },
-                _flushWriteQueue: function() {
-                    if (this._writeQueue.length === 0) return;
-                    const records = this._writeQueue;
-                    this._writeQueue = [];
-                    this._dbPutBatch(records).catch(() => {});
                 },
 
                 updateCatalogProgressUI: function(pct, loaded, total, isComplete = false) {
@@ -11031,51 +10838,29 @@ const DBCache = {
 
                 _loadCatalog: async function() {
                     try {
-                        // Prefer the compressed catalog, but fall back to the plain
-                        // JSON on ANY failure (missing, corrupt, or unreadable .gz)
-                        // so a bad gzip can never silently leave an empty database.
-                        let list = null;
 
-                        try {
-                            const gzRes = await fetch('./database.json.gz');
-                            if (gzRes.ok) {
-                                const decompressedStream = gzRes.body.pipeThrough(new DecompressionStream('gzip'));
-                                const parsed = await new Response(decompressedStream).json();
-                                list = Array.isArray(parsed) ? parsed : null;
-                            }
-                        } catch (gzErr) {
-                            console.warn("[CurveIndexer] database.json.gz failed, trying database.json...", gzErr);
-                        }
+                        let res = await fetch('./database.json.gz');
 
-                        if (list === null) {
-                            const res = await fetch('./database.json');
+                        if (!res.ok) {
+                            console.warn("database.json.gz not found, trying database.json...");
+                            res = await fetch('./database.json');
                             if (!res.ok) throw new Error("Database file missing");
-                            const parsed = await res.json();
-                            list = Array.isArray(parsed) ? parsed : [];
+                            const list = await res.json();
+                            this.catalog = Array.isArray(list) ? list : [];
+                            this.updateCatalogProgressUI(100, 0, 0, true);
+                            return;
                         }
 
-                        this.catalog = list;
+                        const decompressedStream = res.body.pipeThrough(new DecompressionStream('gzip'));
+                        const response = new Response(decompressedStream);
+
+                        const list = await response.json();
+                        this.catalog = Array.isArray(list) ? list : [];
                         this.updateCatalogProgressUI(100, 0, 0, true);
-                        // If FindEngine asked for the metadata while the catalog
-                        // was still loading, fulfill the pending retry now.
-                        if (window.FindEngine && FindEngine._dbRetryPending) {
-                            FindEngine._dbRetryPending = false;
-                            try { await FindEngine.loadDatabase(); }
-                            catch (retryErr) { console.warn("[CurveIndexer] FindEngine catalog retry failed.", retryErr); }
-                        }
                     } catch (e) {
-                        console.error("[CurveIndexer] Could not load catalog from .gz or .json:", e);
+                        console.warn("[CurveIndexer] Could not load catalog:", e);
                         this.catalog = [];
-                        // Do NOT paint "DB Ready" here - the catalog is genuinely
-                        // unavailable. Surface a persistent visible error instead
-                        // so the empty fallback dataset isn't mistaken for success.
-                        const headerBadge = document.getElementById('db-download-progress');
-                        if (headerBadge) {
-                            headerBadge.classList.remove('hidden');
-                            headerBadge.classList.add('flex');
-                            headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-red-500/10 border border-red-500/30 rounded text-[9px] font-mono font-bold text-red-400 select-none ml-1.5 whitespace-nowrap flex-shrink-0";
-                            headerBadge.innerHTML = "<span class=\"whitespace-nowrap\">\u26a0 DB Load Failed</span>";
-                        }
+                        this.updateCatalogProgressUI(100, 0, 0, true);
                     }
                 },
 
@@ -11111,10 +10896,10 @@ const DBCache = {
 
                             if (cached && cached.freqs && cached.dbs && cached.freqs.length >= 2) {
                                 cachedData = this._decodeCurve(cached.freqs, cached.dbs);
-                                cachedInterp = (cached.cachedInterp && cached.interpAlignDb === PEQDB_Module.alignDb) ? cached.cachedInterp : null;
+                                cachedInterp = cached.cachedInterp;
                             } else if (cached && Array.isArray(cached.data) && cached.data.length >= 2) {
                                 cachedData = cached.data;
-                                cachedInterp = (cached.cachedInterp && cached.interpAlignDb === PEQDB_Module.alignDb) ? cached.cachedInterp : null;
+                                cachedInterp = cached.cachedInterp;
                             }
                         }
 
@@ -11175,18 +10960,14 @@ const DBCache = {
                         item.sourcesCache[targetFile] = parsed;
 
                         if (fileIndex === 0) {
-                            const hadData = !!item.data;
                             item.data = parsed;
                             const norm = PEQDB_Module.getNormalizedData(parsed, item.name);
                             item.cachedInterp = Array.from(PEQDB_Module.DSP.interpolate(norm));
-                            if (!hadData) PEQDB_Module._indexedCount = (PEQDB_Module._indexedCount || 0) + 1;
                         }
 
-                        this._queueWrite({
+                        this._dbPut({
                             path: targetFile,
                             ...this._encodeCurve(parsed),
-                            cachedInterp: (fileIndex === 0 && item.cachedInterp) ? Array.from(item.cachedInterp) : null,
-                            interpAlignDb: fileIndex === 0 ? PEQDB_Module.alignDb : null,
                             indexedAt: Date.now()
                         });
                         return true;
@@ -11201,98 +10982,14 @@ const DBCache = {
                 },
 
                 _bgRunning: false,
-                startBackgroundWarmup: async function(dataset) {
+                startBackgroundWarmup: function(dataset) {
 
-                    if (this.warming || PEQDB_Module.databaseFullyLoaded || PEQDB_Module.dataMissing) return;
-                    if (!dataset || dataset.length === 0) {
-                        // Same boot race guard as startBackgroundLoading: never
-                        // mark the DB "fully loaded" off an empty dataset — retry.
-                        if (!PEQDB_Module.databaseFullyLoaded) PEQDB_Module.startBackgroundLoading();
-                        return;
-                    }
-
-                    // Probe for the measurement files BEFORE fanning out 4,980
-                    // curve fetches. If every probed primary file 404s, the
-                    // data/ directory is missing (e.g. gitignored asset folder)
-                    // and the warmup would otherwise storm the local server
-                    // with thousands of failing requests before giving up.
-                    const probeFiles = [];
-                    for (let i = 0; i < Math.min(dataset.length, 200) && probeFiles.length < 3; i++) {
-                        const it = dataset[i];
-                        const f = it && it.files && it.files[0];
-                        if (f && !probeFiles.includes(f)) probeFiles.push(f);
-                    }
-                    const probeResults = await Promise.all(probeFiles.map(async (f) => {
-                        try {
-                            // HEAD avoids downloading whole curve files just to
-                            // verify existence.
-                            const res = await fetch('./' + f.split('/').map(encodeURIComponent).join('/'), { method: 'HEAD' }).catch(() => null);
-                            return !!(res && res.ok);
-                        } catch (_) {
-                            return false;
-                        }
-                    }));
-                    if (probeFiles.length > 0 && probeResults.every(ok => !ok)) {
-                        PEQDB_Module.dataMissing = true;
-                        this.warming = false;
-                        console.warn("[CurveIndexer] Measurement data missing (all probed files 404) - indexing paused.");
-                        const indicator = document.getElementById('peqdb-indexing-indicator');
-                        if (indicator) {
-                            indicator.textContent = '⚠️ Measurement Data Missing - Indexing Paused';
-                            indicator.classList.remove('hidden');
-                        }
-                        const progressContainer = document.getElementById('find-progress-container');
-                        if (progressContainer) progressContainer.classList.add('hidden');
-                        return;
-                    }
-                    this.warming = true;
-                    const pending = dataset.filter(item => !(item.data && Array.isArray(item.data) && item.data.length >= 2));
-                    const CONCURRENCY = 6;
-                    let cursor = 0;
-                    let lastPercent = -1;
-                    const self = this;
-                    const tick = () => {
-                        if (!self.warming) return;
-                        const batch = [];
-                        while (batch.length < CONCURRENCY && cursor < pending.length) {
-                            batch.push(pending[cursor++]);
-                        }
-                        if (batch.length === 0) {
-                            self.warming = false;
-                            PEQDB_Module.databaseFullyLoaded = true;
-                            localStorage.setItem('squig_db_indexed', 'true');
-                            const indicator = document.getElementById('peqdb-indexing-indicator');
-                            if (indicator) indicator.classList.add('hidden');
-                            if (window.FindEngine && FindEngine.hideIndexingProgressAfterMin) {
-                                FindEngine.hideIndexingProgressAfterMin();
-                            } else {
-                                const progressContainer = document.getElementById('find-progress-container');
-                                if (progressContainer) progressContainer.classList.add('hidden');
-                            }
-                            if (window.FindEngine && FindEngine.updateIndexingProgressBar) {
-                                FindEngine.updateIndexingProgressBar();
-                            }
-                            return;
-                        }
-                        Promise.all(batch.map(item => self.loadCurve(item).catch(() => false))).then(() => {
-                            if (window.FindEngine && FindEngine.updateIndexingProgressBar) {
-                                const datasetRef = PEQDB_Module.STATE.dataset;
-                                const totalCount = datasetRef ? datasetRef.length : 0;
-                                // loadCurve already bumps _indexedCount per newly
-                                // loaded item; re-scanning the whole dataset per
-                                // 6-item batch was O(n) per tick (~11k curves).
-                                let indexedCount = (PEQDB_Module._indexedCountBase || 0) + (PEQDB_Module._indexedCount || 0);
-                                if (indexedCount > totalCount || indexedCount < 0) indexedCount = totalCount;
-                                const percent = totalCount ? Math.round((indexedCount / totalCount) * 100) : 100;
-                                if (percent !== lastPercent || percent >= 100) {
-                                    lastPercent = percent;
-                                    FindEngine.updateIndexingProgressBar();
-                                }
-                            }
-                            setTimeout(tick, 0);
-                        });
-                    };
-                    setTimeout(tick, 0);
+                    PEQDB_Module.databaseFullyLoaded = true;
+                    localStorage.setItem('squig_db_indexed', 'true');
+                    const indicator = document.getElementById('peqdb-indexing-indicator');
+                    if (indicator) indicator.classList.add('hidden');
+                    const progressContainer = document.getElementById('find-progress-container');
+                    if (progressContainer) progressContainer.classList.add('hidden');
                 }
             };
 
@@ -11311,11 +11008,12 @@ const DBCache = {
             }
 
             const PEQDB_Module = {
+                viewMinF: 20,
+                viewMaxF: 20000,
                 isDrawingModeActive: false,
                 isUserDrawing: false,
                 drawnPoints: [],
                 databaseFullyLoaded: false,
-                _similarTargetEverModified: false,
 
                 migrateLegacyReviews: async function() {
                     const legacy = localStorage.getItem('iem_library_v2');
@@ -11376,6 +11074,10 @@ const DBCache = {
                 resonanceHz: 8000,
                 alignHz: '500',
                 alignDb: 75.0,
+                viewMinF: 20,
+                viewMaxF: 20000,
+                squigYMin: 50,
+                squigYMax: 110,
                 parseRawCurveText: function(rawText) {
 
             const lines = rawText.split(/\r\n|\r|\n/);
@@ -11392,6 +11094,21 @@ const DBCache = {
                     lines.forEach(line => {
                         let cleanLine = line.trim();
                         if (cleanLine.startsWith('#') || cleanLine.startsWith('*') || cleanLine.startsWith('//') || cleanLine === '') return;
+
+                        // Grouped-digit repair ("1,000" -> "1000"), applied
+                        // BEFORE the branch split regardless of commaIsDecimal:
+                        // a tab/semicolon elsewhere on the SAME line can flip
+                        // that heuristic to true, which would otherwise
+                        // reinterpret a thousands-separated frequency as a
+                        // decimal (e.g. tab-delimited "1,000\t6.5" -> 1 Hz
+                        // instead of 1000 Hz). The strict 3-digit-grouping
+                        // regex can never match a genuine decimal-comma token
+                        // like "1,5", so this is safe either way.
+                        const firstTok = cleanLine.split(/[\t;\s]+/)[0] || '';
+                        if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(firstTok)) {
+                            cleanLine = cleanLine.replace(/(\d),(\d{3})/g, '$1$2');
+                        }
+
                         let parts = [];
                         if (commaIsDecimal) {
                             cleanLine = cleanLine.replace(/,/g, '.');
@@ -11403,7 +11120,12 @@ const DBCache = {
                         if (parts.length >= 2) {
                             const f = parseFloat(parts[0]);
                             const a = parseFloat(parts[1]);
-                            if (!isNaN(f) && !isNaN(a)) {
+                            // Number.isFinite (not isNaN) also rejects
+                            // Infinity/-Infinity, which parseFloat happily
+                            // returns for overflowing literals like "1e999"
+                            // or the literal token "Infinity" -- isNaN alone
+                            // let those through and into the curve dataset.
+                            if (Number.isFinite(f) && Number.isFinite(a)) {
                                 if (f >= 1 && f <= 24000) {
                                     data.push([f, a]);
                                 }
@@ -11431,14 +11153,12 @@ const DBCache = {
             if (this.databaseFullyLoaded) return;
             const dataset = this.STATE.dataset;
             if (!dataset || dataset.length === 0) {
-                // Dataset is still being built (async fetches) — retry shortly
-                // instead of marking the DB "fully loaded", which would
-                // permanently skip the warm-up and the similar-curve index.
-                clearTimeout(this._bgLoadingRetryTimer);
-                const self = this;
-                this._bgLoadingRetryTimer = setTimeout(function() {
-                    if (!self.databaseFullyLoaded) self.startBackgroundLoading();
-                }, 400);
+                this.databaseFullyLoaded = true;
+                localStorage.setItem('squig_db_indexed', 'true');
+                this.renderList(false, true);
+                if (window.FindEngine && FindEngine.updateIndexingProgressBar) {
+                    FindEngine.updateIndexingProgressBar();
+                }
                 return;
             }
             CurveIndexer.startBackgroundWarmup(dataset);
@@ -11689,9 +11409,6 @@ const DBCache = {
                 };
                 this.STATE.dataset.unshift(newItem);
                 this.STATE.renderList.unshift(newItem);
-                // The sorted-list memo in DATA.search keys on array identity,
-                // which an unshift doesn't change — invalidate it explicitly.
-                if (PEQDB_Module.DATA._sortedDatasetSource !== undefined) PEQDB_Module.DATA._sortedDatasetSource = null;
                 this.toggleCurveSelection(id);
             });
 
@@ -11701,23 +11418,28 @@ const DBCache = {
         initSimilarityWorker: function() {
                 if (typeof Worker === 'undefined') return;
                 const workerCode = `
-                    const fn = ${computeSimilarityScores.toString()};
-                    let cachedDataset = null;
-                    let cachedSig = null;
                     self.onmessage = function(e) {
-                        const msg = e.data || {};
-                        if (msg.type === 'prime') {
-                            cachedDataset = msg.dataset;
-                            cachedSig = msg.sig;
-                            self.postMessage({ type: 'primed', token: msg.token });
-                            return;
+                        const { dataset, targetInterp, freqs, threshold } = e.data;
+                        const matches = [];
+                        for (let idx = 0; idx < dataset.length; idx++) {
+                            const item = dataset[idx];
+                            if (!item.cachedInterp) continue;
+                            let totalDiff = 0;
+                            let count = 0;
+                            for (let i = 0; i < freqs.length; i += 8) {
+                                const f = freqs[i];
+                                if (f > 10000) break;
+                                totalDiff += Math.abs(targetInterp[i] - item.cachedInterp[i]);
+                                count++;
+                            }
+                            const mae = totalDiff / count;
+                            const similarity = Math.max(0, 100 * (1 - (mae / threshold)));
+                            matches.push({
+                                id: item.id, name: item.name, variant: item.variant, source: item.source, similarity: similarity
+                            });
                         }
-                        if (msg.type !== 'search') return;
-                        const ds = (msg.sig !== undefined && msg.sig === cachedSig)
-                            ? cachedDataset
-                            : (cachedDataset = msg.dataset, cachedSig = msg.sig, msg.dataset);
-                        const matches = fn(msg.targetInterp, ds, msg.probes, msg.weights, msg.midMask, msg.threshold);
-                        self.postMessage({ type: 'result', token: msg.token, matches: matches });
+                        matches.sort((a, b) => b.similarity - a.similarity);
+                        self.postMessage({ matches });
                     };
                 `;
                 try {
@@ -11726,80 +11448,13 @@ const DBCache = {
                     this.similarityWorker = new Worker(blobUrl);
                     URL.revokeObjectURL(blobUrl);
                     this.similarityWorker.onmessage = (e) => {
-                        const d = e.data || {};
-                        if (d.type === 'primed') {
-                            if (this._similarPrimeTimer) {
-                                clearTimeout(this._similarPrimeTimer);
-                                this._similarPrimeTimer = null;
-                            }
-                            // Dataset freshly cloned — retry the pending search
-                            // that triggered the prime.
-                            if (this._similarPriming) {
-                                this._similarPriming = false;
-                                this.findSimilarCurves();
-                            }
-                            return;
-                        }
-                        if (d.type !== 'result') return;
-                        // Ignore stale responses that no longer match the newest
-                        // in-flight search so an old result can't overwrite the
-                        // cache (and its post-time fingerprint).
-                        if (d.token !== this._similarSearchToken) return;
-                        this.handleSimilarityResults(d.matches, this._similarPostFp);
-                    };
-                    this.similarityWorker.onerror = () => {
-                        // Worker died (OOM on the clone is the usual suspect):
-                        // drop back to the inline scoring path permanently.
-                        if (this._similarPrimeTimer) {
-                            clearTimeout(this._similarPrimeTimer);
-                            this._similarPrimeTimer = null;
-                        }
-                        this._similarPriming = false;
-                        this._similarPrimedSig = null;
-                        try { this.similarityWorker.terminate(); } catch (_) {}
-                        this.similarityWorker = null;
-                        if (this._similarSearchToken && this._similarPendingRetry !== true) {
-                            this._similarPendingRetry = true;
-                            setTimeout(() => {
-                                this._similarPendingRetry = false;
-                                this.findSimilarCurves();
-                            }, 0);
-                        }
+                        this.handleSimilarityResults(e.data.matches);
                     };
                 } catch (err) {
                     console.warn("Similarity Web Worker creation restricted on local files. Running inline.");
                     this.similarityWorker = null;
                 }
             },
-
-        // Content signature for the similarity dataset: changes whenever the
-        // membership, per-item interp sizes OR values change, so the worker is
-        // only re-primed when the actual payload differs. Interp VALUES are
-        // sampled because two datasets can share the same id/length profile but
-        // carry different curve content (re-imported or edited traces).
-        _similarDsSig: function(ds) {
-            let h1 = 0, h2 = 0;
-            for (let i = 0; i < ds.length; i++) {
-                const it = ds[i];
-                const idStr = it && it.id ? String(it.id) : '';
-                for (let c = 0; c < idStr.length; c++) {
-                    h1 = (Math.imul(h1, 33) + idStr.charCodeAt(c)) | 0;
-                    h2 = (Math.imul(h2, 31) + idStr.charCodeAt(c)) | 0;
-                }
-                const interp = it && it.cachedInterp;
-                if (interp) {
-                    for (let j = 0; j < interp.length; j += 8) {
-                        const v = Math.round(interp[j] * 100) | 0;
-                        h1 = (Math.imul(h1, 33) + v) | 0;
-                        h2 = (Math.imul(h2, 31) + v) | 0;
-                    }
-                }
-            }
-            // Alignment changes shift every cached interpolation — include it
-            // so an align change (which also nulls cachedInterp) both invalidates
-            // the primed worker payload and re-key the cache.
-            return ds.length + ':' + h1 + ':' + h2 + ':' + this.alignHz + ':' + this.alignDb;
-        },
 
         getRefDb: function(data) {
             if (!data || data.length === 0) return 0;
@@ -11842,7 +11497,7 @@ const DBCache = {
                         graphBtn.innerHTML = `<span class="align-label-prefix">Align: </span>${labelMap[hzStr] || hzStr}`;
                     }
 
-                    this.updateAlignmentCfg();
+                    this.updateAlignmentCfgActual();
                 },
                 setAlignDb: function(db) {
             const numDb = parseFloat(db);
@@ -11887,12 +11542,6 @@ const DBCache = {
             }, 120);
         },
         updateAlignmentCfgActual: function() {
-            if (this._lastAppliedAlignHz === this.alignHz && this._lastAppliedAlignDb === this.alignDb) {
-                return;
-            }
-            this._lastAppliedAlignHz = this.alignHz;
-            this._lastAppliedAlignDb = this.alignDb;
-
             if (this.alignDb === 0) {
                 this.squigYMin = -30;
                 this.squigYMax = 30;
@@ -11913,10 +11562,6 @@ const DBCache = {
                 this.STATE.dataset.forEach(item => {
                     item.cachedInterp = null;
                 });
-                // Invalidate any in-flight chunked interpolation pass: its
-                // remaining chunks would re-fill these nulls with curves
-                // normalized under the old alignment.
-                this._interpGeneration = (this._interpGeneration || 0) + 1;
             }
 
             try {
@@ -11949,6 +11594,7 @@ const DBCache = {
         squigYMin: 50,
         squigYMax: 110,
         searchMode: 'database',
+        _similarTargetEverModified: false,
         targetMode: 'database',
 
         convertActiveToSculpt: function() {
@@ -11991,7 +11637,7 @@ const DBCache = {
         handleSculptChangeDirect: function(index, db) {
             this.sculptPoints[index].val = db;
             this.updateSculptTargetData();
-            this.updateAllThrottled();
+            this.updateAll();
         },
         updateSculptTargetData: function() {
             const activeTarget = this.STATE.activeCurves.find(c => c.role === 'target');
@@ -12206,7 +11852,6 @@ const DBCache = {
                 PEQDB_Module.databaseFullyLoaded = true;
                 localStorage.setItem('squig_db_indexed', 'true');
             }
-            if (FindEngine._cardDataCache) FindEngine._cardDataCache.clear();
 
                 try {
                     PEQDB_Module.precalculateInterps();
@@ -12242,19 +11887,12 @@ const DBCache = {
                     PEQDB_Module.STATE.dataset = [];
                 }
                 if (!query || !query.trim()) {
-                    // Memoize the fully-sorted list: the dataset is immutable
-                    // between loads, and this sort ran on every search() call
-                    // (each keystroke + every renderList refresh).
-                    if (this._sortedDatasetSource !== PEQDB_Module.STATE.dataset) {
-                        this._sortedDatasetSource = PEQDB_Module.STATE.dataset;
-                        this._sortedDataset = PEQDB_Module.STATE.dataset.slice().sort((a, b) => {
-                            const nameA = (a.name || '').toLowerCase();
-                            const nameB = (b.name || '').toLowerCase();
-                            if (nameA !== nameB) return nameA.localeCompare(nameB);
-                            return (a.source || '').localeCompare(b.source || '');
-                        });
-                    }
-                    PEQDB_Module.STATE.renderList = this._sortedDataset;
+                    PEQDB_Module.STATE.renderList = PEQDB_Module.STATE.dataset.slice().sort((a, b) => {
+                        const nameA = (a.name || '').toLowerCase();
+                        const nameB = (b.name || '').toLowerCase();
+                        if (nameA !== nameB) return nameA.localeCompare(nameB);
+                        return (a.source || '').localeCompare(b.source || '');
+                    });
                     return;
                 }
                 const results = [];
@@ -12310,13 +11948,9 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             const searchInput = document.getElementById("peqdb-search");
             if (searchInput) {
                 searchInput.addEventListener("input", debounce(e => {
-                    if (this.searchMode === 'similar') {
-                        this.debouncedFindSimilarCurves();
-                    } else {
-                        this.DATA.search(e.target.value);
-                        this.renderList();
-                        this.updateSearchSuggestions(e.target.value);
-                    }
+                    this.DATA.search(e.target.value);
+                    this.renderList();
+                    this.updateSearchSuggestions(e.target.value);
                 }, 250));
                 searchInput.addEventListener("blur", () => {
                     setTimeout(() => {
@@ -12330,22 +11964,14 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
 
             const listContainer = document.getElementById("peqdb-list");
             if (listContainer) {
-                // Coalesce rapid scroll events into one render per frame
-                // (scroll can fire many times per frame while flinging).
-                let scrollRenderScheduled = false;
                 listContainer.addEventListener("scroll", () => {
-                    if (scrollRenderScheduled) return;
-                    scrollRenderScheduled = true;
-                    requestAnimationFrame(() => {
-                        scrollRenderScheduled = false;
-                        const scrollBuffer = 60;
-                        if (listContainer.scrollTop + listContainer.clientHeight >= listContainer.scrollHeight - scrollBuffer) {
-                            if (PEQDB_Module.listRenderLimit < PEQDB_Module.STATE.renderList.length) {
-                                PEQDB_Module.listRenderLimit += 40;
-                                PEQDB_Module.renderList(true);
-                            }
+                    const scrollBuffer = 60;
+                    if (listContainer.scrollTop + listContainer.clientHeight >= listContainer.scrollHeight - scrollBuffer) {
+                        if (PEQDB_Module.listRenderLimit < PEQDB_Module.STATE.renderList.length) {
+                            PEQDB_Module.listRenderLimit += 40;
+                            PEQDB_Module.renderList(true);
                         }
-                    });
+                    }
                 }, { passive: true });
             }
 
@@ -12425,32 +12051,21 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
         },
         expandedItemDrawers: new Set(),
         expandedBrands: new Set(),
-        _brandDisplayNames: null,
-        normBrandKey: function(brand) {
-            return String(brand || 'Unknown Brand').toLowerCase().replace(/[^a-z0-9]+/g, '');
-        },
         dbItemFileIndex: {},
         toggleBrandGroup: function(brandName) {
-            const key = this.normBrandKey(brandName);
-            if (this.expandedBrands.has(key)) {
-                this.expandedBrands.delete(key);
+            if (this.expandedBrands.has(brandName)) {
+                this.expandedBrands.delete(brandName);
             } else {
-                this.expandedBrands.add(key);
+                this.expandedBrands.add(brandName);
             }
-            const groupEl = document.querySelector(`#peqdb-list [data-brand-group="${key}"]`);
+            const brandSlug = brandName.replace(/[^a-zA-Z0-9]/g, '_');
+            const groupEl = document.querySelector(`[data-brand-group="${brandSlug}"]`);
             if (groupEl) {
                 const container = groupEl.querySelector('.brand-items-container');
                 const arrow = groupEl.querySelector('.brand-group-arrow');
-                const isNowExpanded = this.expandedBrands.has(key);
+                const isNowExpanded = this.expandedBrands.has(brandName);
                 if (container) container.classList.toggle('hidden', !isNowExpanded);
                 if (arrow) arrow.textContent = isNowExpanded ? '▲' : '▼';
-
-                // Safety net: if every item row of this group was evicted from
-                // the DOM while the shell survived, repopulate on expand.
-                if (isNowExpanded && container && !container.children.length) {
-                    this.renderList(false, true);
-                    return;
-                }
 
                 if (isNowExpanded && container && this.applyOrbitMarqueeFn) {
                     setTimeout(() => {
@@ -12471,48 +12086,6 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             } else {
                 this.renderList(false, true, true);
             }
-        },
-
-        rescoreSimilarItemFile: async function(item) {
-            const target = this._similarTargetInterp;
-            if (!target || !this._lastSimilarGroups) return;
-            const idx = this.dbItemFileIndex[item.id] || 0;
-            if (!this._fileSwitchTokens) this._fileSwitchTokens = {};
-            const token = (this._fileSwitchTokens[item.id] = (this._fileSwitchTokens[item.id] || 0) + 1);
-            const targetFile = item.files && item.files[idx] ? item.files[idx] : item.primaryFilePath;
-            if (!targetFile) return;
-
-            if (!(item.sourcesCache && item.sourcesCache[targetFile])) {
-                try { await CurveIndexer.loadCurve(item, idx); } catch (e) { return; }
-            }
-            if (this._fileSwitchTokens[item.id] !== token) return;
-            const parsed = (item.sourcesCache && item.sourcesCache[targetFile]) || item.data;
-            if (!parsed || parsed.length < 2) return;
-
-            const norm = this.getNormalizedData(parsed, item.name);
-            const interp = Array.from(this.DSP.interpolate(norm));
-
-            const probeFreqs = CurveUtils.SIM_PROBE_FREQS;
-            const probesIdx = CurveUtils.probeIndices(this.DSP.FREQS, probeFreqs);
-            const weights = probeFreqs.map(f => CurveUtils.weightFor(f));
-            const midMask = probeFreqs.map(f =>
-                (f >= CurveUtils.MID_MEAN_BAND[0] && f <= CurveUtils.MID_MEAN_BAND[1]) ? 1 : 0
-            );
-            const fakeItem = { id: item.id, name: item.name, variant: item.variant, source: item.source, cachedInterp: interp };
-            const scores = computeSimilarityScores(target, [fakeItem], probesIdx, weights, midMask, 8.0);
-            if (!scores.length || this._fileSwitchTokens[item.id] !== token) return;
-            const sim = scores[0].similarity;
-
-            const matches = SimilarCurvesCache.results;
-            if (Array.isArray(matches)) {
-                const m = matches.find(x => x.id === item.id);
-                if (m) m.similarity = sim;
-            }
-            const group = this._lastSimilarGroups.find(g => g.items.some(it => it.id === item.id));
-            if (group) {
-                group.bestSimilarity = Math.max(...group.items.map(it => it.similarity));
-            }
-            this.renderSimilarList(this._lastSimilarGroups, this._lastSimilarRefName);
         },
         toggleItemDrawer: function(itemId) {
             const list = document.getElementById('peqdb-list');
@@ -12562,34 +12135,25 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             }
         },
 
-        updateRowSelectionUI: function(id) {
+        updateRowSelectionUI: function(id, itemById) {
             const list = document.getElementById('peqdb-list');
             if (!list) return;
 
             let row = null;
-            // Cache row elements per id: the refresh loop calls this once per
-            // row, and a querySelector per call is the O(rows²) hotspot when
-            // hundreds of rows are rendered.
-            const cached = this._rowElCache && this._rowElCache.get(id);
-            if (cached && cached.isConnected) {
-                row = cached;
-            } else {
-                try {
-                    row = list.querySelector(`[data-id="${CSS.escape(id)}"]`);
-                } catch(e) {
-                    const all = list.querySelectorAll('.peqdb-row-item');
-                    for (let i = 0; i < all.length; i++) {
-                        if (all[i].getAttribute('data-id') === id) { row = all[i]; break; }
-                    }
-                }
-                if (row) {
-                    if (!this._rowElCache) this._rowElCache = new Map();
-                    this._rowElCache.set(id, row);
+            try {
+                row = list.querySelector(`[data-id="${CSS.escape(id)}"]`);
+            } catch(e) {
+                const all = list.querySelectorAll('.peqdb-row-item');
+                for (let i = 0; i < all.length; i++) {
+                    if (all[i].getAttribute('data-id') === id) { row = all[i]; break; }
                 }
             }
             if (!row) return;
 
-            const item = this.STATE.dataset.find(i => i.id === id);
+            // Batch callers pass a prebuilt id→item Map; a linear .find per row
+            // made updateAllRowSelectionUIs O(rows × dataset) on every curve
+            // toggle / color cycle / ±1 dB offset click.
+            const item = (itemById && itemById.get(id)) || this.STATE.dataset.find(i => i.id === id);
             if (!item) return;
 
             const activeCurves = this.STATE.activeCurves;
@@ -12647,136 +12211,37 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             const list = document.getElementById('peqdb-list');
             if (!list) return;
             const rows = list.querySelectorAll('.peqdb-row-item');
+            if (rows.length === 0) return;
+            // One Map build instead of a linear dataset scan per row.
+            const itemById = new Map((this.STATE.dataset || []).map(d => [d.id, d]));
             rows.forEach(row => {
                 const id = row.getAttribute('data-id');
-                if (id) this.updateRowSelectionUI(id);
+                if (id) this.updateRowSelectionUI(id, itemById);
             });
         },
 
-        buildDbModelCard: function(item, similarInfo) {
-            const fileCount = item.files ? item.files.length : 0;
-            const isMulti = fileCount > 1;
-            const curFileIdx = this.dbItemFileIndex[item.id] || 0;
-            const activeFileIdx = Math.min(curFileIdx, Math.max(0, fileCount - 1));
-
-            const filePath = item.files && item.files[activeFileIdx] ? item.files[activeFileIdx] : item.primaryFilePath;
-            const pathParts = (filePath || '').split('/');
-            const sourceName = pathParts.length >= 3 ? pathParts[1] : (pathParts.length >= 2 ? pathParts[0] : (item.source || 'Database'));
-            const fileNameRaw = pathParts[pathParts.length - 1] || '';
-            const fileNameNoExt = fileNameRaw.replace(/\.[^/.]+$/, '');
-
-            const activeCurves = this.STATE.activeCurves;
-
-            const curveUid = `${item.id}_src_${activeFileIdx}`;
-            const activeCurve = activeCurves.find(c => c.uid === curveUid || (fileCount <= 1 && c.id === item.id));
-            const isLoaded = !!activeCurve;
-            const rowAccentColor = isLoaded ? activeCurve.color : 'var(--border-color)';
-
-            const formFactorEmojiMap = {
-                'IEM': FindEngine.formFactorEmojis['IEM'],
-                'Earbuds (Wired)': FindEngine.formFactorEmojis['Earbuds (Wired)'],
-                'Wireless Earbuds (TWS)': FindEngine.formFactorEmojis['Wireless Earbuds (TWS)'],
-                'Over-Ear Headphones (Wired)': FindEngine.formFactorEmojis['Over-Ear Headphones (Wired)'],
-                'Wireless Over-Ear Headphones': FindEngine.formFactorEmojis['Wireless Over-Ear Headphones']
-            };
-            const formEmoji = formFactorEmojiMap[item.form_factor] || FindEngine.formFactorEmojis['IEM'];
-            const driverEmoji = FindEngine.driverEmojis[item.driver_type] || '⚙️';
-            const driverTooltip = `${item.driver_type || 'Driver'}${item.driver_config ? ' (' + item.driver_config + ')' : ''}`;
-            const connectorEmoji = FindEngine.connectorEmojis[item.connector] || '🔌';
-
-            const specIconsHtml = `
-                ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:9px;">$${esc(item.price_usd)}</span></span>` : ''}
-                ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:9px;">${esc(item.year)}</span></span>` : ''}
-                ${item.driver_type ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
-                ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${esc(item.connector)}">${connectorEmoji}</span>` : ''}
-                <span class="spec-icon-badge" data-tooltip="${esc(item.form_factor || 'In-Ear Monitor (IEM)')}">${formEmoji}</span>
-            `;
-
-            const getTagEmoji = (tagStr) => {
-                if (!tagStr) return '🏷️';
-                const emojiMatch = tagStr.match(/^(\p{Extended_Pictographic}|\p{Emoji})/u);
-                if (emojiMatch) return emojiMatch[0];
-                const cleanKey = tagStr.toLowerCase().trim().replace(/[\s_]+/g, '-');
-                const emojiMap = {
-                    'basshead': '💥', 'treble-head': '⚡', 'treblehead': '⚡', 'treble-head': '⚡', 'treble head': '⚡',
-                    'sub-bass': '🌊', 'sub bass': '🌊', 'punchy-bass': '🥊', 'punchy bass': '🥊',
-                    'warm': '🌿', 'warm-tilt': '🌿', 'neutral': '⚖️', 'v-shaped': '🔺', 'v-shape': '🔺',
-                    'u-shaped': '🧲', 'u-shape': '🧲', 'ushaped': '🧲', 'ushape': '🧲', 'balanced': '☯️',
-                    'bright': '✨', 'dark': '🌑', 'detailed': '💎', 'detail': '💎', 'resolving': '🔍',
-                    'technical': '🔬', 'wide-stage': '🏟️', 'soundstage': '🏟️', 'good-imaging': '🔭',
-                    'imaging': '🔭', 'smooth': '🧈', 'reference': '📐', 'studio-monitoring': '🎛️',
-                    'studio monitoring': '🎛️', 'studiomonitoring': '🎛️', 'studio-monitor': '🎛️', 'studio monitor': '🎛️',
-                    'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮',
-                    'competitive-gaming': '🏆', 'competitive gaming': '🏆', 'vocal-focused': '🗣️', 'vocal': '🎤',
-                    'budget': '💰', 'mid-tier': '🪙', 'mid tier': '🪙', 'premium': '👑', 'flagship': '🥇',
-                    'collab': '🤝', 'limited-edition': '🌟', 'limited edition': '🌟'
-                };
-                return emojiMap[cleanKey] || '🏷️';
-            };
-            const tagsHtml = (item.tags || []).map(t => `<span class="spec-icon-badge" data-tooltip="${esc(t)}">${getTagEmoji(t)}</span>`).join('');
-
-            let fileRowHtml;
-            if (isMulti) {
-                fileRowHtml = `
-                    <div class="flex items-center gap-1.5 mt-1">
-                        <button onclick="event.stopPropagation(); PEQDB_Module.cycleDbItemSource('${escJs(item.id)}', -1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
-                        <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
-                            <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
-                        </div>
-                        <button onclick="event.stopPropagation(); PEQDB_Module.cycleDbItemSource('${escJs(item.id)}', 1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
-                    </div>
-                `;
-            } else {
-                fileRowHtml = `
-                    <div class="mt-1 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
-                        <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
-                    </div>
-                `;
+        updateAll: function(preserveScroll = false) {
+            if (EQ_Module.isDragging) {
+                EQ_Module.drawCurve();
+                return;
             }
 
-            const similarHeader = similarInfo ? `
-                <div class="flex items-center justify-between gap-2 mb-1.5 border-b border-white/[0.05] pb-1.5">
-                    <span class="text-[9px] font-mono text-[var(--text-secondary)]">#${similarInfo.rank}</span>
-                    <span class="flex items-center gap-1.5">
-                        <span class="text-[11px] font-black text-[var(--accent-green)]">${similarInfo.similarity.toFixed(1)}%</span>
-                        ${similarInfo.badgeHtml || ''}
-                    </span>
-                </div>
-            ` : '';
-
-            const div = document.createElement('div');
-            div.className = 'peqdb-row-item p-2 mb-1.5 transition-all select-none cursor-pointer';
-            div.setAttribute('data-id', item.id);
-            if (isLoaded) {
-                div.classList.add('is-loaded');
-                div.style.setProperty('--row-glow', `rgba(${this.hexToRgb(activeCurve.color)}, 0.28)`);
-                div.style.setProperty('--row-glow-solid', activeCurve.color);
-            }
-            div.onclick = () => PEQDB_Module.toggleCurveSelection(item.id, activeFileIdx);
-            div.innerHTML = similarHeader + `
-                <div class="db-title-row overflow-hidden whitespace-nowrap">
-                    <span class="db-title-text font-black text-stone-200 text-xs inline-block whitespace-nowrap">${esc(item.name)}</span>
-                </div>
-                <div class="text-[8.5px] text-zinc-500 font-bold uppercase tracking-wider mt-0.5">${esc(item.source || sourceName)}</div>
-                <div class="flex flex-wrap items-center justify-center gap-1 mt-1">${specIconsHtml}</div>
-                ${tagsHtml ? `<div class="flex flex-wrap items-center justify-center gap-1 mt-1">${tagsHtml}</div>` : ''}
-                ${fileRowHtml}
-            `;
-            return div;
+            this.updateAllRowSelectionUIs();
+            EQ_Module.drawCurve();
+            this.renderActiveCurvesDock();
         },
 
         renderList: function(appendMore = false, preserveScroll = false, preserveLimit = false) {
             const list = document.getElementById('peqdb-list');
             const existingLoader = document.getElementById('peqdb-loading');
             if (!list) return;
-            if (!appendMore && this._rowElCache) this._rowElCache.clear();
 
             const savedScroll = list.scrollTop;
             if (!PEQDB_Module.STATE.renderList) PEQDB_Module.STATE.renderList = [];
 
             if (!appendMore) {
 
-                if (!preserveLimit) this.listRenderLimit = Math.max(40, PEQDB_Module.STATE.renderList.length);
+                if (!preserveLimit) this.listRenderLimit = 40;
                 if (!preserveScroll) list.scrollTop = 0;
             }
 
@@ -12787,23 +12252,11 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             const countEl = document.getElementById('peqdb-result-count');
             if (countEl && this.searchMode !== 'similar') countEl.textContent = totalItems;
 
-            // Memoize brand counts per renderList instance: the full-list pass
-            // ran on every render (including appendMore refreshes) even though
-            // the counts only change when the filtered list itself changes.
-            if (this._brandCountsSource !== PEQDB_Module.STATE.renderList) {
-                this._brandCountsSource = PEQDB_Module.STATE.renderList;
-                const brandCounts = new Map();
-                const brandDisplayNames = new Map();
-                PEQDB_Module.STATE.renderList.forEach(item => {
-                    const raw = item.brand || 'Unknown Brand';
-                    const bk = this.normBrandKey(raw);
-                    if (!brandDisplayNames.has(bk)) brandDisplayNames.set(bk, raw);
-                    brandCounts.set(bk, (brandCounts.get(bk) || 0) + 1);
-                });
-                this._brandCounts = brandCounts;
-                this._brandDisplayNames = brandDisplayNames;
-            }
-            const brandCounts = this._brandCounts;
+            const brandCounts = new Map();
+            PEQDB_Module.STATE.renderList.forEach(item => {
+                const bk = item.brand || 'Unknown Brand';
+                brandCounts.set(bk, (brandCounts.get(bk) || 0) + 1);
+            });
 
             const fragment = document.createDocumentFragment();
             const activeCurves = PEQDB_Module.STATE.activeCurves;
@@ -12816,10 +12269,9 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             this._brandCounts = brandCounts;
 
             const brandBuckets = new Map();
-            let renderedRowIdx = startIdx;
             for (let idx = startIdx; idx < endIdx; idx++) {
                 const item = PEQDB_Module.STATE.renderList[idx];
-                const brandKey = this.normBrandKey(item.brand || 'Unknown Brand');
+                const brandKey = item.brand || 'Unknown Brand';
                 if (!brandBuckets.has(brandKey)) brandBuckets.set(brandKey, []);
                 brandBuckets.get(brandKey).push(item);
             }
@@ -12827,27 +12279,118 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             if (!this.expandedBrands) this.expandedBrands = new Set();
             if (!this.dbItemFileIndex) this.dbItemFileIndex = {};
 
-            const buildModelCard = (item) => this.buildDbModelCard(item);
+            const buildModelCard = (item) => {
+                const fileCount = item.files ? item.files.length : 0;
+                const isMulti = fileCount > 1;
+                const curFileIdx = this.dbItemFileIndex[item.id] || 0;
+                const activeFileIdx = Math.min(curFileIdx, Math.max(0, fileCount - 1));
 
-            for (const [brandKey, items] of brandBuckets) {
-                const displayName = (this._brandDisplayNames && this._brandDisplayNames.get(brandKey)) || brandKey;
+                const filePath = item.files && item.files[activeFileIdx] ? item.files[activeFileIdx] : item.primaryFilePath;
+                const pathParts = (filePath || '').split('/');
+                const sourceName = pathParts.length >= 3 ? pathParts[1] : (pathParts.length >= 2 ? pathParts[0] : (item.source || 'Database'));
+                const fileNameRaw = pathParts[pathParts.length - 1] || '';
+                const fileNameNoExt = fileNameRaw.replace(/\.[^/.]+$/, '');
 
-                let groupEl = appendMore ? list.querySelector(`[data-brand-group="${brandKey}"]`) : null;
+                const curveUid = `${item.id}_src_${activeFileIdx}`;
+                const activeCurve = activeCurves.find(c => c.uid === curveUid || (fileCount <= 1 && c.id === item.id));
+                const isLoaded = !!activeCurve;
+                const rowAccentColor = isLoaded ? activeCurve.color : 'var(--border-color)';
+
+                const formFactorEmojiMap = {
+                    'IEM': FindEngine.formFactorEmojis['IEM'],
+                    'Earbuds (Wired)': FindEngine.formFactorEmojis['Earbuds (Wired)'],
+                    'Wireless Earbuds (TWS)': FindEngine.formFactorEmojis['Wireless Earbuds (TWS)'],
+                    'Over-Ear Headphones (Wired)': FindEngine.formFactorEmojis['Over-Ear Headphones (Wired)'],
+                    'Wireless Over-Ear Headphones': FindEngine.formFactorEmojis['Wireless Over-Ear Headphones']
+                };
+                const formEmoji = formFactorEmojiMap[item.form_factor] || FindEngine.formFactorEmojis['IEM'];
+                const driverEmoji = FindEngine.driverEmojis[item.driver_type] || '⚙️';
+                const driverTooltip = `${item.driver_type || 'Driver'}${item.driver_config ? ' (' + item.driver_config + ')' : ''}`;
+                const connectorEmoji = FindEngine.connectorEmojis[item.connector] || '🔌';
+
+                const specIconsHtml = `
+                    ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:9px;">$${item.price_usd}</span></span>` : ''}
+                    ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:9px;">${item.year}</span></span>` : ''}
+                    ${item.driver_type ? `<span class="spec-icon-badge" data-tooltip="${driverTooltip}">${driverEmoji}</span>` : ''}
+                    ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${item.connector}">${connectorEmoji}</span>` : ''}
+                    <span class="spec-icon-badge" data-tooltip="${item.form_factor || 'In-Ear Monitor (IEM)'}">${formEmoji}</span>
+                `;
+
+                const getTagEmoji = (tagStr) => {
+                    if (!tagStr) return '🏷️';
+                    const cleanKey = tagStr.toLowerCase().trim().replace(/[\s_]+/g, '-');
+                    const emojiMap = {
+                        'basshead': '💥', 'sub-bass': '🌊', 'punchy-bass': '🥊', 'warm': '🌿', 'warm-tilt': '🌿',
+                        'neutral': '⚖️', 'v-shaped': '🔺', 'balanced': '⚖️', 'bright': '✨', 'dark': '🌑',
+                        'detailed': '💎', 'detail': '💎', 'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️',
+                        'soundstage': '🏟️', 'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '🎯',
+                        'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮', 'competitive-gaming': '🏆',
+                        'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
+                        'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📼'
+                    };
+                    return emojiMap[cleanKey] || '🏷️';
+                };
+                const tagsHtml = (item.tags || []).map(t => `<span class="spec-icon-badge" data-tooltip="${esc(t)}">${getTagEmoji(t)}</span>`).join('');
+
+                let fileRowHtml;
+                if (isMulti) {
+                    fileRowHtml = `
+                        <div class="flex items-center gap-1.5 mt-1">
+                            <button onclick="event.stopPropagation(); PEQDB_Module.cycleDbItemSource('${escJs(item.id)}', -1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
+                            <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
+                                <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
+                            </div>
+                            <button onclick="event.stopPropagation(); PEQDB_Module.cycleDbItemSource('${escJs(item.id)}', 1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
+                        </div>
+                    `;
+                } else {
+                    fileRowHtml = `
+                        <div class="mt-1 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
+                            <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
+                        </div>
+                    `;
+                }
+
+                const div = document.createElement('div');
+                div.className = 'peqdb-row-item p-2 mb-1.5 transition-all select-none cursor-pointer';
+                div.setAttribute('data-id', item.id);
+                if (isLoaded) {
+                    div.classList.add('is-loaded');
+                    div.style.setProperty('--row-glow', `rgba(${this.hexToRgb(activeCurve.color)}, 0.28)`);
+                    div.style.setProperty('--row-glow-solid', activeCurve.color);
+                }
+                div.onclick = () => PEQDB_Module.toggleCurveSelection(item.id, activeFileIdx);
+                div.innerHTML = `
+                    <div class="db-title-row overflow-hidden whitespace-nowrap">
+                        <span class="db-title-text font-black text-stone-200 text-xs inline-block whitespace-nowrap">${esc(item.name)}</span>
+                    </div>
+                    <div class="text-[8.5px] text-zinc-500 font-bold uppercase tracking-wider mt-0.5">${esc(item.source || sourceName)}</div>
+                    <div class="flex flex-wrap items-center justify-center gap-1 mt-1">${specIconsHtml}</div>
+                    ${tagsHtml ? `<div class="flex flex-wrap items-center justify-center gap-1 mt-1">${tagsHtml}</div>` : ''}
+                    ${fileRowHtml}
+                `;
+                return div;
+            };
+
+            for (const [brandName, items] of brandBuckets) {
+                const brandSlug = brandName.replace(/[^a-zA-Z0-9]/g, '_');
+
+                let groupEl = appendMore ? list.querySelector(`[data-brand-group="${brandSlug}"]`) : null;
                 let itemsContainer;
 
                 if (groupEl) {
                     itemsContainer = groupEl.querySelector('.brand-items-container');
                 } else {
-                    const isExpanded = this.expandedBrands.has(brandKey);
+                    const isExpanded = this.expandedBrands.has(brandName);
                     groupEl = document.createElement('div');
                     groupEl.className = 'mb-1.5';
-                    groupEl.setAttribute('data-brand-group', brandKey);
-                    groupEl.setAttribute('data-letter', alphaKeyOf({ brand: displayName }));
+                    groupEl.setAttribute('data-brand-group', brandSlug);
+                    groupEl.setAttribute('data-letter', alphaKeyOf({ brand: brandName }));
                     groupEl.innerHTML = `
-                        <div class="flex items-center justify-between p-2 cursor-pointer select-none border-2 border-black rounded" style="background: var(--bg-input);" onclick="PEQDB_Module.toggleBrandGroup('${escJs(brandKey)}')">
-                            <span class="text-xs font-black uppercase tracking-wider text-[var(--accent-blue)]">${esc(displayName)}</span>
+                        <div class="flex items-center justify-between p-2 cursor-pointer select-none border-2 border-black rounded" style="background: var(--bg-input);" onclick="PEQDB_Module.toggleBrandGroup('${escJs(brandName)}')">
+                            <span class="text-xs font-black uppercase tracking-wider text-[var(--accent-blue)]">${esc(brandName)}</span>
                             <span class="flex items-center gap-1.5 flex-shrink-0">
-                                <span class="text-[9px] font-black text-zinc-500">${this._brandCounts.get(brandKey) || 0}</span>
+                                <span class="text-[9px] font-black text-zinc-500">${this._brandCounts.get(brandName) || 0}</span>
                                 <span class="brand-group-arrow text-[10px] font-black text-[var(--text-secondary)]">${isExpanded ? '▲' : '▼'}</span>
                             </span>
                         </div>
@@ -12857,13 +12400,7 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
                     itemsContainer = groupEl.querySelector('.brand-items-container');
                 }
 
-                items.forEach(item => {
-                    const div = buildModelCard(item);
-                    // Absolute index into renderList: lets the eviction pass
-                    // drop the oldest rows without re-scanning STATE.renderList.
-                    div.setAttribute('data-dbidx', String(renderedRowIdx++));
-                    itemsContainer.appendChild(div);
-                });
+                items.forEach(item => itemsContainer.appendChild(buildModelCard(item)));
             }
 
             if (!appendMore) {
@@ -12873,75 +12410,23 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
                 list.appendChild(fragment);
             }
 
-            // Only scan the freshly built rows for marquee overflow instead of
-            // re-querying the entire list on every render (O(all rendered rows)
-            // per keystroke/append). Rows already animated keep their class and
-            // are skipped by the guard below anyway.
-            const newMarqueeTargets = Array.from(fragment.querySelectorAll('.db-title-text, .db-file-marquee-text'));
-
             setTimeout(() => {
                 const applyOrbitMarquee = (el) => {
                     if (!el || el.classList.contains('marquee-orbit-active')) return;
                     activateOrbitMarquee(el);
                 };
-                newMarqueeTargets.slice(0, 200).forEach(applyOrbitMarquee);
+                list.querySelectorAll('.db-title-text, .db-file-marquee-text').forEach(applyOrbitMarquee);
                 PEQDB_Module.applyOrbitMarqueeFn = applyOrbitMarquee;
             }, 80);
 
-            if (preserveScroll) list.scrollTop = savedScroll;
-
-            // Bound the rendered DOM: once the list has grown well past the
-            // viewport, drop the oldest rows so an infinite-scroll session
-            // can't accumulate unbounded node counts.
-            if (appendMore) this._evictRenderedRows(list.scrollTop);
-
-            this._dbRenderedState = PEQDB_Module.STATE.renderList;
+            list.scrollTop = savedScroll;
 
             requestAnimationFrame(() => PEQDB_Module.fillVisibleList());
-        },
-
-        _evictRenderedRows: function(anchor) {
-            const list = document.getElementById('peqdb-list');
-            if (!list) return;
-            const MAX_ROWS = 400;
-            if (this.listRenderLimit <= MAX_ROWS) return;
-            // Only evict rows that are fully above the visible viewport —
-            // index alone is not enough (the list can over-append before it
-            // has height at boot, evicting the rows the user is looking at).
-            const listRect = list.getBoundingClientRect();
-            const rows = list.querySelectorAll('[data-dbidx]');
-            let removedH = 0;
-            for (let i = 0; i < rows.length; i++) {
-                const r = rows[i];
-                if (r.getBoundingClientRect().bottom <= listRect.top) {
-                    removedH += r.offsetHeight;
-                    r.remove();
-                }
-            }
-            // Remove the empty brand-group shells the eviction left behind.
-            list.querySelectorAll('.brand-items-container').forEach(c => {
-                if (!c.children.length && c.parentElement) c.parentElement.remove();
-            });
-            if (this._rowElCache) {
-                for (const [id, el] of this._rowElCache) {
-                    if (!el.isConnected) this._rowElCache.delete(id);
-                }
-            }
-            if (removedH > 0) {
-                // Keep the viewport anchored to the same content: the rows above
-                // it collapsed away, so push the scroll position down by their
-                // combined height.
-                list.scrollTop = Math.min(Math.max(0, anchor + removedH), list.scrollHeight);
-            }
         },
 
         fillVisibleList: function(depth = 0) {
             const list = document.getElementById('peqdb-list');
             if (!list || depth > 25) return;
-            // Never append while the list has no laid-out height (boot, hidden
-            // panels): the overflow check below is meaningless at 0px and the
-            // chain would balloon listRenderLimit, triggering row eviction.
-            if (list.clientHeight < 8) return;
             const total = (PEQDB_Module.STATE.renderList || []).length;
             if (this.listRenderLimit >= total) return;
             if (list.scrollHeight > list.clientHeight + 4) return;
@@ -12965,7 +12450,7 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             const targetFile = (item.files && item.files[fileIndex]) ? item.files[fileIndex] : item.primaryFilePath;
             const curveUid = `${id}_src_${fileIndex}`;
 
-            const activeIndex = this.STATE.activeCurves.findIndex(c => c.uid === curveUid || ((!item.files || item.files.length <= 1) && c.id === id));
+            const activeIndex = this.STATE.activeCurves.findIndex(c => c.uid === curveUid || (item.files.length <= 1 && c.id === id));
             if (activeIndex >= 0) {
                 this.STATE.activeCurves.splice(activeIndex, 1);
             } else {
@@ -13030,8 +12515,8 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             this.updateRowSelectionUI(id);
             EQ_Module.drawCurve();
             this.renderActiveCurvesDock();
-            this._similarTargetEverModified = true;
-            this.updateSearchModeButtons();
+            // Keep the Similar tab's LOAD/role badges in sync when a curve is
+            // toggled while Similar mode is open.
             if (this.searchMode === 'similar' && this._lastSimilarGroups) {
                 this.renderSimilarList(this._lastSimilarGroups, this._lastSimilarRefName || '');
             }
@@ -13077,13 +12562,26 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
                     });
                 }
             }
-            this.updateAllThrottled();
+            this.updateAll();
         },
 
-// Shared reset step used before any AutoEQ solve (curve-based or genre-based):
-// zeroes all main/advanced bands in both the UI and EQ_Module state so the
-// solver always starts from a clean slate.
-_resetEqBandsForAutoEQ: function() {
+        generateLeastSquaresAutoEQ: async function() {
+            // Re-entrancy guard: a second click while the solve is yielding to
+            // the UI would interleave two solvers writing the same sliders.
+            if (this._autoEqRunning) return;
+            this._autoEqRunning = true;
+
+            const baseCurve = this.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
+            const targetCurve = this.STATE.activeCurves.find(c => c.role === 'target' && c.visible);
+
+            Mascot.triggerTemporaryExpression('genius', 1500);
+
+            if (!baseCurve || !targetCurve) {
+                this._autoEqRunning = false;
+                showToast("Load both a Base and Target curve to solve.", "⚠️");
+                return;
+            }
+
             EQ_Module.isProgrammaticSliderUpdate = true;
 
             for (let i = 0; i < 10; i++) {
@@ -13127,46 +12625,13 @@ _resetEqBandsForAutoEQ: function() {
             }
 
             EQ_Module.virtualBands = [];
+            if (EQ_Module.virtualFilters) {
+                EQ_Module.virtualFilters.forEach(f => {
+                    setAudioParamSmooth(f.gain, 0);
+                });
+            }
 
             EQ_Module.isProgrammaticSliderUpdate = false;
-        },
-
-// Shared align+smooth step: removes the mid-band (300-3000Hz) mean from a raw
-// correction curve (so the solver never chases a broadband offset that
-// peaking bands can't reproduce) and lightly gaussian-smooths it (so tiny
-// measurement ripples / sparse-anchor spline wiggles aren't chased 1:1).
-_alignAndSmoothCorrection: function(targetCorrection, freqs) {
-            const points = freqs.length;
-            let midSum = 0, midWSum = 0;
-            for (let j = 0; j < points; j++) {
-                const f = freqs[j];
-                if (f >= CurveUtils.MID_MEAN_BAND[0] && f <= CurveUtils.MID_MEAN_BAND[1]) {
-                    const w = CurveUtils.weightFor(f);
-                    midSum += targetCorrection[j] * w;
-                    midWSum += w;
-                }
-            }
-            if (midWSum > 0) {
-                const midMean = midSum / midWSum;
-                for (let j = 0; j < points; j++) targetCorrection[j] -= midMean;
-            }
-            const smoothedTarget = CurveUtils.gaussianSmooth(freqs, targetCorrection, 0.05);
-            for (let j = 0; j < points; j++) targetCorrection[j] = smoothedTarget[j];
-            return targetCorrection;
-        },
-
-generateLeastSquaresAutoEQ: function() {
-            const baseCurve = this.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
-            const targetCurve = this.STATE.activeCurves.find(c => c.role === 'target' && c.visible);
-
-            Mascot.triggerTemporaryExpression('genius', 1500);
-
-            if (!baseCurve || !targetCurve) {
-                showToast("Load both a Base and Target curve to solve.", "⚠️");
-                return;
-            }
-
-            this._resetEqBandsForAutoEQ();
 
             const baseInterp = this.DSP.interpolate(this.getNormalizedData(baseCurve.data, baseCurve.name));
             const targetInterp = this.DSP.interpolate(this.getNormalizedData(targetCurve.data, targetCurve.name));
@@ -13178,40 +12643,6 @@ generateLeastSquaresAutoEQ: function() {
                 targetCorrection[j] = targetInterp[j] - baseInterp[j];
             }
 
-            // Align to the mid-band mean (curves were normalized against the
-            // global Align setting, which pins one point/band to 75 dB) and
-            // lightly smooth (the AutoEQ "smoothbins" behavior) before solving.
-            this._alignAndSmoothCorrection(targetCorrection, freqs);
-
-            this._solveAutoEQBands(targetCorrection, freqs, null);
-        },
-
-// Core iterative solve: given a target correction curve (dB per this.DSP.FREQS
-// point) that the cascaded EQ bands should approximate, resets nothing further
-// (callers must already have reset bands via _resetEqBandsForAutoEQ and
-// prepared targetCorrection via _alignAndSmoothCorrection or equivalent),
-// solves gains for the active band resolution, applies them to the UI/state,
-// and shows a completion toast. toastText overrides the default message;
-// pass null to use the generic "AutoEQ solved and loaded N bands" message.
-_solveAutoEQBands: async function(targetCorrection, freqs, toastText) {
-            // The solve is heavy (bands x points x iterations of biquad math)
-            // and was fully synchronous — a 48-band solve froze the UI for
-            // seconds. Guard against overlapping solves (double-clicks) and
-            // let the chunked inner solve yield to the event loop.
-            if (this._autoEqSolving) return;
-            this._autoEqSolving = true;
-            try {
-                await this._solveAutoEQBandsInner(targetCorrection, freqs, toastText);
-            } catch (err) {
-                console.error("[PEQDB] AutoEQ solve failed:", err);
-                showToast("AutoEQ solve failed.", "⚠️");
-            } finally {
-                this._autoEqSolving = false;
-            }
-        },
-
-        _solveAutoEQBandsInner: async function(targetCorrection, freqs, toastText) {
-            const points = freqs.length;
             const bandCount = PEQDB_Module.autoeqResolution || 10;
 
             const optimizedBands = [];
@@ -13236,7 +12667,7 @@ _solveAutoEQBands: async function(targetCorrection, freqs, toastText) {
                 }
                 for (let i = 0; i < EQ_Module.advancedBands.length; i++) {
                     const b = EQ_Module.advancedBands[i];
-                    optimizedBands.push({ freq: b.hz, q: b.q !== undefined ? b.q : b.defaultQ, type: b.type || 'peaking', gain: 0.0, role: 'adv', index: i });
+                    optimizedBands.push({ freq: b.hz, q: b.q !== undefined ? b.q : b.defaultQ, type: 'peaking', gain: 0.0, role: 'adv', index: i });
                 }
             } else {
 
@@ -13250,23 +12681,8 @@ _solveAutoEQBands: async function(targetCorrection, freqs, toastText) {
                 const proportionalQ = Math.min(4.5, Math.max(1.0, 1.44 / (9.96 / bandCount)));
 
                 targetFrequencies.forEach((hz, i) => {
-                    const role = i < 10 ? 'main' : (i < 20 ? 'adv' : 'virtual');
-                    if (role === 'virtual' && optimizedBands.filter(b => b.role === 'virtual').length >= 28) return;
-                    optimizedBands.push({ freq: hz, q: parseFloat(proportionalQ.toFixed(2)), type: 'peaking', gain: 0.0, role: role, index: i });
+                    optimizedBands.push({ freq: hz, q: parseFloat(proportionalQ.toFixed(2)), type: 'peaking', gain: 0.0, role: 'virtual', index: i });
                 });
-            }
-
-            // Peaking bands can barely move the sub (<100 Hz) or the top octave,
-            // so always give the solver a low shelf and a high shelf unless the
-            // band set already provides one. Shelf gains land in the virtual
-            // slots, so they reach the graph AND the audio worklet chain.
-            const hasLowShelf = optimizedBands.some(b => b.type === 'lowshelf');
-            const hasHighShelf = optimizedBands.some(b => b.type === 'highshelf');
-            if (!hasLowShelf) {
-                optimizedBands.push({ freq: 80, q: 0.7, type: 'lowshelf', gain: 0.0, role: 'virtual', index: optimizedBands.length });
-            }
-            if (!hasHighShelf) {
-                optimizedBands.push({ freq: 9000, q: 0.7, type: 'highshelf', gain: 0.0, role: 'virtual', index: optimizedBands.length });
             }
 
             const bandResponses = [];
@@ -13280,88 +12696,51 @@ _solveAutoEQBands: async function(targetCorrection, freqs, toastText) {
 
             const weights = new Float32Array(points);
             for (let j = 0; j < points; j++) {
-                // Shared perceptual table (mid/vocal most important, sub & air
-                // de-emphasized) - scaled so the ~1 kHz emphasis matches the
-                // previous hard-coded band weights.
-                weights[j] = CurveUtils.weightFor(freqs[j]) * 1.25;
+                const f = freqs[j];
+                if (f < 40) weights[j] = 0.3;
+                else if (f < 100) weights[j] = 0.8;
+                else if (f < 3000) weights[j] = 1.5;
+                else if (f < 8000) weights[j] = 1.0;
+                else weights[j] = 0.2;
             }
 
             const iterations = 20;
-            const lambda = 0.35; // ridge - discourages gain-cancelling pairs
-            for (let iter = 0; iter < iterations; iter++) {
-                for (let b = 0; b < optimizedBands.length; b++) {
-                    let num = 0;
-                    let den = 0;
-                    const respB = bandResponses[b];
-
-                    for (let j = 0; j < points; j++) {
-                        let modeledVal = 0;
-                        for (let k = 0; k < optimizedBands.length; k++) {
-                            if (k !== b) {
-                                modeledVal += bandResponses[k][j] * optimizedBands[k].gain;
-                            }
-                        }
-                        const residual = targetCorrection[j] - modeledVal;
-                        num += residual * respB[j] * weights[j];
-                        den += respB[j] * respB[j] * weights[j];
-                    }
-
-                    if (den + lambda > 1e-6) {
-                        const idealGain = num / (den + lambda);
-                        optimizedBands[b].gain = Math.max(-12, Math.min(12, idealGain));
-                    }
-                }
-                // Yield every other sweep so the UI stays responsive.
-                if (iter % 2 === 1) await new Promise(r => setTimeout(r, 0));
-            }
-
-            // Newton-style refinement: the main pass is linear in the gain-1
-            // basis, which drifts from the true biquad response at large gains.
-            // Re-solve small delta steps around the TRUE cascade (central
-            // difference sensitivity) so the result converges toward the real
-            // response, and recompute the preamp from the true model.
-            const refineIterations = 8;
-            const trueResp = new Float32Array(points);
-            for (let iter = 0; iter < refineIterations; iter++) {
-                for (let j = 0; j < points; j++) {
-                    let prod = 1.0;
+            try {
+                for (let iter = 0; iter < iterations; iter++) {
                     for (let b = 0; b < optimizedBands.length; b++) {
-                        const band = optimizedBands[b];
-                        prod *= Math.max(1e-9, EQ_Module.getBiquadMagnitude(band.type, freqs[j], band.freq, band.q, band.gain));
+                        let num = 0;
+                        let den = 0;
+                        const respB = bandResponses[b];
+
+                        for (let j = 0; j < points; j++) {
+                            let modeledVal = 0;
+                            for (let k = 0; k < optimizedBands.length; k++) {
+                                if (k !== b) {
+                                    modeledVal += bandResponses[k][j] * optimizedBands[k].gain;
+                                }
+                            }
+                            const residual = targetCorrection[j] - modeledVal;
+                            num += residual * respB[j] * weights[j];
+                            den += respB[j] * respB[j] * weights[j];
+                        }
+
+                        if (den > 1e-6) {
+                            const idealGain = num / den;
+                            optimizedBands[b].gain = Math.max(-12, Math.min(12, idealGain));
+                        }
                     }
-                    trueResp[j] = 20 * Math.log10(prod);
+                    // Yield to the UI between sweeps so high band counts
+                    // (up to 50 bands x 20 iterations of O(B^2*P) work) never
+                    // freeze input for the whole solve.
+                    if (iter < iterations - 1) await new Promise(r => setTimeout(r, 0));
                 }
 
-                for (let b = 0; b < optimizedBands.length; b++) {
-                    const band = optimizedBands[b];
-                    let num = 0, den = 0;
-                    for (let j = 0; j < points; j++) {
-                        const g0 = band.gain;
-                        const ga = Math.max(-12, Math.min(12, g0 + 0.5));
-                        const gb_ = Math.max(-12, Math.min(12, g0 - 0.5));
-                        const magA = Math.max(1e-9, EQ_Module.getBiquadMagnitude(band.type, freqs[j], band.freq, band.q, ga));
-                        const magB = Math.max(1e-9, EQ_Module.getBiquadMagnitude(band.type, freqs[j], band.freq, band.q, gb_));
-                        const sens = (ga !== gb_) ? (20 * Math.log10(magA / magB)) / (ga - gb_) : 0;
-                        const residual = targetCorrection[j] - trueResp[j];
-                        num += residual * sens * weights[j];
-                        den += sens * sens * weights[j];
-                    }
-                    if (den + lambda > 1e-6) {
-                        const delta = num / (den + lambda);
-                        band.gain = Math.max(-12, Math.min(12, band.gain + delta * 0.6));
-                    }
-                }
-                await new Promise(r => setTimeout(r, 0));
-            }
-
-            let maxModelDb = 0;
+                let maxModelDb = 0;
             for (let j = 0; j < points; j++) {
-                let prod = 1.0;
+                let modelDb = 0;
                 for (let b = 0; b < optimizedBands.length; b++) {
-                    const band = optimizedBands[b];
-                    prod *= Math.max(1e-9, EQ_Module.getBiquadMagnitude(band.type, freqs[j], band.freq, band.q, band.gain));
+                    modelDb += bandResponses[b][j] * optimizedBands[b].gain;
                 }
-                const modelDb = 20 * Math.log10(prod);
                 if (modelDb > maxModelDb) {
                     maxModelDb = modelDb;
                 }
@@ -13373,130 +12752,118 @@ _solveAutoEQBands: async function(targetCorrection, freqs, toastText) {
             EQ_Module.updatePreamp();
 
             EQ_Module.virtualBands = [];
+            if (EQ_Module.virtualFilters) {
+                EQ_Module.virtualFilters.forEach(f => {
+                    setAudioParamSmooth(f.gain, 0);
+                });
+            }
 
             EQ_Module.isProgrammaticSliderUpdate = true;
 
-            const virtuals = [];
-            optimizedBands.forEach((b) => {
-                if (b.role === 'main') {
-                    const slider = document.getElementById("eq-s" + b.index);
-                    if (slider) slider.value = b.gain.toFixed(1);
-                    const numInput = document.getElementById(`eq-s${b.index}_num`);
-                    if (numInput) numInput.value = b.gain.toFixed(1);
+            if (bandCount === 10 || bandCount === 20) {
+                optimizedBands.forEach((b) => {
+                    if (b.role === 'main') {
+                        const slider = document.getElementById("eq-s" + b.index);
+                        if (slider) slider.value = b.gain.toFixed(1);
+                        const numInput = document.getElementById(`eq-s${b.index}_num`);
+                        if (numInput) numInput.value = b.gain.toFixed(1);
+                        EQ_Module.updateSlider(b.index, 'main');
+                    } else if (b.role === 'adv') {
+                        const advBand = EQ_Module.advancedBands[b.index];
+                        if (advBand) advBand.g = parseFloat(b.gain.toFixed(1));
+                        EQ_Module.updateSlider(b.index, 'adv');
+                    }
+                });
+            } else {
 
-                    if (b.freq !== undefined) {
-                        const fInput = document.getElementById("eq-f" + b.index);
+                const virtuals = [];
+                optimizedBands.forEach((b, idx) => {
+                    if (idx < 10) {
+
+                        const slider = document.getElementById("eq-s" + idx);
+                        if (slider) slider.value = b.gain.toFixed(1);
+                        const numInput = document.getElementById(`eq-s${idx}_num`);
+                        if (numInput) numInput.value = b.gain.toFixed(1);
+
+                        const fInput = document.getElementById("eq-f" + idx);
                         if (fInput) fInput.value = b.freq;
-                        const fsSlider = document.getElementById(`eq-fs_m${b.index}`);
+                        const fsSlider = document.getElementById(`eq-fs_m${idx}`);
                         if (fsSlider) fsSlider.value = EQ_Module.logHzToSlider(b.freq);
-                    }
-                    if (b.q !== undefined) {
-                        const qSlider = document.getElementById("eq-q_m" + b.index);
+
+                        const qSlider = document.getElementById("eq-q_m" + idx);
                         if (qSlider) qSlider.value = b.q.toFixed(1);
-                        const qNum = document.getElementById(`eq-q_m${b.index}_num`);
+                        const qNum = document.getElementById(`eq-q_m${idx}_num`);
                         if (qNum) qNum.value = b.q.toFixed(2);
-                    }
 
-                    EQ_Module.updateSlider(b.index, 'main');
-                } else if (b.role === 'adv') {
-                    const advIdx = b.index >= 10 ? b.index - 10 : b.index;
-                    const advBand = EQ_Module.advancedBands[advIdx];
-                    if (advBand) {
-                        if (b.freq !== undefined) advBand.hz = b.freq;
-                        advBand.g = parseFloat(b.gain.toFixed(1));
-                        if (b.q !== undefined) advBand.q = b.q;
-                    }
+                        EQ_Module.updateSlider(idx, 'main');
+                    } else if (idx < 20) {
 
-                    if (b.freq !== undefined) {
+                        const advIdx = idx - 10;
+                        const advBand = EQ_Module.advancedBands[advIdx];
+                        if (advBand) {
+                            advBand.hz = b.freq;
+                            advBand.g = parseFloat(b.gain.toFixed(1));
+                            advBand.q = b.q;
+                        }
+
                         const afInput = document.getElementById("eq-af" + advIdx);
                         if (afInput) afInput.value = b.freq;
-                    }
 
-                    const aSlider = document.getElementById("eq-a" + advIdx);
-                    if (aSlider) aSlider.value = b.gain.toFixed(1);
-                    const aNum = document.getElementById(`eq-a${advIdx}_num`);
-                    if (aNum) aNum.value = b.gain.toFixed(1);
+                        const aSlider = document.getElementById("eq-a" + advIdx);
+                        if (aSlider) aSlider.value = b.gain.toFixed(1);
+                        const aNum = document.getElementById(`eq-a${advIdx}_num`);
+                        if (aNum) aNum.value = b.gain.toFixed(1);
 
-                    if (b.q !== undefined) {
                         const qSlider = document.getElementById("eq-q_a" + advIdx);
                         if (qSlider) qSlider.value = b.q.toFixed(1);
                         const qNum = document.getElementById(`eq-q_a${advIdx}_num`);
                         if (qNum) qNum.value = b.q.toFixed(2);
-                    }
 
-                    EQ_Module.updateSlider(advIdx, 'adv');
-                } else {
-                    virtuals.push({ hz: b.freq, g: b.gain, q: b.q, type: b.type || 'peaking' });
-                }
-            });
-            EQ_Module.virtualBands = virtuals;
+                        EQ_Module.updateSlider(advIdx, 'adv');
+                    } else {
+
+                        const virtIdx = idx - 20;
+                        virtuals.push({ hz: b.freq, g: b.gain, q: b.q, type: 'peaking' });
+
+                        if (EQ_Module.virtualFilters && EQ_Module.virtualFilters[virtIdx]) {
+                            const f = EQ_Module.virtualFilters[virtIdx];
+                            setAudioParamSmooth(f.frequency, b.freq);
+                            setAudioParamSmooth(f.gain, EQ_Module.eqEnabled ? b.gain : 0);
+                            setAudioParamSmooth(f.Q, b.q);
+                        }
+                    }
+                });
+                EQ_Module.virtualBands = virtuals;
+            }
 
             EQ_Module.isProgrammaticSliderUpdate = false;
             EQ_Module.eqEnabled = true;
             const eqToggleBtn = document.getElementById("eqToggleBtn");
-            if (eqToggleBtn) eqToggleBtn.classList.add('is-on');
+            if (eqToggleBtn) {
+                eqToggleBtn.classList.add('is-on');
+                eqToggleBtn.textContent = "EQ: ON";
+            }
+
+            // The solved bands above were applied while isProgrammaticSliderUpdate
+            // was true, so updateSlider skipped its own DSP push. Send the filter
+            // bank now — without this the worklet keeps the previous coefficients
+            // and AutoEQ only changes what's heard after the next manual tweak
+            // (same pattern as applyGeneratedPEQ/convertHearingToEQ).
+            if (EQ_Module.graphBuilt) {
+                EQ_Module.updateAudioConnections();
+            }
 
             EQ_Module.updatePreamp();
             EQ_Module.drawCurve();
             if (window.syncGlobalSliders) window.syncGlobalSliders();
-            PEQDB_Module._similarTargetEverModified = true;
-            if (PEQDB_Module.searchMode === 'similar') PEQDB_Module.findSimilarCurves();
-            showToast(toastText || `AutoEQ solved and loaded ${bandCount} bands successfully!`, "🪄");
-        },
-
-// Genre-Target AutoEQ: instead of solving toward a loaded external Target
-// curve, synthesize a target shape directly from one of the 32 genre family
-// tonal profiles (5-axis dB deltas from the 500Hz mid reference - the same
-// profiles that drive the live Music/Game Match badges) and solve the 10/20/N
-// EQ bands toward THAT shape. If a Base curve is loaded, the genre shape is
-// applied as a correction on top of it (so the IEM's own measured deviations
-// still get corrected); if no Base curve is loaded, the genre shape is
-// solved directly against flat, so the EQ alone sculpts the curve toward the
-// genre's family shape.
-applyGenreAutoEQ: function(familyIndex, side) {
-            const isGame = side === 'game';
-            const family = isGame ? FindEngine.gameGenreFamilies[familyIndex] : FindEngine.genreFamilies[familyIndex];
-            if (!family) {
-                showToast("Couldn't find that genre.", "⚠️");
-                return;
+            // The solve rewrote the DSP curve programmatically — unlock
+            // live Similar-mode matching (this was the only path that
+            // accidentally flipped the flag before, via its preamp change).
+            this._similarTargetEverModified = true;
+            showToast(`AutoEQ solved and loaded ${bandCount} bands successfully!`, "🪄");
+            } finally {
+                this._autoEqRunning = false;
             }
-            const variant = isGame ? family.gameVariants[0] : family.musicVariants[0];
-            const profile = family.profile;
-            if (!profile) {
-                showToast("That genre doesn't have a tuning profile yet.", "⚠️");
-                return;
-            }
-
-            Mascot.triggerTemporaryExpression('genius', 1500);
-
-            this._resetEqBandsForAutoEQ();
-
-            const freqs = this.DSP.FREQS;
-            const points = freqs.length;
-
-            // Anchor points matching CurveUtils.AXIS_BANDS centers - [sub,
-            // warmth, vocal, treble, air] relative to the 500Hz mid (pinned
-            // to 0) - extended flat at the spectrum edges so the spline
-            // doesn't swing wildly past the outermost anchors.
-            const anchorPoints = [
-                [20, profile[0]], [30, profile[0]], [100, profile[1]], [500, 0],
-                [2500, profile[2]], [8000, profile[3]], [14000, profile[4]], [20000, profile[4]]
-            ];
-            const genreShape = CurveUtils.cubicSplineInterpolate(anchorPoints, Array.from(freqs));
-
-            const baseCurve = this.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
-            const targetCorrection = new Float32Array(points);
-            if (baseCurve) {
-                const baseInterp = this.DSP.interpolate(this.getNormalizedData(baseCurve.data, baseCurve.name));
-                for (let j = 0; j < points; j++) targetCorrection[j] = genreShape[j] - baseInterp[j];
-            } else {
-                for (let j = 0; j < points; j++) targetCorrection[j] = genreShape[j];
-            }
-
-            this._alignAndSmoothCorrection(targetCorrection, freqs);
-
-            const label = variant ? `${variant.emoji} ${variant.name}` : 'genre target';
-            this._solveAutoEQBands(targetCorrection, freqs, `🎯 AutoEQ solved toward ${label}!`);
         },
 
                         clearState: function() {
@@ -13521,36 +12888,9 @@ applyGenreAutoEQ: function(familyIndex, side) {
                 return;
             }
 
-            this.updateSearchModeButtons();
             this.renderList(false, preserveScroll);
             EQ_Module.drawCurve();
             this.renderActiveCurvesDock();
-        },
-
-        updateDockState: function(curveIds) {
-            if (EQ_Module.isDragging) {
-                EQ_Module.drawCurve();
-                return;
-            }
-            this.updateSearchModeButtons();
-            EQ_Module.drawCurve();
-            this.renderActiveCurvesDock();
-            if (Array.isArray(curveIds)) {
-                curveIds.forEach(id => this.updateRowSelectionUI(id));
-            }
-            if (this.searchMode === 'similar' && this._lastSimilarGroups) {
-                this.renderSimilarList(this._lastSimilarGroups, this._lastSimilarRefName || '');
-                if (this.debouncedFindSimilarCurves) this.debouncedFindSimilarCurves();
-            }
-        },
-        updateAllThrottled: function() {
-            // rAF-coalesced variant for per-input-event call sites (sculptor
-            // drags, target select): renderList + dock rebuild are expensive,
-            // and running them on every drag tick janks the UI.
-            if (!this._updateAllThrottled) {
-                this._updateAllThrottled = rafThrottle(() => this.updateAll());
-            }
-            this._updateAllThrottled();
         },
         renderActiveCurvesDock: function() {
             const baseSlot = document.getElementById('base-slot');
@@ -13619,7 +12959,7 @@ border: 2px solid rgba(${r}, ${g}, ${b}, 0.95) !important;
 
                     <div onclick="PEQDB_Module.renameCurve(this.closest('[data-uid]').dataset.uid)" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5"  draggable="false">
                         <div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none">
-                            <span id="marquee-${esc(c.uid)}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span>
+                            <span id="marquee-${c.uid}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span>
                         </div>
                     </div>
 
@@ -13696,6 +13036,8 @@ border: 2px solid rgba(${r}, ${g}, ${b}, 0.95) !important;
             const uid = e.dataTransfer.getData("text/plain");
             if (!uid) return;
             this.assignRole(uid, targetRole);
+
+            this.updateAll();
         },
 
         assignRole: function(uid, targetRole) {
@@ -13724,13 +13066,13 @@ border: 2px solid rgba(${r}, ${g}, ${b}, 0.95) !important;
 
             targetCard.role = targetRole;
 
-            this.updateDockState([uid]);
+            this.updateAll();
         },
         toggleVisible: function(uid) {
             const c = this.STATE.activeCurves.find(item => item.uid === uid);
             if (c) c.visible = !c.visible;
 
-            this.updateDockState([uid]);
+            this.updateAll();
         },
         activeRenameUid: null,
         renameCurve: function(uid) {
@@ -13762,25 +13104,16 @@ border: 2px solid rgba(${r}, ${g}, ${b}, 0.95) !important;
                 const cleanName = input.value.trim();
                 if (cleanName) {
                     c.name = cleanName;
-                    const list = document.getElementById('peqdb-list');
-                    if (list) {
-                        try {
-                            const row = list.querySelector(`[data-id="${CSS.escape(c.id)}"]`);
-                            const item = this.STATE.dataset.find(i => i.id === c.id);
-                            if (row && item) row.replaceWith(this.buildDbModelCard(item));
-                        } catch(e) {}
-                    }
-                    this.updateDockState([c.id]);
+                    this.updateAll();
                     showToast(`Curve renamed to "${cleanName}"`, "📝");
                 }
             }
             this.closeRenameModal();
         },
         removeCurve: function(uid) {
-            const removed = this.STATE.activeCurves.find(c => c.uid === uid);
             this.STATE.activeCurves = this.STATE.activeCurves.filter(c => c.uid !== uid);
 
-            this.updateDockState(removed ? [removed.id] : null);
+            this.updateAll();
         },
         cycleRole: function(uid) {
             const c = this.STATE.activeCurves.find(item => item.uid === uid);
@@ -13788,20 +13121,20 @@ border: 2px solid rgba(${r}, ${g}, ${b}, 0.95) !important;
             const roles = ['base', 'target', 'reference'];
             const idx = roles.indexOf(c.role);
             c.role = roles[(idx + 1) % roles.length];
-            this.updateDockState([uid]);
+            this.updateAll();
         },
         cycleColor: function(uid) {
             const c = this.STATE.activeCurves.find(item => item.uid === uid);
             if (!c) return;
             const idx = this.colorPalette.indexOf(c.color);
             c.color = this.colorPalette[(idx + 1) % this.colorPalette.length];
-            this.updateDockState([uid]);
+            this.updateAll();
         },
         adjustCurveOffset: function(uid, delta) {
             const c = this.STATE.activeCurves.find(item => item.uid === uid);
             if (c) {
                 c.offset = Math.max(-10, Math.min(10, (c.offset || 0) + delta));
-                this.updateDockState([uid]);
+                this.updateAll();
             }
         },
 
@@ -13878,15 +13211,9 @@ border: 2px solid rgba(${r}, ${g}, ${b}, 0.95) !important;
 
             if (subBass - midBass > 3) tags.push('🌋 Sub Focus');
 
-            if (bassBoost > 3 && trebleBoost > 3 && mids < midReference - 1) tags.push('🔺 V-Shaped');
+            if (bassBoost > 3 && trebleBoost > 3 && mids < midReference - 1) tags.push('🔺 V-Shape');
 
-            if (bassBoost > 2 && trebleBoost > 2 && Math.abs(mids - midReference) < 2) tags.push('🧲 U-Shaped');
-
-            if (trebleBoost > 4.5 && bassBoost < 2.5) tags.push('⚡ Treble-Head');
-
-            if (Math.abs(bassBoost) < 1.5 && Math.abs(trebleBoost) < 1.5 && Math.abs(upperMidPresence) < 1.8) {
-                tags.push('🎛️ Studio-Monitoring');
-            }
+            if (bassBoost > 2 && trebleBoost > 2 && Math.abs(mids - midReference) < 2) tags.push('🪞 U-Shape');
 
             if (Math.abs(bassBoost) < 2 && Math.abs(trebleBoost) < 2 && Math.abs(upperMidPresence) < 2.5) {
                 tags.push('⚖️ Neutral');
@@ -13967,6 +13294,13 @@ border: 2px solid rgba(${r}, ${g}, ${b}, 0.95) !important;
             return [];
         },
 
+                toggleTargetSculptor: function() {
+            if (EQ_Module.isTuningLabActive) {
+                EQ_Module.exitTuningLab(true);
+            } else {
+                EQ_Module.enterTuningLab();
+            }
+        },
 generateDynamicFallbackCurve: function(name) {
             const freqs = [20, 30, 45, 70, 100, 150, 250, 350, 500, 700, 1000, 1500, 2200, 3000, 4000, 5500, 7000, 8500, 10000, 13000, 16000, 20000];
             const curve = [];
@@ -14005,13 +13339,8 @@ generateDynamicFallbackCurve: function(name) {
             return curve;
         },
 
-                        toggleTargetSculptor: function() {
-            if (EQ_Module.isTuningLabActive) {
-                EQ_Module.exitTuningLab(true);
-            } else {
-                EQ_Module.enterTuningLab();
-            }
-        },
+        // (duplicate toggleTargetSculptor definition removed � it shadowed the
+        // identical copy above and only invited drift)
 
         getNormalizedData: function(raw_data, curveName) {
             let data = this.standardizeCurveData(raw_data);
@@ -14078,7 +13407,7 @@ generateDynamicFallbackCurve: function(name) {
 
                 if (data.length > 0) {
                     data.sort((a,b) => a[0] - b[0]);
-                    const id = 'imported_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+                    const id = 'imported_' + Date.now();
                     const cleanName = file.name.replace(/\.[^/.]+$/, "").replace("omega", "Ω");
                     const newItem = {
                         id,
@@ -14090,9 +13419,6 @@ generateDynamicFallbackCurve: function(name) {
                     };
                     PEQDB_Module.STATE.dataset.unshift(newItem);
                     PEQDB_Module.STATE.renderList.unshift(newItem);
-                    // The sorted-list memo in DATA.search keys on array identity,
-                    // which an unshift doesn't change — invalidate it explicitly.
-                    if (PEQDB_Module.DATA._sortedDatasetSource !== undefined) PEQDB_Module.DATA._sortedDatasetSource = null;
                     PEQDB_Module.renderList();
                     PEQDB_Module.toggleCurveSelection(id);
                     showToast(`Trace "${cleanName}" imported successfully.`, "📥");
@@ -14105,56 +13431,23 @@ generateDynamicFallbackCurve: function(name) {
 
         precalculateInterps: function() {
             if (!this.STATE.dataset) return;
-            // Generation counter: updateAlignmentCfgActual nulls every
-            // cachedInterp when alignment changes. An in-flight chunked pass
-            // would otherwise re-fill those nulls with interpolations computed
-            // under the OLD alignment — bump the generation there, and each
-            // chunk here dies as soon as its generation goes stale.
-            const gen = (this._interpGeneration || 0) + 1;
-            this._interpGeneration = gen;
-            if (this._interpChunkActive) return;
-            const dataset = this.STATE.dataset;
-            const self = this;
-            this._interpChunkActive = true;
-            const CHUNK = 120;
-            let cursor = 0;
-            const step = () => {
-                if (this._interpGeneration !== gen) {
-                    // Alignment changed mid-pass — abandon this pass and let
-                    // the align handler's restart (precalculateInterps call)
-                    // take over; the align handler re-nulls all caches first.
-                    this._interpChunkActive = false;
-                    if (this._interpGeneration !== gen) this.precalculateInterps();
-                    return;
+            this.STATE.dataset.forEach(item => {
+                if (item.cachedInterp) return;
+                if (!item.data) return;
+                try {
+                    const norm = this.getNormalizedData(item.data, item.name);
+                    item.cachedInterp = Array.from(this.DSP.interpolate(norm));
+                } catch(e) {
+                    item.cachedInterp = null;
                 }
-                const end = Math.min(cursor + CHUNK, dataset.length);
-                for (; cursor < end; cursor++) {
-                    const item = dataset[cursor];
-                    if (item.cachedInterp) continue;
-                    if (!item.data) continue;
-                    try {
-                        const norm = this.getNormalizedData(item.data, item.name);
-                        item.cachedInterp = Array.from(this.DSP.interpolate(norm));
-                    } catch(e) {
-                        item.cachedInterp = null;
-                    }
-                }
-                if (cursor < dataset.length) {
-                    // Yield to the event loop between chunks so a 5,000-curve
-                    // pass never blocks the main thread in one synchronous hit.
-                    setTimeout(step, 0);
-                } else {
-                    this._interpChunkActive = false;
-                    this.STATE.lightweightDataset = this.STATE.dataset.map(item => ({
-                        id: item.id,
-                        name: item.name,
-                        variant: item.variant,
-                        source: item.source,
-                        cachedInterp: item.cachedInterp
-                    })).filter(item => item.cachedInterp !== null);
-                }
-            };
-            step();
+            });
+            this.STATE.lightweightDataset = this.STATE.dataset.map(item => ({
+                id: item.id,
+                name: item.name,
+                variant: item.variant,
+                source: item.source,
+                cachedInterp: item.cachedInterp
+            })).filter(item => item.cachedInterp !== null);
         },
 
         normalizeSearchText: function(str) {
@@ -14231,6 +13524,15 @@ generateDynamicFallbackCurve: function(name) {
             return this._brandNormCache.get(brand);
         },
 
+        normBrandKey: function(brand) {
+            return String(brand || 'Unknown Brand').toLowerCase().replace(/[^a-z0-9]+/g, '');
+        },
+        getBrandNorm: function(brand) {
+            if (!this._brandNormCache) this._brandNormCache = new Map();
+            if (!this._brandNormCache.has(brand)) this._brandNormCache.set(brand, this.normalizeSearchText(brand));
+            return this._brandNormCache.get(brand);
+        },
+
         getFuzzyBaseName: function(name) {
             if (!name) return "";
             let clean = name.toLowerCase();
@@ -14244,59 +13546,51 @@ generateDynamicFallbackCurve: function(name) {
         },
 
 setSearchMode: function(mode) {
-            this.searchMode = (mode === 'similar') ? 'similar' : 'database';
-            const searchBox = document.getElementById('peqdb-search');
-            const suggestions = document.getElementById('peqdb-search-suggestions');
-            const hideSearch = this.searchMode === 'similar';
-            const searchWrap = document.getElementById('peqdb-search-wrap');
-            if (searchWrap) searchWrap.classList.toggle('hidden', hideSearch);
-            if (searchBox) searchBox.classList.toggle('hidden', hideSearch);
-            // The suggestions box is only ever shown by updateSearchSuggestions
-            // while the user types; a mode switch must never reveal it empty.
-            if (suggestions) suggestions.classList.add('hidden');
-            const dbList = document.getElementById('peqdb-list');
-            this.ensureSimilarList();
-            const simList = document.getElementById('similar-list');
-            if (this.searchMode === 'similar') {
-                if (dbList) dbList.classList.add('hidden');
-                if (simList) simList.classList.remove('hidden');
+                this.searchMode = (mode === 'similar') ? 'similar' : 'database';
+                const searchBox = document.getElementById('peqdb-search');
+                const suggestions = document.getElementById('peqdb-search-suggestions');
+                const hideSearch = this.searchMode === 'similar';
+                const searchWrap = document.getElementById('peqdb-search-wrap');
+                if (searchWrap) searchWrap.classList.toggle('hidden', hideSearch);
+                if (searchBox) searchBox.classList.toggle('hidden', hideSearch);
+                // The suggestions box is only ever shown while the user types;
+                // a mode switch must never reveal it empty.
+                if (suggestions) suggestions.classList.add('hidden');
                 this.ensureSimilarList();
-                this.findSimilarCurves();
-            } else {
-                if (simList) simList.classList.add('hidden');
-                if (dbList) {
-                    dbList.classList.remove('hidden');
-                    if (!this._dbRenderedState || this._dbRenderedState !== PEQDB_Module.STATE.renderList || !dbList.children.length) {
+                const dbList = document.getElementById('peqdb-list');
+                const simList = document.getElementById('similar-list');
+                if (this.searchMode === 'similar') {
+                    if (dbList) dbList.classList.add('hidden');
+                    if (simList) simList.classList.remove('hidden');
+                    this.similarDirty = false;
+                    this.findSimilarCurves();
+                } else {
+                    if (simList) simList.classList.add('hidden');
+                    if (dbList) {
+                        dbList.classList.remove('hidden');
                         this.renderList();
                     }
                 }
-            }
-            this.updateSearchModeButtons();
-        },
-        updateSearchModeButtons: function() {
-            const sim = document.getElementById('btn-sim-mode');
-            const db = document.getElementById('btn-db-mode');
-            if (sim) {
-                sim.classList.toggle('active', this.searchMode === 'similar');
-                sim.title = 'Find IEMs with curves similar to the current DSP curve';
-                sim.style.opacity = '';
-                sim.style.cursor = '';
-            }
-            if (db) {
-                db.classList.toggle('active', this.searchMode !== 'similar');
-                db.title = 'Browse the measurement database';
-            }
-        },
-
-        ensureSimilarList: function() {
-            if (document.getElementById('similar-list')) return;
-            const wrapper = document.getElementById('peqdb-list-wrapper');
-            if (!wrapper) return;
-            const listEl = document.createElement('div');
-            listEl.id = 'similar-list';
-            listEl.className = 'peqdb-list hidden w-full min-w-0 flex-1 overflow-y-auto pr-2 space-y-1.5';
-            wrapper.appendChild(listEl);
-        },
+                this.updateSearchModeButtons();
+            },
+            toggleSearchMode: function(mode) {
+                this.setSearchMode(mode || 'database');
+            },
+            ensureSimilarList: function() {
+                if (document.getElementById('similar-list')) return;
+                const wrapper = document.getElementById('peqdb-list-wrapper');
+                if (!wrapper) return;
+                const listEl = document.createElement('div');
+                listEl.id = 'similar-list';
+                listEl.className = 'flex-1 min-h-0 overflow-y-auto space-y-1 pr-0.5 mt-1 mx-1 hidden';
+                wrapper.appendChild(listEl);
+            },
+            updateSearchModeButtons: function() {
+                const sim = document.getElementById('btn-sim-mode');
+                const db = document.getElementById('btn-db-mode');
+                if (sim) sim.classList.toggle('active', this.searchMode === 'similar');
+                if (db) db.classList.toggle('active', this.searchMode !== 'similar');
+            },
 
         handleSimilarityResults: function(matches, fingerprint) {
         this.similarDirty = false;
@@ -14311,23 +13605,20 @@ setSearchMode: function(mode) {
         SimilarCurvesCache.results = matches;
         // Use the fingerprint captured when the search was issued, never
         // recompute at arrival time (the user may have changed the target
-        // while the worker was running). Cache-hit re-renders pass no
-        // fingerprint and preserve the stored hash.
+        // while the search was running).
         if (fingerprint !== undefined) {
             SimilarCurvesCache.targetHash = fingerprint;
         }
         SimilarCurvesCache.query = document.getElementById('peqdb-search')?.value.trim().toLowerCase() || '';
             const referenceName = "DSP Curve";
 
-            const topMatches = matches;
-
             const grouped = {};
             const datasetById = (this.STATE.dataset) ? new Map(this.STATE.dataset.map(i => [i.id, i])) : null;
+            const topMatches = matches;
             topMatches.forEach(m => {
-
                 const item = datasetById ? datasetById.get(m.id) : null;
                 const brand = (item && (item.brand || item.source)) ? (item.brand || item.source) : 'Unknown Brand';
-                const brandKey = this.getBrandNorm(brand);
+                const brandKey = this.normBrandKey(brand);
 
                 if (!grouped[brandKey]) {
                     grouped[brandKey] = {
@@ -14407,6 +13698,10 @@ setSearchMode: function(mode) {
                     composite[i] = (baselineInterp ? baselineInterp[i] : 80.0) + realValues.preVal;
                 }
 
+                // Match against the cached composite magnitude that the graph
+                // itself draws: it covers main + advanced + virtual bands plus
+                // every active sim, honors bypassed bands and the EQ on/off
+                // toggle, and matches what the user hears.
                 if (EQ_Module.graphBuilt) {
                     const mag = EQ_Module.getCompositeFilterMagnitude(freqs, points);
                     for (let j = 0; j < points; j++) {
@@ -14418,19 +13713,14 @@ setSearchMode: function(mode) {
 
             if (!targetInterp) return;
 
-            // Slim payload for the similarity search: the worker only reads
-            // id/name/variant/source/cachedInterp, so sending the whole dataset
-            // would structured-clone every curve's data[], files, sourcesCache,
-            // and searchKey on each search. Build fresh here so lazily-loaded or
-            // imported curves are never missed by a stale cached copy.
+            // Slim candidate list: only id/name/variant/source/cachedInterp.
+            // Lazily-loaded or imported curves get their interpolation computed
+            // inline here so they are never silently dropped by a stale cache.
             const lightweightDs = [];
             const fullDs = this.STATE.dataset || [];
             for (let i = 0; i < fullDs.length; i++) {
                 const item = fullDs[i];
                 if (!item.cachedInterp) {
-                    // Curve present but not yet cached (e.g. alignment changed
-                    // and the chunked re-precalc hasn't finished): compute its
-                    // interpolation inline so the search never silently drops it.
                     if (item.data) {
                         try {
                             const norm = this.getNormalizedData(item.data, item.name);
@@ -14458,70 +13748,18 @@ setSearchMode: function(mode) {
                 (f >= CurveUtils.MID_MEAN_BAND[0] && f <= CurveUtils.MID_MEAN_BAND[1]) ? 1 : 0
             );
 
-            if (this.similarityWorker) {
-                // Capture the fingerprint NOW (before the async trip) and tag the
-                // request with a token so stale responses can be dropped and the
-                // cache keyed against the data this search actually used.
-                this._similarSearchToken = (this._similarSearchToken || 0) + 1;
-                this._similarPostFp = SimilarCurvesCache.getTargetFingerprint();
-                this._similarTargetInterp = Array.from(targetInterp);
-
-                // The dataset is primed into the worker once per signature;
-                // drag ticks only send the (small) search parameters instead of
-                // structured-cloning ~11,000 curve arrays every 220ms.
-                const dsSig = this._similarDsSig(lightweightDs);
-                if (dsSig !== this._similarPrimedSig) {
-                    this._similarPrimedSig = dsSig;
-                    this._similarPriming = true;
-                    // Watchdog: if the worker never acknowledges the prime
-                    // (crashed, stuck on the huge clone), fall back to the
-                    // inline scoring path instead of hanging the search.
-                    if (this._similarPrimeTimer) clearTimeout(this._similarPrimeTimer);
-                    this._similarPrimeTimer = setTimeout(() => {
-                        this._similarPrimeTimer = null;
-                        if (!this._similarPriming) return;
-                        this._similarPriming = false;
-                        this._similarPrimedSig = null;
-                        if (this.similarityWorker) {
-                            try { this.similarityWorker.terminate(); } catch (_) {}
-                            this.similarityWorker = null;
-                        }
-                        this.findSimilarCurves();
-                    }, 15000);
-                    this.similarityWorker.postMessage({
-                        type: 'prime',
-                        dataset: lightweightDs,
-                        sig: dsSig,
-                        token: this._similarSearchToken
-                    });
-                    return;
-                }
-                this.similarityWorker.postMessage({
-                    type: 'search',
-                    sig: dsSig,
-                    targetInterp: Array.from(targetInterp),
-                    probes: Array.from(probesIdx),
-                    weights,
-                    midMask,
-                    threshold: 8.0,
-                    token: this._similarSearchToken
-                });
-            } else {
-                this._similarTargetInterp = Array.from(targetInterp);
-                const threshold = 8.0;
-                const matches = computeSimilarityScores(
-                    targetInterp, lightweightDs, probesIdx, weights, midMask, threshold
-                );
-                this.handleSimilarityResults(matches, SimilarCurvesCache.getTargetFingerprint());
-            }
+            this._similarTargetInterp = Array.from(targetInterp);
+            const threshold = 8.0;
+            const matches = computeSimilarityScores(
+                targetInterp, lightweightDs, probesIdx, weights, midMask, threshold
+            );
+            this.handleSimilarityResults(matches, SimilarCurvesCache.getTargetFingerprint());
         },
 
         renderSimilarList: function(groups, refName, preserveScroll = true) {
             const list = document.getElementById('similar-list');
             if (!list) return;
 
-            // Hoisted once instead of re-created inside the per-group loop.
-            const esc = (str) => String(str || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
             const savedScrollTop = preserveScroll ? list.scrollTop : 0;
             if (!this.expandedGroups) this.expandedGroups = new Set();
 
@@ -14535,12 +13773,6 @@ setSearchMode: function(mode) {
             const activeCurves = this.STATE.activeCurves;
             const datasetById = (this.STATE.dataset) ? new Map(this.STATE.dataset.map(d => [d.id, d])) : null;
 
-            const fragment = document.createDocumentFragment();
-            const headerEl = document.createElement('div');
-            headerEl.className = 'text-[9px] text-zinc-555 font-bold uppercase tracking-wider mb-2 border-b border-[var(--border-color)] pb-1 flex justify-between items-center mr-3 select-none';
-            headerEl.innerHTML = `<span>Matches for:</span><span class="text-[var(--accent-amber)] truncate max-w-[130px]" title="${esc(refName)}">${esc(refName)}</span>`;
-            fragment.appendChild(headerEl);
-
             const badgeFor = (item) => {
                 const loadedCurve = activeCurves.find(c => c.id === item.id);
                 if (loadedCurve) {
@@ -14549,63 +13781,59 @@ setSearchMode: function(mode) {
                 return `<span class="text-[8px] text-zinc-500 uppercase tracking-widest font-black">LOAD</span>`;
             };
 
+            let html = `
+                <div class="text-[9px] text-zinc-555 font-bold uppercase tracking-wider mb-2 border-b border-[var(--border-color)] pb-1 flex justify-between items-center mr-3 select-none">
+                    <span>Matches for:</span>
+                    <span class="text-[var(--accent-amber)] truncate max-w-[130px]" title="${esc(refName)}">${esc(refName)}</span>
+                </div>
+            `;
+
             groups.forEach((group, idx) => {
                 const isMulti = group.items.length > 1;
                 const isExpanded = this.expandedGroups.has(group.brand);
 
                 if (isMulti) {
-                    const groupEl = document.createElement('div');
-                    groupEl.className = 'peqdb-row-item cursor-pointer mb-1.5';
-                    groupEl.style.borderLeft = '2px solid var(--accent-blue)';
-                    groupEl.onclick = () => PEQDB_Module.toggleGroupExpand(groupEl);
-                    groupEl.innerHTML = `
-                        <div class="flex items-center justify-between w-full pointer-events-none">
-                            <div class="truncate pr-2">
-                                <div class="flex items-center gap-1.5">
-                                    <span class="text-[9px] font-mono text-[var(--text-secondary)]">#${idx+1}</span>
-                                    <div class="overflow-hidden whitespace-nowrap max-w-[170px] w-full">
-                                        <span class="db-title-text font-bold text-zinc-300 text-xs inline-block whitespace-nowrap">${esc(group.brand)}</span>
+                    html += `
+                        <div class="peqdb-row-item cursor-pointer mb-1.5" style="border-left: 2px solid var(--accent-blue);" onclick="PEQDB_Module.toggleGroupExpand(this)" data-group-name="${esc(group.brand)}" data-group-idx="${idx}">
+                            <div class="flex items-center justify-between w-full pointer-events-none">
+                                <div class="truncate pr-2">
+                                    <div class="flex items-center gap-1.5">
+                                        <span class="text-[9px] font-mono text-[var(--text-secondary)]">#${idx+1}</span>
+                                        <div class="overflow-hidden whitespace-nowrap max-w-[170px] w-full">
+                                            <span class="font-bold text-zinc-300 text-xs inline-block whitespace-nowrap">${esc(group.brand)}</span>
+                                        </div>
                                     </div>
+                                    <div class="text-[9px] text-[var(--accent-blue)] font-black uppercase tracking-wider mt-0.5">${group.items.length} Entries</div>
                                 </div>
-                                <div class="text-[9px] text-[var(--accent-blue)] font-black uppercase tracking-wider mt-0.5">${group.items.length} Entries</div>
+                                <div class="flex items-center gap-2 flex-shrink-0">
+                                    <span class="text-[11px] font-black text-[var(--accent-green)] mr-1">${group.bestSimilarity.toFixed(1)}%</span>
+                                    <span class="group-arrow text-zinc-500 text-[9px] font-black transition-transform duration-200">${isExpanded ? '▲' : '▼'}</span>
+                                </div>
                             </div>
-                            <div class="flex items-center gap-2 flex-shrink-0">
-                                <span class="text-[11px] font-black text-[var(--accent-green)] mr-1">${group.bestSimilarity.toFixed(1)}%</span>
-                                <span class="group-arrow text-zinc-500 text-[9px] font-black transition-transform duration-200">${isExpanded ? '▲' : '▼'}</span>
+
+                            <div class="similar-items-drawer border-t border-white/[0.04] mt-2 pt-2 space-y-1.5 ${isExpanded ? '' : 'hidden'}" onclick="event.stopPropagation();">
+                                ${isExpanded ? group.items.map(item => {
+                                    const fullItem = datasetById ? (datasetById.get(item.id) || item) : item;
+                                    return this.buildDbModelCard(fullItem, {
+                                        rank: idx + 1,
+                                        similarity: item.similarity,
+                                        badgeHtml: badgeFor(item)
+                                    }).outerHTML;
+                                }).join('') : ''}
                             </div>
                         </div>
                     `;
-                    const drawer = document.createElement('div');
-                    drawer.className = 'similar-items-drawer border-t border-white/[0.04] mt-2 pt-2 space-y-1.5';
-                    if (!isExpanded) drawer.classList.add('hidden');
-                    drawer.onclick = (e) => e.stopPropagation();
-                    if (isExpanded) {
-                        group.items.forEach(item => {
-                            const fullItem = datasetById ? (datasetById.get(item.id) || item) : item;
-                            const card = this.buildDbModelCard(fullItem, {
-                                rank: idx + 1,
-                                similarity: item.similarity,
-                                badgeHtml: badgeFor(item)
-                            });
-                            drawer.appendChild(card);
-                        });
-                    }
-                    groupEl.dataset.groupIdx = idx;
-                    groupEl.dataset.groupName = group.brand;
-                    groupEl.appendChild(drawer);
-                    fragment.appendChild(groupEl);
                 } else {
                     const item = group.items[0];
                     const fullItem = datasetById ? (datasetById.get(item.id) || item) : item;
-                    const card = this.buildDbModelCard(fullItem, {
+                    html += this.buildDbModelCard(fullItem, {
                         rank: idx + 1,
                         similarity: item.similarity,
                         badgeHtml: badgeFor(item)
-                    });
-                    fragment.appendChild(card);
+                    }).outerHTML;
                 }
             });
-            list.replaceChildren(fragment);
+            list.innerHTML = html;
             this.lastSimilarHTML = list.innerHTML;
 
             setTimeout(() => {
@@ -14621,7 +13849,7 @@ setSearchMode: function(mode) {
             const card = header.closest('.peqdb-row-item') || header.closest('div.p-2');
             const drawer = card.querySelector('.similar-items-drawer');
             const arrow = card.querySelector('.group-arrow');
-            const groupName = card.dataset.groupName || card.querySelector('.font-bold').textContent.trim();
+            const groupName = card.dataset.groupName || (card.querySelector('.font-bold') ? card.querySelector('.font-bold').textContent.trim() : '');
 
             if (!this.expandedGroups) this.expandedGroups = new Set();
 
@@ -14632,8 +13860,11 @@ setSearchMode: function(mode) {
                     this.expandedGroups.delete(groupName);
                 } else {
                     this.expandedGroups.add(groupName);
+                    // Lazy-fill: an expand of a group that rendered while
+                    // collapsed has no child cards yet — build them now.
                     if (!drawer.querySelector('.peqdb-row-item') && this._lastSimilarGroups) {
-                        const group = this._lastSimilarGroups[Number(card.dataset.groupIdx)];
+                        const groupIdx = Number(card.dataset.groupIdx);
+                        const group = this._lastSimilarGroups[groupIdx];
                         if (group) {
                             const datasetById = (this.STATE.dataset) ? new Map(this.STATE.dataset.map(d => [d.id, d])) : null;
                             const activeCurves = this.STATE.activeCurves;
@@ -14644,18 +13875,18 @@ setSearchMode: function(mode) {
                                 }
                                 return `<span class="text-[8px] text-zinc-500 uppercase tracking-widest font-black">LOAD</span>`;
                             };
-                            const rank = Number(card.dataset.groupIdx) + 1;
-                            group.items.forEach(item => {
+                            const rank = groupIdx + 1;
+                            drawer.innerHTML = group.items.map(item => {
                                 const fullItem = datasetById ? (datasetById.get(item.id) || item) : item;
-                                drawer.appendChild(this.buildDbModelCard(fullItem, {
+                                return this.buildDbModelCard(fullItem, {
                                     rank,
                                     similarity: item.similarity,
                                     badgeHtml: badgeFor(item)
-                                }));
-                            });
+                                }).outerHTML;
+                            }).join('');
                             setTimeout(() => {
                                 const titles = drawer.querySelectorAll('.db-title-text, .db-file-marquee-text');
-                                Array.from(titles).forEach(el => {
+                                Array.from(titles).slice(0, 200).forEach(el => {
                                     if (!el.classList.contains('marquee-orbit-active')) activateOrbitMarquee(el);
                                 });
                             }, 50);
@@ -14666,6 +13897,138 @@ setSearchMode: function(mode) {
         },
         loadSimilarItem: function(id) {
             this.toggleCurveSelection(id);
+        },
+        rescoreSimilarItemFile: async function(item) {
+            const target = this._similarTargetInterp;
+            if (!target || !this._lastSimilarGroups) return;
+            const idx = this.dbItemFileIndex[item.id] || 0;
+            if (!this._fileSwitchTokens) this._fileSwitchTokens = {};
+            const token = (this._fileSwitchTokens[item.id] = (this._fileSwitchTokens[item.id] || 0) + 1);
+            const targetFile = item.files && item.files[idx] ? item.files[idx] : item.primaryFilePath;
+            if (!targetFile) return;
+
+            if (!(item.sourcesCache && item.sourcesCache[targetFile])) {
+                try { await CurveIndexer.loadCurve(item, idx); } catch (e) { return; }
+            }
+            if (this._fileSwitchTokens[item.id] !== token) return;
+            const parsed = (item.sourcesCache && item.sourcesCache[targetFile]) || item.data;
+            if (!parsed || parsed.length < 2) return;
+
+            const norm = this.getNormalizedData(parsed, item.name);
+            const interp = Array.from(this.DSP.interpolate(norm));
+
+            const probeFreqs = CurveUtils.SIM_PROBE_FREQS;
+            const probesIdx = CurveUtils.probeIndices(this.DSP.FREQS, probeFreqs);
+            const weights = probeFreqs.map(f => CurveUtils.weightFor(f));
+            const midMask = probeFreqs.map(f =>
+                (f >= CurveUtils.MID_MEAN_BAND[0] && f <= CurveUtils.MID_MEAN_BAND[1]) ? 1 : 0
+            );
+            const fakeItem = { id: item.id, name: item.name, variant: item.variant, source: item.source, cachedInterp: interp };
+            const scores = computeSimilarityScores(target, [fakeItem], probesIdx, weights, midMask, 8.0);
+            if (!scores.length || this._fileSwitchTokens[item.id] !== token) return;
+            const sim = scores[0].similarity;
+
+            const matches = SimilarCurvesCache.results;
+            if (Array.isArray(matches)) {
+                const m = matches.find(x => x.id === item.id);
+                if (m) m.similarity = sim;
+            }
+            const group = this._lastSimilarGroups.find(g => g.items.some(it => it.id === item.id));
+            if (group) {
+                group.bestSimilarity = Math.max(...group.items.map(it => it.similarity));
+            }
+            this.renderSimilarList(this._lastSimilarGroups, this._lastSimilarRefName || '');
+        },
+        buildDbModelCard: function(item, similarInfo) {
+            if (!this.dbItemFileIndex) this.dbItemFileIndex = {};
+            const fileCount = item.files ? item.files.length : 0;
+            const isMulti = fileCount > 1;
+            const curFileIdx = this.dbItemFileIndex[item.id] || 0;
+            const activeFileIdx = Math.min(curFileIdx, Math.max(0, fileCount - 1));
+
+            const filePath = item.files && item.files[activeFileIdx] ? item.files[activeFileIdx] : item.primaryFilePath;
+            const pathParts = (filePath || '').split('/');
+            const sourceName = pathParts.length >= 3 ? pathParts[1] : (pathParts.length >= 2 ? pathParts[0] : (item.source || 'Database'));
+            const fileNameRaw = pathParts[pathParts.length - 1] || '';
+            const fileNameNoExt = fileNameRaw.replace(/\.[^/.]+$/, '');
+
+            const activeCurves = this.STATE.activeCurves;
+
+            const curveUid = `${item.id}_src_${activeFileIdx}`;
+            const activeCurve = activeCurves.find(c => c.uid === curveUid || (fileCount <= 1 && c.id === item.id));
+            const isLoaded = !!activeCurve;
+            const rowAccentColor = isLoaded ? activeCurve.color : 'var(--border-color)';
+
+            const formFactorEmojiMap = {
+                'IEM': FindEngine.formFactorEmojis['IEM'],
+                'Earbuds (Wired)': FindEngine.formFactorEmojis['Earbuds (Wired)'],
+                'Wireless Earbuds (TWS)': FindEngine.formFactorEmojis['Wireless Earbuds (TWS)'],
+                'Over-Ear Headphones (Wired)': FindEngine.formFactorEmojis['Over-Ear Headphones (Wired)'],
+                'Wireless Over-Ear Headphones': FindEngine.formFactorEmojis['Wireless Over-Ear Headphones']
+            };
+            const formEmoji = formFactorEmojiMap[item.form_factor] || FindEngine.formFactorEmojis['IEM'];
+            const driverEmoji = FindEngine.driverEmojis[item.driver_type] || '⚙️';
+            const driverTooltip = `${item.driver_type || 'Driver'}${item.driver_config ? ' (' + item.driver_config + ')' : ''}`;
+            const connectorEmoji = FindEngine.connectorEmojis[item.connector] || '🔌';
+
+            const specIconsHtml = `
+                ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:9px;">$${esc(item.price_usd)}</span></span>` : ''}
+                ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:9px;">${esc(item.year)}</span></span>` : ''}
+                ${item.driver_type ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
+                ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${esc(item.connector)}">${connectorEmoji}</span>` : ''}
+                <span class="spec-icon-badge" data-tooltip="${esc(item.form_factor || 'In-Ear Monitor (IEM)')}">${formEmoji}</span>
+            `;
+
+            const tagsHtml = (item.tags || []).map(t => `<span class="spec-icon-badge" data-tooltip="${esc(t)}">${FindEngine.getTagEmoji(t)}</span>`).join('');
+
+            let fileRowHtml;
+            if (isMulti) {
+                fileRowHtml = `
+                    <div class="flex items-center gap-1.5 mt-1">
+                        <button onclick="event.stopPropagation(); PEQDB_Module.cycleDbItemSource('${escJs(item.id)}', -1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
+                        <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
+                            <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
+                        </div>
+                        <button onclick="event.stopPropagation(); PEQDB_Module.cycleDbItemSource('${escJs(item.id)}', 1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
+                    </div>
+                `;
+            } else {
+                fileRowHtml = `
+                    <div class="mt-1 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
+                        <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
+                    </div>
+                `;
+            }
+
+            const similarHeader = similarInfo ? `
+                <div class="flex items-center justify-between gap-2 mb-1.5 border-b border-white/[0.05] pb-1.5">
+                    <span class="text-[9px] font-mono text-[var(--text-secondary)]">#${similarInfo.rank}</span>
+                    <span class="flex items-center gap-1.5">
+                        <span class="text-[11px] font-black text-[var(--accent-green)]">${similarInfo.similarity.toFixed(1)}%</span>
+                        ${similarInfo.badgeHtml || ''}
+                    </span>
+                </div>
+            ` : '';
+
+            const div = document.createElement('div');
+            div.className = 'peqdb-row-item p-2 mb-1.5 transition-all select-none cursor-pointer';
+            div.setAttribute('data-id', item.id);
+            if (isLoaded) {
+                div.classList.add('is-loaded');
+                div.style.setProperty('--row-glow', `rgba(${this.hexToRgb(activeCurve.color)}, 0.28)`);
+                div.style.setProperty('--row-glow-solid', activeCurve.color);
+            }
+            div.onclick = () => PEQDB_Module.toggleCurveSelection(item.id, activeFileIdx);
+            div.innerHTML = similarHeader + `
+                <div class="db-title-row overflow-hidden whitespace-nowrap">
+                    <span class="db-title-text font-black text-stone-200 text-xs inline-block whitespace-nowrap">${esc(item.name)}</span>
+                </div>
+                <div class="text-[8.5px] text-zinc-500 font-bold uppercase tracking-wider mt-0.5">${esc(item.source || sourceName)}</div>
+                <div class="flex flex-wrap items-center justify-center gap-1 mt-1">${specIconsHtml}</div>
+                ${tagsHtml ? `<div class="flex flex-wrap items-center justify-center gap-1 mt-1">${tagsHtml}</div>` : ''}
+                ${fileRowHtml}
+            `;
+            return div;
         },
         averageActiveCurves: function() {
             const activeReferences = this.STATE.activeCurves.filter(c => c.role === 'reference' && c.visible);
@@ -14706,7 +14069,7 @@ setSearchMode: function(mode) {
             this.STATE.activeCurves.push({
                 uid, name, role: 'target', color: '#ff9500', visible: true, data: avgData
             });
-            this.updateDockState(null);
+            this.updateAll();
             showToast(`Averaged ${activeReferences.length} traces into smooth Target plot.`, "📊");
         },
         exportCurrentTarget: function() {
@@ -14760,7 +14123,7 @@ setSearchMode: function(mode) {
                 uid, name, role: 'target', color: '#bf5af2', visible: true, data: curveData
             });
 
-            this.updateDockState(null);
+            this.updateAll();
             showToast("Cloned active filters to Target plot curve.", "❄️");
         }
     };
@@ -14768,6 +14131,7 @@ setSearchMode: function(mode) {
     const TestLab_Module = {
         activeNodes: [],
         spatialActive: false,
+        spatialType: 'pink',
         getAbxConfidence: function(correct, total) {
             if (total === 0) return { pct: 0, text: "No Trials", class: "text-zinc-500" };
 
@@ -14818,6 +14182,7 @@ setSearchMode: function(mode) {
                 class: colorClass
             };
         },
+        spatialReverb: 'dry',
         spatialOrbitActive: false,
         spatialOrbitInterval: null,
         spatialOrbitAngle: 0,
@@ -14913,7 +14278,6 @@ setSearchMode: function(mode) {
         },
 
         abxStart: async function() {
-            if (this.abxIsActive) return;
             const audioA = document.getElementById('ab-audio-a');
             const audioB = document.getElementById('ab-audio-b');
             if (!audioA || !audioB || !audioA.src || !audioB.src) {
@@ -14957,6 +14321,8 @@ setSearchMode: function(mode) {
             this.abxNextTrial();
         },
         abxNextTrial: async function() {
+            // A queued inter-trial timer may fire after STOP — never start a
+            // ghost trial once the test is no longer active.
             if (!this.abxIsActive) return;
             if (this.abxTrialIndex >= this.abxTotalTrials) {
                 this.abxEndGame();
@@ -14976,38 +14342,42 @@ setSearchMode: function(mode) {
 
             await EQ_Module.ensureDSPGraph();
             this.ensureABSources();
+            // ensureABSources() only creates gainNodeA/gainNodeB once and
+            // wires them into the shared audio graph; updateABFade() is the
+            // only place their gain values ever get set, and it refuses to
+            // run while an ABX session is active. Without this, whatever
+            // the non-blind crossfade slider was last set to (including a
+            // hard 0/1 extreme) stays baked into these two GainNodes for
+            // every trial, on top of the .volume toggle below — verified in
+            // a sandbox trace: a stale gainNodeB=0 makes every "B" target
+            // trial completely silent while the UI still scores it.
+            this._abxSetArmGainsUnity();
 
             const audioA = document.getElementById('ab-audio-a');
             const audioB = document.getElementById('ab-audio-b');
 
-            // The audible level is set by the graph gain nodes: once
-            // createMediaElementSource wires the elements into the DSP graph,
-            // element .volume is bypassed, so setting it here did nothing and
-            // the previous crossfade gains leaked which channel was the target.
-            if (this.abSourcesConnected && this.gainNodeA && this.gainNodeB && SharedAudio.ctx) {
-                const now = SharedAudio.ctx.currentTime;
-                if (this.abxTargetAnswer === 'A') {
-                    this.gainNodeA.gain.setTargetAtTime(1.0, now, 0.015);
-                    this.gainNodeB.gain.setTargetAtTime(0.0, now, 0.015);
-                } else {
-                    this.gainNodeA.gain.setTargetAtTime(0.0, now, 0.015);
-                    this.gainNodeB.gain.setTargetAtTime(1.0, now, 0.015);
-                }
+            if (this.abxTargetAnswer === 'A') {
+                audioA.volume = 1.0;
+                audioB.volume = 0.0;
             } else {
-                // Graph not wired yet: fall back to element volume.
-                if (this.abxTargetAnswer === 'A') {
-                    audioA.volume = 1.0;
-                    audioB.volume = 0.0;
-                } else {
-                    audioA.volume = 0.0;
-                    audioB.volume = 1.0;
-                }
+                audioA.volume = 0.0;
+                audioB.volume = 1.0;
             }
 
             audioA.currentTime = 0;
             audioB.currentTime = 0;
-            audioA.play().catch(e => console.log("ABX play A interrupted:", e));
-            audioB.play().catch(e => console.log("ABX play B interrupted:", e));
+            // Floating play() promises: autoplay-policy denials become unhandled
+            // rejections. Catch and surface them like the rest of the test flow.
+            audioA.play().catch(e => {
+                console.warn("[TestLab] ABX source A playback blocked:", e && e.message);
+                if (this.abxIsActive) {
+                    const status = document.getElementById('abx-status-lbl');
+                    if (status) status.textContent = 'Playback blocked — click anywhere and retry.';
+                }
+            });
+            audioB.play().catch(e => {
+                console.warn("[TestLab] ABX source B playback blocked:", e && e.message);
+            });
 
             this.abPlaying = true;
         },
@@ -15044,14 +14414,15 @@ setSearchMode: function(mode) {
             this.abPlaying = false;
 
             this.abxTrialIndex++;
-            if (this._abxNextTimer) clearTimeout(this._abxNextTimer);
-            this._abxNextTimer = setTimeout(() => {
-                this._abxNextTimer = null;
+            // Track the inter-trial timer so STOP (abxReset) can cancel it —
+            // an untracked timer used to fire one ghost trial after stopping.
+            if (this._abxTrialTimer) clearTimeout(this._abxTrialTimer);
+            this._abxTrialTimer = setTimeout(() => {
+                this._abxTrialTimer = null;
                 this.abxNextTrial();
             }, 1000);
         },
         abxEndGame: function() {
-            if (this._abxNextTimer) { clearTimeout(this._abxNextTimer); this._abxNextTimer = null; }
             this.abxIsActive = false;
             const percentage = Math.round((this.abxCorrect / this.abxTotalTrials) * 100);
 
@@ -15071,13 +14442,19 @@ setSearchMode: function(mode) {
                 startBtn.onclick = () => this.abxStart();
             }
             this.setABXControlsEnabled(true);
+            // Restore whatever the non-blind crossfade slider was set to
+            // before the session started -- updateABFade() early-returns
+            // while abxIsActive is true, so this is the first safe point
+            // to apply it once the trial arms are no longer in exclusive
+            // use.
+            this.updateABFade();
         },
         abxReset: function() {
-            if (this._abxNextTimer) { clearTimeout(this._abxNextTimer); this._abxNextTimer = null; }
             this.abxIsActive = false;
             this.abxTrialIndex = 0;
             this.abxCorrect = 0;
             this.abxIncorrect = 0;
+            if (this._abxTrialTimer) { clearTimeout(this._abxTrialTimer); this._abxTrialTimer = null; }
 
             const startBtn = document.getElementById('abx-start-btn');
             if (startBtn) {
@@ -15112,6 +14489,8 @@ setSearchMode: function(mode) {
             if (audioB) audioB.pause();
             this.abPlaying = false;
             this.setABXControlsEnabled(true);
+            // Same restore as abxEndGame() -- see that call site for why.
+            this.updateABFade();
         },
         imbalanceInterval: null,
         isChannelSwapped: false,
@@ -15243,6 +14622,10 @@ setSearchMode: function(mode) {
 
             if (audioA) { audioA.pause(); audioA.src = ''; audioA.load(); }
             if (audioB) { audioB.pause(); audioB.src = ''; audioB.load(); }
+            // NOTE: the MediaElementSource wrappers are deliberately KEPT —
+            // they are one-per-element for the context's lifetime and keep
+            // working with whatever blob src is loaded next. Nulling them here
+            // would make the next ensureABSources() throw permanently.
             if (fileA) fileA.value = '';
             if (fileB) fileB.value = '';
             if (labelA) labelA.textContent = 'Browse or drop...';
@@ -15252,23 +14635,44 @@ setSearchMode: function(mode) {
             showToast("A/B comparison tracks cleared.", "🗑️");
         },
 
-ensureABSources: function() {
-            if (this.abSourcesConnected) return;
+        ensureABSources: function() {
             const ctx = SharedAudio.init();
             const audioA = document.getElementById('ab-audio-a');
             const audioB = document.getElementById('ab-audio-b');
             if (!audioA || !audioB) return;
 
-            this.sourceA = ctx.createMediaElementSource(audioA);
-            this.sourceB = ctx.createMediaElementSource(audioB);
+            try {
+                // A MediaElementSource is one-per-element for the lifetime of
+                // the context — recreating it throws. Wrap-and-reuse instead,
+                // so a Clear followed by new files keeps working.
+                if (!this.sourceA) this.sourceA = ctx.createMediaElementSource(audioA);
+                if (!this.sourceB) this.sourceB = ctx.createMediaElementSource(audioB);
+                if (!this.gainNodeA) this.gainNodeA = ctx.createGain();
+                if (!this.gainNodeB) this.gainNodeB = ctx.createGain();
 
-            this.gainNodeA = ctx.createGain();
-            this.gainNodeB = ctx.createGain();
-
-            this.sourceA.connect(this.gainNodeA).connect(EQ_Module.inputGainNode || SharedAudio.masterGain);
-            this.sourceB.connect(this.gainNodeB).connect(EQ_Module.inputGainNode || SharedAudio.masterGain);
-
-            this.abSourcesConnected = true;
+                if (!this.abSourcesConnected) {
+                    // Route into the shared DSP chain (EQ applies) when it
+                    // exists, otherwise straight to the master bus. Duplicate
+                    // connect() calls with identical endpoints are collapsed
+                    // by the spec, so this is safe to re-run.
+                    const dest = EQ_Module.inputGainNode || SharedAudio.masterGain;
+                    this.sourceA.connect(this.gainNodeA).connect(dest);
+                    this.sourceB.connect(this.gainNodeB).connect(dest);
+                    this.abSourcesConnected = true;
+                }
+            } catch (e) {
+                console.warn('[A/B] Failed to wire comparison sources:', e);
+                try { if (typeof showToast === 'function') showToast("A/B audio routing failed — see console, then press Play again.", "⚠️"); } catch (_) {}
+            }
+        },
+        // Forces both ABX playback arms to unity gain so the only thing
+        // distinguishing "A" from "B" during a trial is the .volume toggle
+        // in abxNextTrial() -- see the call site there for why this exists.
+        _abxSetArmGainsUnity: function() {
+            if (!SharedAudio.ctx) return;
+            const now = SharedAudio.ctx.currentTime;
+            if (this.gainNodeA) this.gainNodeA.gain.setTargetAtTime(1.0, now, 0.005);
+            if (this.gainNodeB) this.gainNodeB.gain.setTargetAtTime(1.0, now, 0.005);
         },
 setABXControlsEnabled: function(enabled) {
             const slider = document.getElementById('ab-crossfade');
@@ -15277,23 +14681,36 @@ setABXControlsEnabled: function(enabled) {
             if (playBtn) playBtn.disabled = !enabled;
         },
         toggleABPlay: async function() {
-            if (this.abxIsActive) return;
             const audioA = document.getElementById('ab-audio-a');
-                const audioB = document.getElementById('ab-audio-b');
-                const btn = document.getElementById('ab-play-btn');
+            const audioB = document.getElementById('ab-audio-b');
+            const btn = document.getElementById('ab-play-btn');
 
-                if (!audioA || !audioB || !audioA.src || !audioB.src) {
-                    showToast("Upload audio files to compare.", "⚠️");
-                    return;
-                }
+            if (this.abxIsActive) {
+                // Previously a silent early-return: the button appeared dead.
+                showToast("An ABX session is active — finish or reset it first.", "ℹ️");
+                return;
+            }
+            if (!audioA || !audioB || !audioA.src || !audioB.src) {
+                showToast("Upload audio files to compare.", "⚠️");
+                return;
+            }
 
-                await EQ_Module.ensureDSPGraph();
+            await EQ_Module.ensureDSPGraph();
 
-                if (SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
-                    await SharedAudio.ctx.resume();
-                }
+            if (SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
+                await SharedAudio.ctx.resume();
+            }
 
-                this.ensureABSources();
+            this.ensureABSources();
+            if (!this.abSourcesConnected) {
+                console.error('[A/B] abort: sources not connected', {
+                    hasSourceA: !!this.sourceA, hasSourceB: !!this.sourceB,
+                    graphBuilt: EQ_Module.graphBuilt
+                });
+                return;
+            }
+
+            const dbg = (label, extra) => console.info('[A/B]', label, extra || '');
 
             if (this.abPlaying) {
                 audioA.pause();
@@ -15301,21 +14718,100 @@ setABXControlsEnabled: function(enabled) {
                 this.abPlaying = false;
                 if (btn) btn.innerHTML = 'Play Sync';
             } else {
+                // Exclusive playback: the playlist must not drive the shared
+                // chain while A/B compares two files (levels, meters, de-esser
+                // and AGC all assume a single source).
+                if (window.EQ && EQ.stopPlaylistPlayback) EQ.stopPlaylistPlayback();
                 this.stopAll();
                 audioA.currentTime = 0;
                 audioB.currentTime = 0;
                 this.updateABFade();
 
-                const playA = audioA.play();
-                const playB = audioB.play();
+                try {
+                    // Surface element-level failures (unsupported codec, failed
+                    // load, interrupted play) instead of logging to console only
+                    // while the UI claims "Pause".
+                    dbg('play() requested', {
+                        ctx: SharedAudio.ctx.state,
+                        readyA: audioA.readyState, readyB: audioB.readyState,
+                        durA: audioA.duration, durB: audioB.duration
+                    });
+                    await Promise.all([audioA.play(), audioB.play()]);
+                    this.abPlaying = true;
+                    if (btn) btn.innerHTML = 'Pause';
 
-                Promise.all([playA, playB]).catch(err => {
+                    // Verify audible signal shortly after starting. Elements can
+                    // report "playing" while the routing feeding them is dead
+                    // (or something paused them again); tell the user which
+                    // world we are in and offer a one-click bypass of the
+                    // shared DSP chain.
+                    setTimeout(() => {
+                        const stillPlaying = !audioA.paused && !audioB.paused;
+                        let metered = false;
+                        try {
+                            const probe = new Uint8Array(SharedAudio.analyser ? SharedAudio.analyser.fftSize : 1024);
+                            if (SharedAudio.analyser) {
+                                SharedAudio.analyser.getByteTimeDomainData(probe);
+                                for (let i = 0; i < probe.length; i++) {
+                                    if (Math.abs(probe[i] - 128) > 2) { metered = true; break; }
+                                }
+                            }
+                        } catch (_) {}
+                        dbg('350ms check', {
+                            stillPlaying, metered,
+                            gainA: this.gainNodeA && this.gainNodeA.gain.value.toFixed(3),
+                            gainB: this.gainNodeB && this.gainNodeB.gain.value.toFixed(3),
+                            tA: audioA.currentTime.toFixed(2), tB: audioB.currentTime.toFixed(2),
+                            ctx: SharedAudio.ctx.state,
+                            destChain: 'inputGainNode'
+                        });
+                        if (!stillPlaying) {
+                            showToast("Tracks stopped unexpectedly right after starting.", "⚠️");
+                        } else if (!metered) {
+                            // Elements running but the master bus sees silence
+                            // (assumes no other source is playing right now).
+                            showToast("No signal reaching output — route A/B directly?", "🔌", {
+                                duration: 10000,
+                                action: {
+                                    label: "Direct",
+                                    onClick: () => {
+                                        try {
+                                            const dest = SharedAudio.masterGain;
+                                            this.gainNodeA.disconnect();
+                                            this.gainNodeB.disconnect();
+                                            this.gainNodeA.connect(dest);
+                                            this.gainNodeB.connect(dest);
+                                            showToast("A/B routed straight to master (DSP chain bypassed).", "🔌");
+                                        } catch (e) {
+                                            console.warn('[A/B] direct reroute failed:', e);
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                    }, 350);
+                } catch (err) {
                     console.error("Audio playback failure:", err);
-                });
-
-                this.abPlaying = true;
-                if (btn) btn.innerHTML = 'Pause';
+                    this.abPlaying = false;
+                    if (btn) btn.innerHTML = 'Play Sync';
+                    showToast(`Playback failed: ${err && err.name ? err.name : 'unknown error'} — try re-selecting the file.`, "⚠️");
+                }
             }
+        },
+
+        // Pause any active A/B session (used by playlist playback for
+        // exclusive output — see toggleABPlay's mirror of this behavior).
+        pauseABPlayback: function() {
+            if (!this.abPlaying) return false;
+            const audioA = document.getElementById('ab-audio-a');
+            const audioB = document.getElementById('ab-audio-b');
+            if (audioA && !audioA.paused) { try { audioA.pause(); } catch (e) {} }
+            if (audioB && !audioB.paused) { try { audioB.pause(); } catch (e) {} }
+            this.abPlaying = false;
+            const btn = document.getElementById('ab-play-btn');
+            if (btn) btn.innerHTML = 'Play Sync';
+            showToast("A/B paused — playlist took over.", "ℹ️");
+            return true;
         },
 
         updateABFade: function() {
@@ -15437,6 +14933,21 @@ setABXControlsEnabled: function(enabled) {
                 this.hearingGain = null;
             }
         },
+        // The resonance sweeper owns its OWN oscillator. It previously stored
+        // it in hearingOsc/hearingGain, so a sweep running concurrently with
+        // (or right after) a hearing test would retune the hearing tone to
+        // 6.4–9.6 kHz while the UI displayed a completely different pitch.
+        stopResonanceTone: function() {
+            if (this.resonanceOsc) {
+                try { this.resonanceOsc.stop(); } catch(e){}
+                this.resonanceOsc.disconnect();
+                this.resonanceOsc = null;
+            }
+            if (this.resonanceGain) {
+                this.resonanceGain.disconnect();
+                this.resonanceGain = null;
+            }
+        },
         resetHearingTest: function() {
             this.stopHearingTone();
             this.hearingStep = -1;
@@ -15505,6 +15016,7 @@ setABXControlsEnabled: function(enabled) {
 
             EQ_Module.applyHearingCalibrationGains();
             EQ_Module.drawCurve();
+            if (window.App && App.saveWorkspaceState) App.saveWorkspaceState();
             showToast("Hearing Calibration Profile Applied!", "👂");
         },
         convertHearingToEQ: function() {
@@ -15517,7 +15029,7 @@ setABXControlsEnabled: function(enabled) {
                 6: EQ_Module.hearingOffsets[3] || 0,
                 7: EQ_Module.hearingOffsets[4] || 0,
                 8: EQ_Module.hearingOffsets[5] || 0,
-                9: (EQ_Module.hearingOffsets[7] || 0) + (EQ_Module.hearingOffsets[6] || 0)
+                9: EQ_Module.hearingOffsets[7] || 0
             };
 
             EQ_Module.isProgrammaticSliderUpdate = true;
@@ -15556,7 +15068,10 @@ setABXControlsEnabled: function(enabled) {
             EQ_Module.eqEnabled = true;
 
             const eqToggleBtn = document.getElementById("eqToggleBtn");
-            if (eqToggleBtn) eqToggleBtn.classList.add('is-on');
+            if (eqToggleBtn) {
+                eqToggleBtn.classList.add('is-on');
+                eqToggleBtn.textContent = "EQ: ON";
+            }
 
             EQ_Module.updateAudioConnections();
             EQ_Module.drawCurve();
@@ -15906,20 +15421,12 @@ setABXControlsEnabled: function(enabled) {
             const arrayR = new Uint8Array(SharedAudio.analyserR.frequencyBinCount);
 
             this.imbalanceInterval = setInterval(() => {
-                // Self-stop: every test that drives this meter routes its audio
-                // through activeNodes (or hearing/channel-tone oscillators), so
-                // when all of them are gone the meter is orphaned — stop it
-                // instead of polling silent analysers forever.
-                if (!this.activeNodes.length && !this.hearingOsc && !this.channelToneOsc) {
-                    clearInterval(this.imbalanceInterval);
-                    this.imbalanceInterval = null;
-                    const meterL = document.getElementById('imbalance-meter-l');
-                    const meterR = document.getElementById('imbalance-meter-r');
-                    if (meterL) meterL.style.width = "0%";
-                    if (meterR) meterR.style.width = "0%";
-                    return;
-                }
                 if (!SharedAudio.ctx || !SharedAudio.analyserL || !SharedAudio.analyserR) return;
+                // Skip all sampling/DOM writes while the meters can't be seen
+                // (Test-Lab tab hidden or page backgrounded). The interval
+                // itself keeps running so re-entering the tab is instant.
+                const meterLCheck = document.getElementById('imbalance-meter-l');
+                if (!meterLCheck || meterLCheck.offsetParent === null || document.hidden) return;
                 SharedAudio.analyserL.getByteTimeDomainData(arrayL);
                 SharedAudio.analyserR.getByteTimeDomainData(arrayR);
 
@@ -15936,7 +15443,7 @@ setABXControlsEnabled: function(enabled) {
                 const pctL = rmsL < 0.0015 ? 0 : Math.min(100, rmsL * 350);
                 const pctR = rmsR < 0.0015 ? 0 : Math.min(100, rmsR * 350);
 
-                const meterL = document.getElementById('imbalance-meter-l');
+                const meterL = meterLCheck;
                 const meterR = document.getElementById('imbalance-meter-r');
                 if (meterL) meterL.style.width = pctL + "%";
                 if (meterR) meterR.style.width = pctR + "%";
@@ -16029,10 +15536,6 @@ setABXControlsEnabled: function(enabled) {
             this.channelToneOsc.start(now);
             this.activeNodes.push(this.channelToneOsc, this.channelTonePanner, this.channelToneGain);
             this.startImbalanceMeter();
-
-            if (window.EQ && !EQ.vizLoopRunning) {
-                EQ.startVisualizer();
-            }
         },
         stopChannelTone: function() {
 
@@ -16041,7 +15544,6 @@ setABXControlsEnabled: function(enabled) {
              if (btn) btn.classList.remove('is-on', 'active');
          });
 
-         const toneNodes = [this.channelToneOsc, this.channelTonePanner, this.channelToneGain];
          if (this.channelToneOsc) {
              try { this.channelToneOsc.stop(); } catch(e){}
              this.channelToneOsc = null;
@@ -16051,12 +15553,6 @@ setABXControlsEnabled: function(enabled) {
              this.channelToneGain = null;
          }
          this.channelTonePanner = null;
-         this.activeNodes = this.activeNodes.filter(n => !toneNodes.includes(n));
-
-         const meterL = document.getElementById('imbalance-meter-l');
-         const meterR = document.getElementById('imbalance-meter-r');
-         if (meterL) meterL.style.width = "0%";
-         if (meterR) meterR.style.width = "0%";
 
          Mascot.isOverrideActive = false;
          Mascot.setExpression('idle');
@@ -16314,9 +15810,6 @@ toggleChannelSwap: function() {
         }
 
         if (activeType === 'rest') {
-            // A rest phase must actually be silent — previously the last
-            // tone kept playing because this early-return skipped the stop.
-            this.stopBurninSignal();
             this.updateBurninStatus('resting');
             return;
         }
@@ -16436,7 +15929,7 @@ toggleChannelSwap: function() {
         this.setBurninTime(this.burninDurationHours);
         showToast("Burn-In timer reset.", "🔄");
     },
-                stopAll: function(keepMascotOverride = false) {
+                stopAll: function(keepMascotOverride = false, preserveBurnin = false) {
             this.stopSpatialOrbit();
             if (this.resonanceInterval) {
                 clearInterval(this.resonanceInterval);
@@ -16469,6 +15962,7 @@ toggleChannelSwap: function() {
                 this.hearingGain.disconnect();
                 this.hearingGain = null;
             }
+            this.stopResonanceTone();
 
             const leakNodes = [this.oscL, this.oscR, this.gainL, this.gainR];
             if (this.oscL) { try { this.oscL.stop(); } catch(e){} this.oscL = null; }
@@ -16487,19 +15981,27 @@ toggleChannelSwap: function() {
             }
             this.channelTonePanner = null;
 
-            this.burninActive = false;
-            if (this.burninIntervalId) {
-                clearInterval(this.burninIntervalId);
-                this.burninIntervalId = null;
+            // Burn-in is an intentional long-duration background process
+            // (driver break-in noise meant to keep running for minutes to
+            // hours) -- unlike every other generator above, it should
+            // survive a plain tab switch. preserveBurnin lets callers like
+            // App.switchTab() stop every other Test Lab sound source
+            // without silently killing an in-progress burn-in run.
+            if (!preserveBurnin) {
+                this.burninActive = false;
+                if (this.burninIntervalId) {
+                    clearInterval(this.burninIntervalId);
+                    this.burninIntervalId = null;
+                }
+                this.stopBurninSignal();
+                if (this.burninGainNode) {
+                    this.burninGainNode.disconnect();
+                    this.burninGainNode = null;
+                }
+                const bBtn = document.getElementById('burnin-start-btn');
+                if (bBtn) bBtn.textContent = "Start";
+                this.updateBurninStatus('idle');
             }
-            this.stopBurninSignal();
-            if (this.burninGainNode) {
-                this.burninGainNode.disconnect();
-                this.burninGainNode = null;
-            }
-            const bBtn = document.getElementById('burnin-start-btn');
-            if (bBtn) bBtn.textContent = "Start";
-            this.updateBurninStatus('idle');
 
             this.activeNodes = this.activeNodes.filter(n => !leakNodes.includes(n));
 
@@ -16548,14 +16050,6 @@ toggleChannelSwap: function() {
                 spatialBtn.classList.remove('text-red-400');
             }
             this.spatialActive = false;
-            // A competing sound engine took over: abort any pending ABX trial
-            // timer and mark the test inactive so it can't silently restart
-            // itself over another engine's playback.
-            if (this._abxNextTimer) {
-                clearTimeout(this._abxNextTimer);
-                this._abxNextTimer = null;
-            }
-            this.abxIsActive = false;
             const abBtn = document.getElementById('ab-play-btn');
             if (abBtn) abBtn.innerHTML = 'Play Sync';
             this.abPlaying = false;
@@ -16593,14 +16087,14 @@ toggleChannelSwap: function() {
                 lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/15 font-bold text-[9px] py-1.5 rounded";
             }
 
-            this.hearingOsc = ctx.createOscillator();
-            this.hearingGain = ctx.createGain();
-            this.hearingOsc.type = 'sine';
-            this.hearingOsc.frequency.setValueAtTime(this.resonanceFreq, ctx.currentTime);
-            this.hearingGain.gain.setValueAtTime(0.06, ctx.currentTime);
+            this.resonanceOsc = ctx.createOscillator();
+            this.resonanceGain = ctx.createGain();
+            this.resonanceOsc.type = 'sine';
+            this.resonanceOsc.frequency.setValueAtTime(this.resonanceFreq, ctx.currentTime);
+            this.resonanceGain.gain.setValueAtTime(0.06, ctx.currentTime);
 
-            this.hearingOsc.connect(this.hearingGain).connect(SharedAudio.masterGain);
-            this.hearingOsc.start();
+            this.resonanceOsc.connect(this.resonanceGain).connect(SharedAudio.masterGain);
+            this.resonanceOsc.start();
 
             let sweepDir = 1;
             this.resonanceInterval = setInterval(() => {
@@ -16608,8 +16102,8 @@ toggleChannelSwap: function() {
                 if (this.resonanceFreq >= 9600) sweepDir = -1;
                 if (this.resonanceFreq <= 6400) sweepDir = 1;
 
-                if (this.hearingOsc) {
-                    setAudioParamSmooth(this.hearingOsc.frequency, this.resonanceFreq);
+                if (this.resonanceOsc) {
+                    setAudioParamSmooth(this.resonanceOsc.frequency, this.resonanceFreq);
                 }
 
                 if (needle) {
@@ -16647,7 +16141,7 @@ toggleChannelSwap: function() {
         lockResonancePeak: function() {
             if (!this.resonanceActive) return;
             clearInterval(this.resonanceInterval);
-            this.stopHearingTone();
+            this.stopResonanceTone();
             this.resonanceActive = false;
 
             PEQDB_Module.resonanceHz = Math.round(this.resonanceFreq);
@@ -16689,7 +16183,17 @@ toggleChannelSwap: function() {
             const sSlider = document.getElementById("eq-s8");
             const sNum = document.getElementById("eq-s8_num");
             const qSlider = document.getElementById("eq-q_m8");
-            const qNum = document.getElementById("eq-q_m8_num");
+            const qNum = document.getElementById(`eq-q_m8_num`);
+
+            // Snapshot band 8 before overwriting so the toast can offer Undo —
+            // the notch previously destroyed whatever the user had on this band
+            // with no way back.
+            const prevBand8 = {
+                hz: fInput ? fInput.value : null,
+                g: sSlider ? sSlider.value : null,
+                q: qSlider ? qSlider.value : null
+            };
+            const hadUserNotch = parseFloat(prevBand8.g) !== 0;
 
             if (fInput) fInput.value = PEQDB_Module.resonanceHz;
             if (sSlider) sSlider.value = -4.5;
@@ -16703,12 +16207,46 @@ toggleChannelSwap: function() {
             EQ_Module.isProgrammaticSliderUpdate = true;
             EQ_Module.updateSlider(8, 'main');
             EQ_Module.isProgrammaticSliderUpdate = false;
+            // updateSlider skipped its DSP push under the programmatic flag;
+            // send the notch to the worklet now so it is audible immediately.
+            if (EQ_Module.graphBuilt) {
+                EQ_Module.updateAudioConnections();
+            }
 
             EQ_Module.drawCurve();
-            showToast(`Corrective PEQ Notch applied at ${PEQDB_Module.resonanceHz} Hz!`, "🎯");
+            showToast(`Corrective PEQ Notch applied at ${PEQDB_Module.resonanceHz} Hz!`, "🎯", hadUserNotch ? {
+                action: {
+                    label: "Undo",
+                    onClick: () => {
+                        const b8 = EQ_Module.bands[8];
+                        const fi = document.getElementById("eq-f8");
+                        const ss = document.getElementById("eq-s8");
+                        const sn = document.getElementById("eq-s8_num");
+                        const qs = document.getElementById("eq-q_m8");
+                        const qn = document.getElementById("eq-q_m8_num");
+                        const fss = document.getElementById("eq-fs_m8");
+                        if (fi && prevBand8.hz !== null) fi.value = prevBand8.hz;
+                        if (ss && prevBand8.g !== null) ss.value = prevBand8.g;
+                        if (sn && prevBand8.g !== null) sn.value = parseFloat(prevBand8.g).toFixed(1);
+                        if (qs && prevBand8.q !== null) qs.value = prevBand8.q;
+                        if (qn && prevBand8.q !== null) qn.value = parseFloat(prevBand8.q).toFixed(2);
+                        if (fss && fi) {
+                            const restoreHz = parseFloat(fi.value);
+                            if (Number.isFinite(restoreHz)) fss.value = EQ_Module.logHzToSlider(restoreHz);
+                            else if (b8) fss.value = EQ_Module.logHzToSlider(b8.hz);
+                        }
+                        EQ_Module.isProgrammaticSliderUpdate = true;
+                        EQ_Module.updateSlider(8, 'main');
+                        EQ_Module.isProgrammaticSliderUpdate = false;
+                        if (EQ_Module.graphBuilt) EQ_Module.updateAudioConnections();
+                        EQ_Module.drawCurve();
+                        showToast("Band 8 restored.", "↩️");
+                    }
+                }
+            } : undefined);
         },
         resetResonance: function() {
-            this.stopHearingTone();
+            this.stopResonanceTone();
             clearInterval(this.resonanceInterval);
             this.resonanceActive = false;
 
@@ -16763,6 +16301,11 @@ toggleChannelSwap: function() {
             EQ_Module.isProgrammaticSliderUpdate = true;
             EQ_Module.updateSlider(8, 'main');
             EQ_Module.isProgrammaticSliderUpdate = false;
+            // Push the restored band-8 defaults to the worklet (skipped above
+            // while the programmatic flag was set).
+            if (EQ_Module.graphBuilt) {
+                EQ_Module.updateAudioConnections();
+            }
 
             EQ_Module.drawCurve();
             showToast("Ear Resonance Peak Tuner Reset", "🔄");
@@ -16896,7 +16439,10 @@ toggleChannelSwap: function() {
             if (this.resonanceActive) {
 
                 clearInterval(this.resonanceInterval);
-                this.stopHearingTone();
+                // The sweep oscillator created below is stored on
+                // resonanceOsc/resonanceGain � stopping hearingOsc here left the
+                // 6.4-9.6 kHz sweep tone running after toggle-off.
+                this.stopResonanceTone();
                 this.resonanceActive = false;
 
                 PEQDB_Module.resonanceHz = Math.round(this.resonanceFreq);
@@ -16929,14 +16475,14 @@ toggleChannelSwap: function() {
                     btn.className = "w-full bg-[#38bdf8]/10 border border-[#38bdf8]/30 text-sky-400 font-bold text-xs py-2 rounded transition-all active-btn";
                 }
 
-                this.hearingOsc = ctx.createOscillator();
-                this.hearingGain = ctx.createGain();
-                this.hearingOsc.type = 'sine';
-                this.hearingOsc.frequency.setValueAtTime(this.resonanceFreq, ctx.currentTime);
-                this.hearingGain.gain.setValueAtTime(0.06, ctx.currentTime);
+                this.resonanceOsc = ctx.createOscillator();
+                this.resonanceGain = ctx.createGain();
+                this.resonanceOsc.type = 'sine';
+                this.resonanceOsc.frequency.setValueAtTime(this.resonanceFreq, ctx.currentTime);
+                this.resonanceGain.gain.setValueAtTime(0.06, ctx.currentTime);
 
-                this.hearingOsc.connect(this.hearingGain).connect(SharedAudio.masterGain);
-                this.hearingOsc.start();
+                this.resonanceOsc.connect(this.resonanceGain).connect(SharedAudio.masterGain);
+                this.resonanceOsc.start();
 
                 let sweepDir = 1;
                 this.resonanceInterval = setInterval(() => {
@@ -16944,8 +16490,8 @@ toggleChannelSwap: function() {
                     if (this.resonanceFreq >= 9600) sweepDir = -1;
                     if (this.resonanceFreq <= 6400) sweepDir = 1;
 
-                    if (this.hearingOsc) {
-                        setAudioParamSmooth(this.hearingOsc.frequency, this.resonanceFreq);
+                    if (this.resonanceOsc) {
+                        setAudioParamSmooth(this.resonanceOsc.frequency, this.resonanceFreq);
                     }
                     if (btn) {
                         btn.textContent = `🎯 Mark Peak: ${Math.round(this.resonanceFreq)}Hz`;
@@ -16964,13 +16510,20 @@ toggleChannelSwap: function() {
             const masterVol = masterVolSlider ? parseFloat(masterVolSlider.value) / 100 : 0.5;
             const targetVolume = 0.04 * masterVol;
 
+            // Cache unit-amplitude noise (keyed only on sample rate) and
+            // apply the volume at play time via a gain node instead of
+            // baking it into the buffer -- baking it in meant the buffer
+            // was generated once at whatever volume happened to be current
+            // on the FIRST play, then reused verbatim (same cache key)
+            // forever after, so the Master Volume slider had no effect on
+            // this test tone from the second play onward.
             const cacheKey = 'noise_detail_' + ctx.sampleRate;
             if (!this.bufferCache[cacheKey]) {
                 const bufferSize = ctx.sampleRate * 3;
                 const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
                 const data = buffer.getChannelData(0);
                 for (let i = 0; i < bufferSize; i++) {
-                    data[i] = (Math.random() * 2 - 1) * targetVolume;
+                    data[i] = (Math.random() * 2 - 1);
                 }
                 this.bufferCache[cacheKey] = buffer;
             }
@@ -16984,18 +16537,25 @@ toggleChannelSwap: function() {
             filter.frequency.value = 12000;
             filter.Q.value = 1.0;
 
+            const noiseGain = ctx.createGain();
+            noiseGain.gain.value = targetVolume;
+
             noise.connect(filter);
-            filter.connect(SharedAudio.masterGain);
+            filter.connect(noiseGain);
+            noiseGain.connect(SharedAudio.masterGain);
             noise.start();
-            this.activeNodes.push(noise, filter);
+            this.activeNodes.push(noise, filter, noiseGain);
 
             noise.onended = () => {
                 noise.disconnect();
                 filter.disconnect();
+                noiseGain.disconnect();
                 const idx1 = this.activeNodes.indexOf(noise);
                 if (idx1 > -1) this.activeNodes.splice(idx1, 1);
                 const idx2 = this.activeNodes.indexOf(filter);
                 if (idx2 > -1) this.activeNodes.splice(idx2, 1);
+                const idx3 = this.activeNodes.indexOf(noiseGain);
+                if (idx3 > -1) this.activeNodes.splice(idx3, 1);
             };
             this.startImbalanceMeter();
         },
@@ -17066,9 +16626,6 @@ toggleChannelSwap: function() {
             osc.connect(panner).connect(gain).connect(SharedAudio.masterGain);
             osc.start();
             osc.stop(ctx.currentTime + 5.0);
-            osc.onended = () => {
-                this.activeNodes = this.activeNodes.filter(n => n !== osc && n !== panner && n !== gain);
-            };
             this.activeNodes.push(osc, panner, gain);
             this.startImbalanceMeter();
         },
@@ -17100,9 +16657,6 @@ toggleChannelSwap: function() {
             noise.connect(delay).connect(gainR).connect(merger, 0, 1);
             merger.connect(SharedAudio.masterGain);
             noise.start();
-            noise.onended = () => {
-                this.activeNodes = this.activeNodes.filter(n => n !== noise && n !== delay && n !== merger && n !== gainL && n !== gainR);
-            };
             this.activeNodes.push(noise, delay, merger, gainL, gainR);
             this.startImbalanceMeter();
         },
@@ -17132,9 +16686,6 @@ toggleChannelSwap: function() {
             osc.connect(gain).connect(panner).connect(SharedAudio.masterGain);
             osc.start();
             osc.stop(ctx.currentTime + 3);
-            osc.onended = () => {
-                this.activeNodes = this.activeNodes.filter(n => n !== osc && n !== panner && n !== gain);
-            };
             this.activeNodes.push(osc, panner, gain);
             this.startImbalanceMeter();
         },
@@ -17272,6 +16823,25 @@ loadSoundLibrary: async function() {
                     data[i] = Math.sin(t * Math.PI * 2 * 440) * 0.12;
                 }
             }
+
+            // Loop-seam crossfade for the noise generators: white/pink/brown are
+            // stochastic, so data[0] != data[len-1] and the wrap point produced
+            // an audible click every 4-second loop. Equal-power blend of the
+            // tail into the head makes the loop seamless.
+            if (type === 'white_noise' || type === 'pink_noise' || type === 'brown_noise') {
+                const fade = Math.min(Math.floor(ctx.sampleRate * 0.05), bufferSize >> 2);
+                if (fade > 1) {
+                    for (let i = 0; i < fade; i++) {
+                        const alpha = i / fade;
+                        const head = data[i];
+                        const tail = data[bufferSize - fade + i];
+                        const wHead = Math.sin(alpha * Math.PI / 2);
+                        const wTail = Math.cos(alpha * Math.PI / 2);
+                        data[i] = head * wHead + tail * wTail;
+                    }
+                }
+            }
+
             this.bufferCache[cacheKey] = buffer;
             return buffer;
         },
@@ -17336,18 +16906,28 @@ loadSoundLibrary: async function() {
             this.isDecoding = true;
             try {
                 const res = await fetch(`./sounds/${file}`);
-                if (!res.ok) throw new Error();
+                if (!res.ok) throw new Error('HTTP ' + res.status);
                 const arrayBuffer = await res.arrayBuffer();
                 const buffer = await ctx.decodeAudioData(arrayBuffer);
                 this.bufferCache[cacheKey] = buffer;
                 this.isDecoding = false;
                 return buffer;
             } catch (e) {
-
-                const type = file.replace('.mp3', '');
-                const backup = this.createSpatialBuffer(ctx, type);
-                this.bufferCache[cacheKey] = backup;
                 this.isDecoding = false;
+                // Surface the failure — a silent fallback here previously
+                // sounded like random sine tones with no hint why (packaged
+                // builds once shipped without sounds/ entirely). The synthesized
+                // backup is cached under its OWN key so a later retry of this
+                // file can still succeed once the asset is actually available.
+                console.warn(`[Soundstage] Could not load sounds/${file}:`, e.message || e, '— falling back to synthesized buffer.');
+                try { if (typeof showToast === 'function') showToast(`Could not load "${file}" — using built-in synth instead.`, "⚠️"); } catch (_) {}
+                const type = file.replace('.mp3', '');
+                const synthKey = 'spatial_' + type + '_' + ctx.sampleRate;
+                let backup = this.bufferCache[synthKey];
+                if (!backup) {
+                    backup = this.createSpatialBuffer(ctx, type);
+                    this.bufferCache[synthKey] = backup;
+                }
                 return backup;
             }
         },
@@ -17510,6 +17090,10 @@ loadSoundLibrary: async function() {
                 this.spatialActive = false;
                 Mascot.update();
         },
+        // NOTE: earlier duplicate definitions of toggleSpatialPlay /
+        // updatePlayerButtonsUI / handleSpatialFile were removed here — object
+        // literals keep the LAST key, so the copies further below were the live
+        // ones and these shadowed versions only invited drift.
         spatialReverbMix: 0.30,
         updateReverbMix: function(val) {
             const num = parseFloat(val);
@@ -17527,8 +17111,14 @@ loadSoundLibrary: async function() {
             }
             if (window.syncGlobalSliders) window.syncGlobalSliders();
         },
+        // updateSpatialVolume's real implementation is in the second spatial
+        // block below; these noops are the only definitions of their keys.
+        updateSpatialOverallVolume: function() {},
+        updateSpatialMusicVolume: function() {},
         updateVolumeSliderVisibility: function() {},
-		cycleSpatialWidth: function() {
+        // (duplicate cycleSpatialSource removed — the live definition is in the
+        // second spatial block below)
+	cycleSpatialWidth: function() {
         const curIdx = this.spatialWidthOptions.indexOf(this.spatialWidthLevel);
         const nextIdx = (curIdx + 1) % this.spatialWidthOptions.length;
         this.spatialWidthLevel = this.spatialWidthOptions[nextIdx];
@@ -17557,6 +17147,9 @@ loadSoundLibrary: async function() {
             EQ.updateStereoExpand(val);
         }
     },
+        // (duplicate cycleSpatialReverb removed — the live definition is in the
+        // second spatial block below)
+
         updateReverbDSPOnTheFly: function() {
             if (!this.spatialActive || !SharedAudio.ctx) return;
 
@@ -17595,6 +17188,10 @@ loadSoundLibrary: async function() {
             }
         },
         toggleSpatialPlay: function(playState) {
+            // Ignore presses while a custom track is still decoding — without
+            // this, double-pressing during decode started two BufferSources
+            // (startSpatialAudio's spatialActive guard can't see a source that
+            // hasn't been created yet).
             if (this.isDecoding) {
                 showToast("Decoding track, please wait...", "⏳");
                 return;
@@ -17914,7 +17511,14 @@ loadSoundLibrary: async function() {
             }, true);
         })();
 
-    const bootApp = async () => {
+    // Boot entry point. index.html injects this bundle via a dynamically
+    // created <script>, which is async by default — so this code can execute
+    // AFTER DOMContentLoaded has already fired. Registering a DOMContentLoaded
+    // listener unconditionally meant the entire boot sequence (module init,
+    // mathFilters allocation, audio element wiring) silently never ran in that
+    // case, leaving EQ.mathFilters empty (getCompositeFilterMagnitude crash)
+    // and EQ.audioEl null (drawViz crash). Run immediately when we're late.
+    const runAppBoot = async () => {
         const bootModules = [
             ['App', App],
             ['IEM_Module', IEM_Module],
@@ -17937,25 +17541,17 @@ loadSoundLibrary: async function() {
         if (window.EQ && EQ.setupPlaylist) {
             try { EQ.setupPlaylist(); } catch (err) { console.error('[Boot] Playlist preload failed:', err); }
         }
-        if (window.EQ && EQ._applyGaplessButton) {
-            try { EQ._applyGaplessButton(); } catch (err) { console.error('[Boot] Gapless button init failed:', err); }
-        }
-        if (window.EQ && EQ._applyCrossfadeButton) {
-            try { EQ._applyCrossfadeButton(); } catch (err) { console.error('[Boot] Crossfade button init failed:', err); }
-        }
 
         try { bootstrapAlphabetIndex(); } catch (err) { console.error('[Boot] Alphabet index init failed:', err); }
 
         if (window.EQ && EQ.injectExtraPresetsOnLoad) {
-            // Don't let a broken preset file kill the whole boot sequence.
-            try { EQ.injectExtraPresetsOnLoad(); }
-            catch (err) { console.error('[Boot] Extra presets injection failed:', err); }
+            EQ.injectExtraPresetsOnLoad();
         }
 
         setTimeout(() => {
             if (PEQDB_Module && PEQDB_Module.startBackgroundLoading) {
                 try {
-                    PEQDB_Module.startBackgroundLoading();
+
                 } catch (err) {
                     console.error('[Boot] startBackgroundLoading failed:', err);
                 }
@@ -18003,6 +17599,8 @@ loadSoundLibrary: async function() {
         if (window.syncGlobalSliders) window.syncGlobalSliders();
 
         App.loadDynamicFonts().then(() => {
+            return App.loadDynamicThemes();
+        }).then(() => {
             if (App.renderThemeToggles) App.renderThemeToggles();
             return EQ_Module.loadCustomVisualizerEffects();
         }).then(() => {
@@ -18019,14 +17617,19 @@ loadSoundLibrary: async function() {
             };
 
             if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', bootApp);
+                window.addEventListener('DOMContentLoaded', runAppBoot, { once: true });
             } else {
-                // Defer past the end of this script so every top-level const/let
-                // (FindEngine etc.) is fully initialized before boot reads them.
-                setTimeout(bootApp, 0);
+                // Bundle executed after DOMContentLoaded (async script injection):
+                // boot right away instead of waiting for an event that already
+                // fired. Deferred to a microtask because runAppBoot closes over
+                // consts (e.g. FindEngine) declared LATER in this bundle — calling
+                // it synchronously here would hit their temporal dead zone.
+                if (typeof queueMicrotask === 'function') queueMicrotask(() => runAppBoot());
+                else setTimeout(() => runAppBoot(), 0);
             }
 
             const FindEngine = {
+                canonicalCache: {},
                 isScanning: false,
                 currentBaselineIndex: 0,
                 isClonedModeActive: false,
@@ -18036,23 +17639,18 @@ loadSoundLibrary: async function() {
                 filterTags: new Set(),
                 selectedPicks: [],
                 approvedTagsList: [
-    "Basshead", "Treblehead", "Sub-Bass", "Punchy Bass", "Warm", "Neutral", 
-    "V-Shaped", "U-Shaped", "Balanced", "Bright", "Dark", "Detailed", 
-    "Resolving", "Technical", "Wide-Stage", "Good-Imaging", "Smooth", 
-    "Reference", "Studio-Monitoring", "Analytical", "Fun", "Relaxed", 
-    "Gaming", "Competitive-Gaming", "Vocal-Focused", "Budget", "Mid-Tier", 
-    "Premium", "Flagship", "Collab", "Limited-Edition"
-],
-tagEmojis: {
-    "Basshead": "💥", "Treblehead": "⚡", "Sub-Bass": "🌊", "Punchy Bass": "🥊", 
-    "Warm": "🌿", "Neutral": "⚖️", "V-Shaped": "🔺", "U-Shaped": "🧲", 
-    "Balanced": "☯️", "Bright": "✨", "Dark": "🌑", "Detailed": "💎", 
-    "Resolving": "🔍", "Technical": "🔬", "Wide-Stage": "🏟️", "Good-Imaging": "🔭", 
-    "Smooth": "🧈", "Reference": "📐", "Studio-Monitoring": "🎛️", "Analytical": "🧠", 
-    "Fun": "🔥", "Relaxed": "😌", "Gaming": "🎮", "Competitive-Gaming": "🏆", 
-    "Vocal-Focused": "🗣️", "Budget": "💰", "Mid-Tier": "🪙", "Premium": "👑", 
-    "Flagship": "🥇", "Collab": "🤝", "Limited-Edition": "🌟"
-},
+                    "Basshead", "Sub-Bass", "Punchy Bass", "Warm", "Neutral", "V-Shaped", "Balanced",
+                    "Bright", "Dark", "Detailed", "Resolving", "Technical", "Wide-Stage", "Good-Imaging",
+                    "Smooth", "Reference", "Analytical", "Fun", "Relaxed", "Gaming", "Competitive-Gaming",
+                    "Vocal-Focused", "Budget", "Mid-Tier", "Premium", "Flagship", "Collab", "Limited-Edition"
+                ],
+                tagEmojis: {
+                    "Basshead": "💥", "Sub-Bass": "🌊", "Punchy Bass": "🥊", "Warm": "🌿", "Neutral": "⚖️", "V-Shaped": "🔺", "Balanced": "☯️",
+                    "Bright": "✨", "Dark": "🌑", "Detailed": "💎", "Resolving": "🔍", "Technical": "🔬", "Wide-Stage": "🏟️", "Good-Imaging": "🔭",
+                    "Smooth": "🧈", "Reference": "📐", "Analytical": "🧠", "Fun": "🔥", "Relaxed": "😌", "Gaming": "🎮", "Competitive-Gaming": "🏆",
+                    "Vocal-Focused": "🗣️", "Budget": "💰", "Mid-Tier": "🪙", "Premium": "👑", "Flagship": "🥇", "Collab": "🤝", "Limited-Edition": "🌟",
+                    "Vintage": "📼"
+                },
 
                 _toggleCustomMenuPrefixed: function(prefix, keys, key) {
                     keys.forEach(k => {
@@ -18089,8 +17687,12 @@ tagEmojis: {
                     { val: 'Bluetooth', label: '<img src="icons/bluetooth.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> Bluetooth' },
                     { val: 'Detachable Cable', label: '<img src="icons/detach.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> Detachable Cable' },
                     { val: 'Fixed Cable', label: '<img src="icons/fixed.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> Fixed Cable' },
-                    { val: 'Proprietary', label: '<img src="icons/proprietary.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> Proprietary' },
-                    { val: 'Electrostatic', label: '<img src="icons/electro.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> Electrostatic' }
+                    { val: '3.5mm', label: '<img src="icons/3.5mm.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> 3.5mm' },
+                    { val: '4.4mm', label: '<img src="icons/4.4mm.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> 4.4mm' },
+                    { val: '6.35mm', label: '<img src="icons/6.35mm.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> 6.35mm' },
+                    { val: 'XLR', label: '<img src="icons/xlr.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> XLR' },
+                    { val: 'Electrostatic', label: '<img src="icons/electro.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block mr-1.5 anim-toggle-pop"> Electrostatic' },
+                    { val: 'Unknown', label: '<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none mr-1.5 anim-toggle-pop">❓</span> Unknown' }
                 ],
 
                 formFactorOptions: [
@@ -18129,239 +17731,6 @@ tagEmojis: {
                     return list;
                 },
 
-                // ---- Multi-select spec chips (form factor / driver / connector) ----
-                // State lives in the hidden inputs as JSON arrays: [] = no filter
-                // (all grayed out), ["DD","Planar"] = OR-union of selected chips.
-                readFilterList: function(prefix, key) {
-                    const el = document.getElementById(`${prefix}-filter-${key}`);
-                    if (!el) return [];
-                    const v = (el.value || '').trim();
-                    if (v === '' || v === 'any') return [];
-                    try {
-                        const arr = JSON.parse(v);
-                        return Array.isArray(arr) ? arr : [];
-                    } catch (e) {
-                        return [v];
-                    }
-                },
-
-                writeFilterList: function(prefix, key, list) {
-                    const el = document.getElementById(`${prefix}-filter-${key}`);
-                    if (el) el.value = JSON.stringify(list);
-                },
-
-                // Normalizes a filter value (raw input string / 'any' / array /
-                // JSON array string) into a plain list; [] means "no filter".
-                toFilterList: function(v) {
-                    if (v == null) return [];
-                    if (Array.isArray(v)) return v;
-                    const s = String(v).trim();
-                    if (s === '' || s === 'any') return [];
-                    try {
-                        const arr = JSON.parse(s);
-                        return Array.isArray(arr) ? arr : [s];
-                    } catch (e) {
-                        return [s];
-                    }
-                },
-
-                specChipLists: function(prefix, key) {
-                    if (key === 'driver') return this.driverOptions.filter(o => o.val !== 'any');
-                    if (key === 'connector') return this.connectorOptions.filter(o => o.val !== 'any');
-                    if (key === 'formfactor') return ((prefix === 'ug') ? this.ugFormFactorOptions : this.formFactorOptions).filter(o => o.val !== 'any');
-                    return [];
-                },
-
-                _chipIconFromLabel: function(label) {
-                    const img = String(label).match(/^<img[^>]*>/);
-                    if (img) return img[0];
-                    const em = String(label).match(/<span[^>]*>([^<]*)<\/span>/);
-                    if (em) return `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${em[1]}</span>`;
-                    return String(label);
-                },
-
-                _chipTooltip: function(label) {
-                    return String(label).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-                },
-
-                renderSpecChipGrid: function(prefix, key) {
-                    const grid = document.getElementById(`grid-${prefix}-filter-${key}`);
-                    if (!grid) return;
-                    const sel = this.readFilterList(prefix, key);
-                    const list = this.specChipLists(prefix, key);
-                    let html = '';
-                    for (const o of list) {
-                        const on = sel.indexOf(o.val) !== -1;
-                        html += `<button type="button" onclick="FindEngine.toggleSpecChip('${prefix}','${key}','${escJs(o.val)}')" data-tooltip="${esc(this._chipTooltip(o.label))}" data-value="${esc(o.val)}" class="no-tactile find-pick-badge spec-chip${on ? ' on' : ''}" aria-pressed="${on ? 'true' : 'false'}">${this._chipIconFromLabel(o.label)}</button>`;
-                    }
-                    grid.innerHTML = html;
-                },
-
-                renderAllSpecChipGrids: function() {
-                    ['find', 'gk', 'ug', 'eg'].forEach(p => {
-                        ['driver', 'connector', 'formfactor'].forEach(k => this.renderSpecChipGrid(p, k));
-                    });
-                },
-
-                clearSpecChips: function(prefix, key) {
-                    this.writeFilterList(prefix, key, []);
-                    this.renderSpecChipGrid(prefix, key);
-                    this._triggerSpecLiveUpdate(prefix);
-                },
-
-                toggleSpecChip: function(prefix, key, value) {
-                    const sel = this.readFilterList(prefix, key);
-                    const idx = sel.indexOf(value);
-                    const wasAdded = idx === -1;
-                    if (wasAdded) sel.push(value); else sel.splice(idx, 1);
-                    this.writeFilterList(prefix, key, sel);
-                    this.renderSpecChipGrid(prefix, key);
-                    if (wasAdded) this._applySpecSmartRules(prefix, key, value);
-                    this._triggerSpecLiveUpdate(prefix);
-                },
-
-                // Auto-corrects impossible pairings the moment a chip is toggled
-                // on (all rules are backed by actual database cross-tabs, so a
-                // combo left untouched is guaranteed to have entries). Every
-                // change ships with an undo toast.
-                _applySpecSmartRules: function(prefix, key, value) {
-                    const before = {
-                        driver: this.readFilterList(prefix, 'driver'),
-                        connector: this.readFilterList(prefix, 'connector'),
-                        formfactor: this.readFilterList(prefix, 'formfactor')
-                    };
-                    const changes = [];
-                    const wirelessFF = ['Wireless Earbuds (TWS)', 'Wireless Over-Ear Headphones'];
-                    const wiredConns = ['2-pin', 'MMCX', 'QDC', 'A2DC', 'Detachable Cable', 'Fixed Cable', 'Proprietary', 'Electrostatic'];
-
-                    if (key === 'formfactor') {
-                        let conns = this.readFilterList(prefix, 'connector');
-                        const removed = [];
-                        if (wirelessFF.indexOf(value) !== -1) {
-                            const dropped = conns.filter(c => wiredConns.indexOf(c) !== -1);
-                            conns = conns.filter(c => wiredConns.indexOf(c) === -1);
-                            if (conns.indexOf('Bluetooth') === -1) conns.push('Bluetooth');
-                            changes.push({ kind: 'connector', removed: dropped, added: ['Bluetooth'] });
-                        } else {
-                            if (conns.indexOf('Bluetooth') !== -1) removed.push('Bluetooth');
-                            conns = conns.filter(c => c !== 'Bluetooth');
-                            if (value === 'IEM' || value === 'Earbuds (Wired)') {
-                                if (conns.indexOf('Electrostatic') !== -1) removed.push('Electrostatic');
-                                conns = conns.filter(c => c !== 'Electrostatic');
-                            }
-                            if (removed.length) changes.push({ kind: 'connector', removed: removed, added: [] });
-                        }
-                        this.writeFilterList(prefix, 'connector', conns);
-                    } else if (key === 'connector') {
-                        let ffs = this.readFilterList(prefix, 'formfactor');
-                        const removed = [];
-                        if (value === 'Bluetooth') {
-                            const dropped = ffs.filter(f => wirelessFF.indexOf(f) !== -1);
-                            ffs = ffs.filter(f => wirelessFF.indexOf(f) === -1);
-                            if (dropped.length) changes.push({ kind: 'formfactor', removed: dropped, added: [] });
-                        } else if (value === 'Electrostatic') {
-                            const invalidFF = ['IEM', 'Earbuds (Wired)', 'Wireless Earbuds (TWS)', 'Wireless Over-Ear Headphones'];
-                            const dropped = ffs.filter(f => invalidFF.indexOf(f) !== -1);
-                            ffs = ffs.filter(f => invalidFF.indexOf(f) === -1);
-                            if (dropped.length) changes.push({ kind: 'formfactor', removed: dropped, added: [] });
-                        } else {
-                            const dropped = ffs.filter(f => wirelessFF.indexOf(f) !== -1);
-                            ffs = ffs.filter(f => wirelessFF.indexOf(f) === -1);
-                            if (dropped.length) changes.push({ kind: 'formfactor', removed: dropped, added: [] });
-                        }
-                        this.writeFilterList(prefix, 'formfactor', ffs);
-                    } else if (key === 'driver' && value === 'PZT') {
-                        const drv = this.readFilterList(prefix, 'driver');
-                        const added = [];
-                        if (drv.indexOf('Hybrid') === -1) { drv.push('Hybrid'); added.push('Hybrid'); }
-                        if (drv.indexOf('Tribrid') === -1) { drv.push('Tribrid'); added.push('Tribrid'); }
-                        this.writeFilterList(prefix, 'driver', drv);
-                        if (added.length) changes.push({ kind: 'driver', removed: [], added: added });
-                    }
-
-                    if (changes.length) {
-                        this.renderSpecChipGrid(prefix, 'driver');
-                        this.renderSpecChipGrid(prefix, 'connector');
-                        this.renderSpecChipGrid(prefix, 'formfactor');
-                        const parts = [];
-                        changes.forEach(ch => {
-                            const bits = [];
-                            if (ch.removed.length) bits.push(ch.removed.join(', ') + ' removed');
-                            if (ch.added.length) bits.push(ch.added.join(', ') + ' added');
-                            parts.push(bits.join(' · '));
-                        });
-                        showToast(`${parts.join(' — ')} · ${this._smartRuleReason(changes)}`, '🧩', {
-                            duration: 6000,
-                            action: {
-                                label: '↩ Undo',
-                                onClick: () => {
-                                    this.writeFilterList(prefix, 'driver', before.driver);
-                                    this.writeFilterList(prefix, 'connector', before.connector);
-                                    this.writeFilterList(prefix, 'formfactor', before.formfactor);
-                                    this.renderSpecChipGrid(prefix, 'driver');
-                                    this.renderSpecChipGrid(prefix, 'connector');
-                                    this.renderSpecChipGrid(prefix, 'formfactor');
-                                    this._triggerSpecLiveUpdate(prefix);
-                                }
-                            }
-                        });
-                    }
-                },
-
-                _smartRuleReason: function(changes) {
-                    for (const ch of changes) {
-                        if (ch.kind === 'connector' && ch.added.indexOf('Bluetooth') !== -1) return 'wireless form factors always use Bluetooth';
-                        if (ch.kind === 'connector' && ch.removed.indexOf('Bluetooth') !== -1) return 'Bluetooth pairs with wireless form factors only';
-                        if (ch.kind === 'connector' && ch.removed.indexOf('Electrostatic') !== -1) return 'Electrostatic connectors appear only on Over-Ear Headphones (Wired)';
-                        if (ch.kind === 'formfactor' && ch.removed.length) return 'that combination would return no matches';
-                        if (ch.kind === 'driver' && ch.added.length) return 'PZT only exists inside Hybrid/Tribrid configs';
-                    }
-                    return 'adjusted for a valid combination';
-                },
-
-                _triggerSpecLiveUpdate: function(prefix) {
-                    if (prefix === 'ug' && this._upgradeHasRun && this.selectedUpgradeBaseIemId) {
-                        this._debouncedRun(this.renderUpgradePathway, 'ug');
-                    } else if (prefix === 'gk' && this._gkHasRun && this.selectedGkFlagshipId) {
-                        this._debouncedRun(this.scanGiantKillers, 'gk');
-                    } else if (prefix === 'eg' && this._egHasRun) {
-                        this._debouncedRun(this.scanEndgameSets, 'eg');
-                    }
-                },
-
-                // ---- OR-union match semantics for the multi-select lists ----
-                matchesDriverList: function(db, vals) {
-                    if (!vals || vals.length === 0) return true;
-                    if (!db) return false;
-                    const type = db.driver_type || '';
-                    if (vals.indexOf(type) !== -1) return true;
-                    if (!type) {
-                        const techs = this.parseDriverConfig(db.driver_config);
-                        return techs.length === 1 && vals.indexOf(techs[0]) !== -1;
-                    }
-                    return false;
-                },
-
-                matchesConnectorList: function(db, vals) {
-                    if (!vals || vals.length === 0) return true;
-                    if (!db || !db.connector) return false;
-                    const dbArr = Array.isArray(db.connector) ? db.connector : [db.connector];
-                    const dbStr = dbArr.join(' ').toLowerCase();
-                    return vals.some(v => {
-                        const t = String(v).toLowerCase();
-                        if (t === 'mmcx') return dbStr.indexOf('mmcx') !== -1;
-                        if (t === '2-pin') return dbStr.indexOf('2-pin') !== -1 || dbStr.indexOf('2pin') !== -1 || dbStr.indexOf('0.78') !== -1;
-                        if (t === 'qdc') return dbStr.indexOf('qdc') !== -1;
-                        return dbStr.indexOf(t) !== -1;
-                    });
-                },
-
-                matchesFormFactorList: function(db, vals) {
-                    if (!vals || vals.length === 0) return true;
-                    const ff = String((db && db.form_factor) || 'IEM').toLowerCase().trim();
-                    return vals.some(v => ff === String(v).toLowerCase().trim());
-                },
-
                 cycleCustomOption: function(prefix, key, dir) {
                     let optionsList = [];
                     if (key === 'driver') optionsList = this.driverOptions;
@@ -18387,18 +17756,6 @@ tagEmojis: {
                     this._selectCustomOptionPrefixed(prefix, key, selected.val, selected.label);
                 },
 
-                // Coalesce rapid filter/spec changes into a single re-scan (slider
-                // drags fire on every input event; a full rescan per tick would
-                // thrash the worker and main thread).
-                _debouncedRun: function(fn, key, delay) {
-                    const timerKey = '_deb_' + key;
-                    if (this[timerKey]) clearTimeout(this[timerKey]);
-                    this[timerKey] = setTimeout(() => {
-                        this[timerKey] = null;
-                        fn.call(this);
-                    }, delay || 250);
-                },
-
                 _selectCustomOptionPrefixed: function(prefix, key, value, htmlLabel) {
                     const input = document.getElementById(`${prefix}-filter-${key}`);
                     const label = document.getElementById(`label-${prefix}-filter-${key}`);
@@ -18410,26 +17767,18 @@ tagEmojis: {
                     // Once a tab has run, spec changes live-update the results instead
                     // of silently waiting for the user to re-press the button.
                     if (prefix === 'ug' && this._upgradeHasRun && this.selectedUpgradeBaseIemId) {
-                        this._debouncedRun(this.renderUpgradePathway, 'ug');
+                        this.renderUpgradePathway();
                     } else if (prefix === 'gk' && this._gkHasRun && this.selectedGkFlagshipId) {
-                        this._debouncedRun(this.scanGiantKillers, 'gk');
-                    } else if (prefix === 'eg' && this._egHasRun) {
-                        this._debouncedRun(this.scanEndgameSets, 'eg');
+                        this.scanGiantKillers();
                     }
                 },
 
                 _pickGroupList: function() {
                     const tags = this.approvedTagsList || [];
                     const tagOf = (name) => ({ kind: 'meta', value: name, emoji: this.tagEmojis[name] || '🏷️' });
-                    const soundTuning = [
-    'Basshead', 'Treblehead', 'Sub-Bass', 'Punchy Bass', 'Warm', 
-    'Neutral', 'V-Shaped', 'U-Shaped', 'Balanced', 'Bright', 
-    'Dark', 'Detailed', 'Resolving', 'Technical', 'Wide-Stage', 
-    'Good-Imaging', 'Smooth', 'Reference', 'Studio-Monitoring', 
-    'Analytical', 'Fun', 'Relaxed', 'Vocal-Focused'
-];
-const special = ['Budget', 'Mid-Tier', 'Premium', 'Flagship', 'Collab', 'Limited-Edition'];
-const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
+                    const soundTuning = ['Basshead', 'Sub-Bass', 'Punchy Bass', 'Warm', 'Neutral', 'V-Shaped', 'Balanced', 'Bright', 'Dark', 'Detailed', 'Resolving', 'Technical', 'Wide-Stage', 'Good-Imaging', 'Smooth', 'Reference', 'Analytical', 'Fun', 'Relaxed', 'Vocal-Focused'];
+                    const special = ['Budget', 'Mid-Tier', 'Premium', 'Flagship', 'Collab', 'Limited-Edition'];
+                    const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     const known = new Set([...soundTuning, ...special, ...gamingAttrs]);
                     const leftover = tags.filter(t => !known.has(t));
                     const musicItems = (this.genreFamilies || []).map(f => { const v = f.musicVariants[0]; return v ? { kind: 'music', value: v.name, emoji: v.emoji } : null; }).filter(Boolean);
@@ -18443,12 +17792,6 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     return groups;
                 },
 
-                // Normalizes a tag string for comparison so cosmetic differences
-                // (hyphens, spaces, casing - e.g. "Treble-Head" vs "Treblehead")
-                // never cause a real tag match to be missed.
-                _normTag: function(s) {
-                    return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                },
                 _pickEmojiFor: function(kind, value) {
                     let emoji = '🏷️';
                     this._pickGroupList().forEach(g => g.items.forEach(p => { if (p.kind === kind && p.value === value) emoji = p.emoji; }));
@@ -18456,43 +17799,40 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                 },
 
                 pickFx: {
-    'Basshead': 'basshead', 'Treblehead': 'treblehead', 'Sub-Bass': 'subbass', 'Punchy Bass': 'punch', 'Warm': 'warm',
-    'Neutral': 'neutral', 'V-Shaped': 'vshape', 'U-Shaped': 'ushape', 'Balanced': 'balanced', 'Bright': 'bright',
-    'Dark': 'dark', 'Detailed': 'detailed', 'Resolving': 'resolving', 'Technical': 'technical',
-    'Wide-Stage': 'widestage', 'Good-Imaging': 'imaging', 'Smooth': 'smooth', 'Reference': 'reference',
-    'Studio-Monitoring': 'studiomonitor', 'Analytical': 'analytical', 'Fun': 'fun', 'Relaxed': 'relaxed', 'Vocal-Focused': 'vocal',
-    'Hip-Hop': 'hiphop', 'EDM': 'edm', 'Reggae': 'reggae', 'Pop': 'pop', 'Disco': 'disco',
-    'Techno': 'techno', 'Synthwave': 'synthwave', 'Rock': 'rock', 'Jazz': 'jazz', 'World': 'world',
-    'Classical': 'classical', 'Folk': 'folk', 'Indie': 'indie', 'Lo-Fi': 'lofi', 'ASMR': 'asmr',
-    'Cinematic': 'cinematic', 'Zombie': 'zombie', 'Racing': 'racing', 'Adventure': 'adventure',
-    'RPG': 'rpg', 'Roguelike': 'roguelike', 'Sci-Fi': 'scifi', 'Tactical': 'tactical',
-    'Action': 'action', 'MMO': 'mmo', 'Sports': 'sports', 'Strategy': 'strategy', 'Cozy': 'cozy',
-    'Horror': 'horror', 'Puzzle': 'puzzle', 'Arcade': 'arcade', 'FPS': 'fps',
-    'Platformer': 'platformer',
-    'Gaming': 'gaming', 'Competitive-Gaming': 'compgaming',
-    'Budget': 'budget', 'Mid-Tier': 'midtier', 'Premium': 'premium', 'Flagship': 'flagship',
-    'Collab': 'collab', 'Limited-Edition': 'limited'
-},
+                    'Basshead': 'basshead', 'Sub-Bass': 'subbass', 'Punchy Bass': 'punch', 'Warm': 'warm',
+                    'Neutral': 'neutral', 'V-Shaped': 'vshape', 'Balanced': 'balanced', 'Bright': 'bright',
+                    'Dark': 'dark', 'Detailed': 'detailed', 'Resolving': 'resolving', 'Technical': 'technical',
+                    'Wide-Stage': 'widestage', 'Good-Imaging': 'imaging', 'Smooth': 'smooth', 'Reference': 'reference',
+                    'Analytical': 'analytical', 'Fun': 'fun', 'Relaxed': 'relaxed', 'Vocal-Focused': 'vocal',
+                    'Hip-Hop': 'hiphop', 'EDM': 'edm', 'Reggae': 'reggae', 'Pop': 'pop', 'Disco': 'disco',
+                    'Techno': 'techno', 'Synthwave': 'synthwave', 'Rock': 'rock', 'Jazz': 'jazz', 'World': 'world',
+                    'Classical': 'classical', 'Folk': 'folk', 'Indie': 'indie', 'Lo-Fi': 'lofi', 'ASMR': 'asmr',
+                    'Cinematic': 'cinematic', 'Zombie': 'zombie', 'Racing': 'racing', 'Adventure': 'adventure',
+                    'RPG': 'rpg', 'Roguelike': 'roguelike', 'Sci-Fi': 'scifi', 'Tactical': 'tactical',
+                    'Action': 'action', 'MMO': 'mmo', 'Sports': 'sports', 'Strategy': 'strategy', 'Cozy': 'cozy',
+                    'Horror': 'horror', 'Puzzle': 'puzzle', 'Arcade': 'arcade', 'FPS': 'fps',
+                    'Gaming': 'gaming', 'Competitive-Gaming': 'compgaming',
+                    'Budget': 'budget', 'Mid-Tier': 'midtier', 'Premium': 'premium', 'Flagship': 'flagship',
+                    'Collab': 'collab', 'Limited-Edition': 'limited', 'Vintage': 'vintage'
+                },
 
                 renderPickGrid: function() {
                     const grid = document.getElementById('find-pick-grid');
                     if (!grid) return;
                     const selected = this.selectedPicks || [];
-                    const findSel = p => selected.find(s => s.kind === p.kind && s.value === p.value);
+                    const isSel = p => selected.some(s => s.kind === p.kind && s.value === p.value);
                     let html = '';
                     this._pickGroupList().forEach(group => {
                         if (!group.items.length) return;
                         html += `<div class="pick-group">
-                            <span class="pick-group-label ${group.cls || 'text-zinc-400'}">${group.title}</span>
+                            <span class="pick-group-label ${group.cls || 'text-zinc-400'}">${group.emoji} ${group.title}</span>
                             <div class="pick-group-grid">`;
                         group.items.forEach(p => {
-                            const sel = findSel(p);
-                            const on = !!sel;
+                            const on = isSel(p);
                             const fx = this.pickFx[p.value] || '';
                             const playing = on && p.value === this._lastFx ? ' fx-play' : '';
-                            const stateClass = on ? 'on' : '';
-                            html += `<button type="button" onclick="FindEngine.togglePick('${escJs(p.kind)}','${escJs(p.value)}')" data-tooltip="${esc(p.value)}" data-value="${esc(p.value)}" data-fx="${esc(fx)}" class="no-tactile find-pick-badge ${stateClass}${playing}" aria-pressed="${on ? 'true' : 'false'}">
-                                <span class="emoji-font vibrant-emoji leading-none pointer-events-none">${esc(p.emoji)}</span>
+                            html += `<button type="button" onclick="FindEngine.togglePick('${p.kind}','${p.value.replace(/'/g, "\\'")}')" data-tooltip="${p.value}" data-value="${p.value}" data-fx="${fx}" class="no-tactile find-pick-badge ${on ? 'on' : ''}${playing}" aria-pressed="${on}">
+                                <span class="emoji-font vibrant-emoji leading-none pointer-events-none">${p.emoji}</span>
                             </button>`;
                         });
                         html += `</div></div>`;
@@ -18503,20 +17843,17 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                 },
 
                 fitPickGrid: function() {
+                    // Must match --pick-emoji in app.css (#find-pick-grid);
+                    // FX decorations scale off this variable.
                     const grid = document.getElementById('find-pick-grid');
-                    const pickSection = document.getElementById('find-pick-section');
-                    if (!grid || !pickSection || pickSection.classList.contains('hidden')) return;
-                    grid.style.setProperty('--pick-emoji', '20px');
+                    if (grid) grid.style.setProperty('--pick-emoji', '19px');
                 },
 
-                // Two-state toggle: off (grayed out, included in results by
-                // default) -> Include (highlighted, narrows results to those
-                // carrying this tag/genre) -> off.
                 togglePick: function(kind, value) {
                     const picks = this.selectedPicks || [];
                     const idx = picks.findIndex(p => p.kind === kind && p.value === value);
                     if (idx === -1) {
-                        picks.push({ kind, value, emoji: this._pickEmojiFor(kind, value), mode: 'include' });
+                        picks.push({ kind, value, emoji: this._pickEmojiFor(kind, value) });
                         this._lastFx = value;
                     } else {
                         picks.splice(idx, 1);
@@ -18556,8 +17893,8 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     for (const p of picks) {
                         if (p.kind === 'meta') {
                             if (dbEntry && dbEntry.tags && Array.isArray(dbEntry.tags)) {
-                                const reqNorm = this._normTag(p.value);
-                                const hasTag = dbEntry.tags.some(t => { const tn = this._normTag(t); return tn.includes(reqNorm) || reqNorm.includes(tn); });
+                                const reqLower = String(p.value).toLowerCase();
+                                const hasTag = dbEntry.tags.some(t => { const tl = String(t).toLowerCase(); return tl.includes(reqLower) || reqLower.includes(tl); });
                                 if (hasTag) count++;
                             }
                         } else if (p.kind === 'music') {
@@ -18569,30 +17906,6 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         }
                     }
                     return count;
-                },
-                // Boolean short-circuit version of countPickMatches, used to test
-                // Exclude-mode picks (anti-recommendations) where a single hit is
-                // enough to drop the candidate - no need to keep counting.
-                hasAnyPickMatch: function(item, dbEntry, picks) {
-                    picks = picks || [];
-                    if (!picks.length) return false;
-                    let music = null, game = null;
-                    for (const p of picks) {
-                        if (p.kind === 'meta') {
-                            if (dbEntry && dbEntry.tags && Array.isArray(dbEntry.tags)) {
-                                const reqNorm = this._normTag(p.value);
-                                const hasTag = dbEntry.tags.some(t => { const tn = this._normTag(t); return tn.includes(reqNorm) || reqNorm.includes(tn); });
-                                if (hasTag) return true;
-                            }
-                        } else if (p.kind === 'music') {
-                            if (!music) music = this.determineIemGenreMatch(item, dbEntry);
-                            if (music && music.name === p.value) return true;
-                        } else if (p.kind === 'game') {
-                            if (!game) game = this.determineIemGameGenreMatch(item, dbEntry);
-                            if (game && game.name === p.value) return true;
-                        }
-                    }
-                    return false;
                 },
                 selectCustomOption: function(key, value, htmlLabel) {
                     this._selectCustomOptionPrefixed('find', key, value, htmlLabel);
@@ -18616,8 +17929,12 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     "A2DC": '<img src="icons/a2dc.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
                     "Fixed Cable": '<img src="icons/fixed.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
                     "Detachable Cable": '<img src="icons/detach.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
-                    "Proprietary": '<img src="icons/proprietary.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
-                    "Electrostatic": '<img src="icons/electro.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">'
+                    "3.5mm": '<img src="icons/3.5mm.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
+                    "4.4mm": '<img src="icons/4.4mm.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
+                    "6.35mm": '<img src="icons/6.35mm.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
+                    "XLR": '<img src="icons/xlr.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
+                    "Electrostatic": '<img src="icons/electro.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
+                    "Unknown": "❓"
                 },
                 formFactorEmojis: {
                     'IEM': '<img src="icons/iem.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">',
@@ -18629,21 +17946,18 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                 getTagEmoji: function(tagStr) {
                     if (!tagStr) return '🏷️';
                     const emojiMatch = tagStr.match(/^(\p{Extended_Pictographic}|\p{Emoji})/u);
-                    if (emojiMatch) return emojiMatch[0];
-                    const cleanKey = tagStr.toLowerCase().trim().replace(/[\s_]+/g, '-');
+                    if (emojiMatch) return '';
+                    const cleanKey = tagStr.toLowerCase().trim().replace(/_/g, '-');
                     const emojiMap = {
-                        'basshead': '💥', 'treble-head': '⚡', 'treblehead': '⚡', 'treble head': '⚡',
-                        'sub-bass': '🌊', 'sub bass': '🌊', 'punchy-bass': '🥊', 'punchy bass': '🥊',
+                        'basshead': '💥', 'sub-bass': '🌊', 'sub bass': '🌊', 'punchy-bass': '🥊', 'punchy bass': '🥊',
                         'warm': '🌿', 'warm-tilt': '🌿', 'neutral': '⚖️', 'v-shaped': '🔺', 'v-shape': '🔺',
-                        'u-shaped': '🧲', 'u-shape': '🧲', 'ushaped': '🧲', 'ushape': '🧲', 'balanced': '☯️',
-                        'bright': '✨', 'dark': '🌑', 'detailed': '💎', 'detail': '💎', 'resolving': '🔍',
-                        'technical': '🔬', 'wide-stage': '🏟️', 'soundstage': '🏟️', 'good-imaging': '🔭',
-                        'imaging': '🔭', 'smooth': '🧈', 'reference': '📐', 'studio-monitoring': '🎛️',
-                        'studio monitoring': '🎛️', 'studiomonitoring': '🎛️', 'studio-monitor': '🎛️', 'studio monitor': '🎛️',
+                        'balanced': '☯️', 'bright': '✨', 'dark': '🌑', 'detailed': '💎', 'detail': '💎',
+                        'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️', 'soundstage': '🏟️',
+                        'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '📐',
                         'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮',
-                        'competitive-gaming': '🏆', 'competitive gaming': '🏆', 'vocal-focused': '🗣️', 'vocal': '🎤',
-                        'budget': '💰', 'mid-tier': '🪙', 'mid tier': '🪙', 'premium': '👑', 'flagship': '🥇',
-                        'collab': '🤝', 'limited-edition': '🌟', 'limited edition': '🌟'
+                        'competitive-gaming': '🏆', 'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰',
+                        'mid-tier': '🪙', 'premium': '👑', 'flagship': '🥇', 'collab': '🤝',
+                        'limited-edition': '🌟', 'vintage': '📼'
                     };
                     return emojiMap[cleanKey] || '🏷️';
                 },
@@ -18656,12 +17970,12 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     { id: 'basshead', label: 'Basshead', emoji: '💥' },
                     { id: 'vshape', label: 'V-Shape', emoji: '🔺' },
                     { id: 'gaming', label: 'Gaming', emoji: '🎮' },
-                    { id: 'flat', label: 'Flat Neutral', emoji: '📏' },
-                    { id: 'custom', label: 'Custom', emoji: '🛠️' }
+                    { id: 'flat', label: 'Flat Neutral', emoji: '📏' }
                 ],
 
                 init: async function() {
                     this.bindEvents();
+                    this.loadCachedCanonicalProfiles();
                     this.checkInitialProgress();
 
                     await this.loadDatabase();
@@ -18670,12 +17984,12 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     const btn = document.getElementById('find-baseline-btn');
                     if (btn) {
                         const opt = this.baselineOptions[0];
-                        btn.textContent = `${opt.emoji} ${opt.label}`;
+                        btn.textContent = `${opt.emoji} Baseline: ${opt.label}`;
                     }
 
                     this.loadSavedTasteFavorites();
                     this.renderPickGrid();
-                    this.renderAllSpecChipGrids();
+                    this.renderSpecChipGrids();
                     window.addEventListener('resize', () => this.fitPickGrid());
 
                     setTimeout(() => {
@@ -18705,29 +18019,14 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                 },
 
                 _freqWeight: function(f) {
-                    // Shared perceptual weight table (see CurveUtils), keeps
-                    // the Find tab's tuning/upgrade scoring consistent with
-                    // the similar-curve ranking and the genre classifier.
-                    return CurveUtils.weightFor(f);
+                    // Single source of truth: CurveUtils.freqWeight
+                    // (js/utils.js), shared verbatim with find-worker.js.
+                    return CurveUtils.freqWeight(f);
                 },
 
                 _scoreInterp: function(interp, targetInterp, freqs, weighted = true) {
-                    let numK = 0, denK = 0;
-                    for (let i = 0; i < freqs.length; i++) {
-                        if (freqs[i] >= 100 && freqs[i] <= 8000) {
-                            const w = weighted ? this._freqWeight(freqs[i]) : 1.0;
-                            numK += (targetInterp[i] - interp[i]) * w;
-                            denK += w;
-                        }
-                    }
-                    const k = denK > 0 ? numK / denK : 0;
-                    let errSum = 0, wSum = 0;
-                    for (let i = 0; i < freqs.length; i++) {
-                        const w = weighted ? this._freqWeight(freqs[i]) : 1.0;
-                        errSum += Math.abs((interp[i] + k) - targetInterp[i]) * w;
-                        wSum += w;
-                    }
-                    return Math.max(0, Math.min(100, 100 * Math.exp(-0.11 * (errSum / wSum))));
+                    // Single source of truth: CurveUtils.scoreInterp.
+                    return CurveUtils.scoreInterp(interp, targetInterp, freqs, weighted);
                 },
 
                 calculateCurveMatchScore: function(candidateData, targetInterp, freqs, weighted = true) {
@@ -18766,6 +18065,125 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     return db.driver_type === filterDriverVal;
                 },
 
+                // ---- Multi-select spec chips (form factor / driver / connector) ----
+                // Chip values are the CANONICAL strings used in database.json
+                // (verified against the live catalog), so filtering is an exact
+                // case-insensitive match — no substring guessing.
+                SPEC_CHIP_DEFS: {
+                    formfactor: [
+                        { v: 'IEM', icon: 'iem.png' },
+                        { v: 'Wireless Earbuds (TWS)', icon: 'tws.png' },
+                        { v: 'Earbuds (Wired)', icon: 'earbud.png' },
+                        { v: 'Wireless Over-Ear Headphones', icon: 'wireless.png' },
+                        { v: 'Over-Ear Headphones (Wired)', icon: 'headphone.png' }
+                    ],
+                    driver: [
+                        { v: 'DD', icon: 'dd.png' },
+                        { v: 'BA', icon: 'ba.png' },
+                        { v: 'BC', icon: 'bc.png' },
+                        { v: 'Planar', icon: 'planar.png' },
+                        { v: 'Hybrid', icon: 'hybrid.png' },
+                        { v: 'Tribrid', icon: 'trybrid.png' },
+                        { v: 'EST', icon: 'est.png' },
+                        { v: 'MEMS', icon: 'mems.png' },
+                        { v: 'PZT', icon: 'pzt.png' }
+                    ],
+                    connector: [
+                        { v: 'Bluetooth', icon: 'bluetooth.png' },
+                        { v: '2-pin', icon: '2pin.png' },
+                        { v: 'QDC', icon: 'qdc.png' },
+                        { v: 'MMCX', icon: 'mmcx.png' },
+                        { v: 'A2DC', icon: 'a2dc.png' },
+                        { v: 'Fixed Cable', icon: 'fixed.png' },
+                        { v: 'Detachable Cable', icon: 'detach.png' },
+                        { v: 'Proprietary', icon: 'proprietary.png' },
+                        { v: 'Electrostatic', icon: 'electro.png' }
+                    ]
+                },
+
+                _getSpecSelection: function(prefix, kind) {
+                    try {
+                        const el = document.getElementById(prefix + '-filter-' + kind);
+                        if (!el) return [];
+                        const parsed = JSON.parse(el.value || '[]');
+                        return Array.isArray(parsed) ? parsed.filter(v => typeof v === 'string' && v) : [];
+                    } catch (_) {
+                        return [];
+                    }
+                },
+
+                _setSpecSelection: function(prefix, kind, values) {
+                    const el = document.getElementById(prefix + '-filter-' + kind);
+                    if (el) el.value = JSON.stringify(values);
+                },
+
+                toggleSpecChip: function(prefix, kind, value, btn) {
+                    const cur = this._getSpecSelection(prefix, kind);
+                    const idx = cur.indexOf(value);
+                    if (idx === -1) cur.push(value); else cur.splice(idx, 1);
+                    this._setSpecSelection(prefix, kind, cur);
+                    if (btn) btn.classList.toggle('on', idx === -1);
+                },
+
+                renderSpecChipGrids: function() {
+                    // Chips are rendered EXACTLY like the Tuning/Music/Gaming/Other
+                    // tag badges (renderPickGrid): bare find-pick-badge buttons,
+                    // icon only, no labels or boxes, so every Find tab shares one
+                    // visual language and symmetry. Names live on the tooltip.
+                    ['find', 'gk', 'ug', 'eg'].forEach(prefix => {
+                        Object.keys(this.SPEC_CHIP_DEFS).forEach(kind => {
+                            const grid = document.getElementById('grid-' + prefix + '-filter-' + kind);
+                            if (!grid || grid.dataset.chipsRendered === '1') return;
+                            grid.dataset.chipsRendered = '1';
+                            grid.innerHTML = '';
+                            this.SPEC_CHIP_DEFS[kind].forEach(def => {
+                                const b = document.createElement('button');
+                                b.type = 'button';
+                                b.className = 'no-tactile find-pick-badge';
+                                b.title = def.v;
+                                b.setAttribute('data-tooltip', def.v);
+                                b.setAttribute('aria-label', kind + ': ' + def.v);
+                                b.dataset.value = def.v;
+
+                                const img = document.createElement('img');
+                                img.src = 'icons/' + def.icon;
+                                img.alt = def.v;
+                                img.draggable = false;
+                                img.onerror = () => {
+                                    const s = document.createElement('span');
+                                    s.className = 'emoji-font vibrant-emoji leading-none pointer-events-none';
+                                    s.style.fontSize = 'var(--pick-emoji, 20px)';
+                                    s.textContent = def.v.charAt(0);
+                                    img.replaceWith(s);
+                                };
+                                b.appendChild(img);
+
+                                if (this._getSpecSelection(prefix, kind).indexOf(def.v) !== -1) b.classList.add('on');
+                                b.addEventListener('click', () => this.toggleSpecChip(prefix, kind, def.v, b));
+                                grid.appendChild(b);
+                            });
+                        });
+                    });
+                },
+
+                // Exact-match helpers shared by every spec-filter consumer.
+                // Values come from the canonical chip definitions which mirror
+                // database.json's form_factor / connector / driver_type fields.
+                _connectorMatches: function(db, value) {
+                    if (!db || !value) return true;
+                    const t = String(value).toLowerCase().trim();
+                    const c = db.connector;
+                    if (Array.isArray(c)) return c.some(x => String(x).toLowerCase().trim() === t);
+                    if (!c) return false;
+                    return String(c).toLowerCase().includes(t);
+                },
+
+                _formFactorMatches: function(db, value) {
+                    const itemFF = String((db && db.form_factor) || 'IEM').toLowerCase().trim();
+                    const t = String(value).toLowerCase().trim();
+                    return itemFF === t || itemFF.includes(t) || t.includes(itemFF);
+                },
+
                 readSpecFilterValues: function() {
                     const yearMinEl = document.getElementById('find-filter-year-min');
                     const yearMaxEl = document.getElementById('find-filter-year-max');
@@ -18781,9 +18199,9 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         priceMax: priceMaxEl ? (parseInt(priceMaxEl.max) || 3000) : 3000,
                         priceLo: priceMinEl ? (parseInt(priceMinEl.value) || (parseInt(priceMinEl.min) || 0)) : 0,
                         priceHi: priceMaxEl ? (parseInt(priceMaxEl.value) || (parseInt(priceMaxEl.max) || 3000)) : 3000,
-                        driver: document.getElementById('find-filter-driver')?.value || 'any',
-                        connector: document.getElementById('find-filter-connector')?.value || 'any',
-                        formFactor: document.getElementById('find-filter-formfactor')?.value || 'any',
+                        driver: this._getSpecSelection('find', 'driver'),
+                        connector: this._getSpecSelection('find', 'connector'),
+                        formFactor: this._getSpecSelection('find', 'formfactor'),
                         picks: (this.selectedPicks || []).slice(),
                     };
                 },
@@ -18808,22 +18226,30 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         if (itemPrice == null || isNaN(itemPrice) || itemPrice < f.priceLo || itemPrice > f.priceHi) return false;
                     }
 
-                    const driverList = this.toFilterList(f.driver);
-                    if (driverList.length && !this.matchesDriverList(db, driverList)) return false;
+                    // Filter selections are arrays (multi-select chips). Tolerate
+                    // legacy single-string values ('any' / a specific value).
+                    const driverSel = Array.isArray(f.driver) ? f.driver : ((f.driver && f.driver !== 'any') ? [f.driver] : []);
+                    if (driverSel.length) {
+                        if (!driverSel.some(v => this.driverFilterMatches(db, v))) return false;
+                    }
 
-                    const connList = this.toFilterList(f.connector);
-                    if (connList.length && !this.matchesConnectorList(db, connList)) return false;
+                    const connSel = Array.isArray(f.connector) ? f.connector : ((f.connector && f.connector !== 'any') ? [f.connector] : []);
+                    if (connSel.length) {
+                        if (!connSel.some(v => this._connectorMatches(db, v))) return false;
+                    }
 
-                    const ffList = this.toFilterList(f.formFactor);
-                    if (ffList.length && !this.matchesFormFactorList(db, ffList)) return false;
+                    const ffSel = Array.isArray(f.formFactor) ? f.formFactor : ((f.formFactor && f.formFactor !== 'any' && f.formFactor !== 'auto') ? [f.formFactor] : []);
+                    if (ffSel.length) {
+                        if (!ffSel.some(v => this._formFactorMatches(db, v))) return false;
+                    }
 
                     const metaPicks = (f.picks || []).filter(p => p.kind === 'meta');
                     if (metaPicks.length) {
                         if (!db.tags || !Array.isArray(db.tags)) return false;
-                        const dbTagsNorm = db.tags.map(t => this._normTag(t));
+                        const dbTagsLower = db.tags.map(t => String(t).toLowerCase());
                         const anyTag = metaPicks.some(p => {
-                            const reqNorm = this._normTag(p.value);
-                            return dbTagsNorm.some(t => t.includes(reqNorm) || reqNorm.includes(t));
+                            const reqLower = String(p.value).toLowerCase();
+                            return dbTagsLower.some(t => t.includes(reqLower) || reqLower.includes(t));
                         });
                         if (!anyTag) return false;
                     }
@@ -18837,55 +18263,13 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         if (window.CurveIndexer && Array.isArray(CurveIndexer.catalog) && CurveIndexer.catalog.length > 0) {
                             this.iemDatabase = CurveIndexer.catalog;
                         } else {
-                            // Mirror CurveIndexer._loadCatalog: gz-first with a
-                            // plain-JSON fallback — the old path only tried
-                            // database.json and silently left filters dead.
-                            let list = null;
-                            try {
-                                const gzRes = await fetch('database.json.gz');
-                                if (gzRes.ok) {
-                                    const decompressedStream = gzRes.body.pipeThrough(new DecompressionStream('gzip'));
-                                    const parsed = await new Response(decompressedStream).json();
-                                    list = Array.isArray(parsed) ? parsed : null;
-                                }
-                            } catch (gzErr) {
-                                console.warn("[FindEngine] database.json.gz failed, trying database.json...", gzErr);
-                            }
-                            if (list === null) {
-                                const res = await fetch('database.json');
-                                if (res.ok) list = await res.json();
-                            }
-                            if (list !== null && Array.isArray(list)) {
-                                this.iemDatabase = list;
-                            } else {
-                                // The catalog loader may still be indexing — flag
-                                // a retry that fires when it finishes.
-                                this._dbRetryPending = true;
-                                console.warn("[FindEngine] Metadata database not found or offline. Filtering fallback in effect.");
-                            }
+                            const res = await fetch('database.json');
+                            if (res.ok) this.iemDatabase = await res.json();
                         }
-                        this._rebuildDbIndex();
+                        this.populateCloneSelector();
                         this.populateBrandSuggestions();
                     } catch(e) {
                         console.warn("[FindEngine] Metadata database not found or offline. Filtering fallback in effect.", e);
-                    }
-                },
-
-                _rebuildDbIndex: function() {
-                    this._dbById = new Map();
-                    const db = this.iemDatabase;
-                    if (!db) return;
-                    for (let i = 0; i < db.length; i++) {
-                        const e = db[i];
-                        if (!e || !e.id) continue;
-                        if (!this._dbById.has(e.id)) this._dbById.set(e.id, e);
-                        const files = e.files;
-                        if (Array.isArray(files)) {
-                            for (let f = 0; f < files.length; f++) {
-                                const key = String(files[f]).toLowerCase();
-                                if (!this._dbById.has(key)) this._dbById.set(key, e);
-                            }
-                        }
                     }
                 },
 
@@ -18937,12 +18321,12 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                 getTagAnimationClass: function(tag) {
                     const t = tag.toLowerCase();
                     if (/bass|slam|punch|rumble/i.test(t)) return 'anim-match-punch';
-                    if (/bright|detail|sparkle|air|resolv|technical|analytical|treble/i.test(t)) return 'anim-match-pulse';
-                    if (/rock|metal|energetic|fun|v-shaped|u-shaped/i.test(t)) return 'anim-match-rock';
+                    if (/bright|detail|sparkle|air|resolv|technical|analytical/i.test(t)) return 'anim-match-pulse';
+                    if (/rock|metal|energetic|fun|v-shaped/i.test(t)) return 'anim-match-rock';
                     if (/vocal|presence|dialogue/i.test(t)) return 'anim-match-bounce';
                     if (/gaming|competitive|arcade/i.test(t)) return 'anim-match-snap';
                     if (/flagship|premium|limited|collab|gold/i.test(t)) return 'anim-match-spin';
-                    if (/neutral|warm|relaxed|smooth|balanced|reference|studio/i.test(t)) return 'anim-match-breath';
+                    if (/neutral|warm|relaxed|smooth|balanced|reference/i.test(t)) return 'anim-match-breath';
                     return 'anim-match-float';
                 },
 
@@ -19127,20 +18511,21 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     if (container) container.classList.add('hidden');
                 },
 
+                getDriveability: function(impedance, sensitivity) {
+                    if (impedance == null || sensitivity == null || isNaN(impedance) || isNaN(sensitivity)) return 'unknown';
+                    if (impedance <= 32 && sensitivity >= 104) return 'easy';
+                    if (impedance > 64 || sensitivity < 98) return 'hard';
+                    return 'moderate';
+                },
+
                 getDbEntry: function(item) {
                     if (!this.iemDatabase || this.iemDatabase.length === 0) return null;
 
-                    // O(1) lookups through the rebuild-time index instead of
-                    // a full .find() scan on every candidate card.
-                    if (this._dbById) {
-                        let match = this._dbById.get(item.id);
-                        if (match) return match;
-                        match = this._dbById.get(String(item.id).toLowerCase());
-                        if (match) return match;
-                    }
+                    let match = this.iemDatabase.find(db => db.id === item.id);
+                    if (match) return match;
 
-                    const fallback = this.iemDatabase.find(db => db.files && db.files.some(f => f.toLowerCase() === item.id.toLowerCase()));
-                    return fallback;
+                    match = this.iemDatabase.find(db => db.files && db.files.some(f => f.toLowerCase() === item.id.toLowerCase()));
+                    return match;
                 },
 
                 checkInitialProgress: function() {
@@ -19148,33 +18533,17 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     const progressContainer = document.getElementById('find-progress-container');
                     if (isIndexed && progressContainer) {
                         progressContainer.classList.add('hidden');
+                        this.populateCloneSelector();
                     } else {
                         this.updateIndexingProgressBar();
 
-                        let attempts = 0;
-                        const MAX_ATTEMPTS = 20;
-                        const check = () => {
-                            attempts++;
-                            if (PEQDB_Module.databaseFullyLoaded) {
-                                if (progressContainer) progressContainer.classList.add('hidden');
-                                return;
-                            }
-                            if (CurveIndexer.warming) {
-                                if (attempts >= MAX_ATTEMPTS) {
-                                    if (progressContainer) progressContainer.classList.add('hidden');
-                                    console.warn("[FindEngine] Progress bar auto-hidden after warmup timeout.");
-                                } else {
-                                    setTimeout(check, 3000);
-                                }
-                                return;
-                            }
+                        setTimeout(() => {
                             if (progressContainer && !progressContainer.classList.contains('hidden')) {
                                 progressContainer.classList.add('hidden');
                                 PEQDB_Module.databaseFullyLoaded = true;
                                 console.warn("[FindEngine] Progress bar auto-hidden via safety timer.");
                             }
-                        };
-                        setTimeout(check, 3000);
+                        }, 3000);
                     }
                 },
 
@@ -19184,18 +18553,6 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         blindChk.addEventListener('change', () => {
                             if (this._lastMatches) {
                                 this.renderMatches(this._lastMatches);
-                            }
-                        });
-                    }
-
-                    const targetCanvas = document.getElementById('find-target-canvas');
-                    if (targetCanvas) {
-                        targetCanvas.addEventListener('click', () => {
-                            const opt = this.baselineOptions[this.currentBaselineIndex];
-                            if (!opt || opt.id !== 'custom') return;
-                            const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
-                            if (!baseCurve || !baseCurve.data || baseCurve.data.length < 2) {
-                                App.switchTab('eq');
                             }
                         });
                     }
@@ -19250,7 +18607,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                                     const btn = document.getElementById('find-baseline-btn');
                                     if (btn) {
                                         const opt = this.baselineOptions[this.currentBaselineIndex];
-                                        btn.textContent = `${opt.emoji} ${opt.label}`;
+                                        btn.textContent = `${opt.emoji} Baseline: ${opt.label}`;
                                     }
                                 }
                                 this.updateSliderUI(id);
@@ -19263,7 +18620,6 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
 
                 updateSliderUI: function(id) {
                     const el = document.getElementById(id);
-                    if (!el) return;
                     const val = parseFloat(el.value);
                     const display = document.getElementById(id + '-val');
                     if (!display) return;
@@ -19279,7 +18635,14 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     const sliders = ['find-bass', 'find-sub', 'find-punch', 'find-warm', 'find-vocals', 'find-treble', 'find-smooth'];
                     sliders.forEach(id => {
                         const el = document.getElementById(id);
-                        if (el) el.value = 0;
+                        if (el) {
+                            el.value = 0;
+                            // Programmatic value changes fire no input event, so
+                            // the gradient fill must be repainted here or the
+                            // bar stays stuck at the pre-reset position.
+                            if (window.paintSliderTrack) window.paintSliderTrack(el);
+                            else if (window.syncGlobalSliders) window.syncGlobalSliders(el);
+                        }
                         this.updateSliderUI(id);
                     });
                 },
@@ -19296,29 +18659,17 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
 
                     const btn = document.getElementById('find-baseline-btn');
                     if (btn) {
-                        btn.textContent = `${opt.emoji} ${opt.label}`;
+                        btn.textContent = `${opt.emoji} Baseline: ${opt.label}`;
                     }
 
                     this.resetSlidersToZero();
                     this.drawTargetVisualization();
-
-                    if (opt.id === 'custom') {
-                        const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
-                        if (!baseCurve) {
-                            showToast("Add a curve to the EQ Base slot to use Custom baseline!", "🛠️");
-                            return;
-                        }
-                        showToast(`Custom baseline locked to "${baseCurve.name}"!`, "🛠️");
-                        return;
-                    }
-
                     showToast(`Toggled baseline to "${opt.label}"!`, "🎯");
                 },
 
                 startActiveSlotObserver: function() {
                     if (this._activeSlotObserverStarted) return;
                     this._activeSlotObserverStarted = true;
-                    this._lastObservedBaseKey = '';
 
                     setInterval(() => {
                         if (document.hidden) return;
@@ -19326,20 +18677,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         // the next tick after returning corrects any stale state.
                         const findPane = document.getElementById('pane-find');
                         if (findPane && findPane.classList.contains('hidden')) return;
-
                         const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
-                        const baseUid = baseCurve ? baseCurve.uid : null;
-                        const baseDataReady = !!(baseCurve && baseCurve.data && baseCurve.data.length >= 2);
-                        const baseKey = baseUid ? `${baseUid}:${baseDataReady ? 'ready' : 'pending'}` : '';
-
-                        const opt = this.baselineOptions[this.currentBaselineIndex];
-                        const customMode = !!(opt && opt.id === 'custom');
-
-                        if (customMode && baseKey !== this._lastObservedBaseKey) {
-                            this._lastObservedBaseKey = baseKey;
-                            this.drawTargetVisualization();
-                        }
-
                         const btn = document.getElementById('find-clone-btn');
                         const row = document.getElementById('find-clone-actions-row');
                         if (!btn || !row) return;
@@ -19399,34 +18737,21 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     const details = document.getElementById('find-taste-details');
                     if (details && details.open) {
 
-                        this.drawTargetVisualization();
+                        this.populateCloneSelector();
                     }
                 },
 
                 scanTasteMatches: async function() {
+                    if (this.isScanning) return;
                     this._tasteHasRun = true;
-                    if (this.isScanning) {
-                        showToast("A scan is already running — wait for it to finish.", "⏳");
-                        return;
-                    }
                     const selected = this.tasteFavorites.map(f => f.id).filter(id => id !== '');
                     if (selected.length < 2) {
                         showToast("Please select at least 2 favorite IEMs to average your taste profile.", "⚠️");
                         return;
                     }
 
-                    const dataset = PEQDB_Module.STATE.dataset;
-                    if (!dataset || dataset.length === 0) {
-                        showToast("Database catalog not loaded yet.", "⚠️");
-                        return;
-                    }
-
                     this.isScanning = true;
                     this.isClonedModeActive = false;
-                    // Bump the scan token synchronously at entry — the 1000ms
-                    // deferral below must not outlive a newer scan.
-                    const scanToken = (this._scanToken || 0) + 1;
-                    this._scanToken = scanToken;
 
                     const grid = document.getElementById('find-matches-grid');
                     const emptyState = document.getElementById('find-empty-state');
@@ -19441,6 +18766,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     if (title) title.textContent = "Synthesizing Taste Profile...";
                     if (subtitle) subtitle.textContent = "Averaging favorite frequency curves...";
 
+                    const dataset = PEQDB_Module.STATE.dataset;
                     await Promise.all(selected.map(async (id) => {
                         const item = dataset.find(i => i.id === id);
                         if (item && (!item.data || item.data.length < 2)) {
@@ -19480,14 +18806,11 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
 
                     const btn = document.getElementById('find-baseline-btn');
                     if (btn) {
-                        btn.textContent = `❤️ Custom Taste`;
+                        btn.textContent = `❤️ Baseline: Custom Taste`;
                     }
 
                     setTimeout(async () => {
-
-                        // A newer scan started during the 1000ms deferral (or the
-                        // 25-item load loop below) — it owns the overlay now.
-                        if (this._scanToken !== scanToken) return;
+                        try {
 
                         const batchSize = 25;
                         for (let i = 0; i < dataset.length; i += batchSize) {
@@ -19496,65 +18819,46 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                                 await Promise.all(chunk.map(item => CurveIndexer.loadCurve(item, 0)));
                             }
                         }
-                        if (this._scanToken !== scanToken) return;
 
                         const validItems = dataset.filter(item => item.data !== null && item.data.length >= 2);
+                        const canonicalList = await this.buildCanonicalProfiles(validItems);
                         const targetInterp = Array.from(averagedInterp);
 
                         const matches = [];
 
+                        // Map lookup instead of O(n·m) Array.find per canonical item.
                         const datasetItems = PEQDB_Module.STATE.dataset || [];
-                        // Index once instead of dataset.find per match — the
-                        // old lookup was O(matches × dataset).
-                        const itemById = new Map();
-                        for (let di = 0; di < datasetItems.length; di++) {
-                            const dii = datasetItems[di];
-                            if (dii.id != null && !itemById.has(dii.id)) itemById.set(dii.id, dii);
-                        }
+                        const datasetById = new Map(datasetItems.map(d => [d.id, d]));
 
-                        let tuningMatches;
-                        try {
-                            tuningMatches = await this.runTuningScan(validItems, targetInterp, freqs, scanToken);
-                        } catch (err) {
-                            this._handleScanError(err);
-                            return;
-                        }
-                        if (tuningMatches === this.SCAN_SUPERSEDED || this._scanToken !== scanToken) {
-                            // A newer scan owns the overlay AND the busy
-                            // flag — do NOT clear isScanning here or we'd
-                            // stomp its in-flight state.
-                            return;
-                        }
+                            canonicalList.forEach(iem => {
+                                const matchPct = this._scoreInterp(iem.interp, targetInterp, freqs, true);
 
-                        tuningMatches.forEach(iem => {
-                            const matchPct = iem.similarity;
+                                const dsItem = datasetById.get(iem.id);
+                                const rawFiles = dsItem && dsItem.files ? dsItem.files : [];
+                                const fileScores = [];
 
-                            const dsItem = itemById.get(iem.id);
-                            const rawFiles = dsItem && dsItem.files ? dsItem.files : [];
-                            const fileScores = [];
+                                if (rawFiles.length > 1) {
+                                    rawFiles.forEach(filePath => {
+                                        if (dsItem && dsItem.sourcesCache && dsItem.sourcesCache[filePath]) {
+                                            const subData = dsItem.sourcesCache[filePath];
+                                            const subPct = this.calculateCurveMatchScore(subData, targetInterp, freqs, true);
+                                            fileScores.push(subPct);
+                                        } else {
+                                            fileScores.push(matchPct);
+                                        }
+                                    });
+                                }
 
-                            if (rawFiles.length > 1) {
-                                rawFiles.forEach(filePath => {
-                                    if (dsItem && dsItem.sourcesCache && dsItem.sourcesCache[filePath]) {
-                                        const subData = dsItem.sourcesCache[filePath];
-                                        const subPct = this.calculateCurveMatchScore(subData, targetInterp, freqs, true);
-                                        fileScores.push(subPct);
-                                    } else {
-                                        fileScores.push(matchPct);
-                                    }
+                                matches.push({
+                                    name: iem.name,
+                                    id: iem.id,
+                                    data: iem.sourceData,
+                                    similarity: matchPct,
+                                    fileScores: fileScores,
+                                    interp: iem.interp,
+                                    isTuningMatch: true
                                 });
-                            }
-
-                            matches.push({
-                                name: iem.name,
-                                id: iem.id,
-                                data: iem.data,
-                                similarity: matchPct,
-                                fileScores: fileScores,
-                                interp: iem.interp,
-                                isTuningMatch: true
                             });
-                        });
 
                             matches.sort((a, b) => b.similarity - a.similarity);
 
@@ -19581,17 +18885,33 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         App.setFindSection('matches');
 
                         showToast(`Found ${deduplicatedMatches.length > 100 ? 100 : deduplicatedMatches.length} matches for your taste profile!`, "❤️");
+                        } catch (err) {
+                            // The scan continues inside this timeout, so errors here
+                            // must reset the scanning state themselves or the Find
+                            // tab stays wedged behind the overlay forever.
+                            console.error("[FindEngine] taste scan failed:", err);
+                            this._handleScanError(err);
+                        }
                     }, 1000);
                 },
 
                 loadCachedCanonicalProfiles: function() {
-                    // Retired: the canonical-profile localStorage cache held
-                    // sourceData (megabytes per entry) and was never read
-                    // anywhere else. Kept as a no-op stub.
+                    try {
+                        const cached = localStorage.getItem('find_canonical_profiles');
+                        if (cached) {
+                            this.canonicalCache = JSON.parse(cached);
+                        }
+                    } catch (e) {
+                        console.warn("Failed to load canonical profiles cache.", e);
+                    }
                 },
 
                 saveCanonicalProfilesToCache: function() {
-                    // Retired together with loadCachedCanonicalProfiles.
+                    try {
+                        localStorage.setItem('find_canonical_profiles', JSON.stringify(this.canonicalCache));
+                    } catch (e) {
+                        console.warn("Failed to save canonical profiles cache.", e);
+                    }
                 },
 
                 generateTargetCurve: function() {
@@ -19620,12 +18940,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     const opt = this.baselineOptions[this.currentBaselineIndex];
                     let baselineInterp;
 
-                    if (opt.id === 'custom') {
-                        const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
-                        if (!baseCurve || !baseCurve.data || baseCurve.data.length < 2) return null;
-                        const baseNorm = CurveUtils.normalizeTo75dB(baseCurve.data, 500, 75);
-                        baselineInterp = CurveUtils.cubicSplineInterpolate(baseNorm, freqs);
-                    } else if (opt.id === 'harman') {
+                    if (opt.id === 'harman') {
                         const harman = PEQDB_Module.TARGETS.harman.data;
                         const harmanNorm = CurveUtils.normalizeTo75dB(harman, 500, 75);
                         baselineInterp = CurveUtils.cubicSplineInterpolate(harmanNorm, freqs);
@@ -19682,22 +18997,20 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     return targetData;
                 },
 
-                drawTasteRadar: function(retryCount) {
+                drawTasteRadar: function() {
                     const canvas = document.getElementById('find-taste-radar');
                     if (!canvas) return;
-                    const dpr = window.devicePixelRatio || 1;
                     const w = canvas.clientWidth, h = canvas.clientHeight;
+                    // Cap the hidden-canvas retry chain: the Find pane can stay
+                    // at 0x0 indefinitely, and every caller (slider input, tab
+                    // switch) started its own unbounded 100 ms re-arm loop.
                     if (w === 0 || h === 0) {
-                        // Cap the layout-retry loop so a permanently hidden
-                        // canvas can't schedule timers forever.
-                        if ((retryCount || 0) < 10) setTimeout(() => this.drawTasteRadar((retryCount || 0) + 1), 100);
+                        const attempt = (arguments[0] || 0) + 1;
+                        if (attempt <= 20) setTimeout(() => this.drawTasteRadar(attempt), 100);
                         return;
                     }
-                    // HiDPI backing store: without the DPR scale the radar is
-                    // rendered at CSS resolution and comes out blurry.
-                    canvas.width = Math.floor(w * dpr); canvas.height = Math.floor(h * dpr);
+                    canvas.width = w; canvas.height = h;
                     const ctx = canvas.getContext('2d');
-                    ctx.scale(dpr, dpr);
                     ctx.clearRect(0, 0, w, h);
                     const sliders = [
                         { id: 'find-bass', label: 'Bass' }, { id: 'find-sub', label: 'Sub' },
@@ -19725,8 +19038,15 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         ctx.beginPath(); ctx.moveTo(cx,cy);
                         ctx.lineTo(cx+Math.cos(a)*radius, cy+Math.sin(a)*radius); ctx.stroke();
                     }
-                    ctx.fillStyle = 'rgba(var(--accent-blue-rgb), 0.15)';
-                    ctx.strokeStyle = 'var(--accent-blue)'; ctx.lineWidth = 2;
+                    // Canvas2D cannot resolve CSS var() — resolve the theme
+                    // accent here, otherwise the polygon renders as a black
+                    // blob with a near-invisible outline.
+                    const docStyle = getComputedStyle(document.documentElement);
+                    const accentColor = (docStyle.getPropertyValue('--accent-blue') || '#6488b0').trim() || '#6488b0';
+                    const accentRgbRaw = (docStyle.getPropertyValue('--accent-blue-rgb') || '').trim();
+                    const accentRgb = /^\d{1,3},\s*\d{1,3},\s*\d{1,3}$/.test(accentRgbRaw) ? accentRgbRaw : '100,136,176';
+                    ctx.fillStyle = `rgba(${accentRgb}, 0.15)`;
+                    ctx.strokeStyle = accentColor; ctx.lineWidth = 2;
                     ctx.beginPath();
                     for (let i=0; i<=sliders.length; i++) {
                         const idx = i%sliders.length, a = step*idx - Math.PI/2;
@@ -19743,7 +19063,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     });
                 },
 
-                drawTargetVisualization: function(retryCount) {
+                drawTargetVisualization: function() {
                     const canvas = document.getElementById('find-target-canvas');
                     if (!canvas) return;
                     const ctx = canvas.getContext('2d');
@@ -19753,9 +19073,8 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     const h = canvas.clientHeight;
 
                     if (w === 0 || h === 0) {
-                        // Cap the layout-retry loop so a permanently hidden
-                        // canvas can't schedule timers forever.
-                        if ((retryCount || 0) < 10) setTimeout(() => this.drawTargetVisualization((retryCount || 0) + 1), 100);
+                        const attempt = (arguments[0] || 0) + 1;
+                        if (attempt <= 20) setTimeout(() => this.drawTargetVisualization(attempt), 100);
                         return;
                     }
 
@@ -19808,24 +19127,12 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     });
 
                     const targetCurve = this.generateTargetCurve();
-
-                    if (!targetCurve || targetCurve.length < 2) {
-                        canvas.style.cursor = 'pointer';
-                        ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
-                        ctx.font = 'bold 11px system-ui, sans-serif';
-                        ctx.textAlign = 'center';
-                        ctx.fillText('🛠️ Add a custom curve to the EQ base slot', w / 2, h / 2 - 8);
-                        ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
-                        ctx.font = 'bold 9px system-ui, sans-serif';
-                        ctx.fillText('Click here to open the EQ tab', w / 2, h / 2 + 10);
-                        return;
-                    }
-
-                    canvas.style.cursor = 'default';
                     const minDb = 60;
                     const maxDb = 90;
 
-                    const themeAccent = getThemeAccent('#3b82f6');
+                    const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
+                    const activeThemeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
+                    const themeAccent = activeThemeConfig.accent || "#3b82f6";
 
                     ctx.save();
                     ctx.strokeStyle = themeAccent;
@@ -19850,6 +19157,11 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                 },
 
                 sanitizeName: function(name) {
+                    // Same boundary coercion as the worker's copy of this
+                    // function (js/find-worker.js) -- kept in sync since
+                    // the main-thread fallback path calls this copy, not
+                    // the worker's.
+                    if (typeof name !== 'string') name = (name == null) ? '' : String(name);
                     if (!name) return "";
                     let clean = name.toLowerCase();
 
@@ -19887,38 +19199,6 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                 },
 
                 buildCanonicalProfiles: async function(dataset) {
-                    // In-memory cache: the profile list is derived purely from
-                    // the loaded dataset, so reuse it unless the dataset grew.
-                    // (localStorage persistence is impractical — sourceData alone
-                    // is far too large to serialize per session.)
-                    let loadedCount = 0;
-                    if (dataset) {
-                        for (let i = 0; i < dataset.length; i++) {
-                            if (dataset[i] && dataset[i].data) loadedCount++;
-                        }
-                    }
-                    // FNV-1a over every id + per-item data length: the previous signature
-                    // only looked at dataset[0], so a mid-list curve change with
-                    // a stable count served a stale canonical profile list.
-                    let sig = (dataset ? dataset.length : 0) + '|' + loadedCount;
-                    if (dataset) {
-                        let h = 2166136261 >>> 0;
-                        for (let i = 0; i < dataset.length; i++) {
-                            const it = dataset[i];
-                            const id = (it && it.id) ? String(it.id) : '';
-                            for (let c = 0; c < id.length; c++) {
-                                h ^= id.charCodeAt(c);
-                                h = Math.imul(h, 16777619) >>> 0;
-                            }
-                            h ^= (it && it.data && it.data.length) ? it.data.length : 0;
-                            h = Math.imul(h, 16777619) >>> 0;
-                        }
-                        sig += '|' + h.toString(16);
-                    }
-                    if (this._canonicalSig === sig && this._canonicalList) {
-                        return this._canonicalList;
-                    }
-
                     const groups = {};
                     const freqs = CurveUtils.generateLogGrid(100);
 
@@ -20017,22 +19297,17 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                         });
                     }
 
-                    this._canonicalSig = sig;
-                    this._canonicalList = canonicalList;
                     return canonicalList;
                 },
-
-                // Sentinel distinguishing "scan superseded by a newer request"
-                // from "scan genuinely failed" (null). A superseded scan must
-                // release its own busy state but NEVER touch the shared scanning
-                // overlay, because the newer scan now owns it.
-                SCAN_SUPERSEDED: {},
 
                 ensureFindWorker: function() {
                     if (this._findWorker) return this._findWorker;
                     if (typeof Worker === 'undefined') return null;
                     try {
                         this._findWorker = new Worker('js/find-worker.js');
+                        // A fresh worker starts with an empty canonical-profile
+                        // cache, so any signature we believed it held is void.
+                        this._workerCanonicalSig = null;
                     } catch (e) {
                         console.warn("[FindEngine] Web Worker unavailable:", e);
                         this._findWorker = null;
@@ -20040,91 +19315,101 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     return this._findWorker;
                 },
 
-                // Cheap content hash for the scan payload: changed data
-                // lengths or membership change the signature, identical
-                // scans reuse the previously-primed worker dataset.
-                _scanItemsSig: function(items) {
-                    // Real FNV-1a over the full id characters (not just the
-                    // first char) + data lengths, so any id/content change in
-                    // ANY item invalidates the worker's primed payload.
-                    let h1 = 2166136261 >>> 0;
-                    let h2 = 2246822519 >>> 0;
+                // Signature of an item set, byte-identical to itemsKey() in
+                // find-worker.js (id + curve length per item). Lets the main
+                // thread omit the ~MB-scale curve payload when the worker
+                // already holds a memoized canonical list for exactly this set.
+                _workerSetSig: function(items) {
+                    let s = items.length + '|';
                     for (let i = 0; i < items.length; i++) {
                         const it = items[i];
-                        const id = (it && it.id) ? String(it.id) : '';
-                        for (let c = 0; c < id.length; c++) {
-                            h1 ^= id.charCodeAt(c);
-                            h1 = Math.imul(h1, 16777619) >>> 0;
-                            h2 ^= id.charCodeAt(c) ^ (c << 8);
-                            h2 = Math.imul(h2, 16777619) >>> 0;
-                        }
-                        const dLen = it && it.data ? it.data.length : 0;
-                        h1 ^= dLen;
-                        h1 = Math.imul(h1, 16777619) >>> 0;
-                        h2 ^= dLen >>> 1;
-                        h2 = Math.imul(h2, 16777619) >>> 0;
+                        s += (it && it.id !== undefined ? it.id : i) + ':' + (it && it.data ? it.data.length : 0) + ',';
                     }
-                    return items.length + ':' + h1.toString(16) + ':' + h2.toString(16);
+                    return s;
                 },
 
-                // Single source for worker payload items. Curve data + tags are
-                // joined with the database entry's price and brand (resolved via
-                // getDbEntry, same as scanGiantKillers) so the worker's shared
-                // canonical list carries everything the Endgame scan needs. The
-                // extra fields are harmless for the tuning/upgrade branches, and
-                // _scanItemsSig ignores them, so sigs and prime caches are
-                // unaffected.
-                _slimItem: function(it) {
-                    let dbEntry = null;
-                    try { dbEntry = this.getDbEntry(it); } catch (e) { dbEntry = null; }
-                    let price = null;
-                    if (dbEntry && dbEntry.price_usd) price = parseFloat(dbEntry.price_usd);
-                    if (!isFinite(price) && it && it.price_usd) price = parseFloat(it.price_usd);
-                    if (!isFinite(price)) price = null;
-                    return {
-                        id: it && it.id,
-                        name: it && it.name,
-                        data: it && it.data || null,
-                        tags: it && it.tags && it.tags.slice ? it.tags.slice() : (it && it.tags || []),
-                        price: price,
-                        brand: (dbEntry && dbEntry.brand) || (it && it.brand) || ''
+                // Slim worker payload shared by the tuning and endgame scans.
+                // MUST carry price/brand/tags even for tuning: the worker keeps
+                // ONE canonical-profile cache keyed by set signature, and
+                // scoreEndgameCategories filters on price — a cache poisoned by
+                // metadata-less tuning items would empty every endgame pool.
+                _buildWorkerSlim: function(items) {
+                    const list = [];
+                    let dbMap = null;
+                    if (this.iemDatabase && this.iemDatabase.length) {
+                        dbMap = new Map();
+                        this.iemDatabase.forEach(db => { if (db && db.id) dbMap.set(db.id, db); });
+                    }
+                    const resolveDb = (item) => {
+                        if (!dbMap || !item || !item.id) return null;
+                        let db = dbMap.get(item.id);
+                        if (!db) {
+                            // Same fallback getDbEntry uses: match by file path.
+                            const idLower = String(item.id).toLowerCase();
+                            db = this.iemDatabase.find(d => d.files && d.files.some(f => f.toLowerCase() === idLower)) || null;
+                            if (db) dbMap.set(item.id, db);
+                        }
+                        return db;
                     };
+                    for (let i = 0; i < items.length; i++) {
+                        const item = items[i];
+                        const db = resolveDb(item) || {};
+                        const p = db.price_usd != null ? parseFloat(db.price_usd) : ((item && item.price_usd) != null ? parseFloat(item.price_usd) : null);
+                        list.push({
+                            id: item && item.id,
+                            name: item && item.name,
+                            data: (item && item.data) || null,
+                            price: (isFinite(p) && p > 0) ? p : null,
+                            brand: db.brand || (item && item.brand) || '',
+                            tags: Array.isArray(db.tags) ? db.tags : (Array.isArray(item && item.tags) ? item.tags : [])
+                        });
+                    }
+                    return list;
                 },
 
                 _runTuningViaWorker: function(token, items, targetInterp, freqs) {
                     const worker = this.ensureFindWorker();
                     if (!worker) return Promise.resolve(null);
-                    // Per-request id: the worker echoes it back so this
-                    // listener can ignore results belonging to a different
-                    // scan (tuning and upgrade share the same worker pipe).
-                    const reqId = (this._findReqSeq = (this._findReqSeq || 0) + 1);
+                    const sig = this._workerSetSig(items);
+                    const workerHasSet = (sig === this._workerCanonicalSig);
+                    let slim = null; // built lazily — only when the payload must cross the boundary
+                    const buildSlim = () => {
+                        if (!slim) slim = this._buildWorkerSlim(items);
+                        return slim;
+                    };
                     return new Promise((resolve) => {
+                        let retriedWithItems = false;
                         const onMsg = (e) => {
                             const d = e.data || {};
                             if (d.type !== 'result') return;
-                            if (d.reqId !== reqId) return;
-                            if (d.reprime) {
-                                // Worker lost its canonical cache — re-send the
-                                // full payload and retry once in place.
-                                console.warn("[FindEngine] worker cache miss, re-priming dataset.");
-                                this._workerScanSig = null;
-                                this._workerScanItems = null;
-                                const slim = items.map(it => this._slimItem(it));
-                                const sig = this._scanItemsSig(slim);
-                                this._workerScanSig = sig;
-                                this._workerScanItems = slim;
-                                worker.postMessage({ type: 'prime', dataset: slim, sig: sig, reqId: reqId });
-                                worker.postMessage({ type: 'tuning', sig: sig, items: slim, targetInterp: targetInterp, freqs: freqs, reqId: reqId });
+                            // Worker lost its memoized set (fresh/restarted
+                            // worker): resend the full payload once instead of
+                            // falling back to the slow main-thread scan.
+                            if (!d.ok && d.reprime && !retriedWithItems) {
+                                retriedWithItems = true;
+                                try {
+                                    worker.postMessage({ type: 'tuning', items: buildSlim(), targetInterp: targetInterp, freqs: freqs, sig: sig });
+                                    this._workerCanonicalSig = sig;
+                                } catch (postErr) {
+                                    worker.removeEventListener('message', onMsg);
+                                    worker.removeEventListener('error', onErr);
+                                    resolve(null);
+                                }
                                 return;
                             }
+                            // Only consume replies that carry tuning matches: the
+                            // endgame/upgrade scans share this worker and their
+                            // result shapes differ (no `matches` field).
+                            if (d.matches === undefined) return;
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
-                            clearTimeout(watchdog);
-                            if (this._scanToken !== token) return resolve(this.SCAN_SUPERSEDED);
+                            if (this._scanToken !== token) return resolve(null);
                             if (!d.ok) { console.warn("[FindEngine] worker tuning failed:", d.error); return resolve(null); }
                             const list = (d.matches || []).slice();
-                            // The worker only echoes slim payloads (no sourceData),
-                            // so reattach curve data by id on the main thread.
+                            // The worker only echoes slim payloads (no curve data),
+                            // so reattach each match's data by id on the main thread.
+                            // Without this, match cards lose their sparkline curves
+                            // and genre matching falls back to defaults for every box.
                             list.forEach(m => {
                                 if (m.data) return;
                                 const it = items.find(i => i && i.id === m.id);
@@ -20137,229 +19422,82 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             console.warn("[FindEngine] worker error:", e && e.message);
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
-                            clearTimeout(watchdog);
                             resolve(null);
                         };
                         worker.addEventListener('message', onMsg);
                         worker.addEventListener('error', onErr);
-                        // Watchdog: a hung worker (or one that swallows its own
-                        // error event) would otherwise pin the scan promise
-                        // forever. Time out to the main-thread fallback.
-                        const watchdog = setTimeout(() => {
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
-                            resolve(null);
-                        }, 30000);
                         try {
-                            const slim = items.map(it => this._slimItem(it));
-                            // Prime the dataset into the worker only when the
-                            // payload actually changed — previously the full
-                            // dataset was structured-cloned on every slider tick.
-                            const sig = this._scanItemsSig(slim);
-                            if (sig !== this._workerScanSig || !this._workerScanItems) {
-                                this._workerScanSig = sig;
-                                this._workerScanItems = slim;
-                                worker.postMessage({ type: 'prime', dataset: slim, sig: sig, reqId: reqId });
-                                worker.postMessage({ type: 'tuning', sig: sig, items: slim, targetInterp: targetInterp, freqs: freqs, reqId: reqId });
+                            if (workerHasSet) {
+                                // Same item set the worker already memoized:
+                                // send only the target + signature.
+                                worker.postMessage({ type: 'tuning', targetInterp: targetInterp, freqs: freqs, sig: sig });
                             } else {
-                                // Already primed with this exact payload — skip
-                                // re-cloning the curve data entirely.
-                                worker.postMessage({ type: 'tuning', sig: sig, targetInterp: targetInterp, freqs: freqs, reqId: reqId });
+                                worker.postMessage({ type: 'tuning', items: buildSlim(), targetInterp: targetInterp, freqs: freqs, sig: sig });
+                                this._workerCanonicalSig = sig;
                             }
                         } catch (e) {
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
-                            clearTimeout(watchdog);
                             resolve(null);
                         }
                     });
                 },
 
-                runTuningScan: async function(items, targetInterp, freqs, token) {
-                    // The token is captured by the scan entry point (scanAndMatch /
-                    // scanTasteMatches) BEFORE any deferral, so a scan still waiting
-                    // in its setTimeout window is already superseded by a newer scan
-                    // before it ever reaches the worker.
-                    token = (token !== undefined) ? token : (this._scanToken || 0);
+                runTuningScan: async function(items, targetInterp, freqs) {
+                    const token = (this._scanToken || 0) + 1;
+                    this._scanToken = token;
 
                     const workerMatches = await this._runTuningViaWorker(token, items, targetInterp, freqs);
 
-                    if (workerMatches === this.SCAN_SUPERSEDED) return this.SCAN_SUPERSEDED;
                     if (workerMatches !== null && this._scanToken === token) {
                         return workerMatches;
                     }
 
-                    const freqsLocal = freqs || CurveUtils.generateLogGrid(100);
-                    const canonicalList = await this.buildCanonicalProfiles(items);
-                    const matches = [];
-                    canonicalList.forEach(iem => {
-                        const matchPct = this._scoreInterp(iem.interp, targetInterp, freqsLocal, true);
-                        matches.push({
-                            name: iem.name,
-                            id: iem.id,
-                            data: iem.sourceData,
-                            similarity: matchPct,
-                            interp: iem.interp,
-                            isTuningMatch: true
+                    // The worker path (_runTuningViaWorker) replies
+                    // {ok:false} on a hostile/malformed item instead of
+                    // throwing. This fallback runs the identical scoring
+                    // logic directly on the main thread with no such
+                    // containment -- an item.name that isn't a string (an
+                    // object, a number) would throw inside
+                    // buildCanonicalProfiles -> sanitizeName, become an
+                    // unhandled promise rejection, and surface as the
+                    // full-screen "JS Runtime Exception" overlay instead of
+                    // a clean "no matches" result.
+                    try {
+                        const freqsLocal = freqs || CurveUtils.generateLogGrid(100);
+                        const canonicalList = await this.buildCanonicalProfiles(items);
+                        const matches = [];
+                        canonicalList.forEach(iem => {
+                            const matchPct = this._scoreInterp(iem.interp, targetInterp, freqsLocal, true);
+                            matches.push({
+                                name: iem.name,
+                                id: iem.id,
+                                data: iem.sourceData,
+                                similarity: matchPct,
+                                interp: iem.interp,
+                                isTuningMatch: true
+                            });
                         });
-                    });
-                    matches.sort((a, b) => b.similarity - a.similarity);
-                    // A newer scan may have started while the fallback ran —
-                    // its results must win, never this stale batch.
-                    return (this._scanToken === token) ? matches : this.SCAN_SUPERSEDED;
-                },
-
-                _runUpgradeViaWorker: function(token, items, baseInterp, freqs, goal) {
-                    const worker = this.ensureFindWorker();
-                    if (!worker) return Promise.resolve(null);
-                    // Per-request id: the worker echoes it back so this
-                    // listener only accepts results from its own scan.
-                    const reqId = (this._findReqSeq = (this._findReqSeq || 0) + 1);
-                    let reprimed = false;
-                    return new Promise((resolve) => {
-                        const onMsg = (e) => {
-                            const d = e.data || {};
-                            if (d.type !== 'result') return;
-                            if (d.reqId !== reqId) return;
-                            if (d.reprime) {
-                                // Worker lost its cache — re-send the full
-                                // payload and retry once in place.
-                                if (reprimed) {
-                                    worker.removeEventListener('message', onMsg);
-                                    worker.removeEventListener('error', onErr);
-                                    clearTimeout(watchdog);
-                                    console.warn("[FindEngine] worker upgrade re-prime loop, falling back to main thread.");
-                                    resolve(null);
-                                    return;
-                                }
-                                console.warn("[FindEngine] worker cache miss, re-priming dataset.");
-                                this._upgradeWorkerSig = null;
-                                this._upgradeWorkerItems = null;
-                                const slim = items.map(it => this._slimItem(it));
-                                const sig = this._scanItemsSig(slim);
-                                this._upgradeWorkerSig = sig;
-                                this._upgradeWorkerItems = slim;
-                                reprimed = true;
-                                worker.postMessage({ type: 'prime', dataset: slim, sig: sig, reqId: reqId });
-                                worker.postMessage({ type: 'upgrade', sig: sig, items: slim, baseInterp: baseInterp || null, freqs: freqs, goal: goal, reqId: reqId });
-                                return;
-                            }
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
-                            clearTimeout(watchdog);
-                            if (this._scanToken !== token) return resolve(this.SCAN_SUPERSEDED);
-                            if (!d.ok) { console.warn("[FindEngine] worker upgrade failed:", d.error); return resolve(null); }
-                            resolve((d.matches || []).slice());
-                        };
-                        const onErr = (e) => {
-                            console.warn("[FindEngine] worker error:", e && e.message);
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
-                            clearTimeout(watchdog);
-                            resolve(null);
-                        };
-                        worker.addEventListener('message', onMsg);
-                        worker.addEventListener('error', onErr);
-                        // Watchdog: a hung worker would otherwise pin the scan
-                        // promise forever — time out to the main-thread fallback.
-                        const watchdog = setTimeout(() => {
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
-                            resolve(null);
-                        }, 30000);
-                        try {
-                            const slim = items.map(it => this._slimItem(it));
-                            // Prime the dataset into the worker only when the
-                            // payload actually changed — previously the full
-                            // dataset was structured-cloned on every upgrade run.
-                            const sig = this._scanItemsSig(slim);
-                            if (sig !== this._upgradeWorkerSig || !this._upgradeWorkerItems) {
-                                this._upgradeWorkerSig = sig;
-                                this._upgradeWorkerItems = slim;
-                                worker.postMessage({ type: 'prime', dataset: slim, sig: sig, reqId: reqId });
-                                worker.postMessage({ type: 'upgrade', sig: sig, items: slim, baseInterp: baseInterp || null, freqs: freqs, goal: goal, reqId: reqId });
-                            } else {
-                                // Already primed with this exact payload — skip
-                                // re-cloning the curve data entirely.
-                                worker.postMessage({ type: 'upgrade', sig: sig, baseInterp: baseInterp || null, freqs: freqs, goal: goal, reqId: reqId });
-                            }
-                        } catch (e) {
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
-                            clearTimeout(watchdog);
-                            resolve(null);
-                        }
-                    });
-                },
-
-                runUpgradeScan: async function(items, baseInterp, freqs, goal, token) {
-                    // Token captured at the scan entry point (renderUpgradePathway)
-                    // BEFORE the dataset-loading loop, same rationale as runTuningScan.
-                    token = (token !== undefined) ? token : (this._scanToken || 0);
-
-                    const workerResults = await this._runUpgradeViaWorker(token, items, baseInterp, freqs, goal);
-
-                    if (workerResults === this.SCAN_SUPERSEDED) return this.SCAN_SUPERSEDED;
-                    if (workerResults !== null && this._scanToken === token) {
-                        return workerResults;
+                        matches.sort((a, b) => b.similarity - a.similarity);
+                        return matches;
+                    } catch (err) {
+                        console.warn('[FindEngine] Main-thread tuning scan fallback failed:', err);
+                        try { if (typeof showToast === 'function') showToast("Tuning scan failed on this dataset — see console.", "⚠️"); } catch (_) {}
+                        return [];
                     }
-
-                    const freqsLocal = freqs || CurveUtils.generateLogGrid(100);
-                    const results = [];
-                    items.forEach(it => {
-                        const data = (it && it.data) || null;
-                        const tags = (it && it.tags) || [];
-                        if (!data || data.length < 2 || !baseInterp) {
-                            results.push({ id: it && it.id, tonalMatch: 0, acousticPassed: false, acousticReason: "Missing Curve Data", matchedTag: false });
-                            return;
-                        }
-                        const norm = CurveUtils.normalizeTo75dB(data, 500, 75);
-                        const interp = CurveUtils.cubicSplineInterpolate(norm, freqsLocal);
-                        const tonalMatch = this._scoreInterp(interp, baseInterp, freqsLocal, true);
-                        const acoustic = this.verifyGoalAcoustics(interp, baseInterp, freqsLocal, goal);
-                        results.push({
-                            id: it.id,
-                            tonalMatch: tonalMatch,
-                            acousticPassed: !!acoustic.passed,
-                            acousticReason: acoustic.reason || "",
-                            matchedTag: this.hasGoalTag(tags, goal)
-                        });
-                    });
-                    // A newer scan may have started while the fallback ran —
-                    // its results must win, never this stale batch.
-                    return (this._scanToken === token) ? results : this.SCAN_SUPERSEDED;
                 },
 
                 updateIndexingProgressBar: function() {
                     const progressContainer = document.getElementById('find-progress-container');
-                    if (PEQDB_Module.dataMissing) {
-                        // Never advertise a stuck 0% index when the measurement
-                        // files themselves are absent.
-                        if (progressContainer) progressContainer.classList.add('hidden');
-                        return;
-                    }
                     if (PEQDB_Module.databaseFullyLoaded) {
-                        this.hideIndexingProgressAfterMin();
+                        if (progressContainer) progressContainer.classList.add('hidden');
                         return;
                     }
 
                     const dataset = PEQDB_Module.STATE.dataset;
                     if (!dataset || dataset.length === 0) return;
 
-                    let indexedCount;
-                    if (PEQDB_Module._indexedCountBase === undefined) {
-                        // First call after the dataset exists: snapshot the
-                        // already-restored (IDB-cached) items once, then let
-                        // loadCurve's incremental counter add on top.
-                        PEQDB_Module._indexedCountBase = dataset.filter(item => item.data !== null).length;
-                    }
-                    indexedCount = PEQDB_Module._indexedCountBase + (PEQDB_Module._indexedCount || 0);
-                    if (indexedCount > dataset.length || indexedCount < 0) {
-                        // Counter out of sync (e.g. cache was cleared) — reconcile once.
-                        indexedCount = dataset.filter(item => item.data !== null).length;
-                        PEQDB_Module._indexedCountBase = indexedCount;
-                        PEQDB_Module._indexedCount = 0;
-                    }
+                    const indexedCount = dataset.filter(item => item.data !== null).length;
                     const totalCount = dataset.length;
                     const percent = Math.round((indexedCount / totalCount) * 100);
 
@@ -20371,41 +19509,20 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                     if (text) text.textContent = percent + '%';
 
                     if (percent >= 100) {
-                        this.hideIndexingProgressAfterMin();
+                        if (progressContainer) progressContainer.classList.add('hidden');
                     } else {
-                        if (this._progressShownAt === undefined) this._progressShownAt = Date.now();
                         if (progressContainer) progressContainer.classList.remove('hidden');
                         if (status) status.textContent = `⚡ Indexing: ${indexedCount}/${totalCount} files cached...`;
                     }
                 },
 
-                hideIndexingProgressAfterMin: function() {
-                    const progressContainer = document.getElementById('find-progress-container');
-                    if (!progressContainer || progressContainer.classList.contains('hidden')) return;
-                    if (this._progressShownAt === undefined) this._progressShownAt = Date.now();
-                    const minMs = 900;
-                    const elapsed = Date.now() - this._progressShownAt;
-                    const bar = document.getElementById('find-progress-bar');
-                    const text = document.getElementById('find-progress-text');
-                    if (bar) bar.style.width = '100%';
-                    if (text) text.textContent = '100%';
-                    if (elapsed >= minMs) {
-                        progressContainer.classList.add('hidden');
-                        this._progressShownAt = undefined;
-                    } else {
-                        if (this._progressHideTimer) clearTimeout(this._progressHideTimer);
-                        this._progressHideTimer = setTimeout(() => this.hideIndexingProgressAfterMin(), minMs - elapsed);
-                    }
+                populateCloneSelector: function() {
+
                 },
 
                 scanAndMatch: async function() {
                     if (this.isScanning) return;
                     this.isScanning = true;
-                    // Bump the scan token synchronously at entry — before the
-                    // 400ms deferral below — so any scan started while this one
-                    // is still waiting in its setTimeout window supersedes it.
-                    const scanToken = (this._scanToken || 0) + 1;
-                    this._scanToken = scanToken;
 
                     if (!this.iemDatabase || this.iemDatabase.length === 0) {
                         await this.loadDatabase();
@@ -20422,16 +19539,6 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
 
                     if (isTuningMode) {
 
-                        const opt = this.baselineOptions[this.currentBaselineIndex];
-                        if (opt.id === 'custom') {
-                            const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
-                            if (!baseCurve || !baseCurve.data || baseCurve.data.length < 2) {
-                                showToast("Add a curve to the EQ Base slot to use Custom baseline!", "🛠️");
-                                this.isScanning = false;
-                                return;
-                            }
-                        }
-
                         const dataset = PEQDB_Module.STATE.dataset;
                         if (!dataset || dataset.length === 0) {
                             showToast("Database catalog not loaded yet.", "⚠️");
@@ -20447,9 +19554,6 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
 
                         setTimeout(async () => {
                             try {
-                            // A newer scan started while we were deferred — it
-                            // owns the overlay and the grid now; bail silently.
-                            if (this._scanToken !== scanToken) return;
 
                             const batchSize = 25;
                             for (let i = 0; i < dataset.length; i += batchSize) {
@@ -20458,8 +19562,6 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                                     await Promise.all(chunk.map(item => CurveIndexer.loadCurve(item, 0)));
                                 }
                             }
-                            // Re-check after the loading loop (it can take seconds).
-                            if (this._scanToken !== scanToken) return;
 
                             let validItems = dataset.filter(item => item.data !== null && item.data.length >= 2);
 
@@ -20476,14 +19578,7 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             const freqs = CurveUtils.generateLogGrid(100);
                             const targetInterp = CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]);
 
-                            const matches = await this.runTuningScan(validItems, targetInterp, freqs, scanToken);
-
-                            if (matches === this.SCAN_SUPERSEDED || this._scanToken !== scanToken) {
-                                // A newer scan owns the overlay AND the busy
-                                // flag — do NOT clear isScanning here or we'd
-                                // stomp its in-flight state.
-                                return;
-                            }
+                            const matches = await this.runTuningScan(validItems, targetInterp, freqs);
 
                             const deduplicatedMatches = [];
                             const seenNames = new Set();
@@ -20514,23 +19609,10 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             return;
                         }
 
-                        // Pre-flight zero-check: estimate matches with the current
-                        // spec filters; a guaranteed-empty combo skips the scan
-                        // (and its overlay flash) entirely.
-                        const preflightCount = this.iemDatabase.filter(db => this.matchesSpecFilters(db, this.readSpecFilterValues())).length;
-                        if (preflightCount === 0) {
-                            showToast("No matches for these specs — try clearing a filter.", "🧩", { duration: 3200 });
-                            this.isScanning = false;
-                            return;
-                        }
-
                         if (overlay) overlay.classList.remove('hidden');
 
                         setTimeout(async () => {
                             try {
-                            // Superseded while deferred? The newer scan owns the
-                            // overlay/grid — leave the shared UI alone.
-                            if (this._scanToken !== scanToken) return;
 
                             const specFilterValues = this.readSpecFilterValues();
 
@@ -20551,36 +19633,32 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             });
 
                             const dataset = PEQDB_Module.STATE.dataset || [];
-                            // Index once instead of dataset.find per match —
-                            // the old lookup was O(matches × dataset).
-                            const idMap = new Map();
-                            const fileMap = new Map();
-                            for (let di = 0; di < dataset.length; di++) {
-                                const dii = dataset[di];
-                                if (dii.id != null && !idMap.has(dii.id)) idMap.set(dii.id, dii);
-                                if (dii.primaryFilePath && !fileMap.has(dii.primaryFilePath)) fileMap.set(dii.primaryFilePath, dii);
-                                if (dii.files) {
-                                    for (let fi = 0; fi < dii.files.length; fi++) {
-                                        const fp = dii.files[fi];
-                                        if (!fileMap.has(fp)) fileMap.set(fp, dii);
-                                    }
-                                }
-                            }
+                            // Index the dataset once: id -> item and primaryFile -> item.
+                            // The per-match lookups below were dataset.find() scans
+                            // inside the batch loop (O(matches x dataset)).
+                            const datasetById = new Map();
+                            const datasetByFile = new Map();
+                            dataset.forEach(item => {
+                                if (item && item.id !== undefined && !datasetById.has(item.id)) datasetById.set(item.id, item);
+                                if (item && item.primaryFilePath && !datasetByFile.has(item.primaryFilePath)) datasetByFile.set(item.primaryFilePath, item);
+                                if (item && Array.isArray(item.files)) item.files.forEach(f => { if (!datasetByFile.has(f)) datasetByFile.set(f, item); });
+                            });
                             const LOAD_BATCH = 25;
                             for (let bi = 0; bi < matches.length; bi += LOAD_BATCH) {
                                 const batch = matches.slice(bi, bi + LOAD_BATCH);
                                 await Promise.all(batch.map(async (m) => {
                                     const db = m.dbEntry;
                                     const targetId = db ? db.id : m.id;
-                                    let item = idMap.get(targetId);
+                                    let item = datasetById.get(targetId);
                                     if (!item && db && db.files && db.files.length > 0) {
-                                        item = fileMap.get(db.files[0]);
+                                        item = datasetByFile.get(db.files[0]) || null;
                                     }
                                     if (item) {
                                         if (!item.data || item.data.length < 2) {
                                             await CurveIndexer.loadCurve(item, 0);
                                         }
                                         m.data = item.data;
+                                        db.data = item.data;
                                     }
                                 }));
                                 if (document.getElementById('find-scanning-title')) {
@@ -20591,8 +19669,6 @@ const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
                             const loadedCount = matches.filter(m => m.data && m.data.length >= 2).length;
                             console.log("[FindEngine] Specs scan: matches.length =", matches.length,
                                 "| with curve data =", loadedCount);
-
-                            if (this._scanToken !== scanToken) return;
 
                             this._lastMatches = matches;
                             this.renderMatches(this._lastMatches);
@@ -20729,11 +19805,474 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                     }
                 },
 
+                updateEndgameBudgetDisplay: function(val) {
+                    const disp = document.getElementById('find-endgame-budget-val');
+                    if (disp) disp.textContent = `$${val} Max`;
+                },
+
+                // Main-thread mirror of the worker's scoreEndgameCategories
+                // (find-worker.js). Used only when the Worker is unavailable.
+                _scoreEndgameCategoriesLocal: function(cc, freqs, maxPrice) {
+                    const EG = window.EndgameCategories;
+                    if (!EG) return null;
+                    const cats = EG.ENDGAME_CATEGORIES || [];
+                    const maxPicks = EG.ENDGAME_MAX_PICKS || 12;
+                    const priced = cc.filter(e => e.price && e.price <= maxPrice);
+                    const out = {};
+                    const champions = [];
+
+                    cats.forEach(cat => {
+                        const scored = priced.map(e => {
+                            const res = EG.scoreCategory(cat, e.tags, e.interp, freqs);
+                            const bonus = Math.min(5, (e.price / maxPrice) * 5);
+                            return { entry: e, composite: res.score + bonus, reason: res.reason, tagMatch: res.tagMatch, curveScore: res.curveScore };
+                        }).sort((a, b) => b.composite - a.composite);
+                        if (!scored.length) { out[cat.id] = { pool: [] }; return; }
+
+                        const champion = scored[0];
+                        const gkCeiling = champion.entry.price * EG.GIANT_KILLER_PRICE_FRACTION;
+                        const gkSims = {};
+                        for (let i = 1; i < scored.length; i++) {
+                            const s = scored[i];
+                            if (s.entry.price > gkCeiling) continue;
+                            const sim = this._scoreInterp(s.entry.interp, champion.entry.interp, freqs, true);
+                            if (sim >= 75) gkSims[s.entry.id] = { sim: sim, s: s };
+                        }
+
+                        const pool = [];
+                        const limit = Math.min(maxPicks, scored.length);
+                        for (let i = 0; i < limit; i++) {
+                            const s = scored[i];
+                            const gk = gkSims[s.entry.id];
+                            const pick = {
+                                id: s.entry.id, name: s.entry.name, price: s.entry.price,
+                                brand: s.entry.brand || '', score: Math.min(100, Math.round(s.composite)),
+                                reason: s.reason, tagMatch: !!s.tagMatch, curveScore: Math.round(s.curveScore || 0)
+                            };
+                            if (i === 0) pick.isChampion = true;
+                            if (gk) { pick.isGiantKiller = true; pick.similarity = gk.sim; pick.reason = `${gk.sim.toFixed(1)}% tonal match to ${champion.entry.name}`; }
+                            pool.push(pick);
+                        }
+
+                        let bestGkAll = null, bestGk = null;
+                        for (const gkId in gkSims) {
+                            const g = gkSims[gkId];
+                            if (!bestGkAll || g.sim > bestGkAll.sim) bestGkAll = g;
+                            if (pool.some(p => p.id === gkId)) continue;
+                            if (!bestGk || g.sim > bestGk.sim) bestGk = g;
+                        }
+                        if (bestGk) {
+                            pool.push({
+                                id: bestGk.s.entry.id, name: bestGk.s.entry.name, price: bestGk.s.entry.price,
+                                brand: bestGk.s.entry.brand || '', score: Math.min(100, Math.round(bestGk.s.composite)),
+                                reason: `${bestGk.sim.toFixed(1)}% tonal match to ${champion.entry.name}`,
+                                tagMatch: !!bestGk.s.tagMatch, curveScore: Math.round(bestGk.s.curveScore || 0),
+                                isGiantKiller: true, similarity: bestGk.sim
+                            });
+                        }
+
+                        champions.push({ id: champion.entry.id, name: champion.entry.name, price: champion.entry.price, gk: bestGkAll });
+                        out[cat.id] = { pool: pool };
+                    });
+
+                    const valueById = new Map();
+                    champions.forEach(ch => {
+                        const gk = ch.gk;
+                        if (!gk) return;
+                        const e = gk.s.entry;
+                        const existing = valueById.get(e.id);
+                        if (existing && existing.similarity >= gk.sim) return;
+                        valueById.set(e.id, { id: e.id, name: e.name, price: e.price, brand: e.brand || '', similarity: gk.sim, matchName: ch.name });
+                    });
+                    out._value = { pool: Array.from(valueById.values()).sort((a, b) => b.similarity - a.similarity).slice(0, 12) };
+                    return out;
+                },
+
+                _runEndgameViaWorker: function(items, maxPrice, freqs) {
+                    const worker = this.ensureFindWorker();
+                    if (!worker) return Promise.resolve(null);
+                    // Same canonical-list handshake as tuning: the endgame scan
+                    // reuses the worker's memoized profiles when the item set
+                    // is unchanged (sig matches itemsKey() in find-worker.js).
+                    const sig = this._workerSetSig(items);
+                    const workerHasSet = (sig === this._workerCanonicalSig);
+                    return new Promise((resolve) => {
+                        let retriedWithItems = false;
+                        const onMsg = (e) => {
+                            const d = e.data || {};
+                            if (d.type !== 'result') return;
+                            // Worker lost its memoized set: resend full payload once.
+                            if (!d.ok && d.reprime && !retriedWithItems) {
+                                retriedWithItems = true;
+                                try {
+                                    worker.postMessage({ type: 'endgame', items: items, maxPrice: maxPrice, freqs: freqs, sig: sig });
+                                    this._workerCanonicalSig = sig;
+                                } catch (postErr) {
+                                    cleanup();
+                                    resolve(null);
+                                }
+                                return;
+                            }
+                            // Only consume replies that belong to THIS request type:
+                            // tuning/upgrade listeners share the same worker.
+                            if (d.endgame === undefined) return;
+                            cleanup();
+                            if (!d.ok) { console.warn("[FindEngine] worker endgame failed:", d.error); return resolve(null); }
+                            resolve(d.endgame);
+                        };
+                        const onErr = (e) => {
+                            console.warn("[FindEngine] worker error:", e && e.message);
+                            cleanup();
+                            resolve(null);
+                        };
+                        const cleanup = () => {
+                            worker.removeEventListener('message', onMsg);
+                            worker.removeEventListener('error', onErr);
+                        };
+                        worker.addEventListener('message', onMsg);
+                        worker.addEventListener('error', onErr);
+                        try {
+                            if (workerHasSet) {
+                                worker.postMessage({ type: 'endgame', maxPrice: maxPrice, freqs: freqs, sig: sig });
+                            } else {
+                                worker.postMessage({ type: 'endgame', items: items, maxPrice: maxPrice, freqs: freqs, sig: sig });
+                                this._workerCanonicalSig = sig;
+                            }
+                        } catch (e) {
+                            cleanup();
+                            resolve(null);
+                        }
+                    });
+                },
+
+                scanEndgameSets: async function() {
+                    if (this.isScanning) return;
+                    const grid = document.getElementById('find-matches-grid');
+                    const emptyState = document.getElementById('find-empty-state');
+                    const overlay = document.getElementById('find-scanning-overlay');
+                    try {
+                        this.isScanning = true;
+                        if (grid) grid.innerHTML = '';
+                        if (emptyState) emptyState.classList.add('hidden');
+                        if (overlay) overlay.classList.remove('hidden');
+
+                        const title = document.getElementById('find-scanning-title');
+                        const subtitle = document.getElementById('find-scanning-subtitle');
+                        if (title) title.textContent = "Forging Endgame Sets...";
+                        if (subtitle) subtitle.textContent = "Scoring champions, gems, and category contenders...";
+
+                        const dataset = PEQDB_Module.STATE.dataset || [];
+                        if (!dataset.length) {
+                            showToast("Measurement database not loaded yet.", "⚠️");
+                            return;
+                        }
+
+                        // Batched curve loading (same pattern as scanAndMatch).
+                        const batchSize = 25;
+                        for (let i = 0; i < dataset.length; i += batchSize) {
+                            const chunk = dataset.slice(i, i + batchSize).filter(item => !item.data || item.data.length < 2);
+                            if (chunk.length > 0) {
+                                await Promise.all(chunk.map(item => CurveIndexer.loadCurve(item, 0)));
+                            }
+                        }
+                        const valid = dataset.filter(item => item.data && item.data.length >= 2);
+
+                        const maxPrice = parseFloat(document.getElementById('find-endgame-budget-slider')?.value || 500);
+                        const freqs = CurveUtils.generateLogGrid(100);
+
+                        // Shared enriched payload (price/brand/tags included) so
+                        // the worker's canonical cache is identical whether it
+                        // was built by the tuning or the endgame scan.
+                        const slim = this._buildWorkerSlim(valid);
+
+                        let endgame = await this._runEndgameViaWorker(slim, maxPrice, freqs);
+                        if (!endgame) {
+                            const cc = slim.filter(s => s.data).map(s => {
+                                const norm = CurveUtils.normalizeTo75dB(s.data, 500, 75);
+                                return {
+                                    id: s.id, name: s.name,
+                                    interp: CurveUtils.cubicSplineInterpolate(norm, freqs),
+                                    price: s.price, brand: s.brand, tags: s.tags
+                                };
+                            });
+                            endgame = this._scoreEndgameCategoriesLocal(cc, freqs, maxPrice);
+                        }
+
+                        if (!endgame) {
+                            showToast("Endgame engine unavailable.", "⚠️");
+                            return;
+                        }
+
+                        this._lastEndgame = endgame;
+                        this._endgameState = {};
+                        this.renderEndgameResults(endgame);
+                        showToast("Endgame sets ready!", "👑");
+                    } catch (err) {
+                        console.error("[FindEngine] endgame scan failed:", err);
+                        showToast("Endgame scan failed.", "⚠️");
+                    } finally {
+                        if (overlay) overlay.classList.add('hidden');
+                        this.isScanning = false;
+                    }
+                },
+
+                cycleEndgamePick: function(catId, dir) {
+                    if (!this._lastEndgame || !this._lastEndgame[catId]) return;
+                    const st = this._endgameState = this._endgameState || {};
+                    const pool = this._lastEndgame[catId].pool || [];
+                    if (!pool.length) return;
+                    const cur = st[catId] || 0;
+                    st[catId] = (cur + dir + pool.length) % pool.length;
+                    this.renderEndgameResults(this._lastEndgame);
+                },
+
+                cycleEndgameValue: function(dir) {
+                    if (!this._lastEndgame || !this._lastEndgame._value) return;
+                    const st = this._endgameState = this._endgameState || {};
+                    const pool = this._lastEndgame._value.pool || [];
+                    if (!pool.length) return;
+                    const cur = st._value || 0;
+                    st._value = (cur + dir + pool.length) % pool.length;
+                    this.renderEndgameResults(this._lastEndgame);
+                },
+
+                renderEndgameResults: function(endgame) {
+                    const grid = document.getElementById('find-matches-grid');
+                    const emptyState = document.getElementById('find-empty-state');
+                    if (!grid) return;
+                    if (emptyState) emptyState.classList.add('hidden');
+
+                    const EG = window.EndgameCategories;
+                    const st = this._endgameState = this._endgameState || {};
+
+                    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+                    const dataset = PEQDB_Module.STATE.dataset || [];
+                    const freqs = CurveUtils.generateLogGrid(100);
+
+                    let cardsHtml = '';
+                    const sparkJobs = [];
+                    const marqueesToActivate = [];
+
+                    const buildCardHtml = (cardIdx, headerTitle, headerEmoji, scorePct, scoreColor, curOption, totalOptions, item, catId, isValueStrip, valueMatchName, pReason, badgeHtml, trustHtml) => {
+                        if (!this.cardState[cardIdx]) this.cardState[cardIdx] = { srcIdx: 0, roleIdx: 0 };
+                        const currentRoleOpt = this.cardRoleOptions[this.cardState[cardIdx].roleIdx];
+
+                        const dbEntry = this.getDbEntry(item);
+                        const finalName = item.name || (dbEntry ? dbEntry.name : 'Unknown IEM');
+                        const price = (dbEntry && dbEntry.price_usd != null) ? dbEntry.price_usd : (item.price_usd != null ? item.price_usd : null);
+                        const year = dbEntry && dbEntry.year ? dbEntry.year : null;
+
+                        const driverType = dbEntry ? dbEntry.driver_type : (item.driver_type || null);
+                        const driverTooltip = driverType ? `Driver: ${driverType}` : 'Driver: Dynamic (DD)';
+                        const driverEmoji = (this.driverEmojis && this.driverEmojis[driverType]) || '⚙️';
+
+                        const connector = dbEntry ? dbEntry.connector : (item.connector || null);
+                        const connectorTooltip = connector ? `Connector: ${connector}` : 'Connector: 2-Pin (0.78mm)';
+                        const connectorEmoji = (this.connectorEmojis && this.connectorEmojis[connector]) || '🔌';
+
+                        const formFactor = dbEntry ? (dbEntry.form_factor || 'IEM') : (item.form_factor || 'IEM');
+                        const formTooltip = `Form: ${formFactor}`;
+                        const formEmoji = (typeof formFactorEmojiMap !== 'undefined' && formFactorEmojiMap[formFactor]) || (this.formFactorEmojis && this.formFactorEmojis[formFactor]) || (this.formFactorEmojis && this.formFactorEmojis['IEM']) || '🎧';
+
+                        const cached = this._getCachedCardData(item, dbEntry, freqs);
+                        const genreMatch = cached.genreMatch;
+                        const gameGenreMatch = cached.gameGenreMatch;
+                        const tagsHtml = cached.tagsHtml;
+
+                        let driveHtml = '<span class="text-zinc-500 font-bold">⚡ Easy to drive</span>';
+                        if (dbEntry && dbEntry.impedance_ohm && dbEntry.sensitivity_db) {
+                            const imp = parseFloat(dbEntry.impedance_ohm);
+                            const sens = parseFloat(dbEntry.sensitivity_db);
+                            if (imp >= 64 || sens < 98) {
+                                driveHtml = '<span class="text-amber-400 font-bold" title="Higher impedance / lower sensitivity - benefits from an amp">⚡ Amp Req.</span>';
+                            } else {
+                                driveHtml = '<span class="text-emerald-400 font-bold">⚡ Easy to Drive</span>';
+                            }
+                        }
+
+                        const curveIdToLoad = item.id || (dbEntry ? dbEntry.id : finalName);
+                        const hasGraph = !!(item.data && item.data.length >= 2);
+                        const sparkId = `spark-${cardIdx}`;
+                        const marqId = `marquee-${cardIdx}`;
+
+                        return `
+                            <div id="card-${cardIdx}" class="section-card p-3 flex flex-col justify-between hover:scale-[1.015] hover:shadow-2xl transition-all duration-200 relative overflow-hidden group">
+                                <div class="space-y-2">
+                                    <div class="flex justify-between items-center select-none pb-1 border-b border-white/[0.06]">
+                                        <div class="flex items-center gap-1.5 min-w-0 pr-1 truncate">
+                                            <span class="vibrant-emoji flex-shrink-0 text-sm leading-none">${headerEmoji}</span>
+                                            <span class="text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${isValueStrip ? 'text-amber-300' : 'text-sky-400'} truncate">${esc(headerTitle)}</span>
+                                        </div>
+                                        <div class="flex items-center gap-1.5 flex-shrink-0">
+                                            ${badgeHtml || ''}
+                                            <span class="text-base font-black ${scoreColor} font-mono">${scorePct}%</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex justify-between items-center text-xs select-none">
+                                        <span class="text-[9px] font-mono text-zinc-400 font-bold uppercase tracking-wider">Option ${curOption} of ${totalOptions}</span>
+                                        ${totalOptions > 1 ? `
+                                            <div class="flex items-center gap-1">
+                                                <button onclick="FindEngine.${isValueStrip ? 'cycleEndgameValue(-1)' : `cycleEndgamePick('${catId}', -1)`}" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
+                                                <button onclick="FindEngine.${isValueStrip ? 'cycleEndgameValue(1)' : `cycleEndgamePick('${catId}', 1)`}" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+
+                                    <div class="flex items-center gap-2 mt-1">
+                                        <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Music Match: ${genreMatch.name}">
+                                            <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
+                                                <span class="emoji-font vibrant-emoji text-base leading-none">${genreMatch.emoji}</span>
+                                            </div>
+                                            <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${genreMatch.name}</span>
+                                        </div>
+                                        <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Game Match: ${gameGenreMatch.name}">
+                                            <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
+                                                <span class="emoji-font vibrant-emoji text-base leading-none">${gameGenreMatch.emoji}</span>
+                                            </div>
+                                            <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${gameGenreMatch.name}</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="space-y-1">
+                                        <div class="flex items-center gap-2 w-full mt-1">
+                                            <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0" data-id="${esc(curveIdToLoad)}" data-name="${esc(finalName)}" onclick="event.stopPropagation(); FindEngine.updateFloatingCompareBar();">
+                                            <div class="flex-1 overflow-hidden relative flex items-center h-5">
+                                                <span id="${marqId}" class="text-xs font-black text-stone-200 inline-block whitespace-nowrap">${esc(finalName)}</span>
+                                            </div>
+                                        </div>
+
+                                        <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
+                                            ${price !== null && price !== undefined ? `<span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>` : ''}
+                                            ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
+                                            ${driverType ? `<span class="spec-icon-badge" data-tooltip="${driverTooltip}">${driverEmoji}</span>` : ''}
+                                            ${connector ? `<span class="spec-icon-badge" data-tooltip="${connectorTooltip}">${connectorEmoji}</span>` : ''}
+                                            <span class="spec-icon-badge" data-tooltip="${formTooltip}">${formEmoji}</span>
+                                        </div>
+
+                                        <div class="h-[42px] w-full rounded-none border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
+                                            <canvas id="${sparkId}" class="absolute inset-0 w-full h-full block opacity-85"></canvas>
+                                        </div>
+
+                                        <div class="flex items-center justify-between w-full mt-2.5 px-1 text-[8.5px] font-mono select-none">
+                                            <div class="flex-shrink-0">${driveHtml}</div>
+                                            <div class="flex items-center justify-end overflow-hidden ml-1">
+                                                ${trustHtml || ''}
+                                            </div>
+                                        </div>
+
+                                        <div class="flex items-center justify-center gap-3 w-full mt-2 pt-1">
+                                            ${tagsHtml}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center gap-1.5 mt-3 pt-2 border-t-2 border-black ${hasGraph ? '' : 'hidden'}">
+                                    <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole('${cardIdx}', -1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
+                                    <button onclick="event.stopPropagation(); FindEngine.loadCardToGraph('${cardIdx}', '${esc(curveIdToLoad)}')" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none">
+                                        <span id="label-role-stepper-${cardIdx}" class="flex items-center justify-center gap-1 truncate">${currentRoleOpt.label}</span>
+                                    </button>
+                                    <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole('${cardIdx}', 1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
+                                </div>
+                            </div>
+                        `;
+                    };
+
+                    // 1. Value Strip Card
+                    const vpool = (endgame._value && endgame._value.pool) || [];
+                    if (vpool.length) {
+                        const vi = (st._value || 0) % vpool.length;
+                        const v = vpool[vi];
+                        const dsItem = dataset.find(i => i.id === v.id) || { id: v.id, name: v.name, data: v.data };
+                        const badgeHtml = '';
+                        const trustHtml = `<span class="text-[9px] font-bold text-emerald-400 whitespace-nowrap truncate" title="Clone of ${esc(v.matchName)}">💥 ${esc(v.matchName)}</span>`;
+
+                        cardsHtml += buildCardHtml('eg_val', 'Value', '💎', v.similarity.toFixed(1), 'text-amber-300', vi + 1, vpool.length, dsItem, '_value', true, v.matchName, '', badgeHtml, trustHtml);
+                        sparkJobs.push({ cardIdx: 'eg_val', item: dsItem });
+                        marqueesToActivate.push('marquee-eg_val');
+                    }
+
+                    // 2. Category Cards
+                    (EG && EG.ENDGAME_CATEGORIES || []).forEach(cat => {
+                        const entry = endgame[cat.id];
+                        const pool = (entry && entry.pool) || [];
+                        if (!pool.length) return;
+                        const idx = (st[cat.id] || 0) % pool.length;
+                        const p = pool[idx];
+                        const dsItem = dataset.find(i => i.id === p.id) || { id: p.id, name: p.name, data: p.data };
+
+                        const badgeHtml = p.isChampion
+                            ? '<span class="text-[9.5px] font-black text-amber-300 whitespace-nowrap">👑 Champion</span>'
+                            : (p.isGiantKiller ? '<span class="text-[9.5px] font-black text-emerald-400 whitespace-nowrap">💥 Gem</span>' : '');
+                        const trustHtml = p.tagMatch
+                            ? (p.curveScore >= 40 ? '<span class="text-[9px] font-bold text-emerald-400 whitespace-nowrap">✅ Confirmed</span>' : '<span class="text-[9px] font-bold text-rose-400 whitespace-nowrap">⚠️ Tag Conflict</span>')
+                            : '<span class="text-[9px] font-bold text-sky-400 whitespace-nowrap">🔬 Measured</span>';
+
+                        const headerEmoji = cat.emoji || (p.isChampion ? '👑' : '🎧');
+                        const cardKey = `eg_${cat.id}`;
+
+                        cardsHtml += buildCardHtml(cardKey, cat.label || cat.id, headerEmoji, Math.round(p.score), 'text-emerald-400', idx + 1, pool.length, dsItem, cat.id, false, '', p.reason, badgeHtml, trustHtml);
+                        sparkJobs.push({ cardIdx: cardKey, item: dsItem });
+                        marqueesToActivate.push(`marquee-${cardKey}`);
+                    });
+
+                    grid.innerHTML = cardsHtml || '<div class="col-span-full text-center text-zinc-400 italic text-xs py-8">No endgame candidates under budget. Try increasing your budget ceiling.</div>';
+
+                    App.setFindSection('matches');
+
+                    setTimeout(() => {
+                        sparkJobs.forEach(job => {
+                            if (job.item && job.item.data) {
+                                const sparkCanvas = document.getElementById('spark-' + job.cardIdx);
+                                if (sparkCanvas) {
+                                    const sw = sparkCanvas.clientWidth || 120;
+                                    const sh = sparkCanvas.clientHeight || 40;
+                                    sparkCanvas.width = sw;
+                                    sparkCanvas.height = sh;
+                                    const sctx = sparkCanvas.getContext('2d');
+                                    sctx.clearRect(0, 0, sw, sh);
+                                    sctx.fillStyle = '#000000';
+                                    sctx.fillRect(0, 0, sw, sh);
+                                    const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
+                                    const themeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
+                                    const sparkColor = themeConfig.accent || '#3b82f6';
+                                    const norm = CurveUtils.normalizeTo75dB(job.item.data, 500, 75);
+                                    sctx.strokeStyle = sparkColor;
+                                    sctx.lineWidth = 2.2;
+                                    sctx.lineJoin = 'round';
+                                    sctx.beginPath();
+                                    for (let i = 0; i < norm.length; i++) {
+                                        const x = (Math.log10(norm[i][0] / 20) / Math.log10(20000 / 20)) * sw;
+                                        const y = sh - ((norm[i][1] - 60) / 30) * sh;
+                                        if (i === 0) sctx.moveTo(x, y);
+                                        else sctx.lineTo(x, y);
+                                    }
+                                    sctx.stroke();
+                                }
+                            }
+                        });
+
+                        marqueesToActivate.forEach(id => {
+                            const marq = document.getElementById(id);
+                            if (marq) activateOrbitMarquee(marq);
+                        });
+                    }, 100);
+                },
+
+                // index.html's oninput calls *Debounced wrappers that were
+                // never defined anywhere -- every keystroke in these three
+                // search boxes threw and the live-filtering never ran
+                // (only onfocus, which calls the un-debounced handler
+                // directly, worked). Wrapping the existing live handlers
+                // is enough; they were already correct.
+                handleGkSearchDebounced: debounce(function(query) { FindEngine.handleGkSearch(query); }, 160),
+                handleTasteSearchDebounced: debounce(function(query) { FindEngine.handleTasteSearch(query); }, 160),
+                handleUpgradeSearchDebounced: debounce(function(query) { FindEngine.handleUpgradeSearch(query); }, 160),
+
                 handleGkSearch: function(query) {
                     const container = document.getElementById('find-gk-search-results');
                     if (!container) return;
-                    const hasQuery = !!(query && query.trim());
-                    container.classList.remove('hidden');
+                    const hasQuery = !!(query && query.trim());                    container.classList.remove('hidden');
 
                     const dataset = PEQDB_Module.STATE.dataset || [];
                     const matches = dataset.filter(item => {
@@ -20756,36 +20295,16 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                         return;
                     }
 
-                    // Cap the rendered rows: rebuilding thousands of DOM nodes
-                    // per keystroke is the dominant cost of the live search.
-                    const MAX_ROWS = 100;
-                    const visible = matches.slice(0, MAX_ROWS);
-                    const truncated = matches.length - visible.length;
-
-                    scrollEl.innerHTML = visible.map(item => {
+                    scrollEl.innerHTML = matches.map(item => {
                         const db = this.getDbEntry(item);
-                        const priceDisp = db && db.price_usd ? db.price_usd : (item.price_usd || '200+');
-                        // Numeric coercion for the inline handler: a raw string
-                        // in price_usd must not be able to break out of the
-                        // attribute's JS context (display keeps the raw value).
-                        const priceNum = Number.isFinite(parseFloat(priceDisp)) ? parseFloat(priceDisp) : 0;
+                        const p = db && db.price_usd ? db.price_usd : (item.price_usd || '200+');
                         return `
-                            <div data-letter="${esc(alphaKeyOf(item))}" onclick="FindEngine.setGkFlagship('${escJs(item.id)}', '${escJs(item.name)}', ${priceNum})" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800 flex justify-between">
+                            <div data-letter="${alphaKeyOf(item)}" onclick="FindEngine.setGkFlagship('${escJs(item.id)}', '${escJs(item.name)}', ${p})" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800 flex justify-between">
                                 <span>${esc(item.name)}</span>
-                                <span class="text-amber-400 font-mono ml-2">$${esc(priceDisp)}</span>
+                                <span class="text-amber-400 font-mono ml-2">$${p}</span>
                             </div>
                         `;
-                    }).join('') + (truncated > 0
-                        ? `<div class="p-1 text-zinc-500 italic text-xs">…and ${truncated} more (refine your search)</div>`
-                        : '');
-                },
-
-                handleGkSearchDebounced: function(query) {
-                    if (this._gkSearchTimer) clearTimeout(this._gkSearchTimer);
-                    this._gkSearchTimer = setTimeout(() => {
-                        this._gkSearchTimer = null;
-                        this.handleGkSearch(query);
-                    }, 120);
+                    }).join('');
                 },
 
                 setGkFlagship: function(id, name, price) {
@@ -20812,7 +20331,7 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                         slot.innerHTML = `
                             <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                                 <span class="emoji-font vibrant-emoji text-sm flex-shrink-0 leading-none">👑</span>
-                                <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(name)} ($${esc(this.selectedGkFlagshipPrice)})</span>
+                                <span class="text-xs font-black text-[var(--text-main)] truncate">${name} ($${this.selectedGkFlagshipPrice})</span>
                             </div>
                             <button type="button" onclick="FindEngine.clearGkFlagship()" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the flagship target">✕</button>
                         `;
@@ -20831,161 +20350,99 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                 },
 
                 scanGiantKillers: async function() {
+                    if (this.isScanning) return;
                     this._gkHasRun = true;
                     if (!this.selectedGkFlagshipId) {
                         showToast("Select a flagship IEM target in Step 1 first!", "⚠️");
                         return;
                     }
-                    // Re-entrancy guard: the scan is a long batched loop with
-                    // no cancellation — a second click would overlap it and
-                    // race the shared overlay/isScanning state.
-                    if (this._gkScanning) return;
-                    // Cross-scan guard: any other scan (tuning/specs/taste/upgrade)
-                    // owns the shared overlay and grid right now.
-                    if (this.isScanning) {
-                        showToast("A scan is already running — wait for it to finish.", "⏳");
-                        return;
-                    }
-                    this._gkScanning = true;
 
                     this.isScanning = true;
-                    // Bump the scan token at entry so concurrent scans can't
-                    // interleave renders on the shared overlay/grid.
-                    const scanToken = (this._scanToken || 0) + 1;
-                    this._scanToken = scanToken;
                     const grid = document.getElementById('find-matches-grid');
                     const emptyState = document.getElementById('find-empty-state');
                     const overlay = document.getElementById('find-scanning-overlay');
 
-                    if (grid) grid.innerHTML = '';
-                    if (emptyState) emptyState.classList.add('hidden');
-                    if (overlay) overlay.classList.remove('hidden');
-
-                    const title = document.getElementById('find-scanning-title');
-                    const subtitle = document.getElementById('find-scanning-subtitle');
-                    if (title) title.textContent = "Finding Gems...";
-                    if (subtitle) subtitle.textContent = `Finding budget clones of ${this.selectedGkFlagshipName}...`;
-
-                    // Declared OUTSIDE the try: the finally block is a sibling
-                    // scope, so a let-declaration inside try was unreachable
-                    // there and every scan (even a successful one) ended with an
-                    // uncaught ReferenceError, leaving isScanning/_gkScanning
-                    // stuck on the early-return paths.
-                    let phase3Started = false;
-
                     try {
+                        if (grid) grid.innerHTML = '';
+                        if (emptyState) emptyState.classList.add('hidden');
+                        if (overlay) overlay.classList.remove('hidden');
 
-                    const dataset = PEQDB_Module.STATE.dataset || [];
-                    let flagshipItem = dataset.find(i => i.id === this.selectedGkFlagshipId);
-                    if (!flagshipItem && this.iemDatabase) {
-                        const dbMatch = this.iemDatabase.find(d => d.id === this.selectedGkFlagshipId);
-                        if (dbMatch) flagshipItem = dbMatch;
-                    }
+                        const title = document.getElementById('find-scanning-title');
+                        const subtitle = document.getElementById('find-scanning-subtitle');
+                        if (title) title.textContent = "Hunting Gems...";
+                        if (subtitle) subtitle.textContent = `Finding budget clones of ${this.selectedGkFlagshipName}...`;
 
-                    if (!flagshipItem) {
-                        if (overlay) overlay.classList.add('hidden');
-                        showToast("Flagship curve data not found.", "⚠️");
-                        return;
-                    }
+                        const dataset = PEQDB_Module.STATE.dataset || [];
+                        let flagshipItem = dataset.find(i => i.id === this.selectedGkFlagshipId);
+                        if (!flagshipItem && this.iemDatabase) {
+                            const dbMatch = this.iemDatabase.find(d => d.id === this.selectedGkFlagshipId);
+                            if (dbMatch) flagshipItem = dbMatch;
+                        }
 
-                    if (!flagshipItem.data || flagshipItem.data.length < 2) {
-                        await CurveIndexer.loadCurve(flagshipItem, 0);
-                        if (!flagshipItem.data || flagshipItem.data.length < 2) {
-                            if (overlay) overlay.classList.add('hidden');
-                            showToast("Flagship curve data could not be loaded.", "⚠️");
+                        if (!flagshipItem) {
+                            showToast("Flagship curve data not found.", "⚠️");
                             return;
                         }
-                    }
 
-                    const freqs = CurveUtils.generateLogGrid(100);
-                    const flagNorm = CurveUtils.normalizeTo75dB(flagshipItem.data, 500, 75);
-                    const targetInterp = CurveUtils.cubicSplineInterpolate(flagNorm, freqs);
-
-                    const budgetLimit = parseFloat(document.getElementById('find-gk-budget-slider')?.value || 50);
-                    const selectedDrivers = this.readFilterList('gk', 'driver');
-                    const selectedFormFactors = this.readFilterList('gk', 'formfactor');
-                    const selectedConnectors = this.readFilterList('gk', 'connector');
-
-                    // Phase 1: apply spec filters, collect candidates + what needs loading.
-                    const candidates = [];
-                    const needsLoad = [];
-
-                    for (let i = 0; i < dataset.length; i++) {
-                        const item = dataset[i];
-                        if (item.id === flagshipItem.id) continue;
-
-                        const dbEntry = this.getDbEntry(item);
-                        const price = dbEntry && dbEntry.price_usd ? parseFloat(dbEntry.price_usd) : (item.price_usd ? parseFloat(item.price_usd) : null);
-
-                        if (!price || price > budgetLimit) continue;
-
-                        if (!this.matchesDriverList(dbEntry, selectedDrivers)) continue;
-
-                        if (!this.matchesFormFactorList(dbEntry, selectedFormFactors)) continue;
-
-                        if (!this.matchesConnectorList(dbEntry, selectedConnectors)) continue;
-
-                        candidates.push({ item: item, price: price });
-                        if (!item.data || item.data.length < 2) {
-                            needsLoad.push(item);
+                        if (!flagshipItem.data || flagshipItem.data.length < 2) {
+                            await CurveIndexer.loadCurve(flagshipItem, 0);
                         }
-                    }
 
-                    // Phase 2: batch-load curve data (25 concurrent) instead of
-                    // serializing one awaited fetch per candidate.
-                    const LOAD_BATCH = 25;
-                    for (let i = 0; i < needsLoad.length; i += LOAD_BATCH) {
-                        await Promise.all(needsLoad.slice(i, i + LOAD_BATCH).map(item => CurveIndexer.loadCurve(item, 0)));
-                    }
-                    // Superseded while loading? The newer scan owns the overlay.
-                    if (this._scanToken !== scanToken) return;
+                        const freqs = CurveUtils.generateLogGrid(100);
+                        const flagNorm = CurveUtils.normalizeTo75dB(flagshipItem.data, 500, 75);
+                        const targetInterp = CurveUtils.cubicSplineInterpolate(flagNorm, freqs);
 
-                    // Phase 3: score everything that actually has curve data.
-                    // Run in time-sliced chunks: the per-candidate normalize +
-                    // spline + score work is heavy and the old synchronous
-                    // forEach blocked the main thread for the whole dataset.
-                    const matches = [];
+                        const budgetLimit = parseFloat(document.getElementById('find-gk-budget-slider')?.value || 50);
+                        const selectedDrivers = this._getSpecSelection('gk', 'driver');
+                        const selectedFormFactors = this._getSpecSelection('gk', 'formfactor');
+                        const selectedConnectors = this._getSpecSelection('gk', 'connector');
 
-                    const finishPhase3 = () => {
-                        try {
-                            matches.sort((a, b) => b.similarity - a.similarity);
+                        // Cheap metadata filters first, then ONE batched loading
+                        // pass — awaiting loadCurve inside the scoring loop made
+                        // a cold-cache run thousands of serial HTTP round-trips.
+                        const candidates = [];
+                        for (let i = 0; i < dataset.length; i++) {
+                            const item = dataset[i];
+                            if (item.id === flagshipItem.id) continue;
 
-                            this._lastMatches = matches;
-                            this.renderMatches(this._lastMatches);
+                            const dbEntry = this.getDbEntry(item);
+                            const price = dbEntry && dbEntry.price_usd ? parseFloat(dbEntry.price_usd) : (item.price_usd ? parseFloat(item.price_usd) : null);
 
-                            if (overlay) overlay.classList.add('hidden');
+                            if (!price || price > budgetLimit) continue;
 
-                            App.setFindSection('matches');
-                            showToast(`Found ${matches.length} Gems under $${budgetLimit}!`, "💎");
-                        } finally {
-                            this.isScanning = false;
-                            this._gkScanning = false;
+                        if (selectedDrivers.length && !selectedDrivers.some(v => this.driverFilterMatches(dbEntry, v))) continue;
+
+                        if (selectedFormFactors.length) {
+                            if (!selectedFormFactors.some(v => this._formFactorMatches(dbEntry, v))) continue;
                         }
-                    };
 
-                    let candidateIdx = 0;
-                    const CHUNK_SIZE = 60;
-                    const scoreChunk = () => {
-                        const end = Math.min(candidateIdx + CHUNK_SIZE, candidates.length);
-                        for (; candidateIdx < end; candidateIdx++) {
-                            const entry = candidates[candidateIdx];
-                            const item = entry.item;
+                        if (selectedConnectors.length) {
+                            if (!selectedConnectors.some(v => this._connectorMatches(dbEntry, v))) continue;
+                        }
+
+                            candidates.push(item);
+                        }
+
+                        const batchSize = 25;
+                        for (let i = 0; i < candidates.length; i += batchSize) {
+                            const chunk = candidates.slice(i, i + batchSize).filter(item => !item.data || item.data.length < 2);
+                            if (chunk.length > 0) {
+                                await Promise.all(chunk.map(item => CurveIndexer.loadCurve(item, 0)));
+                            }
+                        }
+
+                        const matches = [];
+                        for (const item of candidates) {
                             if (!item.data || item.data.length < 2) continue;
 
-                            // Reuse the PEQDB 500-point cached interpolation when
-                            // present — the giant-killer loop alone re-normalized
-                            // and re-interpolated every candidate on each run.
-                            let itemInterp;
-                            if (item.cachedInterp && PEQDB_Module.DSP && PEQDB_Module.DSP.FREQS) {
-                                itemInterp = CurveUtils.resampleInterp(item.cachedInterp, PEQDB_Module.DSP.FREQS, freqs);
-                            } else {
-                                const itemNorm = CurveUtils.normalizeTo75dB(item.data, 500, 75);
-                                itemInterp = CurveUtils.cubicSplineInterpolate(itemNorm, freqs);
-                            }
+                            const itemNorm = CurveUtils.normalizeTo75dB(item.data, 500, 75);
+                            const itemInterp = CurveUtils.cubicSplineInterpolate(itemNorm, freqs);
 
                             const matchPct = this._scoreInterp(itemInterp, targetInterp, freqs, true);
 
                             if (matchPct >= 75) {
+                                const dbEntry = this.getDbEntry(item);
+                                const price = dbEntry && dbEntry.price_usd ? parseFloat(dbEntry.price_usd) : (item.price_usd ? parseFloat(item.price_usd) : null);
                                 matches.push({
                                     name: item.name,
                                     id: item.id,
@@ -20995,694 +20452,26 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                                     isGiantKiller: true,
                                     flagshipName: this.selectedGkFlagshipName,
                                     flagshipPrice: this.selectedGkFlagshipPrice,
-                                    price: entry.price,
-                                    savings: Math.max(0, Math.round(this.selectedGkFlagshipPrice - entry.price))
+                                    price: price,
+                                    savings: Math.max(0, Math.round(this.selectedGkFlagshipPrice - price))
                                 });
                             }
                         }
-                        // Superseded mid-run: the newer scan owns the overlay
-                        // and the isScanning flag.
-                        if (this._scanToken !== scanToken) return;
-                        if (candidateIdx < candidates.length) {
-                            if (subtitle) subtitle.textContent = `Scoring candidates ${Math.min(candidateIdx, candidates.length)}/${candidates.length}...`;
-                            setTimeout(scoreChunk, 0);
-                        } else {
-                            finishPhase3();
-                        }
-                    };
 
-                    phase3Started = true;
-                    scoreChunk();
+                        matches.sort((a, b) => b.similarity - a.similarity);
 
+                        this._lastMatches = matches;
+                        this.renderMatches(this._lastMatches);
+
+                        App.setFindSection('matches');
+                        showToast(`Found ${matches.length} Gems under $${budgetLimit}!`, "💎");
+                    } catch (err) {
+                        console.error("[FindEngine] Giant-Killer scan failed:", err);
+                        this._handleScanError(err);
                     } finally {
-                        if (!phase3Started) {
-                            this.isScanning = false;
-                            this._gkScanning = false;
-                        }
-                    }
-                },
-
-                scanEndgameSets: async function() {
-                    // Re-entrancy guard: same rationale as scanGiantKillers —
-                    // a second click must not overlap the shared overlay/state.
-                    if (this._egScanning) return;
-                    if (this.isScanning) {
-                        showToast("A scan is already running — wait for it to finish.", "⏳");
-                        return;
-                    }
-                    this._egHasRun = true;
-                    this._egScanning = true;
-                    this.isScanning = true;
-                    const scanToken = (this._scanToken || 0) + 1;
-                    this._scanToken = scanToken;
-                    const grid = document.getElementById('find-matches-grid');
-                    const emptyState = document.getElementById('find-empty-state');
-                    const overlay = document.getElementById('find-scanning-overlay');
-                    const title = document.getElementById('find-scanning-title');
-                    const subtitle = document.getElementById('find-scanning-subtitle');
-
-                    if (grid) grid.innerHTML = '';
-                    if (emptyState) emptyState.classList.add('hidden');
-                    if (overlay) overlay.classList.remove('hidden');
-                    if (title) title.textContent = "Building Endgame Sets...";
-                    if (subtitle) subtitle.textContent = "Collecting candidates within budget...";
-
-                    try {
-                        const dataset = PEQDB_Module.STATE.dataset || [];
-                        const maxPrice = parseFloat(document.getElementById('find-endgame-budget-slider')?.value || 500);
-
-                        const selectedDrivers = this.readFilterList('eg', 'driver');
-                        const selectedFormFactors = this.readFilterList('eg', 'formfactor');
-                        const selectedConnectors = this.readFilterList('eg', 'connector');
-
-                        // Phase 1: every item with a real price inside the budget.
-                        // Unpriced entries are excluded entirely — none of the
-                        // three picks can be resolved without a price.
-                        const candidates = [];
-                        const needsLoad = [];
-                        for (let i = 0; i < dataset.length; i++) {
-                            const item = dataset[i];
-                            const dbEntry = this.getDbEntry(item);
-                            const price = dbEntry && dbEntry.price_usd ? parseFloat(dbEntry.price_usd) : (item.price_usd ? parseFloat(item.price_usd) : null);
-                            if (!price || price > maxPrice) continue;
-
-                            if (!this.matchesDriverList(dbEntry, selectedDrivers)) continue;
-
-                            if (!this.matchesFormFactorList(dbEntry, selectedFormFactors)) continue;
-
-                            if (!this.matchesConnectorList(dbEntry, selectedConnectors)) continue;
-
-                            candidates.push(item);
-                            if (!item.data || item.data.length < 2) {
-                                needsLoad.push(item);
-                            }
-                        }
-
-                        if (candidates.length === 0) {
-                            if (overlay) overlay.classList.add('hidden');
-                            showToast("No IEMs found under that budget.", "⚠️");
-                            return;
-                        }
-
-                        // Phase 2: batch-load curve data (same 25-concurrent
-                        // window as the giant-killer scan).
-                        const LOAD_BATCH = 25;
-                        for (let i = 0; i < needsLoad.length; i += LOAD_BATCH) {
-                            if (this._scanToken !== scanToken) return;
-                            await Promise.all(needsLoad.slice(i, i + LOAD_BATCH).map(item => CurveIndexer.loadCurve(item, 0)));
-                        }
-                        // Superseded while loading? The newer scan owns the overlay.
-                        if (this._scanToken !== scanToken) return;
-
-                        // Phase 3: score all 8 categories in the worker.
-                        if (subtitle) subtitle.textContent = `Scoring ${candidates.length} IEMs across 8 categories...`;
-                        const freqs = CurveUtils.generateLogGrid(100);
-
-                        let endgame = await this._runEndgameViaWorker(scanToken, candidates, maxPrice);
-                        if (endgame === this.SCAN_SUPERSEDED) return;
-                        if (!endgame) {
-                            console.warn("[FindEngine] endgame worker path failed, falling back to main thread.");
-                            endgame = await this._scoreEndgameFallback(candidates, freqs, maxPrice);
-                            if (endgame === this.SCAN_SUPERSEDED) return;
-                        }
-                        if (this._scanToken !== scanToken) return;
-
-                        this.renderEndgameResults(endgame, maxPrice);
-                    } finally {
-                        // Only hide the overlay when this scan still owns it —
-                        // a superseded scan must not hide a newer scan's overlay.
-                        if (this._scanToken === scanToken) {
-                            if (overlay) overlay.classList.add('hidden');
-                            this.isScanning = false;
-                            this._egScanning = false;
-                        }
-                    }
-                },
-
-                updateEndgameBudgetDisplay: function(val) {
-                    const disp = document.getElementById('find-endgame-budget-val');
-                    if (disp) disp.textContent = `$${val} Max`;
-                },
-
-                _runEndgameViaWorker: function(token, items, maxPrice) {
-                    const worker = this.ensureFindWorker();
-                    if (!worker) return Promise.resolve(null);
-                    // Per-request id: the worker echoes it back so this
-                    // listener only accepts results from its own scan.
-                    const reqId = (this._findReqSeq = (this._findReqSeq || 0) + 1);
-                    let reprimed = false;
-                    return new Promise((resolve) => {
-                        const onMsg = (e) => {
-                            const d = e.data || {};
-                            if (d.type !== 'result') return;
-                            if (d.reqId !== reqId) return;
-                            if (d.reprime) {
-                                // Worker lost its cache — re-send the full
-                                // payload and retry once in place.
-                                if (reprimed) {
-                                    worker.removeEventListener('message', onMsg);
-                                    worker.removeEventListener('error', onErr);
-                                    clearTimeout(watchdog);
-                                    console.warn("[FindEngine] worker endgame re-prime loop, falling back to main thread.");
-                                    resolve(null);
-                                    return;
-                                }
-                                console.warn("[FindEngine] worker endgame cache miss, re-priming dataset.");
-                                this._endgameWorkerSig = null;
-                                this._endgameWorkerItems = null;
-                                const slim = items.map(it => this._slimItem(it));
-                                const sig = this._scanItemsSig(slim);
-                                this._endgameWorkerSig = sig;
-                                this._endgameWorkerItems = slim;
-                                reprimed = true;
-                                worker.postMessage({ type: 'prime', dataset: slim, sig: sig, reqId: reqId });
-                                worker.postMessage({ type: 'endgame', sig: sig, maxPrice: maxPrice, reqId: reqId });
-                                return;
-                            }
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
-                            clearTimeout(watchdog);
-                            if (this._scanToken !== token) return resolve(this.SCAN_SUPERSEDED);
-                            if (!d.ok) { console.warn("[FindEngine] worker endgame failed:", d.error); return resolve(null); }
-                            resolve(d.endgame || null);
-                        };
-                        const onErr = (e) => {
-                            console.warn("[FindEngine] worker error:", e && e.message);
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
-                            clearTimeout(watchdog);
-                            resolve(null);
-                        };
-                        worker.addEventListener('message', onMsg);
-                        worker.addEventListener('error', onErr);
-                        const watchdog = setTimeout(() => {
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
-                            resolve(null);
-                        }, 30000);
-                        try {
-                            const slim = items.map(it => this._slimItem(it));
-                            const sig = this._scanItemsSig(slim);
-                            if (sig !== this._endgameWorkerSig || !this._endgameWorkerItems) {
-                                this._endgameWorkerSig = sig;
-                                this._endgameWorkerItems = slim;
-                                worker.postMessage({ type: 'prime', dataset: slim, sig: sig, reqId: reqId });
-                                worker.postMessage({ type: 'endgame', sig: sig, maxPrice: maxPrice, reqId: reqId });
-                            } else {
-                                worker.postMessage({ type: 'endgame', sig: sig, maxPrice: maxPrice, reqId: reqId });
-                            }
-                        } catch (e) {
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
-                            clearTimeout(watchdog);
-                            resolve(null);
-                        }
-                    });
-                },
-
-                // Main-thread fallback for the Endgame scan — mirrors the
-                // worker's scoreEndgameCategories so both paths agree.
-                _pickEndgameSet: function(cc, freqs, maxPrice) {
-                    const EG = (typeof EndgameCategories !== 'undefined') ? EndgameCategories : null;
-                    if (!EG) return null;
-                    const cats = EG.ENDGAME_CATEGORIES || [];
-                    const maxPicks = EG.ENDGAME_MAX_PICKS || 12;
-                    const priced = [];
-                    for (let i = 0; i < cc.length; i++) {
-                        const e = cc[i];
-                        if (!e.price || e.price > maxPrice) continue;
-                        priced.push(e);
-                    }
-                    const out = {};
-                    const champions = [];
-                    for (let c = 0; c < cats.length; c++) {
-                        const cat = cats[c];
-                        const scored = [];
-                        for (let i = 0; i < priced.length; i++) {
-                            const e = priced[i];
-                            const res = EG.scoreCategory(cat, e.tags, e.interp, freqs);
-                            const bonus = Math.min(5, (e.price / maxPrice) * 5);
-                            scored.push({
-                                entry: e,
-                                composite: res.score + bonus,
-                                reason: res.reason,
-                                tagMatch: res.tagMatch,
-                                curveScore: res.curveScore
-                            });
-                        }
-                        if (scored.length === 0) {
-                            out[cat.id] = { pool: [] };
-                            continue;
-                        }
-                        scored.sort((a, b) => b.composite - a.composite);
-                        const champion = scored[0];
-                        const gkCeiling = champion.entry.price * EG.GIANT_KILLER_PRICE_FRACTION;
-                        const gkSims = {};
-                        for (let i = 1; i < scored.length; i++) {
-                            const s = scored[i];
-                            if (s.entry.price > gkCeiling) continue;
-                            const sim = this._scoreInterp(s.entry.interp, champion.entry.interp, freqs, true);
-                            if (sim >= 75) gkSims[s.entry.id] = { sim: sim, s: s };
-                        }
-                        const pool = [];
-                        const limit = Math.min(maxPicks, scored.length);
-                        for (let i = 0; i < limit; i++) {
-                            const s = scored[i];
-                            const gk = gkSims[s.entry.id];
-                            const pick = {
-                                id: s.entry.id,
-                                name: s.entry.name,
-                                price: s.entry.price,
-                                brand: s.entry.brand || '',
-                                score: Math.min(100, Math.round(s.composite)),
-                                reason: s.reason,
-                                tagMatch: !!s.tagMatch,
-                                curveScore: Math.round(s.curveScore || 0)
-                            };
-                            if (i === 0) pick.isChampion = true;
-                            if (gk) {
-                                pick.isGiantKiller = true;
-                                pick.similarity = gk.sim;
-                                pick.reason = `${gk.sim.toFixed(1)}% tonal match to ${champion.entry.name}`;
-                            }
-                            pool.push(pick);
-                        }
-                        let bestGk = null;
-                        let bestGkAll = null;
-                        for (const gkId in gkSims) {
-                            const g = gkSims[gkId];
-                            if (!bestGkAll || g.sim > bestGkAll.sim) bestGkAll = g;
-                            if (pool.some(p => p.id === gkId)) continue;
-                            if (!bestGk || g.sim > bestGk.sim) bestGk = g;
-                        }
-                        if (bestGk) {
-                            pool.push({
-                                id: bestGk.s.entry.id,
-                                name: bestGk.s.entry.name,
-                                price: bestGk.s.entry.price,
-                                brand: bestGk.s.entry.brand || '',
-                                score: Math.min(100, Math.round(bestGk.s.composite)),
-                                reason: `${bestGk.sim.toFixed(1)}% tonal match to ${champion.entry.name}`,
-                                tagMatch: !!bestGk.s.tagMatch,
-                                curveScore: Math.round(bestGk.s.curveScore || 0),
-                                isGiantKiller: true,
-                                similarity: bestGk.sim
-                            });
-                        }
-                        champions.push({ id: champion.entry.id, name: champion.entry.name, interp: champion.entry.interp, price: champion.entry.price, gk: bestGkAll });
-                        out[cat.id] = { pool: pool };
-                    }
-                    const valueById = new Map();
-                    for (let k = 0; k < champions.length; k++) {
-                        const ch = champions[k];
-                        const gk = ch.gk;
-                        if (!gk) continue;
-                        const e = gk.s.entry;
-                        const existing = valueById.get(e.id);
-                        if (existing && existing.similarity >= gk.sim) continue;
-                        valueById.set(e.id, { id: e.id, name: e.name, price: e.price, brand: e.brand || '', similarity: gk.sim, matchName: ch.name });
-                    }
-                    const valuePool = Array.from(valueById.values()).sort((a, b) => b.similarity - a.similarity);
-                    out._value = { pool: valuePool.slice(0, 12) };
-                    return out;
-                },
-
-                _scoreEndgameFallback: async function(items, freqs, maxPrice) {
-                    // Mirror of the worker path: build canonical profiles on the
-                    // main thread, attach the same price/brand/tags metadata via
-                    // _slimItem, and run the identical selection logic.
-                    const canonicalList = await this.buildCanonicalProfiles(items);
-                    const slimMap = new Map(items.map(it => [it.id, this._slimItem(it)]));
-                    const cc = canonicalList.map(e => {
-                        const meta = slimMap.get(e.id) || {};
-                        return {
-                            name: e.name,
-                            id: e.id,
-                            interp: e.interp,
-                            price: meta.price || null,
-                            brand: meta.brand || '',
-                            tags: meta.tags || []
-                        };
-                    });
-                    return this._pickEndgameSet(cc, freqs, maxPrice);
-                },
-
-                renderEndgameCardHtml: function(catIdx) {
-                    const isValue = catIdx === 'value';
-                    const pool = isValue ? (this._lastEndgameValue || []) : (this._lastEndgame ? this._lastEndgame[catIdx] : null);
-                    if (!pool || pool.length === 0) return '';
-
-                    const cat = isValue ? this._lastEndgameValueCat : (this._lastEndgameCats ? this._lastEndgameCats[catIdx] : null);
-                    const curIdx = isValue ? (this._endgameValueIdx || 0) : (this._endgameIndices ? (this._endgameIndices[catIdx] || 0) : 0);
-                    const c = pool[curIdx];
-                    const total = pool.length;
-
-                    const name = c.pick.name || 'Unknown IEM';
-
-                    const dbEntry = this.getDbEntry({ id: c.pick.id }) || (PEQDB_Module.STATE.dataset ? PEQDB_Module.STATE.dataset.find(d => d.id === c.pick.id) : null);
-                    const price = c.pick.price || '---';
-                    const year = dbEntry ? dbEntry.year : null;
-                    const driverType = dbEntry ? dbEntry.driver_type : null;
-                    const driverConfig = dbEntry ? dbEntry.driver_config : null;
-                    const connector = dbEntry ? dbEntry.connector : null;
-                    const formFactorRaw = dbEntry ? (dbEntry.form_factor || 'IEM') : 'IEM';
-
-                    const formFactorEmojiMap = {
-                        'IEM': FindEngine.formFactorEmojis['IEM'],
-                        'In-Ear Monitor': FindEngine.formFactorEmojis['IEM'],
-                        'Earbuds (Wired)': FindEngine.formFactorEmojis['Earbuds (Wired)'],
-                        'Wireless Earbuds (TWS)': FindEngine.formFactorEmojis['Wireless Earbuds (TWS)'],
-                        'Over-Ear Headphones (Wired)': FindEngine.formFactorEmojis['Over-Ear Headphones (Wired)'],
-                        'Wireless Over-Ear Headphones': FindEngine.formFactorEmojis['Wireless Over-Ear Headphones']
-                    };
-                    const formEmoji = formFactorEmojiMap[formFactorRaw] || FindEngine.formFactorEmojis['IEM'];
-                    const formTooltip = formFactorRaw || 'In-Ear Monitor (IEM)';
-                    const driverEmoji = FindEngine.driverEmojis[driverType] || '⚙️';
-                    const driverTooltip = `${driverType || 'Driver'}${driverConfig ? ' (' + driverConfig + ')' : ''}`;
-                    const connectorEmoji = FindEngine.connectorEmojis[connector] || '🔌';
-                    const connectorTooltip = connector || 'Standard Connector';
-
-                    const badgeValue = c.badgeValue || 0;
-                    let scoreColorClass = "text-emerald-400";
-                    if (badgeValue < 75) scoreColorClass = "text-amber-400";
-                    if (badgeValue < 60) scoreColorClass = "text-rose-400";
-
-                    const driveability = dbEntry ? FindEngine.getDriveabilityStatus(dbEntry.impedance, dbEntry.sensitivity) : null;
-                    const targetCurve = FindEngine.generateTargetCurve();
-                    const freqs = CurveUtils.generateLogGrid(100);
-                    const targetInterp = targetCurve ? CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]) : null;
-                    const dataItem = c.dataItem;
-                    const candInterp = dataItem && dataItem.data ? CurveUtils.cubicSplineInterpolate(CurveUtils.normalizeTo75dB(dataItem.data, 500, 75), freqs) : null;
-                    const eqFeat = (targetInterp && candInterp) ? FindEngine.calculateEQFeasibility(candInterp, targetInterp, freqs) : null;
-
-                    const driveHtml = FindEngine.getShortDriveLabel(driveability);
-                    const eqHtml = FindEngine.getShortEqLabel(eqFeat);
-
-                    const rawTags = dbEntry ? dbEntry.tags : (dataItem && dataItem.data ? PEQDB_Module.analyzeCurveSignature(dataItem.data) : []);
-                    const uniqueTags = [...new Set(rawTags || [])].slice(0, 12);
-                    const tagsHtml = uniqueTags.map(t => {
-                        const emoji = FindEngine.getTagEmoji(t);
-                        return `<span class="find-tag-icon" data-tooltip="${esc(t)}">${emoji || '🏷️'}</span>`;
-                    }).join('');
-
-                    const rawFiles = (dbEntry && Array.isArray(dbEntry.files)) ? dbEntry.files : ((dataItem && dataItem.files) || []);
-                    const fileCount = rawFiles.length;
-
-                    const cardIdx = `eg_${catIdx}`;
-                    if (!FindEngine.cardState[cardIdx]) FindEngine.cardState[cardIdx] = { srcIdx: 0, roleIdx: 0 };
-                    const currentRoleOpt = FindEngine.cardRoleOptions[FindEngine.cardState[cardIdx].roleIdx];
-
-                    const hasGraph = !!(dataItem && dataItem.data) || fileCount > 0;
-
-                    const egGenreMatch = FindEngine.determineIemGenreMatch ? FindEngine.determineIemGenreMatch(dataItem, dbEntry) : { emoji: '🎧', name: 'Pop' };
-                    const egGameGenreMatch = FindEngine.determineIemGameGenreMatch ? FindEngine.determineIemGameGenreMatch(dataItem, dbEntry) : { emoji: '🎮', name: 'Video Game OST' };
-
-                    let corroborationHtml = '';
-                    if (c.pick && c.pick.tagMatch !== undefined) {
-                        const catLabel = cat ? cat.label.toUpperCase() : 'CATEGORY';
-                        if (c.pick.tagMatch && c.pick.curveScore >= 40) {
-                            corroborationHtml = `<span class="text-[8.5px] font-black text-emerald-400 bg-emerald-950/40 border border-emerald-800/80 px-1.5 py-0.5 rounded">✅ Confirmed ${esc(catLabel)}</span>`;
-                        } else if (!c.pick.tagMatch && c.pick.curveScore >= 40) {
-                            corroborationHtml = `<span class="text-[8.5px] font-black text-teal-400 bg-teal-950/40 border border-teal-800/80 px-1.5 py-0.5 rounded">🔬 Measured ${esc(catLabel)}</span>`;
-                        } else if (c.pick.tagMatch && c.pick.curveScore < 40) {
-                            corroborationHtml = `<span class="text-[8.5px] font-black text-rose-400 bg-rose-950/40 border border-rose-800/80 px-1.5 py-0.5 rounded">⚠️ Tag Conflict</span>`;
-                        } else {
-                            corroborationHtml = `<span class="text-[8.5px] font-bold text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">Standard Candidate</span>`;
-                        }
-                    }
-
-                    return `
-                        <div id="eg-step-card-${catIdx}" class="section-card p-3 flex flex-col justify-between hover:scale-[1.015] hover:shadow-2xl transition-all duration-200 relative overflow-hidden group">
-                            <div class="space-y-2">
-                                <div class="flex justify-between items-center select-none pb-1 border-b border-white/[0.06]">
-                                    <span class="text-xs font-black uppercase tracking-wider text-sky-400 whitespace-nowrap">${cat ? `${esc(cat.emoji)} ${esc(cat.label).toUpperCase()}` : ''}</span>
-                                    <span class="text-lg font-black ${scoreColorClass} flex-shrink-0">${esc(c.badgeText)}</span>
-                                </div>
-
-                                <div class="flex justify-between items-center text-xs select-none">
-                                    <span class="text-[9px] font-mono ${c.slotColorClass} font-black" title="${esc(c.reason || '')}">${c.slotEmoji} ${esc(c.slotLabel)}</span>
-                                    ${total > 1 ? `
-                                        <div class="flex items-center gap-1.5">
-                                            <span class="text-[9px] font-mono text-zinc-400 font-bold">Option ${curIdx + 1} of ${total}</span>
-                                            <div class="flex items-center gap-1">
-                                                <button onclick="FindEngine.cycleEndgamePick('${catIdx}', -1)" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Previous pick">◄</button>
-<button onclick="FindEngine.cycleEndgamePick('${catIdx}', 1)" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Next pick">►</button>
-                                            </div>
-                                        </div>
-                                    ` : ''}
-                                </div>
-
-                                ${corroborationHtml ? `
-                                <div class="flex items-center justify-start gap-1.5 mt-1">
-                                    ${corroborationHtml}
-                                </div>
-                                ` : ''}
-
-                                <div class="flex items-center gap-2 w-full mt-1">
-                                    <div class="flex-1 overflow-hidden relative flex items-center h-5">
-                                        <span id="marquee-eg-${catIdx}" class="text-xs font-black text-stone-200 inline-block whitespace-nowrap">${esc(name)}</span>
-                                    </div>
-                                </div>
-
-                                <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
-                                    <span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${esc(price)}</span>
-                                    ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${esc(year)}</span>` : ''}
-                                    ${driverType ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
-                                    ${connector ? `<span class="spec-icon-badge" data-tooltip="${esc(connectorTooltip)}">${connectorEmoji}</span>` : ''}
-                                    <span class="spec-icon-badge" data-tooltip="${esc(formTooltip)}">${formEmoji}</span>
-                                </div>
-
-                                <div class="flex items-center gap-2 mt-1 w-full">
-                                    <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Music Match: ${esc(egGenreMatch.name)}">
-                                        <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
-                                            <span class="emoji-font vibrant-emoji text-base leading-none">${esc(egGenreMatch.emoji)}</span>
-                                        </div>
-                                        <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${esc(egGenreMatch.name)}</span>
-                                    </div>
-                                    <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Game Match: ${esc(egGameGenreMatch.name)}">
-                                        <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
-                                            <span class="emoji-font vibrant-emoji text-base leading-none">${esc(egGameGenreMatch.emoji)}</span>
-                                        </div>
-                                        <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${esc(egGameGenreMatch.name)}</span>
-                                    </div>
-                                </div>
-
-                                <div class="h-[42px] w-full rounded-none border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
-                                    <canvas id="spark-eg-${catIdx}" class="absolute inset-0 w-full h-full block opacity-85"></canvas>
-                                </div>
-
-                                <div class="flex items-center justify-between w-full mt-2.5 px-1 text-[8.5px] font-mono select-none whitespace-nowrap">
-                                    ${driveHtml}
-                                    ${eqHtml}
-                                </div>
-
-                                <div class="flex items-center justify-center gap-1 flex-wrap w-full mt-1.5 pt-1">
-                                    ${tagsHtml}
-                                </div>
-                            </div>
-
-                            <div class="flex items-center gap-1.5 mt-3 pt-2 border-t-2 border-black ${hasGraph ? '' : 'hidden'}">
-                                <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole('${cardIdx}', -1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                <button onclick="event.stopPropagation(); FindEngine.loadCardToGraph('${cardIdx}')" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
-                                    <span id="label-role-stepper-${cardIdx}" class="flex items-center justify-center gap-1 truncate">${currentRoleOpt.label}</span>
-                                </button>
-                                <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole('${cardIdx}', 1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
-                            </div>
-                        </div>
-                    `;
-                },
-
-                cycleEndgamePick: function(catIdx, dir) {
-                    const isValue = catIdx === 'value';
-                    const pool = isValue ? (this._lastEndgameValue || []) : (this._lastEndgame ? this._lastEndgame[catIdx] : null);
-                    if (!pool || pool.length <= 1) return;
-                    const total = pool.length;
-                    let cur = isValue ? (this._endgameValueIdx || 0) : (this._endgameIndices ? (this._endgameIndices[catIdx] || 0) : 0);
-                    cur = (cur + dir + total) % total;
-                    if (isValue) {
-                        this._endgameValueIdx = cur;
-                    } else {
-                        if (!this._endgameIndices) this._endgameIndices = {};
-                        this._endgameIndices[catIdx] = cur;
-                    }
-                    this.cardState['eg_' + catIdx] = { srcIdx: 0, roleIdx: 0 };
-                    const cardEl = document.getElementById('eg-step-card-' + catIdx);
-                    if (cardEl) {
-                        cardEl.outerHTML = this.renderEndgameCardHtml(catIdx);
-                        setTimeout(() => {
-                            this.drawEndgameSparkline(catIdx);
-                            const marq = document.getElementById('marquee-eg-' + catIdx);
-                            if (marq) activateOrbitMarquee(marq);
-                        }, 50);
-                    }
-                },
-
-                drawEndgameSparkline: function(catIdx) {
-                    const isValue = catIdx === 'value';
-                    const pool = isValue ? (this._lastEndgameValue || []) : (this._lastEndgame ? this._lastEndgame[catIdx] : null);
-                    if (!pool || pool.length === 0) return;
-                    const curIdx = isValue ? (this._endgameValueIdx || 0) : (this._endgameIndices ? (this._endgameIndices[catIdx] || 0) : 0);
-                    const c = pool[curIdx];
-                    if (!c || !c.dataItem) return;
-
-                    const doDraw = () => {
-                        const subData = c.dataItem.data;
-                        if (!subData || subData.length < 2) return;
-
-                        const sparkCanvas = document.getElementById('spark-eg-' + catIdx);
-                        if (sparkCanvas) {
-                            const sw = sparkCanvas.clientWidth || 120;
-                            const sh = sparkCanvas.clientHeight || 40;
-                            sparkCanvas.width = sw;
-                            sparkCanvas.height = sh;
-
-                            const sctx = sparkCanvas.getContext('2d');
-                            sctx.clearRect(0, 0, sw, sh);
-                            sctx.fillStyle = '#000000';
-                            sctx.fillRect(0, 0, sw, sh);
-
-                            const sparkColor = getThemeAccent('#3b82f6');
-
-                            const norm = CurveUtils.normalizeTo75dB(subData, 500, 75);
-                            sctx.strokeStyle = sparkColor;
-                            sctx.lineWidth = 2.2;
-                            sctx.lineJoin = 'round';
-                            sctx.shadowColor = sparkColor;
-                            sctx.shadowBlur = 4;
-                            sctx.beginPath();
-                            for (let i = 0; i < norm.length; i++) {
-                                const x = (Math.log10(norm[i][0] / 20) / Math.log10(20000 / 20)) * sw;
-                                const y = sh - ((norm[i][1] - 60) / 30) * sh;
-                                if (i === 0) sctx.moveTo(x, y);
-                                else sctx.lineTo(x, y);
-                            }
-                            sctx.stroke();
-                        }
-
-                        const marq = document.getElementById('marquee-eg-' + catIdx);
-                        if (marq && !marq.classList.contains('marquee-orbit-active')) {
-                            activateOrbitMarquee(marq);
-                        }
-                    };
-
-                    if (!c.dataItem.data || c.dataItem.data.length < 2) {
-                        CurveIndexer.loadCurve(c.dataItem, 0).then(doDraw);
-                    } else {
-                        doDraw();
-                    }
-                },
-
-                renderEndgameResults: function(endgame, maxPrice) {
-                    const EG = (typeof EndgameCategories !== 'undefined') ? EndgameCategories : null;
-                    const cats = (EG && EG.ENDGAME_CATEGORIES) || [];
-                    const grid = document.getElementById('find-matches-grid');
-                    const emptyState = document.getElementById('find-empty-state');
-                    const countBar = document.getElementById('find-results-count');
-                    const countText = document.getElementById('find-results-count-text');
-                    const colMatches = document.getElementById('find-col-results');
-                    const overlay = document.getElementById('find-scanning-overlay');
-
-                    if (colMatches) colMatches.style.display = 'flex';
-                    if (grid) grid.innerHTML = '';
-                    if (emptyState) emptyState.classList.add('hidden');
-                    if (countBar) countBar.classList.remove('hidden');
-
-                    const byId = new Map();
-                    (PEQDB_Module.STATE.dataset || []).forEach(d => { if (d && d.id) byId.set(d.id, d); });
-
-                    const SLOT_META = {
-                        champion: { emoji: '👑', label: 'Champion', colorClass: 'text-amber-400' },
-                        giantKiller: { emoji: '💥', label: 'Giant Killer', colorClass: 'text-emerald-400' },
-                        top: { emoji: '🎯', label: 'Top Pick', colorClass: 'text-sky-400' },
-                        value: { emoji: '💎', label: 'Value Clone', colorClass: 'text-fuchsia-400' }
-                    };
-
-                    this._lastEndgame = [];
-                    this._lastEndgameCats = cats;
-                    this._lastEndgameValueCat = { id: '_value', label: 'Value Picks', emoji: '💎' };
-                    this._endgameIndices = {};
-                    this._lastEndgameValue = [];
-                    this._endgameValueIdx = 0;
-
-                    let pickCount = 0;
-                    let catsWithPicks = 0;
-
-                    cats.forEach(cat => {
-                        const s = (endgame && endgame[cat.id]) || {};
-                        const pool = ((s && s.pool) || []).map(pick => {
-                            let meta = SLOT_META.top;
-                            if (pick.isChampion) meta = SLOT_META.champion;
-                            else if (pick.isGiantKiller) meta = SLOT_META.giantKiller;
-                            const label = (pick.isGiantKiller && pick.similarity)
-                                ? `${meta.label} ${pick.similarity.toFixed(1)}%`
-                                : meta.label;
-                            return {
-                                pick: pick,
-                                dataItem: byId.get(pick.id) || null,
-                                slotEmoji: meta.emoji,
-                                slotLabel: label,
-                                slotColorClass: meta.colorClass,
-                                badgeValue: pick.score || 0,
-                                badgeText: String(pick.score || 0),
-                                reason: pick.reason || ''
-                            };
-                        });
-                        this._lastEndgame.push(pool);
-                        if (pool.length) {
-                            catsWithPicks++;
-                            pickCount += pool.length;
-                        }
-                    });
-
-                    const valuePicks = (endgame && endgame._value && endgame._value.pool) || [];
-                    this._lastEndgameValue = valuePicks.map(pick => ({
-                        pick: pick,
-                        dataItem: byId.get(pick.id) || null,
-                        slotEmoji: SLOT_META.value.emoji,
-                        slotLabel: `${SLOT_META.value.label} ${pick.similarity.toFixed(1)}%`,
-                        slotColorClass: SLOT_META.value.colorClass,
-                        badgeValue: pick.similarity || 0,
-                        badgeText: (pick.similarity || 0).toFixed(1) + '%',
-                        reason: `${(pick.similarity || 0).toFixed(1)}% tonal match to ${pick.matchName || 'a champion'}`
-                    }));
-
-                    if (countText) {
-                        countText.textContent = `${pickCount} endgame picks · ${catsWithPicks} categories under $${maxPrice}${this._lastEndgameValue.length ? ` · ${this._lastEndgameValue.length} value pick${this._lastEndgameValue.length > 1 ? 's' : ''}` : ''}`;
-                        countText.className = 'text-[9.5px] font-black uppercase tracking-wider text-sky-400';
-                    }
-
-                    if (!grid || !cats.length || pickCount === 0) {
                         if (overlay) overlay.classList.add('hidden');
-                        if (countBar) countBar.classList.add('hidden');
-                        if (emptyState) emptyState.classList.remove('hidden');
-                        return;
+                        this.isScanning = false;
                     }
-
-                    const html = [];
-                    if (this._lastEndgameValue.length) {
-                        html.push(this.renderEndgameCardHtml('value'));
-                    }
-                    cats.forEach((cat, ci) => {
-                        if (this._lastEndgame[ci] && this._lastEndgame[ci].length) {
-                            html.push(this.renderEndgameCardHtml(ci));
-                        }
-                    });
-                    grid.innerHTML = html.join('');
-
-                    setTimeout(() => {
-                        if (this._lastEndgameValue.length) {
-                            this.drawEndgameSparkline('value');
-                        }
-                        cats.forEach((cat, ci) => {
-                            if (this._lastEndgame[ci] && this._lastEndgame[ci].length) {
-                                this.drawEndgameSparkline(ci);
-                            }
-                        });
-                    }, 100);
-
-                    if (overlay) overlay.classList.add('hidden');
-                    App.setFindSection('matches');
-                    showToast(`Endgame sets ready — ${pickCount} picks across ${catsWithPicks} categories under $${maxPrice}${this._lastEndgameValue.length ? ` + ${this._lastEndgameValue.length} value pick${this._lastEndgameValue.length > 1 ? 's' : ''}` : ''}!`, "👑");
                 },
 
                 selectedUpgradeBaseIemId: null,
@@ -21690,18 +20479,14 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                 cardState: {},
 
 
-        // These 32 families are NOT hand-guessed — they're the actual clusters
+        // These 16 families are NOT hand-guessed — they're the actual clusters
         // found by running k-means on 7,575 real measured curves from this
         // catalog (reduced to the same 5-axis [subBoost, warmth, vocal,
         // treble, air] shape used everywhere else). Each cluster's `profile`
-        // is its real centroid. Indexes 0-15 are the ORIGINAL 16 clusters,
-        // frozen as anchors (their labels/styles/presetGenreMap indices are
-        // untouched); indexes 16-31 are 16 additional sub-clusters that were
-        // fit into the gaps between them by the same seeded k-means on all
-        // clean curves, then labeled by their centroid signature. Every family
-        // carries exactly one canonical music label and one canonical gaming
-        // label, so the match-card badges, the live EQ-tab overlay, and the
-        // Find-tab genre filters all read off the same single set of names.
+        // is its real centroid. Each family carries exactly one canonical
+        // music label and one canonical gaming label, so the match-card
+        // badges, the live EQ-tab overlay, and the Find-tab genre filters all
+        // read off the same single set of names.
         genreFamilies: [
             { profile: [11.8, 8.4, 7.6, 8.6, -3.9], // "Basshead" (e.g. Blon BL03)
                 musicVariants: [ { emoji: '🎤', name: 'Hip-Hop' } ],
@@ -21761,11 +20546,11 @@ getDriveabilityStatus: function(impedance, sensitivity) {
 
             { profile: [-32.4, -15.4, 6.7, -1.4, -13.3], // Near-bassless open-ear/bone-conduction
                 musicVariants: [ { emoji: '🫧', name: 'ASMR' } ],
-                gameVariants: [ { emoji: '🧱', name: 'Platformer' } ] },
+                gameVariants: [ { emoji: '👾', name: 'Arcade' } ] },
 
             { profile: [6.9, 4.6, 7.7, 2.8, -3.7], // "Typical" balanced Harman-ish — most common shape
                 musicVariants: [ { emoji: '🎬', name: 'Cinematic' } ],
-                gameVariants: [ { emoji: '🔫', name: 'FPS' } ] },
+                gameVariants: [ { emoji: '🔫', name: 'FPS' } ] }
         ],
 
         // Independent GAMING-side classifier. Music and gaming live in
@@ -21796,8 +20581,8 @@ getDriveabilityStatus: function(impedance, sensitivity) {
             { profile: [3.0, 6.0, 3.0, -3.0, -9.0], gameVariants: [ { emoji: '🌱', name: 'Cozy' } ] },
             { profile: [5.0, 1.0, 2.0, -9.0, -12.0], gameVariants: [ { emoji: '👻', name: 'Horror' } ] },
             { profile: [1.0, 3.0, 7.0, 4.0, -5.0], gameVariants: [ { emoji: '🧩', name: 'Puzzle' } ] },
-            { profile: [3.0, 2.0, 8.0, 8.0, -2.0], gameVariants: [ { emoji: '🧱', name: 'Platformer' } ] },
-            { profile: [-2.0, 0.0, 10.0, 10.0, 3.0], gameVariants: [ { emoji: '🔫', name: 'FPS' } ] },
+            { profile: [3.0, 2.0, 8.0, 8.0, -2.0], gameVariants: [ { emoji: '👾', name: 'Arcade' } ] },
+            { profile: [-2.0, 0.0, 10.0, 10.0, 3.0], gameVariants: [ { emoji: '🔫', name: 'FPS' } ] }
         ],
 
         // Indexed 1:1 with genreFamilies, for the live EQ-tab badge's pulse
@@ -21827,38 +20612,26 @@ getDriveabilityStatus: function(impedance, sensitivity) {
         // trebleBoost, airExt] that the family profiles above are scored against.
         getCurveDeltas: function(curveData) {
             if (!curveData || curveData.length < 5) return null;
+            const freqs = [30, 100, 500, 2500, 8000, 14000];
             const norm = CurveUtils.normalizeTo75dB(curveData, 500, 75);
-            const [sb, mb, m, v, tr, air] = CurveUtils.bandAverages(norm, CurveUtils.AXIS_BANDS);
+            const interp = CurveUtils.cubicSplineInterpolate(norm, freqs);
+            const [sb, mb, m, v, tr, air] = interp;
             return [sb - m, mb - m, v - m, tr - m, air - m];
         },
 
         // Same 5-axis reduction, but for the EQ tab's live 10-band parametric
-        // EQ, used only as a fallback when the dense filter-magnitude response
-        // (getLiveResponseDbs) isn't available yet. Convert the 10 EQ bands
-        // into a smooth curve (via the same cubic spline), interpolate onto
-        // the exact reference frequencies used by getCurveDeltas and return
-        // the SAME mid-relative deltas — so the live overlay and the DB-card
-        // classifier rank shapes identically.
-        // bandDeltas is either the 10 boost/cut values in dB (band-index
-        // order, using each band's DEFAULT frequency - only correct if no dot
-        // has been dragged left/right), or an array of {hz, g} pairs giving
-        // each band's actual current frequency and gain, which stays correct
-        // after the band has been dragged horizontally. Callers that already
-        // know the live per-band frequencies (e.g. a dragged dot) should pass
-        // the {hz, g} form so this fallback doesn't silently ignore the drag.
+        // EQ (fixed centers 31/62/125/250/500/1000/2000/4000/8000/16000 Hz)
+        // instead of a measured curve, so both features share one classifier.
+        // bandDeltas is the 10 boost/cut values in dB, band-index order.
         getEqBandDeltas: function(bandDeltas) {
             if (!bandDeltas || bandDeltas.length < 10) return null;
-            const defaultEqFreqs = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
-            const points = [];
-            for (let i = 0; i < bandDeltas.length; i++) {
-                const entry = bandDeltas[i];
-                const isPair = entry && typeof entry === 'object';
-                const hz = isPair ? parseFloat(entry.hz) : defaultEqFreqs[i];
-                const db = isPair ? parseFloat(entry.g) : parseFloat(entry);
-                points.push([isNaN(hz) ? defaultEqFreqs[i] : hz, isNaN(db) ? 0 : db]);
-            }
-            const [sb, mb, m, v, tr, air] = CurveUtils.bandAverages(points, CurveUtils.AXIS_BANDS);
-            return [sb - m, mb - m, v - m, tr - m, air - m];
+            const [b31, b62, b125, b250, b500, b1k, b2k, b4k, b8k, b16k] = bandDeltas;
+            const sub = (b31 + b62) / 2;
+            const warmth = (b125 + b250) / 2;
+            const vocal = b1k;
+            const treble = (b2k + b4k) / 2;
+            const air = (b8k + b16k) / 2;
+            return [sub, warmth, vocal, treble, air];
         },
 
         // Stable (non-random) string hash so the same IEM always lands on the
@@ -21872,65 +20645,42 @@ getDriveabilityStatus: function(impedance, sensitivity) {
             return Math.abs(h) % mod;
         },
 
-        // Shared similarity between a weighted query vector and one weighted
-        // family profile. Direction-cosine alone is magnitude-blind: a 1dB
-        // boost and a 10dB boost point the same way, so small moves never
-        // re-rank families and weird curve shapes sit in one Voronoi cell for
-        // a long time. Blending in a magnitude-overlap term (2·dot / (|q|²+|p|²),
-        // max when the query strength matches the family strength) makes the
-        // live overlay respond proportionally: louder, clearer shapes commit
-        // to their family; faint ones fall back. KEEP 0.5/0.5 unless the family
-        // set is re-tuned.
-        _familyShapeScore: function(qW, pW, dot, qSq, pSq) {
-            const denom = qSq + pSq - dot;
-            const overlap = denom > 1e-9 ? (2 * dot) / (qSq + pSq) : 0;
-            const cos = (qSq > 1e-9 && pSq > 1e-9) ? dot / (Math.sqrt(qSq) * Math.sqrt(pSq)) : 0;
-            return 0.5 * cos + 0.5 * overlap;
-        },
-
         nearestGenreFamilyIndex: function(deltas) {
             // Direction-based (weighted cosine) matching instead of Euclidean
             // nearest-centroid. Euclidean distance is biased toward whichever
-            // centroid sits geometrically closest to the center of the 32-family
+            // centroid sits geometrically closest to the center of the 16-family
             // cluster, which collapsed every moderate V/bass shape onto one
             // "middle" family (Jazz/MMO). Cosine ignores overall magnitude, so
             // a big pure-bass boost maps to the bass-dominant family (Hip-Hop),
             // a V-shaped boost maps to the V-shaped family (EDM/Racing), etc.
             //
             // Per-axis weights for the 5-axis [sub, warmth, vocal, treble, air]
-            // deltas, derived from the shared PERCEPTUAL_WEIGHTS table so the
-            // classifier, similar-curve ranking and auto-EQ all emphasize the
-            // same bands. Perception-wise, genre primarily lives in the mid/
-            // vocal bands, while sub-bass and air are the noisiest in
-            // measurement and the least diagnostic.
-            const AXIS_W = CurveUtils.axisScoreWeights();
+            // deltas. Perception-wise, genre primarily lives in the mid/vocal
+            // bands, while sub-bass and air are the noisiest in measurement and
+            // the least diagnostic — so we under-weight them and emphasize
+            // vocal presence & treble so classification is more musical.
+            const AXIS_W = [0.7, 1.0, 1.3, 1.1, 0.6];
             const W = AXIS_W.map(w => Math.sqrt(w));
-
-            let qSq = 0;
-            const qW = [];
-            for (let j = 0; j < deltas.length; j++) {
-                const v = deltas[j] * W[j];
-                qW.push(v);
-                qSq += v * v;
-            }
 
             // Magnitude gate: an essentially-flat/quiet shape carries no genre
             // information, so route it to the near-neutral family (Classical)
             // instead of letting noise pick an arbitrary direction.
-            if (qSq < 0.25) return 10;
+            let mag = 0;
+            for (let j = 0; j < deltas.length; j++) mag += deltas[j] * W[j] * deltas[j] * W[j];
+            if (mag < 0.25) return 10;
 
             let bestIdx = 0;
             let bestSim = -Infinity;
             this.genreFamilies.forEach((f, i) => {
-                let dot = 0, pSq = 0;
-                const pW = [];
+                let dot = 0, qm = 0, pm = 0;
                 for (let j = 0; j < deltas.length; j++) {
+                    const q = deltas[j] * W[j];
                     const p = f.profile[j] * W[j];
-                    pW.push(p);
-                    dot += qW[j] * p;
-                    pSq += p * p;
+                    dot += q * p;
+                    qm += q * q;
+                    pm += p * p;
                 }
-                const sim = this._familyShapeScore(qW, pW, dot, qSq, pSq);
+                const sim = dot / (Math.sqrt(qm) * Math.sqrt(pm));
                 if (sim > bestSim) {
                     bestSim = sim;
                     bestIdx = i;
@@ -21944,35 +20694,28 @@ getDriveabilityStatus: function(impedance, sensitivity) {
         },
 
         nearestGameGenreFamilyIndex: function(deltas) {
-            // Gaming-tuned axis weights for [sub, warm, vocal, treble, air],
-            // derived from the shared PERCEPTUAL_WEIGHTS table with a gaming
-            // tilt: emphasize sub-bass (rumble) and treble (footsteps/ammo
-            // clicks), de-emphasize warmth (mud masking) and air (noise).
-            const AXIS_W = CurveUtils.axisScoreWeights().map((w, i) => w * [1.7, 0.6, 1.0, 1.3, 0.8][i]);
+            // Gaming-tuned axis weights for [sub, warm, vocal, treble, air].
+            // Emphasize sub-bass (rumble) and treble (footsteps/ammo clicks),
+            // de-emphasize warmth (mud masking) and air (measurement noise).
+            const AXIS_W = [1.2, 0.7, 1.3, 1.5, 0.5];
             const W = AXIS_W.map(w => Math.sqrt(w));
 
-            let qSq = 0;
-            const qW = [];
-            for (let j = 0; j < deltas.length; j++) {
-                const v = deltas[j] * W[j];
-                qW.push(v);
-                qSq += v * v;
-            }
-
-            if (qSq < 0.25) return 10; // near-flat -> Strategy
+            let mag = 0;
+            for (let j = 0; j < deltas.length; j++) mag += deltas[j] * W[j] * deltas[j] * W[j];
+            if (mag < 0.25) return 10; // near-flat -> Strategy
 
             let bestIdx = 0;
             let bestSim = -Infinity;
             this.gameGenreFamilies.forEach((f, i) => {
-                let dot = 0, pSq = 0;
-                const pW = [];
+                let dot = 0, qm = 0, pm = 0;
                 for (let j = 0; j < deltas.length; j++) {
+                    const q = deltas[j] * W[j];
                     const p = f.profile[j] * W[j];
-                    pW.push(p);
-                    dot += qW[j] * p;
-                    pSq += p * p;
+                    dot += q * p;
+                    qm += q * q;
+                    pm += p * p;
                 }
-                const sim = this._familyShapeScore(qW, pW, dot, qSq, pSq);
+                const sim = dot / (Math.sqrt(qm) * Math.sqrt(pm));
                 if (sim > bestSim) {
                     bestSim = sim;
                     bestIdx = i;
@@ -22079,21 +20822,26 @@ declaredPresetGenre: function(presetKey, side) {
     };
 },
 
-// Live EQ-tab version: same 32 families, but returns ONE stable representative
+// Live EQ-tab version: same 16 families, but returns ONE stable representative
 // label per family (variants[0]) instead of hashing, since there's no per-id
 // to anchor on here and hashing live slider state would make the badge flicker
 // between synonyms (e.g. Trap vs Drill) on tiny slider moves with no audible reason.
 // If a curated preset is active, its declared genre wins over the raw shape.
 determineLiveMusicGenreMatch: function(bandDeltas, presetKey) {
-    const deltas = (bandDeltas && bandDeltas.length === 500)
-        ? this.getResponseDeltas(this.DSP.FREQS, bandDeltas)
-        : this.getEqBandDeltas(bandDeltas);
-    const fallbackStyle = { colorClass: 'genre-color-pop', animClass: 'anim-match-breath' };
-    if (!deltas) {
-        const declared = this.declaredPresetGenre(presetKey, 'm');
-        if (declared) return declared;
-        return { emoji: '💃', name: 'Pop', ...fallbackStyle };
+    const declared = this.declaredPresetGenre(presetKey, 'm');
+    if (declared) {
+        const fallbackStyle = { colorClass: 'genre-color-pop', animClass: 'anim-match-breath' };
+        return {
+            emoji: declared.emoji,
+            name: declared.name,
+            colorClass: declared.colorClass || fallbackStyle.colorClass,
+            animClass: declared.animClass || fallbackStyle.animClass
+        };
     }
+
+    const deltas = this.getEqBandDeltas(bandDeltas);
+    const fallbackStyle = { colorClass: 'genre-color-pop', animClass: 'anim-match-breath' };
+    if (!deltas) return { emoji: '💃', name: 'Pop', ...fallbackStyle };
     const idx = this.nearestGenreFamilyIndex(deltas);
     const family = this.genreFamilies[idx];
     const style = this.genreFamilyStyles[idx] || fallbackStyle;
@@ -22102,15 +20850,25 @@ determineLiveMusicGenreMatch: function(bandDeltas, presetKey) {
 },
 
 determineLiveGameGenreMatch: function(bandDeltas, presetKey) {
-    const deltas = (bandDeltas && bandDeltas.length === 500)
-        ? this.getResponseDeltas(this.DSP.FREQS, bandDeltas)
-        : this.getEqBandDeltas(bandDeltas);
-    const fallbackStyle = { colorClass: 'genre-color-electronic', animClass: 'anim-match-breath' };
-    if (!deltas) {
-        const declared = this.declaredPresetGenre(presetKey, 'game');
-        if (declared) return declared;
-        return { emoji: '🎮', name: 'Video Game OST', ...fallbackStyle };
+    const declared = this.declaredPresetGenre(presetKey, 'game');
+    if (declared) {
+        const fallbackStyle = { colorClass: 'genre-color-electronic', animClass: 'anim-match-breath' };
+        return {
+            emoji: declared.emoji,
+            name: declared.name,
+            colorClass: declared.colorClass || fallbackStyle.colorClass,
+            animClass: declared.animClass || fallbackStyle.animClass
+        };
     }
+
+    const deltas = this.getEqBandDeltas(bandDeltas);
+    const fallbackStyle = { colorClass: 'genre-color-electronic', animClass: 'anim-match-breath' };
+    if (!deltas) return { emoji: '🎮', name: 'Video Game OST', ...fallbackStyle };
+    // Classify against the GAMING centroids (gameGenreFamilies) — the old call
+    // scored the shape against MUSIC profiles and then indexed into
+    // genreFamilies for a label, so the live game badge disagreed with
+    // determineIemGameGenreMatch (which correctly uses nearestGameGenreFamily).
+    // Index order is aligned between both tables, so genreFamilyStyles stays valid.
     const idx = this.nearestGameGenreFamilyIndex(deltas);
     const family = this.gameGenreFamilies[idx];
     const style = this.genreFamilyStyles[idx] || fallbackStyle;
@@ -22118,57 +20876,10 @@ determineLiveGameGenreMatch: function(bandDeltas, presetKey) {
     return { emoji: v.emoji, name: v.name, colorClass: style.colorClass, animClass: style.animClass };
 },
 
-// Exact dB response of the current graph curve (same path that draws the graph curve):
-// Supports both EQ filter faders and Target Sculptor mode (sculptPoints).
-// getCompositeFilterMagnitude returns the shared cached magnitude array on
-// cache hits, so memoizing on array identity avoids re-allocating the dB
-// response on every genre scan tick when nothing has changed.
-_liveRespMagCache: null,
-_liveRespCache: null,
-_liveFreqsCache: null,
-getLiveResponseDbs: function() {
-    try {
-        const freqs = this._liveFreqsCache || (this._liveFreqsCache = Float32Array.from(this.DSP.FREQS));
-        const n = freqs.length;
-
-        // If Target Sculptor mode is active, classify the live Sculptor target curve on screen
-        if (typeof PEQDB_Module !== 'undefined' && PEQDB_Module.targetMode === 'sculptor' && Array.isArray(PEQDB_Module.sculptPoints) && PEQDB_Module.sculptPoints.length >= 2) {
-            const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignDb : 75.0;
-            const pts = PEQDB_Module.sculptPoints.map(p => [p.hz, p.val - alignDb]);
-            return CurveUtils.cubicSplineInterpolate(pts, Array.from(freqs));
-        }
-
-        if (typeof EQ_Module === 'undefined' || !EQ_Module.getCompositeFilterMagnitude) return null;
-        const mag = EQ_Module.getCompositeFilterMagnitude(freqs, n);
-        if (!mag) return null;
-        if (this._liveRespGen === EQ_Module._magGeneration) return this._liveRespCache;
-        const resp = new Float32Array(n);
-        for (let j = 0; j < n; j++) resp[j] = 20 * Math.log10(Math.max(1e-9, mag[j]));
-        this._liveRespGen = EQ_Module._magGeneration;
-        this._liveRespCache = resp;
-        return resp;
-    } catch (err) {
-        return null;
-    }
-},
-
-// Band-mean deltas (5 axes relative to the mid axis) from a dense dB response.
-getResponseDeltas: function(freqs, resp) {
-    try {
-        const bs = CurveUtils.responseBandMeans(freqs, resp, CurveUtils.AXIS_BANDS);
-        return [bs[0] - bs[2], bs[1] - bs[2], bs[3] - bs[2], bs[4] - bs[2], bs[5] - bs[2]];
-    } catch (err) {
-        return null;
-    }
-},
-
 applyGenreFilters: function(matches) {
     const picks = this.selectedPicks || [];
     const list = matches || [];
     if (!picks.length) return list;
-    // Selected picks require at least one match (scored/sorted by how many
-    // they hit). Anything with zero selected picks stays included by
-    // default - picks only ever narrow the results, never exclude.
     const kept = list.filter(m => {
         const dbEntry = m.dbEntry || this.getDbEntry(m);
         const count = this.countPickMatches(m, dbEntry, picks);
@@ -22185,6 +20896,41 @@ applyGenreFilters: function(matches) {
                     { role: 'reference', label: '<span class="emoji-font vibrant-emoji text-lg mr-1 anim-toggle-pop">🆚</span> Load as Reference' },
                     { role: 'autoeq', label: '<span class="emoji-font vibrant-emoji text-lg mr-1 anim-toggle-pop">🪄</span> AutoEQ To This' }
                 ],
+
+                tuningPresets: [
+                    { key: 'neutral', label: '🎼 Preset: Neutral', values: { bass: 0, sub: 0, punch: 0, warm: 0, vocals: 0, treble: 0, smooth: 0 } },
+                    { key: 'basshead', label: '💥 Basshead Boost', values: { bass: 6, sub: 4, punch: 3, warm: 2, vocals: 0, treble: -1, smooth: 1 } },
+                    { key: 'vocal', label: '🎤 Vocal Forward', values: { bass: -1, sub: -1, punch: 0, warm: 2, vocals: 4, treble: 2, smooth: 1 } },
+                    { key: 'crisp', label: '✨ Crisp & Airy', values: { bass: 0, sub: 1, punch: 0, warm: -1, vocals: 1, treble: 4, smooth: 2 } },
+                    { key: 'gaming', label: '🎮 Footstep Focus', values: { bass: -2, sub: -4, punch: 1, warm: 0, vocals: 3, treble: 3, smooth: 0 } },
+                    { key: 'chill', label: '☕ Chill Lo-Fi', values: { bass: 3, sub: 2, punch: 1, warm: 3, vocals: -1, treble: -3, smooth: 3 } },
+                    { key: 'vshape', label: '🔺 V-Shaped', values: { bass: 5, sub: 4, punch: 2, warm: -1, vocals: -2, treble: 4, smooth: 0 } }
+                ],
+                currentTuningPresetIdx: 0,
+
+                cycleTuningPreset: function(dir) {
+                    const total = this.tuningPresets.length;
+                    this.currentTuningPresetIdx = (this.currentTuningPresetIdx + dir + total) % total;
+                    const p = this.tuningPresets[this.currentTuningPresetIdx];
+
+                    Object.entries(p.values).forEach(([key, val]) => {
+                        const id = `find-${key}`;
+                        const el = document.getElementById(id);
+                        if (el) {
+                            el.value = val;
+                            this.updateSliderUI(id);
+                        }
+                    });
+
+                    const btn = document.getElementById('find-preset-cycle-btn');
+                    const labelSpaceIdx = p.label.indexOf(' ');
+                    const labelEmoji = p.label.slice(0, labelSpaceIdx);
+                    const labelText = p.label.slice(labelSpaceIdx + 1);
+                    if (btn) btn.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 inline-flex items-center justify-center leading-none mr-1.5 anim-toggle-pop">${labelEmoji}</span> ${labelText}`;
+
+                    this.drawTargetVisualization();
+                    showToast(`Tuning preset "${labelText}" applied!`, "🎼");
+                },
 
                 updateFloatingCompareBar: function() {
                     const checked = document.querySelectorAll('.find-compare-cb:checked');
@@ -22265,7 +21011,9 @@ applyGenreFilters: function(matches) {
                                         sctx.fillStyle = '#000000';
                                         sctx.fillRect(0, 0, sw, sh);
 
-                                        const sparkColor = getThemeAccent('#3b82f6');
+                                        const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
+                                        const themeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
+                                        const sparkColor = themeConfig.accent || '#3b82f6';
 
                                         const norm = CurveUtils.normalizeTo75dB(subData, 500, 75);
                                         sctx.strokeStyle = sparkColor;
@@ -22320,34 +21068,6 @@ applyGenreFilters: function(matches) {
                         const dbEntry = c.db || this.getDbEntry(c.item) || (PEQDB_Module.STATE.dataset ? PEQDB_Module.STATE.dataset.find(d => d.id === c.item.id) : null);
                         curveIdToLoad = dbEntry ? dbEntry.id : c.item.id;
                         candidateName = c.item ? c.item.name : '';
-                    } else if (idx === 'eg_value') {
-                        const pool = this._lastEndgameValue || [];
-                        const curIdx = this._endgameValueIdx || 0;
-                        const c = pool[curIdx];
-                        if (!c || !c.pick) return;
-
-                        const st = this.cardState[idx] || { srcIdx: 0, roleIdx: 0 };
-                        srcIdx = st.srcIdx || 0;
-                        const roleOpt = this.cardRoleOptions[st.roleIdx || 0];
-                        role = roleOpt ? roleOpt.role : 'reference';
-
-                        curveIdToLoad = c.pick.id;
-                        candidateName = c.pick.name || '';
-                    } else if (typeof idx === 'string' && idx.startsWith('eg_')) {
-                        const catIdx = parseInt(idx.replace('eg_', ''));
-                        const pool = this._lastEndgame ? this._lastEndgame[catIdx] : null;
-                        if (!pool || pool.length === 0) return;
-                        const curIdx = this._endgameIndices ? (this._endgameIndices[catIdx] || 0) : 0;
-                        const c = pool[curIdx];
-                        if (!c || !c.pick) return;
-
-                        const st = this.cardState[idx] || { srcIdx: 0, roleIdx: 0 };
-                        srcIdx = st.srcIdx || 0;
-                        const roleOpt = this.cardRoleOptions[st.roleIdx || 0];
-                        role = roleOpt ? roleOpt.role : 'reference';
-
-                        curveIdToLoad = c.pick.id;
-                        candidateName = c.pick.name || '';
                     } else {
                         const match = this._lastMatches ? this._lastMatches[idx - 1] : null;
                         if (!match) return;
@@ -22399,7 +21119,7 @@ applyGenreFilters: function(matches) {
                 rightTabModes: [
                     { id: 'taste', label: 'Taste', emoji: '❤️' },
                     { id: 'upgrade', label: 'Upgrade', emoji: '🚀' },
-                    { id: 'giantkiller', label: 'Gems', emoji: '💎' },
+                    { id: 'giantkiller', label: 'Gem', emoji: '💎' },
                     { id: 'endgame', label: 'Endgame', emoji: '👑' }
                 ],
                 cycleRightTab: function(dir) {
@@ -22454,25 +21174,11 @@ applyGenreFilters: function(matches) {
                         return;
                     }
 
-                    const MAX_ROWS = 100;
-                    const visible = matches.slice(0, MAX_ROWS);
-                    const truncated = matches.length - visible.length;
-
-                    container.innerHTML = visible.map(item => `
-                        <div onclick="FindEngine.setUpgradeBaseIem('${escJs(item.id)}', '${escJs(item.name)}')" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
-                            ${esc(item.name)}
+                    container.innerHTML = matches.map(item => `
+                        <div onclick="FindEngine.setUpgradeBaseIem('${item.id}', '${item.name.replace(/'/g, "\\'")}')" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
+                            ${item.name}
                         </div>
-                    `).join('') + (truncated > 0
-                        ? `<div class="p-1 text-zinc-500 italic text-xs">…and ${truncated} more (refine your search)</div>`
-                        : '');
-                },
-
-                handleUpgradeSearchDebounced: function(query) {
-                    if (this._upgradeSearchTimer) clearTimeout(this._upgradeSearchTimer);
-                    this._upgradeSearchTimer = setTimeout(() => {
-                        this._upgradeSearchTimer = null;
-                        this.handleUpgradeSearch(query);
-                    }, 120);
+                    `).join('');
                 },
 
                 setUpgradeBaseIem: function(id, name) {
@@ -22489,7 +21195,7 @@ applyGenreFilters: function(matches) {
                         baseSlot.innerHTML = `
                             <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                                 <span class="emoji-font vibrant-emoji text-sm flex-shrink-0 leading-none">📱</span>
-                                <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(name)}</span>
+                                <span class="text-xs font-black text-[var(--text-main)] truncate">${name}</span>
                             </div>
                             <button type="button" onclick="FindEngine.clearUpgradeBaseIem()" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the base IEM">✕</button>
                         `;
@@ -22522,14 +21228,14 @@ applyGenreFilters: function(matches) {
                 },
 
                 upgradeGoalList: [
-                    { key: 'direct', label: '<span class="emoji-font vibrant-emoji text-xl w-6 h-6 inline-flex items-center justify-center leading-none mr-1.5 anim-toggle-pop">🎯</span> Direct Upgrade (Same Tuning)' },
-                    { key: 'detail', label: '<span class="emoji-font vibrant-emoji text-xl w-6 h-6 inline-flex items-center justify-center leading-none mr-1.5 anim-toggle-pop">🎧</span> Detail Upgrade' },
-                    { key: 'bass', label: '<span class="emoji-font vibrant-emoji text-xl w-6 h-6 inline-flex items-center justify-center leading-none mr-1.5 anim-toggle-pop">🔊</span> Bass Upgrade' },
-                    { key: 'vocal', label: '<span class="emoji-font vibrant-emoji text-xl w-6 h-6 inline-flex items-center justify-center leading-none mr-1.5 anim-toggle-pop">🎤</span> Vocal Upgrade' },
-                    { key: 'gaming', label: '<span class="emoji-font vibrant-emoji text-xl w-6 h-6 inline-flex items-center justify-center leading-none mr-1.5 anim-toggle-pop">🎮</span> Gaming Upgrade' },
-                    { key: 'stage', label: '<span class="emoji-font vibrant-emoji text-xl w-6 h-6 inline-flex items-center justify-center leading-none mr-1.5 anim-toggle-pop">🌌</span> Soundstage Upgrade' },
-                    { key: 'tech', label: '<span class="emoji-font vibrant-emoji text-xl w-6 h-6 inline-flex items-center justify-center leading-none mr-1.5 anim-toggle-pop">⚙️</span> Driver Tech Upgrade' },
-                    { key: 'refine', label: '<span class="emoji-font vibrant-emoji text-xl w-6 h-6 inline-flex items-center justify-center leading-none mr-1.5 anim-toggle-pop">✨</span> Tuning Refinement' }
+                    { key: 'direct', label: '<span class="flex items-center justify-center gap-1.5 truncate text-[var(--text-main)] font-black uppercase tracking-wider"><span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🎯</span> Direct Upgrade</span>' },
+                    { key: 'detail', label: '<span class="flex items-center justify-center gap-1.5 truncate text-[var(--text-main)] font-black uppercase tracking-wider"><span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🎧</span> Detail Upgrade</span>' },
+                    { key: 'bass', label: '<span class="flex items-center justify-center gap-1.5 truncate text-[var(--text-main)] font-black uppercase tracking-wider"><span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🔊</span> Bass Upgrade</span>' },
+                    { key: 'vocal', label: '<span class="flex items-center justify-center gap-1.5 truncate text-[var(--text-main)] font-black uppercase tracking-wider"><span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🎤</span> Vocal Upgrade</span>' },
+                    { key: 'gaming', label: '<span class="flex items-center justify-center gap-1.5 truncate text-[var(--text-main)] font-black uppercase tracking-wider"><span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🎮</span> Gaming Upgrade</span>' },
+                    { key: 'stage', label: '<span class="flex items-center justify-center gap-1.5 truncate text-[var(--text-main)] font-black uppercase tracking-wider"><span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🌌</span> Soundstage Upgrade</span>' },
+                    { key: 'tech', label: '<span class="flex items-center justify-center gap-1.5 truncate text-[var(--text-main)] font-black uppercase tracking-wider"><span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">⚙️</span> Driver Tech Upgrade</span>' },
+                    { key: 'refine', label: '<span class="flex items-center justify-center gap-1.5 truncate text-[var(--text-main)] font-black uppercase tracking-wider"><span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">✨</span> Tuning Refinement</span>' }
                 ],
                 currentGoalIdx: 0,
 
@@ -22543,7 +21249,7 @@ applyGenreFilters: function(matches) {
                     if (btn) btn.innerHTML = goal.label;
 
                     if (this.selectedUpgradeBaseIemId && this._upgradeHasRun) {
-                        this._debouncedRun(this.renderUpgradePathway, 'ug');
+                        this.renderUpgradePathway();
                     }
                 },
 
@@ -22556,7 +21262,7 @@ applyGenreFilters: function(matches) {
                         if (btn) btn.innerHTML = this.upgradeGoalList[idx].label;
                     }
                     if (this.selectedUpgradeBaseIemId && this._upgradeHasRun) {
-                        this._debouncedRun(this.renderUpgradePathway, 'ug');
+                        this.renderUpgradePathway();
                     }
                 },
 
@@ -22620,20 +21326,19 @@ applyGenreFilters: function(matches) {
                         return { passed, reason: passed ? "Measured Technical Treble Extension" : "Technical Treble Too Reserved" };
                     }
 
-                    // Unknown/unhandled goal: do not silently pass.
                     return { passed: false, reason: "No Acoustic Criteria For This Goal" };
                 },
 
                 hasGoalTag: function(tags, goal) {
                     if (!tags || !Array.isArray(tags)) return false;
                     const tagStr = tags.join(' ').toLowerCase();
-                    if (goal === 'direct') return /balanced|smooth|reference|neutral|all-rounder|studio-monitoring/i.test(tagStr);
-                    if (goal === 'bass') return /basshead|sub-bass|punchy|u-shaped/i.test(tagStr);
-                    if (goal === 'detail') return /detailed|resolving|technical|analytical|treble-head|studio-monitoring/i.test(tagStr);
+                    if (goal === 'direct') return /balanced|smooth|reference|neutral|all-rounder/i.test(tagStr);
+                    if (goal === 'bass') return /basshead|sub-bass|punchy/i.test(tagStr);
+                    if (goal === 'detail') return /detailed|resolving|technical|analytical/i.test(tagStr);
                     if (goal === 'gaming') return /gaming|competitive|imaging|stage/i.test(tagStr);
                     if (goal === 'vocal') return /vocal|smooth|warm|mid/i.test(tagStr);
                     if (goal === 'stage') return /wide-stage|good-imaging|3d/i.test(tagStr);
-                    if (goal === 'refine') return /balanced|smooth|reference|neutral|studio-monitoring/i.test(tagStr);
+                    if (goal === 'refine') return /balanced|smooth|reference|neutral/i.test(tagStr);
                     return false;
                 },
 
@@ -22651,7 +21356,7 @@ applyGenreFilters: function(matches) {
                 syncUgDualRange: function(kind) {
                     this._syncDualRangePrefixed('ug', kind);
                     if (this._upgradeHasRun && this.selectedUpgradeBaseIemId) {
-                        this._debouncedRun(this.renderUpgradePathway, 'ug');
+                        this.renderUpgradePathway();
                     }
                 },
 
@@ -22689,7 +21394,9 @@ applyGenreFilters: function(matches) {
                             sctx.fillStyle = '#000000';
                             sctx.fillRect(0, 0, sw, sh);
 
-                            const sparkColor = getThemeAccent('#3b82f6');
+                            const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
+                            const themeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
+                            const sparkColor = themeConfig.accent || '#3b82f6';
 
                             const norm = CurveUtils.normalizeTo75dB(subData, 500, 75);
                             sctx.strokeStyle = sparkColor;
@@ -22786,18 +21493,18 @@ applyGenreFilters: function(matches) {
                     const driveability = dbEntry ? FindEngine.getDriveabilityStatus(dbEntry.impedance, dbEntry.sensitivity) : null;
                     const targetCurve = FindEngine.generateTargetCurve();
                     const freqs = CurveUtils.generateLogGrid(100);
-                    const targetInterp = targetCurve ? CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]) : null;
+                    const targetInterp = CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]);
                     const candInterp = c.item.interp || (c.item.data ? CurveUtils.cubicSplineInterpolate(CurveUtils.normalizeTo75dB(c.item.data, 500, 75), freqs) : null);
-                    const eqFeat = (targetInterp && candInterp) ? FindEngine.calculateEQFeasibility(candInterp, targetInterp, freqs) : null;
+                    const eqFeat = candInterp ? FindEngine.calculateEQFeasibility(candInterp, targetInterp, freqs) : null;
 
                     const driveHtml = FindEngine.getShortDriveLabel(driveability);
                     const eqHtml = FindEngine.getShortEqLabel(eqFeat);
 
                     const rawTags = dbEntry ? dbEntry.tags : PEQDB_Module.analyzeCurveSignature(c.item.data);
-                    const uniqueTags = [...new Set(rawTags || [])].slice(0, 12);
+                    const uniqueTags = [...new Set(rawTags || [])].slice(0, 4);
                     const tagsHtml = uniqueTags.map(t => {
                         const emoji = FindEngine.getTagEmoji(t);
-                        return `<span class="find-tag-icon" data-tooltip="${esc(t)}">${emoji || '🏷️'}</span>`;
+                        return `<span class="find-tag-icon" data-tooltip="${t}">${emoji || '🏷️'}</span>`;
                     }).join('');
 
                     const rawFiles = (dbEntry && Array.isArray(dbEntry.files)) ? dbEntry.files : (c.item.files || []);
@@ -22824,7 +21531,7 @@ applyGenreFilters: function(matches) {
                         <div id="ug-step-card-${stepNum}" class="section-card p-3 flex flex-col justify-between hover:scale-[1.015] hover:shadow-2xl transition-all duration-200 relative overflow-hidden group">
                             <div class="space-y-2">
                                 <div class="flex justify-between items-center select-none pb-1 border-b border-white/[0.06]">
-                                    <span class="text-xs font-black uppercase tracking-wider text-amber-400 whitespace-nowrap">${esc(sInfo.title)}</span>
+                                    <span class="text-xs font-black uppercase tracking-wider text-amber-400 whitespace-nowrap">${sInfo.title}</span>
                                     <span class="text-lg font-black ${scoreColorClass} flex-shrink-0">${matchPct.toFixed(1)}%</span>
                                 </div>
 
@@ -22839,32 +21546,32 @@ applyGenreFilters: function(matches) {
                                 </div>
 
                                 <div class="flex items-center gap-2 w-full mt-1">
-                                    <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0" data-id="${curveIdToLoad}" data-name="${esc(name)}" onclick="event.stopPropagation();">
+                                    <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0" data-id="${curveIdToLoad}" data-name="${name}" onclick="event.stopPropagation();">
                                     <div class="flex-1 overflow-hidden relative flex items-center h-5">
-                                        <span id="marquee-ug-${stepNum}" class="text-xs font-black text-stone-200 inline-block whitespace-nowrap">${esc(name)}</span>
+                                        <span id="marquee-ug-${stepNum}" class="text-xs font-black text-stone-200 inline-block whitespace-nowrap">${name}</span>
                                     </div>
                                 </div>
 
                                 <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
-                                    <span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${esc(price)}</span>
-                                    ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${esc(year)}</span>` : ''}
-                                    ${driverType ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
-                                    ${connector ? `<span class="spec-icon-badge" data-tooltip="${esc(connectorTooltip)}">${connectorEmoji}</span>` : ''}
-                                    <span class="spec-icon-badge" data-tooltip="${esc(formTooltip)}">${formEmoji}</span>
+                                    <span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>
+                                    ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
+                                    ${driverType ? `<span class="spec-icon-badge" data-tooltip="${driverTooltip}">${driverEmoji}</span>` : ''}
+                                    ${connector ? `<span class="spec-icon-badge" data-tooltip="${connectorTooltip}">${connectorEmoji}</span>` : ''}
+                                    <span class="spec-icon-badge" data-tooltip="${formTooltip}">${formEmoji}</span>
                                 </div>
 
                                 <div class="flex items-center gap-2 mt-1 w-full">
-                                    <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Music Match: ${esc(ugGenreMatch.name)}">
+                                    <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Music Match: ${ugGenreMatch.name}">
                                         <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
-                                            <span class="emoji-font vibrant-emoji text-base leading-none">${esc(ugGenreMatch.emoji)}</span>
+                                            <span class="emoji-font vibrant-emoji text-base leading-none">${ugGenreMatch.emoji}</span>
                                         </div>
-                                        <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${esc(ugGenreMatch.name)}</span>
+                                        <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${ugGenreMatch.name}</span>
                                     </div>
-                                    <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Game Match: ${esc(ugGameGenreMatch.name)}">
+                                    <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Game Match: ${ugGameGenreMatch.name}">
                                         <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
-                                            <span class="emoji-font vibrant-emoji text-base leading-none">${esc(ugGameGenreMatch.emoji)}</span>
+                                            <span class="emoji-font vibrant-emoji text-base leading-none">${ugGameGenreMatch.emoji}</span>
                                         </div>
-                                        <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${esc(ugGameGenreMatch.name)}</span>
+                                        <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${ugGameGenreMatch.name}</span>
                                     </div>
                                 </div>
 
@@ -22891,7 +21598,7 @@ applyGenreFilters: function(matches) {
                                     ${eqHtml}
                                 </div>
 
-                                <div class="flex items-center justify-center gap-1 flex-wrap w-full mt-1.5 pt-1">
+                                <div class="flex items-center justify-center gap-3 w-full mt-1.5 pt-1">
                                     ${tagsHtml}
                                 </div>
                             </div>
@@ -22908,28 +21615,17 @@ applyGenreFilters: function(matches) {
                 },
 
                 renderUpgradePathway: async function() {
+                    if (this.isScanning) return;
                     const grid = document.getElementById('find-matches-grid');
                     const emptyState = document.getElementById('find-empty-state');
                     const overlay = document.getElementById('find-scanning-overlay');
-
-                    // Cross-scan guard: this function has many early returns and
-                    // never sets isScanning itself, so a bare flag check here is
-                    // enough to keep it out of the shared overlay/grid while any
-                    // other scan owns them.
-                    if (this.isScanning) {
-                        showToast("A scan is already running — wait for it to finish.", "⏳");
-                        return;
-                    }
 
                     if (!this.selectedUpgradeBaseIemId) {
                         showToast("Please select an owned/loved IEM in Step 1 first!", "⚠️");
                         return;
                     }
                     this._upgradeHasRun = true;
-                    // Bump the scan token at entry so concurrent scans can't
-                    // interleave renders on the shared overlay/grid.
-                    const scanToken = (this._scanToken || 0) + 1;
-                    this._scanToken = scanToken;
+                    this.isScanning = true;
 
                     if (grid) grid.innerHTML = '';
                     if (emptyState) emptyState.classList.add('hidden');
@@ -22940,162 +21636,157 @@ applyGenreFilters: function(matches) {
                     if (title) title.textContent = "Generating Upgrade Pathway...";
                     if (subtitle) subtitle.textContent = "Calculating step-up acoustic ladders...";
 
-                    const dataset = PEQDB_Module.STATE.dataset || [];
-                    let baseItem = dataset.find(i => i.id === this.selectedUpgradeBaseIemId);
+                    setTimeout(async () => {
+                        try {
+                            const dataset = PEQDB_Module.STATE.dataset || [];
+                            let baseItem = dataset.find(i => i.id === this.selectedUpgradeBaseIemId);
 
-                    if (!baseItem && this.iemDatabase) {
-                        const dbMatch = this.iemDatabase.find(d => d.id === this.selectedUpgradeBaseIemId);
-                        if (dbMatch) baseItem = dbMatch;
-                    }
+                            if (!baseItem && this.iemDatabase) {
+                                const dbMatch = this.iemDatabase.find(d => d.id === this.selectedUpgradeBaseIemId);
+                                if (dbMatch) baseItem = dbMatch;
+                            }
 
-                    if (!baseItem) {
-                        if (overlay) overlay.classList.add('hidden');
-                        showToast("Base IEM details missing.", "⚠️");
-                        return;
-                    }
+                            if (!baseItem) {
+                                showToast("Base IEM details missing.", "⚠️");
+                                this.isScanning = false;
+                                if (overlay) overlay.classList.add('hidden');
+                                return;
+                            }
 
-                    const baseDb = this.getDbEntry(baseItem);
-                    const basePrice = baseDb && baseDb.price_usd ? parseFloat(baseDb.price_usd) : (baseItem.price_usd ? parseFloat(baseItem.price_usd) : 20);
-                    const baseFormFactor = baseDb ? (baseDb.form_factor || 'IEM') : (baseItem.form_factor || 'IEM');
+                            const baseDb = this.getDbEntry(baseItem);
+                            const basePrice = baseDb && baseDb.price_usd ? parseFloat(baseDb.price_usd) : (baseItem.price_usd ? parseFloat(baseItem.price_usd) : 20);
+                            const baseFormFactor = baseDb ? (baseDb.form_factor || 'IEM') : (baseItem.form_factor || 'IEM');
 
-                    const selectedFormFactors = this.readFilterList('ug', 'formfactor');
-                    const selectedDrivers = this.readFilterList('ug', 'driver');
-                    const selectedConnectors = this.readFilterList('ug', 'connector');
+                            const selectedFormFactors = this._getSpecSelection('ug', 'formfactor');
+                            const selectedDrivers = this._getSpecSelection('ug', 'driver');
+                            const selectedConnectors = this._getSpecSelection('ug', 'connector');
 
-                    const priceMinEl = document.getElementById('ug-filter-price-min');
-                    const priceMaxEl = document.getElementById('ug-filter-price-max');
-                    const ugPriceMin = priceMinEl ? parseInt(priceMinEl.value) : 0;
-                    const ugPriceMax = priceMaxEl ? parseInt(priceMaxEl.value) : 3000;
+                            const priceMinEl = document.getElementById('ug-filter-price-min');
+                            const priceMaxEl = document.getElementById('ug-filter-price-max');
+                            const ugPriceMin = priceMinEl ? parseInt(priceMinEl.value) : 0;
+                            const ugPriceMax = priceMaxEl ? parseInt(priceMaxEl.value) : 3000;
 
-                    const yearMinEl = document.getElementById('ug-filter-year-min');
-                    const yearMaxEl = document.getElementById('ug-filter-year-max');
-                    const ugYearMin = yearMinEl ? parseInt(yearMinEl.value) : 1995;
-                    const ugYearMax = yearMaxEl ? parseInt(yearMaxEl.value) : 2026;
+                            const yearMinEl = document.getElementById('ug-filter-year-min');
+                            const yearMaxEl = document.getElementById('ug-filter-year-max');
+                            const ugYearMin = yearMinEl ? parseInt(yearMinEl.value) : 1995;
+                            const ugYearMax = yearMaxEl ? parseInt(yearMaxEl.value) : 2026;
 
-                    if (!baseItem.data || baseItem.data.length < 2) {
-                        await CurveIndexer.loadCurve(baseItem, 0);
-                        if (!baseItem.data || baseItem.data.length < 2) {
-                            if (overlay) overlay.classList.add('hidden');
-                            showToast("Base IEM curve data could not be loaded.", "⚠️");
-                            return;
-                        }
-                    }
+                            if (!baseItem.data || baseItem.data.length < 2) {
+                                await CurveIndexer.loadCurve(baseItem, 0);
+                            }
 
-                    const freqs = CurveUtils.generateLogGrid(100);
-                    const baseNorm = CurveUtils.normalizeTo75dB(baseItem.data, 500, 75);
-                    const baseInterp = CurveUtils.cubicSplineInterpolate(baseNorm, freqs);
+                            const freqs = CurveUtils.generateLogGrid(100);
+                            const baseNorm = CurveUtils.normalizeTo75dB(baseItem.data, 500, 75);
+                            const baseInterp = CurveUtils.cubicSplineInterpolate(baseNorm, freqs);
 
-                    const goal = this.selectedUpgradeGoal;
-                    const candidates = [];
+                            const goal = this.selectedUpgradeGoal;
+                            const candidateEntries = [];
 
-                    const candidateEntries = [];
+                            // Pass 1: cheap metadata filters only.
+                            for (let i = 0; i < dataset.length; i++) {
+                                const cand = dataset[i];
+                                if (cand.id === baseItem.id) continue;
 
-                    for (let i = 0; i < dataset.length; i++) {
-                        const cand = dataset[i];
-                        if (cand.id === baseItem.id) continue;
+                                const candDb = this.getDbEntry(cand);
+                                const candPrice = candDb && candDb.price_usd ? parseFloat(candDb.price_usd) : (cand.price_usd ? parseFloat(cand.price_usd) : null);
+                                const candYear = candDb && candDb.year ? parseInt(candDb.year) : 2022;
 
-                        const candDb = this.getDbEntry(cand);
-                        const candPrice = candDb && candDb.price_usd ? parseFloat(candDb.price_usd) : (cand.price_usd ? parseFloat(cand.price_usd) : null);
-                        const candYear = candDb && candDb.year ? parseInt(candDb.year) : 2022;
+                                if (!candPrice || candPrice <= basePrice) continue;
+                                if (candPrice < ugPriceMin || candPrice > ugPriceMax) continue;
+                                if (candYear < ugYearMin || candYear > ugYearMax) continue;
 
-                        if (!candPrice || candPrice <= basePrice) continue;
+                                const candFormFactor = candDb ? (candDb.form_factor || 'IEM') : (cand.form_factor || 'IEM');
+                                if (selectedFormFactors.includes('auto')) {
+                                    if (String(candFormFactor).toLowerCase() !== String(baseFormFactor).toLowerCase()) continue;
+                                } else if (selectedFormFactors.length) {
+                                    if (!selectedFormFactors.some(v => this._formFactorMatches(candDb, v))) continue;
+                                }
 
-                        if (candPrice < ugPriceMin || candPrice > ugPriceMax) continue;
+                                if (selectedDrivers.length && !selectedDrivers.some(v => this.driverFilterMatches(candDb, v))) continue;
+                                if (selectedConnectors.length && !selectedConnectors.some(v => this._connectorMatches(candDb, v))) continue;
 
-                        if (candYear < ugYearMin || candYear > ugYearMax) continue;
+                                candidateEntries.push({ item: cand, db: candDb, price: candPrice });
+                            }
 
-                        const candFormFactor = candDb ? (candDb.form_factor || 'IEM') : (cand.form_factor || 'IEM');
-                        const ugWantsAuto = selectedFormFactors.indexOf('auto') !== -1;
-                        const ugFfRest = selectedFormFactors.filter(v => v !== 'auto');
-                        if (ugWantsAuto && candFormFactor.toLowerCase() !== baseFormFactor.toLowerCase()) continue;
-                        if (ugFfRest.length && !this.matchesFormFactorList(candDb, ugFfRest)) continue;
+                            // Pass 2: Load curves for top relevant candidates without flooding network
+                            const unloaded = candidateEntries.filter(c => !c.item.data || c.item.data.length < 2);
+                            if (unloaded.length > 0) {
+                                unloaded.sort((a, b) => {
+                                    const aTag = this.hasGoalTag(a.db ? a.db.tags : a.item.tags, goal) ? 1 : 0;
+                                    const bTag = this.hasGoalTag(b.db ? b.db.tags : b.item.tags, goal) ? 1 : 0;
+                                    return bTag - aTag;
+                                });
+                                const toFetch = unloaded.slice(0, 150);
+                                const batchSize = 25;
+                                for (let i = 0; i < toFetch.length; i += batchSize) {
+                                    const chunk = toFetch.slice(i, i + batchSize);
+                                    await Promise.all(chunk.map(c => CurveIndexer.loadCurve(c.item, 0)));
+                                    await new Promise(r => setTimeout(r, 0));
+                                }
+                            }
 
-                        if (!this.matchesDriverList(candDb, selectedDrivers)) continue;
+                            // Pass 3: scoring (sync).
+                            const scoredCandidates = [];
+                            for (const entry of candidateEntries) {
+                                const cand = entry.item;
+                                const candDb = entry.db;
+                                const candPrice = entry.price;
+                                if (!cand.data || cand.data.length < 2) continue;
 
-                        if (!this.matchesConnectorList(candDb, selectedConnectors)) continue;
+                                const candNorm = CurveUtils.normalizeTo75dB(cand.data, 500, 75);
+                                const candInterp = CurveUtils.cubicSplineInterpolate(candNorm, freqs);
 
-                        candidateEntries.push({ cand: cand, db: candDb, price: candPrice });
-                    }
+                                let maeSum = 0;
+                                for (let k = 0; k < freqs.length; k++) {
+                                    maeSum += Math.abs(candInterp[k] - baseInterp[k]);
+                                }
+                                const mae = maeSum / freqs.length;
+                                const tonalMatch = Math.max(0, 100 * Math.exp(-0.11 * mae));
 
-                    const ugBatchSize = 25;
-                    for (let i = 0; i < candidateEntries.length; i += ugBatchSize) {
-                        const chunk = candidateEntries.slice(i, i + ugBatchSize).filter(e => !e.cand.data || e.cand.data.length < 2);
-                        if (chunk.length > 0) {
-                            await Promise.all(chunk.map(e => CurveIndexer.loadCurve(e.cand, 0)));
-                        }
-                    }
+                                if (tonalMatch < 60 && goal !== 'tech' && goal !== 'tier') continue;
 
-                    const upgradeItems = candidateEntries.filter(e => e.cand.data && e.cand.data.length >= 2).map(e => ({
-                        id: e.cand.id,
-                        name: e.cand.name,
-                        data: e.cand.data,
-                        tags: (e.db ? e.db.tags : e.cand.tags) || []
-                    }));
+                                const acousticTest = this.verifyGoalAcoustics(candInterp, baseInterp, freqs, goal);
+                                const candTags = (candDb ? candDb.tags : cand.tags) || [];
+                                const matchedTag = this.hasGoalTag(candTags, goal);
 
-                    if (this._scanToken !== scanToken) return;
+                                let score = tonalMatch;
+                                let badgeHtml = '';
 
-                    const upgradeResults = await this.runUpgradeScan(upgradeItems, baseInterp, freqs, goal, scanToken);
+                                if (acousticTest.passed && matchedTag) {
+                                    score += 35;
+                                    badgeHtml = `<span class="text-[8.5px] font-black text-emerald-400 bg-emerald-950/40 border border-emerald-800/80 px-1.5 py-0.5 rounded">✅ Confirmed ${goal.toUpperCase()}</span>`;
+                                } else if (acousticTest.passed && !matchedTag) {
+                                    score += 20;
+                                    badgeHtml = `<span class="text-[8.5px] font-black text-teal-400 bg-teal-950/40 border border-teal-800/80 px-1.5 py-0.5 rounded">🔬 Measured ${goal.toUpperCase()}</span>`;
+                                } else if (!acousticTest.passed && matchedTag) {
+                                    score -= 25;
+                                    badgeHtml = `<span class="text-[8.5px] font-black text-rose-400 bg-rose-950/40 border border-rose-800/80 px-1.5 py-0.5 rounded">⚠️ Tag Conflict</span>`;
+                                } else {
+                                    badgeHtml = `<span class="text-[8.5px] font-bold text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">Standard Candidate</span>`;
+                                }
 
-                    if (upgradeResults === this.SCAN_SUPERSEDED || this._scanToken !== scanToken) {
-                        // A newer scan owns the overlay now — return without
-                        // touching the shared UI (no overlay hide, no render).
-                        return;
-                    }
+                                if (goal === 'tech') {
+                                    const typeScore = { 'DD': 1, 'BA': 2, 'Planar': 3, 'Hybrid': 4, 'Tribrid': 5 };
+                                    const baseT = typeScore[baseDb ? baseDb.driver_type : 'DD'] || 1;
+                                    const candT = typeScore[candDb ? candDb.driver_type : 'DD'] || 1;
+                                    if (candT > baseT) score += (candT - baseT) * 15;
+                                } else if (goal === 'refine') {
+                                    score = tonalMatch * 1.5;
+                                }
 
-                    const resultById = {};
-                    upgradeResults.forEach(r => { if (r && r.id) resultById[r.id] = r; });
+                                scoredCandidates.push({
+                                    item: cand,
+                                    db: candDb,
+                                    price: candPrice,
+                                    score: score,
+                                    tonalMatch: tonalMatch,
+                                    badgeHtml: badgeHtml,
+                                    reason: acousticTest.reason
+                                });
+                            }
 
-                    candidateEntries.forEach(entry => {
-                        const cand = entry.cand;
-                        const candDb = entry.db;
-                        const candPrice = entry.price;
-                        const res = resultById[cand.id];
-                        if (!res) return;
-
-                        const tonalMatch = res.tonalMatch;
-
-                        if (tonalMatch < 60 && goal !== 'tech') return;
-
-                        const acousticPassed = res.acousticPassed;
-                        const matchedTag = res.matchedTag;
-
-                        let score = tonalMatch;
-                        let badgeHtml = '';
-
-                        if (acousticPassed && matchedTag) {
-                            score += 35;
-                            badgeHtml = `<span class="text-[8.5px] font-black text-emerald-400 bg-emerald-950/40 border border-emerald-800/80 px-1.5 py-0.5 rounded">✅ Confirmed ${goal.toUpperCase()}</span>`;
-                        } else if (acousticPassed && !matchedTag) {
-                            score += 20;
-                            badgeHtml = `<span class="text-[8.5px] font-black text-teal-400 bg-teal-950/40 border border-teal-800/80 px-1.5 py-0.5 rounded">🔬 Measured ${goal.toUpperCase()}</span>`;
-                        } else if (!acousticPassed && matchedTag) {
-                            score -= 25;
-                            badgeHtml = `<span class="text-[8.5px] font-black text-rose-400 bg-rose-950/40 border border-rose-800/80 px-1.5 py-0.5 rounded">⚠️ Tag Conflict</span>`;
-                        } else {
-                            badgeHtml = `<span class="text-[8.5px] font-bold text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">Standard Candidate</span>`;
-                        }
-
-                        if (goal === 'tech') {
-                            const typeScore = { 'DD': 1, 'BA': 2, 'Planar': 3, 'Hybrid': 4, 'Tribrid': 5 };
-                            const baseT = typeScore[baseDb ? baseDb.driver_type : 'DD'] || 1;
-                            const candT = typeScore[candDb ? candDb.driver_type : 'DD'] || 1;
-                            if (candT > baseT) score += (candT - baseT) * 15;
-                        } else if (goal === 'refine') {
-                            score = tonalMatch * 1.5;
-                        }
-
-                        candidates.push({
-                            item: cand,
-                            db: candDb,
-                            price: candPrice,
-                            score: score,
-                            tonalMatch: tonalMatch,
-                            badgeHtml: badgeHtml,
-                            reason: res.acousticReason
-                        });
-                    })
-
-                    candidates.sort((a, b) => b.score - a.score);
+                            const candidates = scoredCandidates;
+                            candidates.sort((a, b) => b.score - a.score);
 
                     const tier1Max = Math.max(basePrice * 2.5, 100);
                     const tier2Max = Math.max(basePrice * 6.0, 350);
@@ -23123,8 +21814,6 @@ applyGenreFilters: function(matches) {
                     };
 
                     const activeStepNumbers = [1, 2, 3].filter(sNum => this.upgradeStepCandidates[sNum].length > 0);
-
-                    if (overlay) overlay.classList.add('hidden');
 
                     if (activeStepNumbers.length === 0) {
                         if (grid) grid.innerHTML = '<div class="col-span-full text-center text-zinc-400 italic text-xs py-8">No matching upgrades found for these filter constraints. Try expanding your search options.</div>';
@@ -23155,7 +21844,9 @@ applyGenreFilters: function(matches) {
                                 sctx.fillStyle = '#000000';
                                 sctx.fillRect(0, 0, sw, sh);
 
-                                const sparkColor = getThemeAccent('#3b82f6');
+                                const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
+                                const themeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
+                                const sparkColor = themeConfig.accent || '#3b82f6';
 
                                 const norm = CurveUtils.normalizeTo75dB(c.item.data, 500, 75);
                                 sctx.strokeStyle = sparkColor;
@@ -23178,41 +21869,31 @@ applyGenreFilters: function(matches) {
                         });
                     }, 100);
 
-                    App.setFindSection('matches');
+                        App.setFindSection('matches');
 
-                    showToast("Upgrade Pathway Ladder generated!", "🚀");
-                },
+                        showToast("Upgrade Pathway Ladder generated!", "🚀");
+                    } catch (err) {
+                        console.error("[FindEngine] upgrade pathway failed:", err);
+                        this._handleScanError(err);
+                    } finally {
+                        if (overlay) overlay.classList.add('hidden');
+                        this.isScanning = false;
+                    }
+                }, 50);
+            },
 
                 _getCachedCardData: function(item, dbEntry, freqs) {
-                    // Key includes a content signature: a same-id item whose
-                    // curve or tags changed (e.g. after an import/trace edit)
-                    // must not reuse the old cached card data.
-                    const dLen = item && item.data ? item.data.length : 0;
-                    const keyBase = (dbEntry && dbEntry.id != null) ? dbEntry.id : (item.id != null ? item.id : null);
-                    let contentSig = dLen;
-                    const dataArr = item && item.data;
-                    if (dataArr && dataArr.length > 0) {
-                        let h = 0;
-                        for (let p = 0; p < dataArr.length; p++) {
-                            const pt = dataArr[p];
-                            if (pt && typeof pt[0] === 'number' && typeof pt[1] === 'number') {
-                                h = ((h * 33) + Math.round(pt[0] * 100) + Math.round(pt[1] * 100)) | 0;
-                            }
-                        }
-                        contentSig = 'h' + h;
-                    }
-                    const tagSig = dbEntry && dbEntry.tags ? dbEntry.tags.join(',') : (item && item.tags ? item.tags.join(',') : '');
-                    const key = keyBase != null ? keyBase + '#' + contentSig + '#' + tagSig : null;
-                    if (!this._cardDataCache) this._cardDataCache = new Map();
-                    if (key != null && this._cardDataCache.has(key)) return this._cardDataCache.get(key);
+                    const key = (dbEntry && dbEntry.id != null) ? dbEntry.id : (item.id != null ? item.id : null);
+                    if (!this._cardDataCache) this._cardDataCache = {};
+                    if (key != null && this._cardDataCache[key] !== undefined) return this._cardDataCache[key];
 
                     const candInterp = item.interp || (item.data ? CurveUtils.cubicSplineInterpolate(CurveUtils.normalizeTo75dB(item.data, 500, 75), freqs) : null);
 
                     const rawTags = dbEntry ? dbEntry.tags : (item.data ? PEQDB_Module.analyzeCurveSignature(item.data) : []);
-                    const uniqueTags = [...new Set(rawTags || [])].slice(0, 12);
+                    const uniqueTags = [...new Set(rawTags || [])].slice(0, 4);
                     const tagsHtml = uniqueTags.map(t => {
                         const emoji = FindEngine.getTagEmoji(t);
-                        return `<span class="find-tag-icon" data-tooltip="${esc(t)}">${emoji || '🏷️'}</span>`;
+                        return `<span class="find-tag-icon" data-tooltip="${t}">${emoji || '🏷️'}</span>`;
                     }).join('');
 
                     const genreMatch = FindEngine.determineIemGenreMatch ? FindEngine.determineIemGenreMatch(item, dbEntry) : { emoji: '🎧', name: 'Pop / Dance' };
@@ -23225,14 +21906,7 @@ applyGenreFilters: function(matches) {
                         genreMatch: genreMatch,
                         gameGenreMatch: gameGenreMatch
                     };
-                    if (key != null) {
-                        this._cardDataCache.set(key, data);
-                        if (this._cardDataCache.size > 1500) {
-                            // Evict oldest entries to keep the cache bounded.
-                            const oldest = this._cardDataCache.keys().next().value;
-                            if (oldest !== undefined) this._cardDataCache.delete(oldest);
-                        }
-                    }
+                    if (key != null) this._cardDataCache[key] = data;
                     return data;
                 },
 
@@ -23247,7 +21921,9 @@ applyGenreFilters: function(matches) {
                     sctx.clearRect(0, 0, sw, sh);
                     sctx.fillStyle = '#000000';
                     sctx.fillRect(0, 0, sw, sh);
-                    const sparkColor = getThemeAccent('#3b82f6');
+                    const savedThemeId = localStorage.getItem('settings_theme_id') || 'slate';
+                    const themeConfig = App.themeMap[savedThemeId] || App.themeMap['slate'];
+                    const sparkColor = themeConfig.accent || '#3b82f6';
                     const norm = CurveUtils.normalizeTo75dB(item.data, 500, 75);
                     sctx.strokeStyle = sparkColor;
                     sctx.lineWidth = 2.2;
@@ -23262,233 +21938,9 @@ applyGenreFilters: function(matches) {
                     sctx.stroke();
                 },
 
-                // Shared match-card builder — the ONLY place that renders a
-                // match card. renderMatches and renderEndgameResults both use
-                // it so every card (tuning/specs/GK/endgame) looks identical.
-                // rankStyle: 'auto' (derive 1st/2nd/3rd from idx) or an explicit
-                // 'gold'/'silver'/'bronze'/'plain'. badgeText overrides the
-                // similarity badge; reasonLine adds the compact mono line under
-                // the name (used by the Endgame picks).
-                _buildMatchCard: function(item, idx, opts) {
-                    opts = opts || {};
-                    const datasetById = opts.datasetById || null;
-                    const targetInterp = opts.targetInterp || null;
-                    const freqs = opts.freqs || null;
-                    const isBlind = opts.isBlind !== undefined ? opts.isBlind : !!(document.getElementById('find-blind-mode')?.checked);
-                    const rankStyle = opts.rankStyle || 'auto';
-                    const matchPct = item.similarity || 0;
-
-                    let dbEntry = item.dbEntry;
-                    if (!dbEntry && this.iemDatabase && this.iemDatabase.length > 0) {
-                        dbEntry = this.getDbEntry(item);
-                    }
-                    if (!dbEntry && datasetById) {
-                        dbEntry = datasetById.get(item.id) || null;
-                    }
-
-                    const rawFiles = (dbEntry && Array.isArray(dbEntry.files)) ? dbEntry.files : (item.files || []);
-                    const fileCount = rawFiles.length;
-                    const isMulti = fileCount > 1;
-
-                    let cardStyle = "";
-                    let rankEmoji = "🏆";
-                    let rankText = `RANK #${idx}`;
-                    let rankColorClass = "text-zinc-500";
-                    let emojiStyle = "font-size: 18px; line-height: 1;";
-
-                    if (rankStyle === 'gold' || (rankStyle === 'auto' && idx === 1)) {
-                        cardStyle = `background: linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, rgba(120, 53, 4, 0.03) 100%), var(--bg-card) !important; border: 2px solid var(--border-color) !important; box-shadow: 6px 6px 0px 0px var(--border-color) !important;`;
-                        rankEmoji = "👑"; rankText = opts.rankText || "1ST"; rankColorClass = "text-amber-400";
-                        emojiStyle = "font-size: 32px; line-height: 1; filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.5));";
-                    } else if (rankStyle === 'silver' || (rankStyle === 'auto' && idx === 2)) {
-                        cardStyle = `background: linear-gradient(135deg, rgba(148, 163, 184, 0.08) 0%, rgba(30, 41, 59, 0.02) 100%), var(--bg-card) !important; border: 2px solid var(--border-color) !important; box-shadow: 5px 5px 0px 0px var(--border-color) !important;`;
-                        rankEmoji = "🥈"; rankText = opts.rankText || "2ND"; rankColorClass = "text-slate-300";
-                        emojiStyle = "font-size: 28px; line-height: 1; filter: drop-shadow(0 0 4px rgba(148, 163, 184, 0.4));";
-                    } else if (rankStyle === 'bronze' || (rankStyle === 'auto' && idx === 3)) {
-                        cardStyle = `background: linear-gradient(135deg, rgba(217, 119, 6, 0.06) 0%, rgba(120, 53, 4, 0.01) 100%), var(--bg-card) !important; border: 2px solid var(--border-color) !important; box-shadow: 4px 4px 0px 0px var(--border-color) !important;`;
-                        rankEmoji = "🥉"; rankText = opts.rankText || "3RD"; rankColorClass = "text-amber-600";
-                        emojiStyle = "font-size: 28px; line-height: 1; filter: drop-shadow(0 0 4px rgba(217, 119, 6, 0.3));";
-                    } else {
-                        cardStyle = `background: var(--bg-card) !important; border: 2px solid var(--border-color) !important; box-shadow: 4px 4px 0px 0px var(--border-color) !important;`;
-                    }
-
-                    const card = document.createElement('div');
-                    card.className = "section-card p-3 flex flex-col justify-between hover:scale-[1.015] hover:shadow-2xl transition-all duration-200 relative overflow-hidden group";
-                    card.style.cssText = cardStyle;
-
-                    let badgeText = "Explore";
-                    let badgeColorClass = "text-rose-500";
-
-                    if (opts.badgeText !== undefined && opts.badgeText !== null) {
-                        badgeText = opts.badgeText;
-                        badgeColorClass = opts.badgeColorClass || 'text-sky-400';
-                    } else if (item.isTuningMatch || typeof item.similarity === 'number') {
-                        const similarity = item.similarity || 0;
-                        if (similarity >= 95) { badgeColorClass = "text-emerald-400"; badgeText = `${similarity.toFixed(1)}%`; }
-                        else if (similarity >= 88) { badgeColorClass = "text-emerald-400"; badgeText = `${similarity.toFixed(1)}%`; }
-                        else if (similarity >= 80) { badgeColorClass = "text-amber-400"; badgeText = `${similarity.toFixed(1)}%`; }
-                        else { badgeColorClass = "text-rose-500"; badgeText = `${similarity.toFixed(1)}%`; }
-                    }
-
-                    const cacheD = this._getCachedCardData(item, dbEntry, freqs);
-                    const candInterp = cacheD.candInterp;
-                    const eqFeat = candInterp ? this.calculateEQFeasibility(candInterp, targetInterp, freqs) : null;
-                    const driveability = dbEntry ? this.getDriveabilityStatus(dbEntry.impedance, dbEntry.sensitivity) : null;
-
-                    let rawName = dbEntry ? (dbEntry.variant ? `${dbEntry.brand} ${dbEntry.model} (${dbEntry.variant})` : `${dbEntry.brand} ${dbEntry.model}`) : item.name;
-
-                    const price = dbEntry ? dbEntry.price_usd : null;
-                    const driverType = dbEntry ? dbEntry.driver_type : null;
-                    const driverConfig = dbEntry ? dbEntry.driver_config : null;
-                    const connector = dbEntry ? dbEntry.connector : null;
-                    const year = dbEntry ? dbEntry.year : null;
-                    const formFactorRaw = dbEntry ? (dbEntry.form_factor || 'IEM') : 'IEM';
-
-                    let finalName = rawName;
-                    if (year && finalName.includes(`(${year})`)) {
-                        finalName = finalName.replace(`(${year})`, '').trim();
-                    }
-
-                    const curveIdToLoad = dbEntry ? dbEntry.id : item.id;
-                    const hasGraph = !!(item.data || fileCount > 0);
-
-                    const uniqueTags = cacheD.uniqueTags;
-                    const tagsHtml = cacheD.tagsHtml;
-
-                    const driveHtml = this.getShortDriveLabel(driveability);
-                    const eqHtml = this.getShortEqLabel(eqFeat);
-
-                    const driverEmoji = FindEngine.driverEmojis[driverType] || '⚙️';
-                    const driverTooltip = `${driverType || 'Driver'}${driverConfig ? ' (' + driverConfig + ')' : ''}`;
-                    const connectorEmoji = FindEngine.connectorEmojis[connector] || '🔌';
-                    const connectorTooltip = connector || 'Standard Connector';
-
-                    const formFactorEmojiMap = {
-                        'IEM': FindEngine.formFactorEmojis['IEM'],
-                        'In-Ear Monitor': FindEngine.formFactorEmojis['IEM'],
-                        'Earbuds (Wired)': FindEngine.formFactorEmojis['Earbuds (Wired)'],
-                        'Wireless Earbuds (TWS)': FindEngine.formFactorEmojis['Wireless Earbuds (TWS)'],
-                        'Over-Ear Headphones (Wired)': FindEngine.formFactorEmojis['Over-Ear Headphones (Wired)'],
-                        'Wireless Over-Ear Headphones': FindEngine.formFactorEmojis['Wireless Over-Ear Headphones']
-                    };
-                    const formEmoji = formFactorEmojiMap[formFactorRaw] || FindEngine.formFactorEmojis['IEM'];
-                    const formTooltip = formFactorRaw || 'In-Ear Monitor (IEM)';
-
-                    if (!this.cardState[idx]) this.cardState[idx] = { srcIdx: 0, roleIdx: 0 };
-                    const currentRoleOpt = this.cardRoleOptions[this.cardState[idx].roleIdx || 0];
-
-                    const genreMatch = cacheD.genreMatch;
-                    const gameGenreMatch = cacheD.gameGenreMatch;
-                    const vibeHeaderLabel = "BEST MUSIC GENRE MATCH";
-                    const reasonLine = opts.reasonLine || '';
-
-                    if (isBlind) {
-                        card.innerHTML = `
-                            <div class="space-y-2">
-                                <div class="flex justify-between items-center select-none pb-1">
-                                    <div class="flex items-center gap-1.5 min-w-0 pr-1">
-                                        <span style="${emojiStyle}" class="vibrant-emoji flex-shrink-0">${rankEmoji}</span>
-                                        <span class="text-[9.5px] font-black uppercase tracking-wider ${rankColorClass}">${rankText}</span>
-                                    </div>
-                                    <span class="text-xs font-black ${badgeColorClass}">${badgeText}</span>
-                                </div>
-                                <div class="space-y-1">
-                                    <h4 id="blind-title-${idx}" class="text-xs font-bold blur-xs select-none">Reveal Required</h4>
-                                    <div class="flex flex-wrap gap-1 mt-1.5">
-                                        <span class="text-[8.5px] font-bold text-zinc-500">🔐 Profile Locked</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="flex gap-2 mt-3 pt-2.5 border-t-2 border-black">
-                                <button onclick="FindEngine.revealIEM(this, '${escJs(finalName)}', 'blind-title-${idx}')" class="flex-1 py-1.5 btn-clear text-[9px] font-black cursor-pointer">🔓 Reveal IEM</button>
-                            </div>
-                        `;
-                    } else {
-                        card.innerHTML = `
-                            <div class="space-y-2">
-                                <div class="flex justify-between items-center select-none pb-1">
-                                    <div class="flex items-center gap-1.5 min-w-0 pr-1">
-                                        <span style="${emojiStyle}" class="vibrant-emoji flex-shrink-0">${rankEmoji}</span>
-                                        <span class="text-[9.5px] font-black uppercase tracking-wider whitespace-nowrap ${rankColorClass}">${rankText}</span>
-                                    </div>
-                                    <span class="text-lg font-black ${badgeColorClass} flex-shrink-0">${badgeText}</span>
-                                </div>
-
-                                <div class="flex items-center gap-2 mt-1">
-                                    <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="${esc(vibeHeaderLabel)}: ${esc(genreMatch.name)}">
-                                        <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
-                                            <span class="emoji-font vibrant-emoji text-base leading-none">${esc(genreMatch.emoji)}</span>
-                                        </div>
-                                        <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${esc(genreMatch.name)}</span>
-                                    </div>
-                                    <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Game Match: ${esc(gameGenreMatch.name)}">
-                                        <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
-                                            <span class="emoji-font vibrant-emoji text-base leading-none">${esc(gameGenreMatch.emoji)}</span>
-                                        </div>
-                                        <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${esc(gameGenreMatch.name)}</span>
-                                    </div>
-                                </div>
-
-                                <div class="space-y-1">
-                                    <div class="flex items-start gap-2 w-full">
-                                        <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0 mt-0.5" data-id="${curveIdToLoad}" data-name="${esc(finalName)}" onclick="event.stopPropagation(); FindEngine.updateFloatingCompareBar();">
-                                        <div class="flex-1 w-full">
-                                            <span class="text-xs font-black text-stone-200 leading-snug line-clamp-2">${esc(finalName)}</span>
-                                            ${reasonLine ? `<div class="text-[8.5px] font-mono text-sky-400/90 leading-snug mt-0.5 line-clamp-1" title="${esc(reasonLine)}">${esc(reasonLine)}</div>` : ''}
-                                        </div>
-                                    </div>
-
-                                    <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
-                                        ${price !== null && price !== undefined ? `<span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${esc(price)}</span>` : ''}
-                                        ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${esc(year)}</span>` : ''}
-                                        ${driverType ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
-                                        ${connector ? `<span class="spec-icon-badge" data-tooltip="${esc(connectorTooltip)}">${connectorEmoji}</span>` : ''}
-                                        <span class="spec-icon-badge" data-tooltip="${esc(formTooltip)}">${formEmoji}</span>
-                                    </div>
-
-                                    <div class="h-[42px] w-full rounded-none border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
-                                        <canvas id="spark-${idx}" class="absolute inset-0 w-full h-full block opacity-85"></canvas>
-                                    </div>
-
-                                    <div class="flex items-center justify-between w-full mt-2.5 px-1 text-[8.5px] font-mono select-none whitespace-nowrap">
-                                        ${driveHtml}
-                                        ${eqHtml}
-                                    </div>
-
-                                    <div class="flex items-center justify-center gap-1 flex-wrap w-full mt-2 pt-1">
-                                        ${tagsHtml}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="flex items-center gap-1.5 mt-3 pt-2 border-t-2 border-black ${hasGraph ? '' : 'hidden'}">
-                                <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole(${idx}, -1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                <button onclick="event.stopPropagation(); FindEngine.loadCardToGraph(${idx})" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
-                                    <span id="label-role-stepper-${idx}" class="flex items-center justify-center gap-1 truncate">${currentRoleOpt.label}</span>
-                                </button>
-                                <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole(${idx}, 1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
-                            </div>
-                        `;
-                    }
-
-                    return card;
-                },
-
                 renderMatches: function(matches) {
                     matches = this.applyGenreFilters(matches);
                     this._lastMatches = matches;
-
-                    // Per-invocation render token: a scan that was superseded
-                    // mid-chunk must not keep appending cards into the grid of
-                    // a newer render. Every deferred chunk re-checks it.
-                    const renderToken = (this._renderToken || 0) + 1;
-                    this._renderToken = renderToken;
-
-                    // Release the previous render's IntersectionObserver up
-                    // front: a superseded render never reached finalizeRender
-                    // and would otherwise keep its observer (and this module
-                    // via closure) alive until the NEXT render.
-                    if (this._findObserver) { this._findObserver.disconnect(); this._findObserver = null; }
 
                     const grid = document.getElementById('find-matches-grid');
                     const emptyState = document.getElementById('find-empty-state');
@@ -23514,14 +21966,7 @@ applyGenreFilters: function(matches) {
                     const isBlind = document.getElementById('find-blind-mode')?.checked;
                     const targetCurve = this.generateTargetCurve();
                     const freqs = CurveUtils.generateLogGrid(100);
-                    const targetInterp = targetCurve ? CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]) : null;
-
-                    // Index the dataset once per render — the per-card fallback
-                    // below would otherwise do an O(dataset) scan for every card.
-                    let datasetById = null;
-                    if (PEQDB_Module.STATE.dataset) {
-                        datasetById = new Map(PEQDB_Module.STATE.dataset.map(d => [d.id, d]));
-                    }
+                    const targetInterp = CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]);
 
                     const matchesToRender = matches;
                     const CHUNK_SIZE = 40;
@@ -23536,11 +21981,7 @@ applyGenreFilters: function(matches) {
                     const scheduleChunk = () => {
                         if (chainActive || !matchesToRender.length) return;
                         chainActive = true;
-                        setTimeout(() => {
-                            chainActive = false;
-                            if (this._renderToken !== renderToken) return;
-                            renderChunk();
-                        }, 16);
+                        setTimeout(() => { chainActive = false; renderChunk(); }, 16);
                     };
 
                     const refreshMarquee = () => {
@@ -23574,7 +22015,6 @@ applyGenreFilters: function(matches) {
                     };
 
                     const finalizeRender = () => {
-                        if (this._renderToken !== renderToken) return;
                         detachObserver();
                         if (countText) countText.textContent = `${matchesToRender.length} matches`;
                         refreshMarquee();
@@ -23609,8 +22049,8 @@ applyGenreFilters: function(matches) {
                         if (!dbEntry && this.iemDatabase && this.iemDatabase.length > 0) {
                             dbEntry = this.getDbEntry(item);
                         }
-                        if (!dbEntry && datasetById) {
-                            dbEntry = datasetById.get(item.id) || null;
+                        if (!dbEntry && PEQDB_Module.STATE.dataset) {
+                            dbEntry = PEQDB_Module.STATE.dataset.find(d => d.id === item.id);
                         }
 
                         const rawFiles = (dbEntry && Array.isArray(dbEntry.files)) ? dbEntry.files : (item.files || []);
@@ -23722,7 +22162,7 @@ applyGenreFilters: function(matches) {
                                     </div>
                                 </div>
                                 <div class="flex gap-2 mt-3 pt-2.5 border-t-2 border-black">
-                                    <button onclick="FindEngine.revealIEM(this, '${escJs(finalName)}', 'blind-title-${idx}')" class="flex-1 py-1.5 btn-clear text-[9px] font-black cursor-pointer">🔓 Reveal IEM</button>
+                                    <button onclick="FindEngine.revealIEM(this, '${finalName.replace(/'/g, "\\'")}', 'blind-title-${idx}')" class="flex-1 py-1.5 btn-clear text-[9px] font-black cursor-pointer">🔓 Reveal IEM</button>
                                 </div>
                             `;
                         } else {
@@ -23737,34 +22177,34 @@ applyGenreFilters: function(matches) {
                                     </div>
 
                                     <div class="flex items-center gap-2 mt-1">
-                                        <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="${esc(vibeHeaderLabel)}: ${esc(genreMatch.name)}">
+                                        <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="${vibeHeaderLabel}: ${genreMatch.name}">
                                             <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
-                                                <span class="emoji-font vibrant-emoji text-base leading-none">${esc(genreMatch.emoji)}</span>
+                                                <span class="emoji-font vibrant-emoji text-base leading-none">${genreMatch.emoji}</span>
                                             </div>
-                                            <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${esc(genreMatch.name)}</span>
+                                            <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${genreMatch.name}</span>
                                         </div>
-                                        <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Game Match: ${esc(gameGenreMatch.name)}">
+                                        <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Game Match: ${gameGenreMatch.name}">
                                             <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
-                                                <span class="emoji-font vibrant-emoji text-base leading-none">${esc(gameGenreMatch.emoji)}</span>
+                                                <span class="emoji-font vibrant-emoji text-base leading-none">${gameGenreMatch.emoji}</span>
                                             </div>
-                                            <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${esc(gameGenreMatch.name)}</span>
+                                            <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${gameGenreMatch.name}</span>
                                         </div>
                                     </div>
 
                                     <div class="space-y-1">
                                         <div class="flex items-start gap-2 w-full">
-                                            <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0 mt-0.5" data-id="${curveIdToLoad}" data-name="${esc(finalName)}" onclick="event.stopPropagation(); FindEngine.updateFloatingCompareBar();">
+                                            <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0 mt-0.5" data-id="${curveIdToLoad}" data-name="${finalName}" onclick="event.stopPropagation(); FindEngine.updateFloatingCompareBar();">
                                             <div class="flex-1 w-full">
-                                                <span class="text-xs font-black text-stone-200 leading-snug line-clamp-2">${esc(finalName)}</span>
+                                                <span class="text-xs font-black text-stone-200 leading-snug line-clamp-2">${finalName}</span>
                                             </div>
                                         </div>
 
                                         <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
-                                            ${price !== null && price !== undefined ? `<span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${esc(price)}</span>` : ''}
-                                            ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${esc(year)}</span>` : ''}
-                                            ${driverType ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
-                                            ${connector ? `<span class="spec-icon-badge" data-tooltip="${esc(connectorTooltip)}">${connectorEmoji}</span>` : ''}
-                                            <span class="spec-icon-badge" data-tooltip="${esc(formTooltip)}">${formEmoji}</span>
+                                            ${price !== null && price !== undefined ? `<span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>` : ''}
+                                            ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
+                                            ${driverType ? `<span class="spec-icon-badge" data-tooltip="${driverTooltip}">${driverEmoji}</span>` : ''}
+                                            ${connector ? `<span class="spec-icon-badge" data-tooltip="${connectorTooltip}">${connectorEmoji}</span>` : ''}
+                                            <span class="spec-icon-badge" data-tooltip="${formTooltip}">${formEmoji}</span>
                                         </div>
 
                                         <div class="h-[42px] w-full rounded-none border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
@@ -23776,7 +22216,7 @@ applyGenreFilters: function(matches) {
                                             ${eqHtml}
                                         </div>
 
-                                        <div class="flex items-center justify-center gap-1 flex-wrap w-full mt-2 pt-1">
+                                        <div class="flex items-center justify-center gap-3 w-full mt-2 pt-1">
                                             ${tagsHtml}
                                         </div>
                                     </div>
@@ -23830,9 +22270,6 @@ applyGenreFilters: function(matches) {
 
                 resetFindResults: function() {
                     this._lastMatches = null;
-                    // Invalidate any in-flight renderMatches async work — it
-                    // would otherwise repopulate the grid we just cleared.
-                    this._renderToken = (this._renderToken || 0) + 1;
                     if (this._findObserver) { this._findObserver.disconnect(); this._findObserver = null; }
                     const grid = document.getElementById('find-matches-grid');
                     if (grid) grid.innerHTML = '';
@@ -23859,25 +22296,15 @@ applyGenreFilters: function(matches) {
                         if (dsItem && dsItem.files && dsItem.files.length > 1) {
                             const targetCurve = this.generateTargetCurve();
                             const freqs = CurveUtils.generateLogGrid(100);
-                            const targetInterp = targetCurve ? CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]) : null;
-
-                            // Load all uncached source curves in parallel (the
-                            // loop was serializing every loadCurve await, which
-                            // stalled the drawer open on multi-file IEMs).
-                            const loadTasks = [];
-                            for (let fIdx = 0; fIdx < dsItem.files.length; fIdx++) {
-                                const filePath = dsItem.files[fIdx];
-                                if (!dsItem.sourcesCache || !dsItem.sourcesCache[filePath]) {
-                                    loadTasks.push(CurveIndexer.loadCurve(dsItem, fIdx).catch(() => {}));
-                                } else {
-                                    loadTasks.push(Promise.resolve());
-                                }
-                            }
-                            await Promise.all(loadTasks);
+                            const targetInterp = CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]);
 
                             for (let fIdx = 0; fIdx < dsItem.files.length; fIdx++) {
                                 const filePath = dsItem.files[fIdx];
                                 const scoreBadge = drawer.querySelector(`[data-sub-score-idx="${fIdx}"]`);
+
+                                if (!dsItem.sourcesCache || !dsItem.sourcesCache[filePath]) {
+                                    await CurveIndexer.loadCurve(dsItem, fIdx);
+                                }
 
                                 if (dsItem.sourcesCache && dsItem.sourcesCache[filePath]) {
                                     const subData = dsItem.sourcesCache[filePath];
@@ -23937,8 +22364,8 @@ applyGenreFilters: function(matches) {
                         }
 
                         parent.innerHTML = `
-                            <button onclick="FindEngine.loadToGraph('${escJs(iem.id)}', 'base')" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-stone-200 rounded font-black text-[9px] cursor-pointer">📈 Base</button>
-                            <button onclick="FindEngine.loadToGraph('${escJs(iem.id)}', 'reference')" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-750 text-stone-200 rounded font-black text-[9px] cursor-pointer">🆚 Reference</button>
+                            <button onclick="FindEngine.loadToGraph('${iem.id}', 'base')" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-stone-200 rounded font-black text-[9px] cursor-pointer">📈 Base</button>
+                            <button onclick="FindEngine.loadToGraph('${iem.id}', 'reference')" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-750 text-stone-200 rounded font-black text-[9px] cursor-pointer">🆚 Reference</button>
                         `;
                     }
                     showToast("IEM identity unlocked!", "🔓");
@@ -23995,32 +22422,20 @@ applyGenreFilters: function(matches) {
                     }
 
                     let html = '';
-                    const MAX_ROWS = 100;
-                    const visible = matches.slice(0, MAX_ROWS);
-                    const truncated = matches.length - visible.length;
-                    for (let i = 0; i < visible.length; i++) {
-                        const item = visible[i];
+                    const limit = matches.length;
+                    for (let i = 0; i < limit; i++) {
+                        const item = matches[i];
                         const isAdded = this.tasteFavorites.some(f => f.id === item.id);
 
                         html += `
-                            <div class="peqdb-row-item flex items-center justify-between p-1.5 cursor-pointer hover:bg-[var(--bg-card)] mb-1 transition-all select-none" onclick="FindEngine.addTasteFavorite('${escJs(item.id)}')">
-                                <span class="text-xs text-stone-200 font-bold truncate flex-1 pr-2">${esc(item.name)}</span>
+                            <div class="peqdb-row-item flex items-center justify-between p-1.5 cursor-pointer hover:bg-[var(--bg-card)] mb-1 transition-all select-none" onclick="FindEngine.addTasteFavorite('${item.id}')">
+                                <span class="text-xs text-stone-200 font-bold truncate flex-1 pr-2">${item.name}</span>
                                 ${isAdded ? '<span class="text-[9px] text-rose-400 font-black flex-shrink-0 ml-1">✓ Added</span>' : '<span class="text-[9px] text-[var(--accent-blue)] font-black flex-shrink-0 ml-1">+ Add</span>'}
                             </div>
                         `;
                     }
 
-                    container.innerHTML = html + (truncated > 0
-                        ? '<span class="text-zinc-500 italic font-bold text-xs p-1 block">…and ' + truncated + ' more (refine your search)</span>'
-                        : '');
-                },
-
-                handleTasteSearchDebounced: function(query) {
-                    if (this._tasteSearchTimer) clearTimeout(this._tasteSearchTimer);
-                    this._tasteSearchTimer = setTimeout(() => {
-                        this._tasteSearchTimer = null;
-                        this.handleTasteSearch(query);
-                    }, 120);
+                    container.innerHTML = html;
                 },
 
                 tasteFavorites: [],
@@ -24067,7 +22482,7 @@ applyGenreFilters: function(matches) {
                     this.renderTasteChips();
                 },
 
-                generateTasteFingerprint: async function(retryCount = 0) {
+                generateTasteFingerprint: async function() {
                     const box = document.getElementById('find-taste-fingerprint');
                     const textEl = document.getElementById('find-taste-fingerprint-text');
                     if (!box || !textEl) return;
@@ -24081,15 +22496,6 @@ applyGenreFilters: function(matches) {
 
                     const dataset = PEQDB_Module.STATE.dataset || [];
                     const selected = this.tasteFavorites.map(f => f.id);
-                    if (dataset.length === 0 || !selected.every(id => dataset.find(i => i.id === id))) {
-                        if ((retryCount || 0) < 40) {
-                            textEl.textContent = '⏳ Analyzing...';
-                            setTimeout(() => this.generateTasteFingerprint((retryCount || 0) + 1), 250);
-                            return;
-                        }
-                        textEl.textContent = "Search to analyze acoustic profile...";
-                        return;
-                    }
 
                     await Promise.all(selected.map(async (id) => {
                         const item = dataset.find(i => i.id === id);
@@ -24178,9 +22584,9 @@ applyGenreFilters: function(matches) {
                             div.innerHTML = `
                                 <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                                     <span class="emoji-font vibrant-emoji text-lg flex-shrink-0 overflow-visible" style="line-height: 1.25;">❤️</span>
-                                    <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(f.name)}</span>
+                                    <span class="text-xs font-black text-[var(--text-main)] truncate">${f.name}</span>
                                 </div>
-                                <button type="button" onclick="event.stopPropagation(); FindEngine.removeTasteFavorite('${escJs(f.id)}')" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${esc(f.name)}">✕</button>
+                                <button type="button" onclick="event.stopPropagation(); FindEngine.removeTasteFavorite('${f.id}')" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${f.name.replace(/"/g, '&quot;')}">✕</button>
                             `;
                             container.appendChild(div);
                         } else {
@@ -24303,11 +22709,6 @@ applyGenreFilters: function(matches) {
                     showToast(`Loaded "${item.name}" as ${role.toUpperCase()} plot!`, "📈");
                 }
             };
-            // Expose FindEngine on window: top-level const/let bindings live in
-            // the global lexical scope (bare-name access works), but `window.`
-            // property reads (used in several boot/guards) would be undefined
-            // without this explicit assignment.
-            window.FindEngine = FindEngine;
 
             const AppState = {
                 get database() { return PEQDB_Module.STATE.dataset; },

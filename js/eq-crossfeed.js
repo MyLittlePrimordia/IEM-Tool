@@ -58,7 +58,14 @@ const EQ_CrossfeedMethods = {
             const isOff = (this.crossfeedState === 'off');
             const crossVal = isOff ? 0 : (levelVal / 100) * 0.58 * preset.level;
             
-            // Automatic volume compensation to prevent quiet drops
+            // Automatic volume compensation to prevent quiet drops.
+            // INTENTIONALLY partial (0.35 factor): crossfeed attenuates
+            // perceived level, and full unity replacement would over-brighten
+            // the direct path. For centered/mono content direct+cross peaks
+            // around +1..+3 dB depending on preset level — bounded by design
+            // and absorbed by the downstream limiter (-0.5 dB threshold).
+            // Do not "fix" this to equal-power without also retuning the
+            // presets; users have calibrated levels around this response.
             const directVal = 1.0 - (crossVal * 0.35);
             
             // Delay emulates the arrival time of the simulated speaker position

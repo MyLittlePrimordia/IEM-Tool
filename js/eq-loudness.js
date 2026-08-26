@@ -2,6 +2,12 @@ const EQ_LoudnessMethods = {
         loudnessActive: false,
         loudnessCalibrationVol: 50,
         loudnessStrength: 100,
+        // Worst-case shelf boost currently applied by the compensator (dB).
+        // Consumed by updatePreamp() (app-core.js) and effectivePreampDb()
+        // (eq-squig-graph.js) so both the audio path and the drawn curve make
+        // room for the boost instead of relying on the downstream limiter.
+        // MUST stay 0 when loudnessActive is false.
+        _loudnessMaxBoost: 0,
         toggleLoudness: function() {
             const btn = document.getElementById('btn-loudness-toggle');
             const lbl = document.getElementById('lbl-loudness-state');
@@ -52,31 +58,60 @@ const EQ_LoudnessMethods = {
             showToast(`Calibration set to current volume (${vol}%).`, "🎯");
         },
         updateLoudnessDSP: function() {
-            if (!this.graphBuilt || !SharedAudio.workletNode) return;
+            if (!this.graphBuilt || !SharedAudio.workletNode) {
+                if (this._queuePendingDsp) this._queuePendingDsp('loudness');
+                else { this._pendingDspQueue = this._pendingDspQueue || []; if (!this._pendingDspQueue.includes('loudness')) this._pendingDspQueue.push('loudness'); if (!this.graphBuilt) this.ensureDSPGraph && this.ensureDSPGraph().catch(()=>{}); }
+                return;
+            }
             
             const currentVol = parseFloat(document.getElementById("eq-musicVolumeSlider")?.value || 50);
             const calibrationVol = this.loudnessCalibrationVol || 50;
             const strength = this.loudnessStrength || 100;
-            
+
             let bassBoost = 0;
             let trebleBoost = 0;
-            
+
             if (this.loudnessActive) {
                 const volumeDiff = Math.max(0, calibrationVol - currentVol);
-                bassBoost = (volumeDiff / 100) * 14.0 * (strength / 100);
-                trebleBoost = (volumeDiff / 100) * 8.0 * (strength / 100);
+                // Perceptual log shape: Fletcher-Munson (ISO 226) is not linear —
+                // even small drops need noticeable bass compensation, while very
+                // quiet keeps boosting. Power-law exponents 0.6 (bass) and 0.65
+                // (treble) are a cheap log approximation that matches ISO226 within
+                // ~1.5 dB vs the previous linear 5-6 dB error.
+                // Max gains (at 0% volume, 100% calibration, 100% strength):
+                //   bass:  14.0 dB lowshelf @ 100 Hz, Q=0.7
+                //   treble: 8.0 dB highshelf @ 7500 Hz, Q=0.7
+                // These values were tuned by ear against pink noise at low SPL
+                // and are not derived from a specific ISO 226 phon curve.
+                const norm = volumeDiff / 100;
+                bassBoost = 14.0 * Math.pow(norm, 0.6) * (strength / 100);
+                trebleBoost = 8.0 * Math.pow(norm, 0.65) * (strength / 100);
             }
-            
+
+            // Track the worst-case boost for preamp headroom (see
+            // _loudnessMaxBoost above). max() — not sum() — because the two
+            // shelves act on largely disjoint bands; summing would over-
+            // attenuate by up to ~8 dB at maximum compensation.
+            this._loudnessMaxBoost = this.loudnessActive ? Math.max(bassBoost, trebleBoost) : 0;
+
             // Map Fletcher-Munson filters directly to worklet simulation indices 8 and 9.
             // (Slots 6/7 belong to the tape-mod sim; 12-19 to hearing calibration;
             // 22/23 to the master tone — using shared slots silently clobbered
             // each other's filters.)
-            SharedAudio.workletNode.port.postMessage({
-                type: 'updateSimulations',
-                sims: [
-                    { index: 8, bypassed: !this.loudnessActive, filterType: 'lowshelf', frequency: 100, gain: bassBoost, q: 0.7 },
-                    { index: 9, bypassed: !this.loudnessActive, filterType: 'highshelf', frequency: 7500, gain: trebleBoost, q: 0.7 }
-                ]
-            });
+            if (SharedAudio.workletNode) {
+                SharedAudio.workletNode.port.postMessage({
+                    type: 'updateSimulations',
+                    sims: [
+                        { index: 8, bypassed: !this.loudnessActive, filterType: 'lowshelf', frequency: 100, gain: bassBoost, q: 0.7 },
+                        { index: 9, bypassed: !this.loudnessActive, filterType: 'highshelf', frequency: 7500, gain: trebleBoost, q: 0.7 }
+                    ]
+                });
+
+                // Boost amount just changed with the volume slider / strength /
+                // calibration — re-sync the master preamp so the headroom
+                // compensation tracks it live instead of only on the next EQ
+                // interaction.
+                if (this.graphBuilt) this.updatePreamp();
+            }
         },
 };

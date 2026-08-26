@@ -1,15 +1,18 @@
 const EQ_ExportMethods = {
         triggerDownload: function(filename, text) { 
-            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const el = document.createElement('a'); 
-            el.setAttribute('href', url); 
-            el.setAttribute('download', filename); 
-            el.style.display = 'none'; 
-            document.body.appendChild(el); 
-            el.click(); 
-            document.body.removeChild(el); 
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            try {
+                const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const el = document.createElement('a'); 
+                el.setAttribute('href', url); 
+                el.setAttribute('download', filename); 
+                el.style.display = 'none'; 
+                if (!document.body) { URL.revokeObjectURL(url); return; }
+                document.body.appendChild(el); 
+                try { el.click(); } catch (_) {}
+                try { document.body.removeChild(el); } catch (_) {}
+                setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 1000);
+            } catch (e) { console.warn('[Export] download failed', e); }
         },
         getSanitizedExportFilename: function(suffix, extension) {
             const model = (document.getElementById('model')?.value || '').trim() || "IEM";
@@ -46,6 +49,7 @@ const EQ_ExportMethods = {
                 
                 // Allow DOM thread to apply changes, then calculate widths
                 setTimeout(() => {
+                    if (!el || !el.parentElement) return;
                     const parentWidth = el.parentElement.clientWidth;
                     const childWidth = el.scrollWidth;
                     
@@ -122,12 +126,16 @@ const EQ_ExportMethods = {
                 });
             }
             
-            if (this.resonanceCalEnabled && window.PEQDB && PEQDB_Module.resonanceHz && PEQDB_Module.resonanceHz !== 8000) {
-                out += 'Filter ' + (fIdx++) + ': ON PK Fc ' + PEQDB_Module.resonanceHz + ' Hz Gain -3.0 dB Q 2.00\n';
-            }
+            // NOTE: the ear-resonance notch needs no extra filter here.
+            // lockResonancePeak() writes it into main band 8, so it is already
+            // included via mainVals below — appending another filter here
+            // double-counted it (~-7.5 dB total vs -4.5 dB live).
 
             if (this.deEsserEnabled) {
-                out += 'Filter ' + (fIdx++) + ': ON PK Fc 6000 Hz Gain ' + (-3.0 * (this.deEsserSensitivity / 100)).toFixed(1) + ' dB Q 2.50\n';
+                // Export the tracked notch frequency (matches what the worklet
+                // is actually applying) rather than the 6 kHz placeholder.
+                var deFreq = (typeof this.deEsserCurrentFreq === 'number' && isFinite(this.deEsserCurrentFreq)) ? Math.round(this.deEsserCurrentFreq) : 6000;
+                out += 'Filter ' + (fIdx++) + ': ON PK Fc ' + deFreq + ' Hz Gain ' + (-3.0 * (this.deEsserSensitivity / 100)).toFixed(1) + ' dB Q 2.50\n';
             }
             
             var bassSlider = document.getElementById("eq-masterBass");
@@ -147,16 +155,29 @@ const EQ_ExportMethods = {
             var waveletFreqs = [20, 21, 22, 23, 24, 26, 27, 29, 30, 32, 34, 36, 38, 40, 43, 45, 48, 50, 53, 56, 59, 63, 66, 70, 74, 78, 83, 87, 92, 97, 103, 109, 115, 121, 128, 136, 143, 151, 160, 169, 178, 188, 199, 210, 222, 235, 248, 262, 277, 292, 309, 326, 345, 364, 385, 406, 429, 453, 479, 506, 534, 565, 596, 630, 665, 703, 743, 784, 829, 875, 924, 977, 1032, 1090, 1151, 1216, 1284, 1357, 1433, 1514, 1599, 1689, 1784, 1885, 1991, 2103, 2221, 2347, 2479, 2618, 2766, 2921, 3086, 3260, 3443, 3637, 3842, 4058, 4287, 4528, 4783, 5052, 5337, 5637, 5955, 6290, 6644, 7018, 7414, 7831, 8272, 8738, 9230, 9749, 10298, 10878, 11490, 12137, 12821, 13543, 14305, 15110, 15961, 16860, 17809, 18812, 19871];
             var outEntries = [];
             var self = this;
+            var magCache = new Map();
+            function cachedMag(type,f,hz,q,g){ var k=type+'|'+f+'|'+hz+'|'+q+'|'+g; var v=magCache.get(k); if(v!==undefined) return v; var m=Math.max(1e-4,self.getBiquadMagnitude(type,f,hz,q,g)); magCache.set(k,m); return m; }
             
             waveletFreqs.forEach(function(f) {
                 var cumulativeDb = preVal;
                 
                 mainVals.forEach(function(v) {
                     var hasNoGain = ['highpass', 'lowpass', 'notch'].includes(v.type);
-                    var gVal = hasNoGain ? 0.0 : v.g;
+                    var rawG = hasNoGain ? 0.0 : v.g;
+                    // Slope only means anything for Shelf/HP/LP; a stale
+                    // value carried over from a previous type must not
+                    // bake extra cascaded copies of a Peaking/Notch section
+                    // into the exported curve (matches the live-audio guard
+                    // in EQ_Module.updateAudioConnections).
+                    var slopeCapableForExport = (v.type === 'lowshelf' || v.type === 'highshelf' || v.type === 'lowpass' || v.type === 'highpass');
+                    var slope = slopeCapableForExport ? (v.slope || 12) : 12;
+                    var cascadeCount = Math.max(1, Math.round(slope / 12));
+                    var nodeGain = (v.type === 'lowshelf' || v.type === 'highshelf') ? (rawG / cascadeCount) : rawG;
                     if (v.type !== 'peaking' || v.g !== 0) {
-                        var mag = Math.max(1e-4, self.getBiquadMagnitude(v.type, f, v.hz, v.q, gVal));
-                        cumulativeDb += 20 * Math.log10(mag);
+                        for (var k = 0; k < cascadeCount; k++) {
+                            var mag = cachedMag(v.type, f, v.hz, v.q, nodeGain);
+                            cumulativeDb += 20 * Math.log10(mag);
+                        }
                     }
                 });
                 
@@ -164,7 +185,7 @@ const EQ_ExportMethods = {
                     var hasNoGain = ['highpass', 'lowpass', 'notch'].includes(v.type);
                     var gVal = hasNoGain ? 0.0 : v.g;
                     if (v.type !== 'peaking' || v.g !== 0) {
-                        var mag = Math.max(1e-4, self.getBiquadMagnitude(v.type, f, v.hz, v.q, gVal));
+                        var mag = cachedMag(v.type, f, v.hz, v.q, gVal);
                         cumulativeDb += 20 * Math.log10(mag);
                     }
                 });
@@ -172,7 +193,7 @@ const EQ_ExportMethods = {
                 if (self.virtualBands) {
                     self.virtualBands.forEach(function(v) {
                         if (v && v.g !== 0) {
-                            var mag = Math.max(1e-4, self.getBiquadMagnitude(v.type || 'peaking', f, v.hz, v.q, v.g));
+                            var mag = cachedMag(v.type || 'peaking', f, v.hz, v.q, v.g);
                             cumulativeDb += 20 * Math.log10(mag);
                         }
                     });
@@ -182,30 +203,29 @@ const EQ_ExportMethods = {
                     [250, 500, 1000, 2000, 4000, 8000, 12000, 16000].forEach(function(freq, idx) {
                         var gain = self.hearingOffsets[idx] || 0;
                         if (gain !== 0) {
-                            var mag = Math.max(1e-4, self.getBiquadMagnitude('peaking', f, freq, 1.0, gain));
+                            var mag = cachedMag('peaking', f, freq, 1.0, gain);
                             cumulativeDb += 20 * Math.log10(mag);
                         }
                     });
                 }
                 
-                if (self.resonanceCalEnabled && window.PEQDB && PEQDB_Module.resonanceHz && PEQDB_Module.resonanceHz !== 8000) {
-                    var mag = Math.max(1e-4, self.getBiquadMagnitude('peaking', f, PEQDB_Module.resonanceHz, 2.0, -3.0));
-                    cumulativeDb += 20 * Math.log10(mag);
-                }
+                // Resonance notch lives in main band 8 (see exportPeace note) —
+                // already accounted for via mainVals; no extra filter here.
 
                 if (self.deEsserEnabled) {
-                    var mag = Math.max(1e-4, self.getBiquadMagnitude('peaking', f, 6000, 2.5, -3.0 * (self.deEsserSensitivity / 100)));
+                    var deFreqW = (typeof self.deEsserCurrentFreq === 'number' && isFinite(self.deEsserCurrentFreq)) ? Math.round(self.deEsserCurrentFreq) : 6000;
+                    var mag = cachedMag('peaking', f, deFreqW, 2.5, -3.0 * (self.deEsserSensitivity / 100));
                     cumulativeDb += 20 * Math.log10(mag);
                 }
                 
                 var bassSlider = document.getElementById("eq-masterBass");
                 var trebSlider = document.getElementById("eq-masterTreble");
                 if (bassSlider && parseFloat(bassSlider.value) !== 0) {
-                    var mag = Math.max(1e-4, self.getBiquadMagnitude('lowshelf', f, 105, 0.7, parseFloat(bassSlider.value)));
+                    var mag = cachedMag('lowshelf', f, 105, 0.7, parseFloat(bassSlider.value));
                     cumulativeDb += 20 * Math.log10(mag);
                 }
                 if (trebSlider && parseFloat(trebSlider.value) !== 0) {
-                    var mag = Math.max(1e-4, self.getBiquadMagnitude('highshelf', f, 8000, 0.7, parseFloat(trebSlider.value)));
+                    var mag = cachedMag('highshelf', f, 8000, 0.7, parseFloat(trebSlider.value));
                     cumulativeDb += 20 * Math.log10(mag);
                 }
                 
@@ -351,6 +371,14 @@ const EQ_ExportMethods = {
             // Export both standard and advanced active bands to the output JSON array
             mainVals.forEach(exportBand);
             advVals.forEach(exportBand);
+            // Include virtual bands (>20-band AutoEQ) — Poweramp supports an
+            // arbitrary number of bands, so discarding them silently would
+            // make the exported file sound different from the live DSP.
+            if (this.virtualBands && this.virtualBands.length) {
+                this.virtualBands.forEach(function(v) {
+                    if (v && v.g !== 0) exportBand({ hz: v.hz, g: v.g, q: v.q, type: v.type || 'peaking' });
+                });
+            }
 
             // Append calibration corrections directly to the active band list
             if (this.hearingCalEnabled) {
@@ -369,22 +397,15 @@ const EQ_ExportMethods = {
                 });
             }
             
-            if (this.resonanceCalEnabled && window.PEQDB && PEQDB_Module.resonanceHz && PEQDB_Module.resonanceHz !== 8000) {
-                peq.bands.push({
-                    "type": 2,
-                    "channels": 0,
-                    "frequency": PEQDB_Module.resonanceHz,
-                    "q": 2.0,
-                    "gain": -3.0,
-                    "color": 0
-                });
-            }
+            // Resonance notch lives in main band 8 (see exportPeace note) —
+            // already exported via mainVals; no extra band here.
 
             if (this.deEsserEnabled) {
+                var deFreqPA = (typeof this.deEsserCurrentFreq === 'number' && isFinite(this.deEsserCurrentFreq)) ? Math.round(this.deEsserCurrentFreq) : 6000;
                 peq.bands.push({
                     "type": 2,
                     "channels": 0,
-                    "frequency": 6000,
+                    "frequency": deFreqPA,
                     "q": 2.5,
                     "gain": parseFloat((-3.0 * (this.deEsserSensitivity / 100)).toFixed(4)),
                     "color": 0
@@ -413,9 +434,23 @@ const EQ_ExportMethods = {
                     "color": 0
                 });
             }
-            
+
+            // Poweramp's band schema has no cascade/slope field -- a Shelf
+            // set to anything above the default 12 dB/oct is silently
+            // collapsed to a single 12 dB/oct section on export, same
+            // limitation as exportPeace's txt format, but this exporter
+            // never disclosed it.
+            var shelfWithSlopePA = function(v) {
+                return v && (v.type === 'lowshelf' || v.type === 'highshelf') && (v.slope || 12) !== 12;
+            };
+            var poweramp_hasUndisclosedSlope = mainVals.some(shelfWithSlopePA) || advVals.some(shelfWithSlopePA) || (this.virtualBands || []).some(shelfWithSlopePA);
+
             this.triggerDownload(this.getSanitizedExportFilename("PowerAmp", "json"), JSON.stringify([peq], null, 2));
-            showToast("Exported Poweramp Preset!", "⚡");
+            if (poweramp_hasUndisclosedSlope) {
+                showToast("Exported — note: export format can't encode shelf slope, using default 12 dB/oct.", "⚡");
+            } else {
+                showToast("Exported Poweramp Preset!", "⚡");
+            }
         },
         exportQudelix: function() {
             var _a = this.getRealValues(), preVal = _a.preVal, mainVals = _a.mainVals, advVals = _a.advVals;
@@ -440,8 +475,23 @@ const EQ_ExportMethods = {
             mainVals.forEach(exportBand);
             // Advanced bands ignored for hardware compatibility — the Qudelix-5K's onboard PEQ only
             // supports 10 bands, so bands 11+ can't be written to this format at all.
-            const qudelixBandCount = PEQDB_Module.autoeqResolution || 10;
-            const qudelixHasDroppedBands = qudelixBandCount > 10 && advVals.some(v => v && (v.type !== 'peaking' || v.g !== 0));
+
+            // The old drop-detection here compared the number of *written*
+            // filter lines against 10 -- which is the wrong signal in both
+            // directions: hearing-cal/de-esser/tone-shelf lines can push
+            // that count past 10 with zero advanced/virtual bands ever
+            // touched (false "bands were dropped" warning on a lossless
+            // export), while a real advanced/virtual band is silently
+            // skipped above regardless of how few main bands are active
+            // (no warning at all, real EQ data missing from a "success"
+            // toast). Count what's actually omitted instead.
+            const activeAdvBands = advVals.filter(function(v) {
+                return v && !(v.type === 'peaking' && v.g === 0);
+            }).length;
+            const activeVirtualBands = (this.virtualBands || []).filter(function(v) {
+                return v && v.g !== 0;
+            }).length;
+            const droppedBands = activeAdvBands + activeVirtualBands;
 
             if (this.hearingCalEnabled) {
                 [250, 500, 1000, 2000, 4000, 8000, 12000, 16000].forEach(function(freq, idx) {
@@ -450,12 +500,12 @@ const EQ_ExportMethods = {
                 });
             }
 
-            if (this.resonanceCalEnabled && window.PEQDB && PEQDB_Module.resonanceHz && PEQDB_Module.resonanceHz !== 8000) {
-                out += 'Filter ' + (fIdx++) + ',ON,PEAK,' + PEQDB_Module.resonanceHz + ',-3.0,2.00\n';
-            }
+            // Resonance notch lives in main band 8 (see exportPeace note) —
+            // already exported via mainVals; no extra filter here.
 
             if (this.deEsserEnabled) {
-                out += 'Filter ' + (fIdx++) + ',ON,PEAK,6000,' + (-3.0 * (this.deEsserSensitivity / 100)).toFixed(1) + ',2.50\n';
+                var deFreqQ = (typeof this.deEsserCurrentFreq === 'number' && isFinite(this.deEsserCurrentFreq)) ? Math.round(this.deEsserCurrentFreq) : 6000;
+                out += 'Filter ' + (fIdx++) + ',ON,PEAK,' + deFreqQ + ',' + (-3.0 * (this.deEsserSensitivity / 100)).toFixed(1) + ',2.50\n';
             }
 
             var bassSlider = document.getElementById("eq-masterBass");
@@ -467,9 +517,13 @@ const EQ_ExportMethods = {
                 out += 'Filter ' + (fIdx++) + ',ON,HSHELF,8000,' + parseFloat(trebSlider.value).toFixed(1) + ',0.70\n';
             }
 
+            const qudelixLineOverflow = (fIdx - 1) > 10;
+
             this.triggerDownload(this.getSanitizedExportFilename("Qudelix5K", "csv"), out);
-            if (qudelixHasDroppedBands) {
-                showToast("Exported — note: Qudelix-5K hardware only supports 10 bands, extra bands were dropped.", "⚠️");
+            if (droppedBands > 0) {
+                showToast(`Exported — ${droppedBands} advanced/virtual band(s) exceed the Qudelix-5K's 10-band PEQ and were omitted.`, "⚠️");
+            } else if (qudelixLineOverflow) {
+                showToast("Exported — note: total filters exceed the Qudelix-5K's 10-band PEQ; the device may ignore the extras.", "⚠️");
             } else {
                 showToast("Exported Qudelix-5K CSV Preset!", "🎛️");
             }
@@ -493,33 +547,72 @@ const EQ_ExportMethods = {
             // 10 Standard EQ Center Frequencies for FxSound
             const fxFreqs = [31, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
             const self = this;
+            var fxCache = new Map();
+            function fxCachedMag(type,f,hz,q,g){ var k=type+'|'+f+'|'+hz+'|'+q+'|'+g; var v=fxCache.get(k); if(v!==undefined) return v; var m=Math.max(1e-4,self.getBiquadMagnitude(type,f,hz,q,g)); fxCache.set(k,m); return m; }
 
             var bandsText = "";
             fxFreqs.forEach(function(f, idx) {
                 var cumulativeDb = preVal;
                 mainVals.forEach(function(v) {
                     var hasNoGain = ['highpass', 'lowpass', 'notch'].includes(v.type);
-                    var gVal = hasNoGain ? 0.0 : v.g;
+                    var rawG = hasNoGain ? 0.0 : v.g;
+                    // Slope only means anything for Shelf/HP/LP; a stale
+                    // value carried over from a previous type must not
+                    // bake extra cascaded copies of a Peaking/Notch section
+                    // into the exported curve (matches the live-audio guard
+                    // in EQ_Module.updateAudioConnections).
+                    var slopeCapableForExport = (v.type === 'lowshelf' || v.type === 'highshelf' || v.type === 'lowpass' || v.type === 'highpass');
+                    var slope = slopeCapableForExport ? (v.slope || 12) : 12;
+                    var cascadeCount = Math.max(1, Math.round(slope / 12));
+                    var nodeGain = (v.type === 'lowshelf' || v.type === 'highshelf') ? (rawG / cascadeCount) : rawG;
                     if (v.type !== 'peaking' || v.g !== 0) {
-                        var mag = Math.max(1e-4, self.getBiquadMagnitude(v.type, f, v.hz, v.q, gVal));
-                        cumulativeDb += 20 * Math.log10(mag);
+                        for (var k = 0; k < cascadeCount; k++) {
+                            var mag = fxCachedMag(v.type, f, v.hz, v.q, nodeGain);
+                            cumulativeDb += 20 * Math.log10(mag);
+                        }
                     }
                 });
                 advVals.forEach(function(v) {
                     var hasNoGain = ['highpass', 'lowpass', 'notch'].includes(v.type);
                     var gVal = hasNoGain ? 0.0 : v.g;
                     if (v.type !== 'peaking' || v.g !== 0) {
-                        var mag = Math.max(1e-4, self.getBiquadMagnitude(v.type, f, v.hz, v.q, gVal));
+                        var mag = fxCachedMag(v.type, f, v.hz, v.q, gVal);
                         cumulativeDb += 20 * Math.log10(mag);
                     }
                 });
                 if (self.virtualBands) {
                     self.virtualBands.forEach(function(v) {
                         if (v && v.g !== 0) {
-                            var mag = Math.max(1e-4, self.getBiquadMagnitude(v.type || 'peaking', f, v.hz, v.q, v.g));
+                            var mag = fxCachedMag(v.type || 'peaking', f, v.hz, v.q, v.g);
                             cumulativeDb += 20 * Math.log10(mag);
                         }
                     });
+                }
+                if (self.hearingCalEnabled) {
+                    [250, 500, 1000, 2000, 4000, 8000, 12000, 16000].forEach(function(freq, hIdx) {
+                        var gain = self.hearingOffsets[hIdx] || 0;
+                        if (gain !== 0) {
+                            var mag = fxCachedMag('peaking', f, freq, 1.0, gain);
+                            cumulativeDb += 20 * Math.log10(mag);
+                        }
+                    });
+                }
+                // Resonance notch lives in main band 8 (see exportPeace note) —
+                // already accounted for via mainVals; no extra filter here.
+                if (self.deEsserEnabled) {
+                    var deFreqFx = (typeof self.deEsserCurrentFreq === 'number' && isFinite(self.deEsserCurrentFreq)) ? Math.round(self.deEsserCurrentFreq) : 6000;
+                    var mag = fxCachedMag('peaking', f, deFreqFx, 2.5, -3.0 * (self.deEsserSensitivity / 100));
+                    cumulativeDb += 20 * Math.log10(mag);
+                }
+                var bassSlider = document.getElementById("eq-masterBass");
+                var trebSlider = document.getElementById("eq-masterTreble");
+                if (bassSlider && parseFloat(bassSlider.value) !== 0) {
+                    var mag = fxCachedMag('lowshelf', f, 105, 0.7, parseFloat(bassSlider.value));
+                    cumulativeDb += 20 * Math.log10(mag);
+                }
+                if (trebSlider && parseFloat(trebSlider.value) !== 0) {
+                    var mag = fxCachedMag('highshelf', f, 8000, 0.7, parseFloat(trebSlider.value));
+                    cumulativeDb += 20 * Math.log10(mag);
                 }
                 var gainVal = parseFloat(cumulativeDb.toFixed(2));
 

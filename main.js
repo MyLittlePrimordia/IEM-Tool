@@ -33,7 +33,8 @@ const MIME_TYPES = {
   '.ape': 'audio/ape',
   '.wv': 'audio/wavpack',
   '.amr': 'audio/amr',
-  '.mka': 'audio/x-matroska'
+  '.mka': 'audio/x-matroska',
+  '.gz': 'application/gzip'
 };
 
 // Caching rules:
@@ -56,7 +57,9 @@ function cacheControlFor(ext, url) {
   if (!app.isPackaged) return 'no-store';
   if (url && url.includes('bundle-version.js')) return 'no-cache, must-revalidate';
   if (!CACHEABLE_EXTENSIONS.has(ext)) return 'no-store';
-  return (url && url.includes('?'))
+  // Only versioned assets with an explicit ?v= hash are immutable.
+  // Using any '?' was over-broad (e.g. ?_=Date.now() would be cached for a year).
+  return (url && url.includes('?v='))
     ? 'public, max-age=31536000, immutable'
     : 'no-cache, must-revalidate';
 }
@@ -74,6 +77,7 @@ function logCrash(err) {
   try {
     const line = `${new Date().toISOString()} ${(err && err.stack) || err}\n`;
     const logPath = crashLogPath();
+    try { fs.mkdirSync(path.dirname(logPath), { recursive: true }); } catch (_) {}
     // Rotate once the log grows past a reasonable size so it cannot balloon.
     try {
       if (fs.statSync(logPath).size > MAX_CRASH_LOG_BYTES) {
@@ -201,6 +205,13 @@ function startLocalServer(rootDir) {
         const isSafe = (relativePath === '') || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
 
         if (!isSafe) {
+          sendEmpty(res, 403);
+          return;
+        }
+        // Deny sensitive files that should never be served over HTTP
+        const relPosix = relativePath.split(path.sep).join('/');
+        if (relPosix === 'node_modules' || relPosix.startsWith('node_modules/') || relPosix === '.git' || relPosix.startsWith('.git/') || relPosix === '.github' || relPosix.startsWith('.github/') || relPosix === 'dist' || relPosix.startsWith('dist/') ||
+            relPosix === 'package.json' || relPosix === 'package-lock.json' || relPosix === 'main.js' || relPosix === 'preload.js' || relPosix === '.gitignore') {
           sendEmpty(res, 403);
           return;
         }

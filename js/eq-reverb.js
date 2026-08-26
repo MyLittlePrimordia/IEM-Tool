@@ -75,7 +75,14 @@ const EQ_ReverbMethods = {
     updateReverbParam: function(param, val) {
         this.reverbParams[param] = parseFloat(val);
         const valEl = document.getElementById(`rev-${param}-val`);
-        if (valEl) valEl.textContent = this.reverbParams[param].toFixed(2);
+        if (valEl) {
+            // predelay is a seconds value entered in ms-scale steps — keep the
+            // same 3-decimal format applyReverbPreset uses so the readout
+            // doesn't jump from "0.025" to "0.03" after a manual tweak.
+            valEl.textContent = param === 'predelay'
+                ? this.reverbParams[param].toFixed(3)
+                : this.reverbParams[param].toFixed(2);
+        }
         // mix/filter only touch live DSP nodes; everything else shapes the IR
         // itself and needs the impulse response rebuilt (debounced).
         if (param === 'mix' || param === 'filter') {
@@ -171,6 +178,10 @@ const EQ_ReverbMethods = {
     let hpL = 0, hpR = 0; // High-pass mud cut state
     let prevL = 0, prevR = 0;
 
+    // High-pass coefficient (120 Hz cutoff) is loop-invariant — hoist the
+    // Math.exp() out of the per-sample loop (up to ~192k calls per IR).
+    const hpAlpha = Math.exp(-2 * Math.PI * 120 / sampleRate);
+
     // 2. Late Tail Generation with Exponential Bloom and Time-Varying Damping
     const bloomDuration = 0.025; // 25ms rise time for reflections to diffuse
     const bloomSamples = Math.floor(bloomDuration * sampleRate);
@@ -216,8 +227,7 @@ const EQ_ReverbMethods = {
         lpL += alpha * (noiseL - lpL);
         lpR += alpha * (noiseR - lpR);
 
-        // Apply high-pass filter (approx. 120Hz cutoff) to eliminate low-end rumble
-        const hpAlpha = 0.985;
+        // Apply high-pass filter (120Hz cutoff) to eliminate low-end rumble (scales with sampleRate)
         hpL = hpAlpha * (hpL + lpL - prevL);
         hpR = hpAlpha * (hpR + lpR - prevR);
         prevL = lpL;
@@ -260,9 +270,11 @@ const EQ_ReverbMethods = {
             // tail rings out naturally instead of snapping to silence on every
             // pause/seek (with the source muted the finite IR fades on its own).
             const mix = this.reverbActive ? this.reverbParams.mix : 0;
-            
-            setAudioParamSmooth(SharedAudio.dryGainNode.gain, 1.0 - (mix * 0.35), 0.015);
-            setAudioParamSmooth(SharedAudio.wetGainNode.gain, mix, 0.015);
+            // Equal-power crossfade so dry+wet stays unity and never clips (previous 1 - mix*0.35 + mix = 1.65 at mix=1).
+            const dryGain = Math.cos(mix * 0.5 * Math.PI);
+            const wetGain = Math.sin(mix * 0.5 * Math.PI);
+            setAudioParamSmooth(SharedAudio.dryGainNode.gain, dryGain, 0.015);
+            setAudioParamSmooth(SharedAudio.wetGainNode.gain, wetGain, 0.015);
             
             if (SharedAudio.reverbFilterNode) {
                 setAudioParamSmooth(SharedAudio.reverbFilterNode.frequency, this.reverbParams.filter * 20000, 0.015);

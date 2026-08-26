@@ -17,6 +17,11 @@ try {
 }
 
 function sanitizeName(name) {
+    // Coerce at the boundary: a truthy non-string (e.g. a number,
+    // an object) reaches .toLowerCase() below and throws --
+    // Number.isFinite/typeof guards on null/undefined already work
+    // via the falsy check, this catches everything else.
+    if (typeof name !== 'string') name = (name == null) ? '' : String(name);
     if (!name) return "";
     let clean = name.toLowerCase();
 
@@ -54,29 +59,13 @@ function sanitizeName(name) {
 }
 
 function freqWeight(f) {
-    // Unified perceptual weight table (CurveUtils.PERCEPTUAL_WEIGHTS) so the
-    // worker's scoring matches the main-thread Find scoring (_scoreInterp in
-    // app-core.js) exactly - see CurveUtils.weightFor.
-    return CurveUtils.weightFor(f);
+    // Single source of truth lives in CurveUtils (js/utils.js, imported above)
+    // and is shared verbatim with FindEngine on the main thread.
+    return CurveUtils.freqWeight(f);
 }
 
 function scoreInterp(interp, targetInterp, freqs, weighted) {
-    let numK = 0, denK = 0;
-    for (let i = 0; i < freqs.length; i++) {
-        if (freqs[i] >= 100 && freqs[i] <= 8000) {
-            const w = weighted ? freqWeight(freqs[i]) : 1.0;
-            numK += (targetInterp[i] - interp[i]) * w;
-            denK += w;
-        }
-    }
-    const k = denK > 0 ? numK / denK : 0;
-    let errSum = 0, wSum = 0;
-    for (let i = 0; i < freqs.length; i++) {
-        const w = weighted ? freqWeight(freqs[i]) : 1.0;
-        errSum += Math.abs((interp[i] + k) - targetInterp[i]) * w;
-        wSum += w;
-    }
-    return Math.max(0, Math.min(100, 100 * Math.exp(-0.11 * (errSum / wSum))));
+    return CurveUtils.scoreInterp(interp, targetInterp, freqs, weighted);
 }
 
 function buildCanonicalProfiles(dataset) {

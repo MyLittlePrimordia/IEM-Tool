@@ -1,7 +1,13 @@
-const SMOOTHING_TIME_CONSTANT_SECONDS = 200 / 44100;
+// Smoothing time constant in seconds (independent of sample rate).
+// At 44.1 kHz this equals the old hardcoded value 200/44100 ≈ 4.5 ms.
+const SMOOTHING_TIME_CONSTANT_SECONDS = 0.0045;
+const COEFF_SMOOTHING_TAU = 0.00017; // ~0.125 at 44.1k, derived from 1-exp(-1/(tau*SR))
 
 function computeSmoothingFactor(sampleRate) {
     return 1 - Math.exp(-1 / (SMOOTHING_TIME_CONSTANT_SECONDS * sampleRate));
+}
+function computeCoeffSmoothingFactor(sampleRate) {
+    return 1 - Math.exp(-1 / (COEFF_SMOOTHING_TAU * sampleRate));
 }
 
 class BiquadFilter {
@@ -27,6 +33,11 @@ class BiquadFilter {
         // History states (Stereo Transposed Direct Form II)
         this.s1_L = 0.0; this.s2_L = 0.0;
         this.s1_R = 0.0; this.s2_R = 0.0;
+        // Second-stage state for 4th-order LR cascade (two identical
+        // 2nd-order sections per edge). Sharing s1/s2 between the two
+        // passes corrupts the cascade (state of stage 1 bleeds into stage 2).
+        this.s1b_L = 0.0; this.s2b_L = 0.0;
+        this.s1b_R = 0.0; this.s2b_R = 0.0;
 
         this.bypassed = true;
         this.type = 'peaking';
@@ -40,12 +51,18 @@ class BiquadFilter {
     reset() {
         this.s1_L = 0.0; this.s2_L = 0.0;
         this.s1_R = 0.0; this.s2_R = 0.0;
+        this.s1b_L = 0.0; this.s2b_L = 0.0;
+        this.s1b_R = 0.0; this.s2b_R = 0.0;
     }
 
     updateCoefficients(type, freq, gain, q, sampleRate, wasBypassed) {
         this.type = type;
         
-        const maxFreq = sampleRate * 0.49;
+        // Clamp to 0.45×SR with at least 1 kHz margin from Nyquist to prevent
+        // instability of high-Q filters near fs/2. At 44.1 kHz: maxFreq = 19.845 kHz.
+        // MUST stay identical to getBiquadMagnitude (app-core.js), which draws
+        // and exports the response of the coefficients built here.
+        const maxFreq = Math.min(sampleRate * 0.45, sampleRate / 2 - 1000);
         this.target_frequency = Math.max(10, Math.min(maxFreq, Number.isFinite(freq) ? freq : 1000));
         this.target_gain = Math.max(-40, Math.min(40, Number.isFinite(gain) ? gain : 0.0));
         this.target_q = Math.max(0.01, Math.min(50, Number.isFinite(q) ? q : 1.0));
@@ -77,10 +94,15 @@ class BiquadFilter {
         const cosW0 = Math.cos(w0);
         const sinW0 = Math.sin(w0);
         const A = Math.pow(10, gain / 40);
-        // Shelves use the RBJ shelf alpha (slope governed by Q) so the audible
+        // Shelves use the RBJ shelf alpha (slope S ≈ Q) so the audible
         // response matches getBiquadMagnitude (drawn curve & exports).
+        // Clamp shelf slope to avoid degenerate narrow alpha for high Q / high gain.
+        let shelfQ = q;
+        if (this.type === 'lowshelf' || this.type === 'highshelf') {
+            shelfQ = Math.max(0.3, Math.min(3.0, q));
+        }
         const alpha = (this.type === 'lowshelf' || this.type === 'highshelf')
-            ? (sinW0 / 2) * Math.sqrt(Math.max(0.001, (A + 1 / A) * (1 / Math.max(0.1, q) - 1) + 2))
+            ? (sinW0 / 2) * Math.sqrt(Math.max(0.02, (A + 1 / A) * (1 / Math.max(0.1, shelfQ) - 1) + 2))
             : sinW0 / (2 * q);
 
         let b0 = 1, b1 = 0, b2 = 0, a0 = 1, a1 = 0, a2 = 0;
@@ -149,7 +171,7 @@ class BiquadFilter {
         this.target_a2 = a2 / div;
     }
 
-    processSampleL(x, smoothingFactor, sampleRate) {
+    stepSmoothing(smoothingFactor, sampleRate) {
         if (!this.coeffsRamped) {
             const freqDiff = Math.abs(this.target_frequency - this.frequency);
             const gainDiff = Math.abs(this.target_gain - this.gain);
@@ -175,18 +197,29 @@ class BiquadFilter {
                 this.coeffsCurrent = true;
             }
 
-            // Smooth sub-sample linear ramping
-            this.b0 += (this.target_b0 - this.b0) * 0.125;
-            this.b1 += (this.target_b1 - this.b1) * 0.125;
-            this.b2 += (this.target_b2 - this.b2) * 0.125;
-            this.a1 += (this.target_a1 - this.a1) * 0.125;
-            this.a2 += (this.target_a2 - this.a2) * 0.125;
+            // Sub-sample linear ramping, SR-dependent
+            const coeffLerp = Math.min(0.5, smoothingFactor * 25);
+            this.b0 += (this.target_b0 - this.b0) * coeffLerp;
+            this.b1 += (this.target_b1 - this.b1) * coeffLerp;
+            this.b2 += (this.target_b2 - this.b2) * coeffLerp;
+            this.a1 += (this.target_a1 - this.a1) * coeffLerp;
+            this.a2 += (this.target_a2 - this.a2) * coeffLerp;
 
-            if (this.coeffsCurrent && Math.abs(this.b0 - this.target_b0) < 1e-6) {
+            if (this.coeffsCurrent && Math.max(Math.abs(this.b0 - this.target_b0), Math.abs(this.b1 - this.target_b1), Math.abs(this.b2 - this.target_b2), Math.abs(this.a1 - this.target_a1), Math.abs(this.a2 - this.target_a2)) < 1e-6) {
                 this.snapCoefficients();
                 this.coeffsRamped = true;
             }
         }
+    }
+
+    _updateCoeffsIfNeeded(smoothingFactor, sampleRate) {
+        if (smoothingFactor === undefined || !Number.isFinite(smoothingFactor)) smoothingFactor = 0.0045;
+        if (sampleRate === undefined || !Number.isFinite(sampleRate)) sampleRate = 44100;
+        this.stepSmoothing(smoothingFactor, sampleRate);
+    }
+
+    processSampleL(x, smoothingFactor, sampleRate) {
+        this.stepSmoothing(smoothingFactor !== undefined ? smoothingFactor : 0.0045, sampleRate !== undefined ? sampleRate : 44100);
 
         const y = x * this.b0 + this.s1_L;
         this.s1_L = x * this.b1 - this.a1 * y + this.s2_L;
@@ -209,7 +242,48 @@ class BiquadFilter {
 
         return y;
     }
+
+    processSampleL_4th(x, smoothingFactor, sampleRate) {
+        this.stepSmoothing(smoothingFactor !== undefined ? smoothingFactor : 0.0045, sampleRate !== undefined ? sampleRate : 44100);
+        // stage 1
+        let y1 = x * this.b0 + this.s1_L;
+        this.s1_L = x * this.b1 - this.a1 * y1 + this.s2_L;
+        this.s2_L = x * this.b2 - this.a2 * y1;
+        if (Math.abs(this.s1_L) < 1e-15) this.s1_L = 0.0;
+        if (Math.abs(this.s2_L) < 1e-15) this.s2_L = 0.0;
+        // stage 2 (independent state, same coeffs)
+        let y2 = y1 * this.b0 + this.s1b_L;
+        this.s1b_L = y1 * this.b1 - this.a1 * y2 + this.s2b_L;
+        this.s2b_L = y1 * this.b2 - this.a2 * y2;
+        if (Math.abs(this.s1b_L) < 1e-15) this.s1b_L = 0.0;
+        if (Math.abs(this.s2b_L) < 1e-15) this.s2b_L = 0.0;
+        return y2;
+    }
+
+    processSampleR_4th(x) {
+        // stage 1
+        let y1 = x * this.b0 + this.s1_R;
+        this.s1_R = x * this.b1 - this.a1 * y1 + this.s2_R;
+        this.s2_R = x * this.b2 - this.a2 * y1;
+        if (Math.abs(this.s1_R) < 1e-15) this.s1_R = 0.0;
+        if (Math.abs(this.s2_R) < 1e-15) this.s2_R = 0.0;
+        // stage 2
+        let y2 = y1 * this.b0 + this.s1b_R;
+        this.s1b_R = y1 * this.b1 - this.a1 * y2 + this.s2b_R;
+        this.s2b_R = y1 * this.b2 - this.a2 * y2;
+        if (Math.abs(this.s1b_R) < 1e-15) this.s1b_R = 0.0;
+        if (Math.abs(this.s2b_R) < 1e-15) this.s2b_R = 0.0;
+        return y2;
+    }
 }
+
+// Central slot maps (must stay in sync with renderer eq-* modules).
+// Used for asserts to catch last-write clobbers when a new sim reuses a slot.
+const SIM_SLOT_MAP = Object.freeze({
+    eartip: [0,1,2,3,4], deEsser: 5, tape: [6,7], loudness: [8,9],
+    dac: [10,11], hearing: [12,13,14,15,16,17,18,19], gear: [20,21], masterTone: [22,23]
+});
+const XO_GAIN_SLOTS = Object.freeze({ low: 0, lowMid: 1, mid: 2, highMid: 3, high: 4 });
 
 class DspProcessor extends AudioWorkletProcessor {
     constructor() {
@@ -241,8 +315,11 @@ class DspProcessor extends AudioWorkletProcessor {
     }
 
     updateActiveLists() {
-        this.activeFilters = this.filters.filter(f => !f.bypassed);
-        this.activeSimFilters = this.simFilters.filter(f => !f.bypassed);
+        // In-place to avoid per-message GC on the audio thread
+        this.activeFilters.length = 0;
+        for (let i = 0; i < this.filters.length; i++) if (!this.filters[i].bypassed) this.activeFilters.push(this.filters[i]);
+        this.activeSimFilters.length = 0;
+        for (let i = 0; i < this.simFilters.length; i++) if (!this.simFilters[i].bypassed) this.activeSimFilters.push(this.simFilters[i]);
     }
 
     handleMessage(data) {
@@ -250,12 +327,28 @@ class DspProcessor extends AudioWorkletProcessor {
             this._handleMessageInner(data);
         } catch (err) {
             // A malformed message must never kill the audio worklet: report
-            // it back to the main thread and keep processing with the last
-            // good filter state.
+            // it back to the main thread with structured error info and keep
+            // processing with the last good filter state.
+            const errorInfo = {
+                type: 'error',
+                error: String(err && err.message ? err.message : err),
+                code: this._classifyError(err),
+                context: data ? data.type : 'unknown'
+            };
             try {
-                this.port.postMessage({ type: 'error', error: String(err && err.message ? err.message : err) });
+                this.port.postMessage(errorInfo);
             } catch (_) {}
         }
+    }
+
+    _classifyError(err) {
+        const msg = String(err && err.message ? err.message : err).toLowerCase();
+        if (msg.includes('cannot read') || msg.includes('undefined') || msg.includes('null')) return 'INVALID_STATE';
+        if (msg.includes('index') || msg.includes('out of bounds')) return 'INVALID_INDEX';
+        if (msg.includes('filter') || msg.includes('biquad') || msg.includes('coefficient')) return 'DSP_MATH_ERROR';
+        if (msg.includes('message') || msg.includes('postmessage') || msg.includes('port')) return 'IPC_ERROR';
+        if (msg.includes('sample rate') || msg.includes('samplerate')) return 'SAMPLE_RATE_MISMATCH';
+        return 'UNKNOWN';
     }
 
     _handleMessageInner(data) {
@@ -268,7 +361,15 @@ class DspProcessor extends AudioWorkletProcessor {
             }
         } 
         else if (data.type === 'updatePreamp') {
-            this.preampDb = Number.isFinite(data.preampDb) ? data.preampDb : 0.0;
+            const db = Number.isFinite(data.preampDb) ? data.preampDb : 0.0;
+            // Trust-boundary clamp: an unbounded preampDb (e.g. NaN-adjacent
+            // extreme values from a corrupted message) can make
+            // Math.pow(10, db/20) evaluate to Infinity, which then poisons
+            // the per-sample smoother below into NaN permanently (verified:
+            // no subsequent message, including 'reset', can recover it once
+            // that happens -- see the self-heal guard in process() for the
+            // second layer of defense).
+            this.preampDb = Math.max(-60, Math.min(60, db));
             this.targetPreampGain = Math.pow(10, this.preampDb / 20);
         } 
         else if (data.type === 'updateFilters' && Array.isArray(data.filters)) {
@@ -348,16 +449,25 @@ class DspProcessor extends AudioWorkletProcessor {
         // Realtime-thread: hoist crossover helpers + gain reads OUT of the
         // per-sample loop (they are constant across an audio block).
         const appXo = this.xoEnabled;
-        const xoEdgeL = (f, x) => f.processSampleL(f.processSampleL(x, this.smoothingFactor, this.sampleRate), this.smoothingFactor, this.sampleRate);
-        const xoEdgeR = (f, x) => f.processSampleR(f.processSampleR(x));
+        const xoType = this.xoType;
+        const xoF = this.xoFilters;
         const xoG0 = this.getGainSafe(0);
         const xoG1 = this.getGainSafe(1);
         const xoG2 = this.getGainSafe(2);
         const xoG3 = this.getGainSafe(3);
         const xoG4 = this.getGainSafe(4);
+        const smFactor = this.smoothingFactor;
+        const sRate = this.sampleRate;
 
         for (let i = 0; i < bufferSize; i++) {
             this.preampGain += (this.targetPreampGain - this.preampGain) * this.smoothingFactor;
+            // Self-heal: if preampGain ever goes non-finite (NaN/Infinity)
+            // through any path, snap it back to the current target instead
+            // of latching a broken value forever -- the exponential
+            // smoother above has no way to recover from NaN on its own
+            // (NaN + anything = NaN). One comparison per sample; no-op on
+            // the healthy path.
+            if (!Number.isFinite(this.preampGain)) this.preampGain = this.targetPreampGain;
 
             let sampleL = inputChannelL[i] * this.preampGain;
             let sampleR = inputChannelR[i] * this.preampGain;
@@ -365,46 +475,41 @@ class DspProcessor extends AudioWorkletProcessor {
             // 1. Parametric EQ Filters
             for (let f = 0; f < numFilters; f++) {
                 const filter = activeFilters[f];
-                sampleL = filter.processSampleL(sampleL, this.smoothingFactor, this.sampleRate);
+                sampleL = filter.processSampleL(sampleL, smFactor, sRate);
                 if (isStereo) sampleR = filter.processSampleR(sampleR);
             }
 
             // 2. Acoustics & Simulations
             for (let s = 0; s < numSims; s++) {
                 const filter = activeSimFilters[s];
-                sampleL = filter.processSampleL(sampleL, this.smoothingFactor, this.sampleRate);
+                sampleL = filter.processSampleL(sampleL, smFactor, sRate);
                 if (isStereo) sampleR = filter.processSampleR(sampleR);
             }
 
-            // 3. Active Crossover — Linkwitz-Riley 4th order. Every band edge is a
-            //    pair of cascaded Butterworth (Q=0.707) 2nd-order sections; each
-            //    section is run twice per sample so every band is -6dB at its split
-            //    points and adjacent bands sum flat in phase (a single in-phase
-            //    2nd-order LP+HP would otherwise null to 0 at every corner).
+            // 3. Active Crossover — Linkwitz-Riley 4th order.
             if (appXo) {
                 let summedL = 0.0;
                 let summedR = 0.0;
-                const type = this.xoType;
 
                 // Band 1 (Low)
                 let b1_L = sampleL, b1_R = sampleR;
-                if (this.xoFilters[0] && !this.xoFilters[0].bypassed) {
-                    b1_L = xoEdgeL(this.xoFilters[0], sampleL);
-                    if (isStereo) b1_R = xoEdgeR(this.xoFilters[0], sampleR);
+                if (xoF[0] && !xoF[0].bypassed) {
+                    b1_L = xoF[0].processSampleL_4th(sampleL, smFactor, sRate);
+                    if (isStereo) b1_R = xoF[0].processSampleR_4th(sampleR);
                 }
                 const g0 = xoG0;
                 summedL += b1_L * g0;
                 summedR += b1_R * g0;
 
                 // Band 2 (Low-Mid)
-                if (type === '5way') {
+                if (xoType === '5way') {
                     let b2_L = sampleL, b2_R = sampleR;
-                    if (this.xoFilters[1] && !this.xoFilters[1].bypassed) {
-                        b2_L = xoEdgeL(this.xoFilters[1], sampleL);
-                        if (this.xoFilters[2]) b2_L = xoEdgeL(this.xoFilters[2], b2_L);
+                    if (xoF[1] && !xoF[1].bypassed) {
+                        b2_L = xoF[1].processSampleL_4th(sampleL, smFactor, sRate);
+                        if (xoF[2]) b2_L = xoF[2].processSampleL_4th(b2_L, smFactor, sRate);
                         if (isStereo) {
-                            b2_R = xoEdgeR(this.xoFilters[1], sampleR);
-                            if (this.xoFilters[2]) b2_R = xoEdgeR(this.xoFilters[2], b2_R);
+                            b2_R = xoF[1].processSampleR_4th(sampleR);
+                            if (xoF[2]) b2_R = xoF[2].processSampleR_4th(b2_R);
                         }
                     }
                     const g1 = xoG1;
@@ -413,32 +518,30 @@ class DspProcessor extends AudioWorkletProcessor {
                 }
 
                 // Band 3 (Mid)
-                if (type === '3way' || type === '4way' || type === '5way') {
+                if (xoType === '3way' || xoType === '4way' || xoType === '5way') {
                     let b3_L = sampleL, b3_R = sampleR;
-                    if (this.xoFilters[3] && !this.xoFilters[3].bypassed) {
-                        b3_L = xoEdgeL(this.xoFilters[3], sampleL);
-                        if (this.xoFilters[4]) b3_L = xoEdgeL(this.xoFilters[4], b3_L);
+                    if (xoF[3] && !xoF[3].bypassed) {
+                        b3_L = xoF[3].processSampleL_4th(sampleL, smFactor, sRate);
+                        if (xoF[4]) b3_L = xoF[4].processSampleL_4th(b3_L, smFactor, sRate);
                         if (isStereo) {
-                            b3_R = xoEdgeR(this.xoFilters[3], sampleR);
-                            if (this.xoFilters[4]) b3_R = xoEdgeR(this.xoFilters[4], b3_R);
+                            b3_R = xoF[3].processSampleR_4th(sampleR);
+                            if (xoF[4]) b3_R = xoF[4].processSampleR_4th(b3_R);
                         }
                     }
-                    // Mid trim is always slot 2 while the mid band is active
-                    // (was reading slot 1 = low-mid trim, muting the mid driver).
                     const g2 = xoG2;
                     summedL += b3_L * g2;
                     summedR += b3_R * g2;
                 }
 
                 // Band 4 (High-Mid)
-                if (type === '4way' || type === '5way') {
+                if (xoType === '4way' || xoType === '5way') {
                     let b4_L = sampleL, b4_R = sampleR;
-                    if (this.xoFilters[5] && !this.xoFilters[5].bypassed) {
-                        b4_L = xoEdgeL(this.xoFilters[5], sampleL);
-                        if (this.xoFilters[6]) b4_L = xoEdgeL(this.xoFilters[6], b4_L);
+                    if (xoF[5] && !xoF[5].bypassed) {
+                        b4_L = xoF[5].processSampleL_4th(sampleL, smFactor, sRate);
+                        if (xoF[6]) b4_L = xoF[6].processSampleL_4th(b4_L, smFactor, sRate);
                         if (isStereo) {
-                            b4_R = xoEdgeR(this.xoFilters[5], sampleR);
-                            if (this.xoFilters[6]) b4_R = xoEdgeR(this.xoFilters[6], b4_R);
+                            b4_R = xoF[5].processSampleR_4th(sampleR);
+                            if (xoF[6]) b4_R = xoF[6].processSampleR_4th(b4_R);
                         }
                     }
                     const g3 = xoG3;
@@ -448,9 +551,9 @@ class DspProcessor extends AudioWorkletProcessor {
 
                 // Band 5 (High) — high trim is always the last gain slot (4)
                 let b5_L = sampleL, b5_R = sampleR;
-                if (this.xoFilters[7] && !this.xoFilters[7].bypassed) {
-                    b5_L = xoEdgeL(this.xoFilters[7], sampleL);
-                    if (isStereo) b5_R = xoEdgeR(this.xoFilters[7], sampleR);
+                if (xoF[7] && !xoF[7].bypassed) {
+                    b5_L = xoF[7].processSampleL_4th(sampleL, smFactor, sRate);
+                    if (isStereo) b5_R = xoF[7].processSampleR_4th(sampleR);
                 }
                 const g4 = xoG4;
                 summedL += b5_L * g4;

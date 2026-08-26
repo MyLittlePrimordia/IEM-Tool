@@ -25,9 +25,9 @@
             }
             window.addEventListener('DOMContentLoaded', initAll);
 
-            setInterval(initAll, 3000);
-            // Skip the refresh entirely while the tab is hidden — the first
-            // tick after focus resumes corrects any stale fill values.
+            // 3s polling removed: input listener + visibilitychange + syncGlobalSliders
+            // already keep fill bars coherent. The interval was waking the tab every
+            // 3s even when hidden/idle.
             document.addEventListener('visibilitychange', () => {
                 if (!document.hidden) initAll();
             });

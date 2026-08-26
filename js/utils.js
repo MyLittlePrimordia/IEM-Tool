@@ -18,9 +18,10 @@ const CurveUtils = {
         let ref_db = 0;
         if (hz === 'mean') {
             let sum = 0, count = 0;
+            const _midBand = (this && this.MID_MEAN_BAND) ? this.MID_MEAN_BAND : (typeof CurveUtils !== 'undefined' ? CurveUtils.MID_MEAN_BAND : [300, 3000]);
             for (let i = 0; i < data.length; i++) {
                 if (data[i] && typeof data[i][0] === 'number' && typeof data[i][1] === 'number') {
-                    if (data[i][0] >= MID_MEAN_BAND[0] && data[i][0] <= MID_MEAN_BAND[1]) {
+                    if (data[i][0] >= _midBand[0] && data[i][0] <= _midBand[1]) {
                         sum += data[i][1];
                         count++;
                     }
@@ -309,6 +310,45 @@ const CurveUtils = {
         };
     },
 
+    // ---- Tuning-match scoring (SINGLE SOURCE OF TRUTH) --------------------------
+    // Used by BOTH FindEngine (_freqWeight/_scoreInterp in app-core.js) and
+    // find-worker.js via importScripts. Do not fork this math: match thresholds
+    // shown in the UI (>=75% Giant Killer cut, badge color bands) were
+    // calibrated against it, and worker vs main-thread scores must stay
+    // identical or the same search would return different numbers depending on
+    // whether the worker fallback path was taken.
+    freqWeight: function(f) {
+        if (f < 80) return 1.2;
+        if (f < 250) return 1.1;
+        if (f < 1000) return 1.0;
+        if (f < 3500) return 1.5;
+        if (f < 7000) return 1.0;
+        if (f <= 10000) return 0.5;
+        return 0.1;
+    },
+
+    scoreInterp: function(interp, targetInterp, freqs, weighted) {
+        // Level-fit band 100 Hz-8 kHz, step weights above, exponential
+        // MAE->score mapping 100*exp(-0.11*mae).
+        let numK = 0, denK = 0;
+        for (let i = 0; i < freqs.length; i++) {
+            if (freqs[i] >= 100 && freqs[i] <= 8000) {
+                const w = weighted ? this.freqWeight(freqs[i]) : 1.0;
+                numK += (targetInterp[i] - interp[i]) * w;
+                denK += w;
+            }
+        }
+        const k = denK > 0 ? numK / denK : 0;
+        let errSum = 0, wSum = 0;
+        for (let i = 0; i < freqs.length; i++) {
+            const w = weighted ? this.freqWeight(freqs[i]) : 1.0;
+            errSum += Math.abs((interp[i] + k) - targetInterp[i]) * w;
+            wSum += w;
+        }
+        const mae = wSum > 0 ? errSum / wSum : 0;
+        return Math.max(0, Math.min(100, 100 * Math.exp(-0.11 * mae)));
+    },
+
     gaussianSmooth: function(freqs, values, octaveBandwidth = 0.08) {
         const n = freqs.length;
         const smoothed = new Float32Array(n);
@@ -369,7 +409,9 @@ const CurveUtils = {
             valuesAtFreq.sort((a, b) => a - b);
             let sum = 0;
             let count = 0;
-            if (activeNumCurves >= 4) {
+            // Trimmed mean (15% each side) only when N>=7; for N=4-6
+            // floor(N*0.15) is 0 so no trimming occurs — documented, not a bug.
+            if (activeNumCurves >= 7) {
                 const start = Math.floor(activeNumCurves * 0.15);
                 const end = activeNumCurves - start;
                 for (let k = start; k < end; k++) {

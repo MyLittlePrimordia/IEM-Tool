@@ -4,6 +4,7 @@ const EQ_PresetMethods = {
                 return JSON.parse(SafeStorage.getItem('iem_custom_eq_presets') || '{}');
             } catch (e) {
                 console.warn('[EQ] Corrupted custom preset data, resetting.', e);
+                try { SafeStorage.removeItem('iem_custom_eq_presets'); } catch (_) {}
                 return {};
             }
         },
@@ -28,13 +29,16 @@ const EQ_PresetMethods = {
             const name = input.value.trim();
             if (!name) return;
 
-            const id = 'custom_' + Date.now();
+            const id = 'custom_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
             const config = this.getRealValues(); // { preVal, mainVals, advVals }
-
+            // Persist virtual bands (used when autoeqResolution >20) so a
+            // >20-band solve survives a preset save/load cycle (was previously
+            // discarded, causing the >20-band target match to collapse on recall).
             const presetData = {
                 p: config.preVal,
                 m: config.mainVals.map(v => ({ g: v.g, hz: v.hz, q: v.q, type: v.type || 'peaking', s: v.slope })),
                 a: config.advVals.map(v => ({ g: v.g, hz: v.hz, q: v.q, type: v.type || 'peaking' })),
+                v: (this.virtualBands || []).map(v => ({ g: v.g, hz: v.hz, q: v.q, type: v.type || 'peaking' })),
                 name: name
             };
 
@@ -142,13 +146,23 @@ const EQ_PresetMethods = {
                             slopeBtn.classList.toggle('hidden', !isSlopeVisible);
                         }
                     }
-                    if (slopeVal !== undefined && this.bands[i]) {
+                    // Only restore a saved slope when the (just-applied)
+                    // type actually supports one -- an older preset saved
+                    // before this guard existed could carry a slope value
+                    // alongside a Peaking/Notch type, which would otherwise
+                    // silently reintroduce the stale-slope cascade bug on
+                    // load even though handleTypeChange() above already
+                    // reset it.
+                    const slopeCapableForPreset = this.bands[i] && ['lowshelf', 'highshelf', 'lowpass', 'highpass'].includes(this.bands[i].type);
+                    if (slopeVal !== undefined && this.bands[i] && slopeCapableForPreset) {
                         this.bands[i].slope = slopeVal;
                         const slopeBtn = document.getElementById(`eq-sl_m${i}`);
                         if (slopeBtn) {
                             slopeBtn.textContent = `${slopeVal}dB`;
                             slopeBtn.classList.remove('hidden');
                         }
+                    } else if (slopeVal !== undefined && this.bands[i]) {
+                        this.bands[i].slope = 12;
                     }
 
                     this.updateSlider(i, 'main');
@@ -214,6 +228,16 @@ const EQ_PresetMethods = {
                 });
             }
 
+                if (p.v && Array.isArray(p.v)) {
+                    this.virtualBands = p.v.map(v => ({
+                        hz: v.hz, g: v.g, q: v.q != null ? v.q : 1.0, type: v.type || 'peaking'
+                    }));
+                } else if (p.v === undefined) {
+                    // Backward compat: old presets without virtual still clear any
+                    // previous virtual solve so the old 10/20-band preset does not
+                    // retain a stale >20-band tail.
+                    this.virtualBands = [];
+                }
             } finally {
                 EQ_Module.isProgrammaticSliderUpdate = false; // Release UI lock even if a band throws
             }
@@ -224,6 +248,12 @@ const EQ_PresetMethods = {
 
             this.drawCurve();
             this.renderCustomPresets();
+            // Applying a preset reshaped the DSP curve programmatically —
+            // unlock live Similar-mode matching and refresh matches.
+            PEQDB_Module._similarTargetEverModified = true;
+            if (PEQDB_Module.searchMode === 'similar' && PEQDB_Module.debouncedFindSimilarCurves) {
+                PEQDB_Module.debouncedFindSimilarCurves();
+            }
             if (window.syncGlobalSliders) window.syncGlobalSliders();
         },
         deleteCustomPreset: async function(id) {
@@ -239,7 +269,7 @@ const EQ_PresetMethods = {
             SafeStorage.setItem('iem_custom_eq_presets', JSON.stringify(presets));
             if (this.activePreset === id) this.activePreset = null;
             this.switchCategory('custom');
-            showToast(`Deleted preset "${id}"`, "🗑️", {
+            showToast(`Deleted preset "${(removed && removed.name) || id}"`, "🗑️", {
                 action: removed ? {
                     label: "Undo",
                     onClick: () => {
@@ -275,20 +305,43 @@ const EQ_PresetMethods = {
                     preSlider.value = p.p;
                     this.updatePreamp();
                 }
+                // Built-in presets store only gains; stale band types (e.g. shelf)
+                // from a prior custom preset would otherwise persist and produce a
+                // different audible response than the preset intended. Reset to PK.
                 if (p.m) {
                     p.m.forEach((val, i) => {
+                        const b = this.bands[i];
+                        if (b && b.type && b.type !== 'peaking') {
+                            b.type = 'peaking';
+                            b.slope = 12;
+                            this.handleTypeChange(i, 'peaking');
+                            const typeBtn = document.getElementById(`eq-t_m${i}`);
+                            if (typeBtn) typeBtn.textContent = 'PK';
+                            const slopeBtn = document.getElementById(`eq-sl_m${i}`);
+                            if (slopeBtn) slopeBtn.classList.add('hidden');
+                        }
                         const slider = document.getElementById("eq-s" + i);
                         if (slider) {
                             slider.value = val;
                         }
                         this.updateSlider(i, 'main');
                     });
+                    // Clear any leftover virtual bands (>20-band solve) so a flat
+                    // 10-band preset does not retain a stale tail.
+                    if (this.virtualBands && this.virtualBands.length) this.virtualBands = [];
                 }
                 if (p.a) {
                     p.a.forEach((val, i) => {
                         const b = this.advancedBands[i];
                         if (b) {
                             b.g = val;
+                            if (b.type && b.type !== 'peaking') {
+                                b.type = 'peaking';
+                                const typeBtn = document.getElementById(`eq-t_a${i}`);
+                                if (typeBtn) typeBtn.textContent = 'PK';
+                                const gainRow = document.getElementById(`row-gain_a${i}`);
+                                if (gainRow) { gainRow.style.opacity = '1'; gainRow.style.pointerEvents = 'auto'; }
+                            }
                         }
                         // The live DSP reads the fader value (getLiveAdvancedFiltersState),
                         // so mirror the gain onto the slider element, not just the model.
@@ -311,6 +364,7 @@ const EQ_PresetMethods = {
                 if (window.syncGlobalSliders) window.syncGlobalSliders();
                 
                 if (PEQDB_Module.searchMode === 'similar') {
+                    PEQDB_Module._similarTargetEverModified = true;
                     PEQDB_Module.findSimilarCurves();
                 }
             }, 50);

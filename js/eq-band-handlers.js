@@ -64,6 +64,10 @@ const EQ_BandHandlerMethods = {
 
             const apoLine = `Filter ${i + 1}: ON ${apoType} Fc ${hz} Hz Gain ${parseFloat(gain).toFixed(1)} dB Q ${parseFloat(q).toFixed(2)}`;
             
+            if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+                showToast("Clipboard unavailable in this context.", "⚠️");
+                return;
+            }
             navigator.clipboard.writeText(apoLine).then(() => {
                 showToast(`Copied APO: "Filter ${i+1}: ON ${apoType}..."`, "📋");
             }).catch(() => {
@@ -127,8 +131,24 @@ const EQ_BandHandlerMethods = {
             const b = this.bands[i];
             b.type = selectedType;
 
+            // A stale slope (12/24/36/48 dB/oct) left over from a previous
+            // Shelf/HP/LP type is meaningless for Peaking/Notch, but the
+            // cascade builder in updateAudioConnections() and the curve
+            // renderer both key purely off b.slope regardless of type --
+            // so an un-reset slope silently cascades N *full-gain* copies
+            // of the new filter (e.g. a stale 48dB/oct turns a +6dB
+            // Peaking band into an unintended +24dB boost). Reset it here,
+            // the single funnel point every type-change path goes through.
+            const slopeCapable = ['lowshelf', 'highshelf', 'lowpass', 'highpass'];
+            if (!slopeCapable.includes(selectedType) && (b.slope || 12) !== 12) {
+                b.slope = 12;
+                const slopeBtn = document.getElementById(`eq-sl_m${i}`);
+                if (slopeBtn) slopeBtn.textContent = '12dB';
+            }
+
             const gainRow = document.getElementById(`row-gain_m${i}`);
             const hasNoGain = ['highpass', 'lowpass', 'notch'].includes(selectedType);
+            const isShelf = ['lowshelf', 'highshelf'].includes(selectedType);
 
             if (gainRow) {
                 if (hasNoGain) {
@@ -142,6 +162,21 @@ const EQ_BandHandlerMethods = {
                     const gainSlider = document.getElementById(`eq-s${i}`);
                     const gainNum = document.getElementById(`eq-s${i}_num`);
                     if (gainNum && gainSlider) gainNum.value = parseFloat(gainSlider.value).toFixed(1);
+                }
+            }
+
+            // Shelf filters (lowshelf/highshelf) use RBJ shelf alpha which becomes
+            // unstable for Q > ~3.0. Clamp UI Q slider to [0.1, 3.0] for shelves
+            // to match DSP (dsp-processor.js:92) and curve drawing (app-core.js:8876,8887).
+            const qSlider = document.getElementById(`eq-q_m${i}`);
+            const qNum = document.getElementById(`eq-q_m${i}_num`);
+            if (qSlider && qNum) {
+                const newMax = isShelf ? 3.0 : 10.0;
+                qSlider.max = newMax;
+                const currentQ = parseFloat(qSlider.value);
+                if (currentQ > newMax) {
+                    qSlider.value = newMax;
+                    qNum.value = newMax.toFixed(2);
                 }
             }
 

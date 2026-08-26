@@ -31,7 +31,12 @@ const EQ_SmartImportMethods = {
             if (files && files.length > 0) { EQ.readSmartFile(files[0]); }
         },
         readSmartFile: function(file) {
+            if (!file) return;
+            var MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+            if (file.size && file.size > MAX_IMPORT_BYTES) { showToast("File too large (max 5 MB).", "⚠️"); return; }
             var reader = new FileReader();
+            reader.onerror = function() { showToast("Failed to read file.", "⚠️"); };
+            reader.onabort = function() { showToast("File read cancelled.", "⚠️"); };
             reader.onload = function(ev) {
                 var textarea = document.getElementById('smart-import-textarea');
                 if (textarea) { textarea.value = ev.target.result; }
@@ -46,9 +51,14 @@ const EQ_SmartImportMethods = {
                 
                 if (text.startsWith('{') && text.endsWith('}')) {
                     try {
-                        var data = JSON.parse(text);
-                        if (data.mainVals || data.advVals || data.preVal !== undefined) { EQ.loadValues(data); showToast("EQ profile loaded!", "📊"); EQ.closeSmartImportModal(); return; }
-                        if (data.brand && data.model) { IEM.loadConfigDirect(data); showToast("IEM Profile loaded!", "📝"); EQ.closeSmartImportModal(); return; }
+                        var data = JSON.parse(text, function(k, v) { if (k === '__proto__' || k === 'constructor' || k === 'prototype') return undefined; return v; });
+                        if (data.mainVals || data.advVals || data.preVal !== undefined) {
+                            // Validate EQ payload before applying — prevents prototype pollution side-effects and TypeErrors from malformed arrays
+                            var validMain = !data.mainVals || Array.isArray(data.mainVals);
+                            var validAdv = !data.advVals || Array.isArray(data.advVals);
+                            if (validMain && validAdv) { EQ.loadValues(data); showToast("EQ profile loaded!", "📊"); EQ.closeSmartImportModal(); return; }
+                        }
+                        if (typeof data.brand === 'string' && typeof data.model === 'string') { IEM.loadConfigDirect(data); showToast("IEM Profile loaded!", "📝"); EQ.closeSmartImportModal(); return; }
                     } catch(e) {}
                 }
                 
@@ -104,6 +114,8 @@ const EQ_SmartImportMethods = {
                 var advVals = this.advancedBands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
                 var self = this;
                 
+                var usedMain = new Set();
+                var usedAdv = new Set();
                 lines.forEach(function(line) {
                     var clean = line.trim();
                     if (!clean || clean.startsWith('#') || clean.startsWith('*') || clean.startsWith('//')) return;
@@ -155,7 +167,7 @@ const EQ_SmartImportMethods = {
                     
                     if (fc !== null) {
                         mappedAny = true;
-                        self.mapSingleFilter(fc, gain, q, filterType, mainVals, advVals);
+                        self.mapSingleFilter(fc, gain, q, filterType, mainVals, advVals, usedMain, usedAdv);
                     }
                 });
                 
@@ -183,20 +195,54 @@ const EQ_SmartImportMethods = {
             if (/\bpeak\b|\bpk\b|\bpeq\b/.test(s)) return 'peaking';
             return null;
         },
-        mapSingleFilter: function(hz, g, q, type, mainVals, advVals) {
+        mapSingleFilter: function(hz, g, q, type, mainVals, advVals, usedMain, usedAdv) {
             var filterType = type || 'peaking';
-            var bestM = 0, bestMd = Infinity;
-            mainVals.forEach(function(v, i) { var d = Math.abs(v.hz - hz); if (d < bestMd) { bestMd = d; bestM = i; } });
-            var bestA = 0, bestAd = Infinity;
-            advVals.forEach(function(v, i) { var d = Math.abs(v.hz - hz); if (d < bestAd) { bestAd = d; bestA = i; } });
-            if (bestMd <= bestAd) { mainVals[bestM].g = g; mainVals[bestM].q = q; mainVals[bestM].hz = hz; mainVals[bestM].type = filterType; }
-            else { advVals[bestA].g = g; advVals[bestA].q = q; advVals[bestA].hz = hz; advVals[bestA].type = filterType; }
+            var uM = usedMain || new Set();
+            var uA = usedAdv || new Set();
+
+            var bestM = -1, bestMd = Infinity;
+            mainVals.forEach(function(v, i) {
+                if (!uM.has(i)) {
+                    var d = Math.abs(v.hz - hz);
+                    if (d < bestMd) { bestMd = d; bestM = i; }
+                }
+            });
+
+            var bestA = -1, bestAd = Infinity;
+            advVals.forEach(function(v, i) {
+                if (!uA.has(i)) {
+                    var d = Math.abs(v.hz - hz);
+                    if (d < bestAd) { bestAd = d; bestA = i; }
+                }
+            });
+
+            // If all slots in both banks were used, fallback to closest overall
+            if (bestM === -1 && bestA === -1) {
+                mainVals.forEach(function(v, i) { var d = Math.abs(v.hz - hz); if (d < bestMd) { bestMd = d; bestM = i; } });
+                advVals.forEach(function(v, i) { var d = Math.abs(v.hz - hz); if (d < bestAd) { bestAd = d; bestA = i; } });
+            }
+
+            if (bestM !== -1 && (bestA === -1 || bestMd <= bestAd)) {
+                mainVals[bestM].g = g;
+                mainVals[bestM].q = q;
+                mainVals[bestM].hz = hz;
+                mainVals[bestM].type = filterType;
+                uM.add(bestM);
+            } else if (bestA !== -1) {
+                advVals[bestA].g = g;
+                advVals[bestA].q = q;
+                advVals[bestA].hz = hz;
+                advVals[bestA].type = filterType;
+                uA.add(bestA);
+            }
         },
         mapGraphicEQToSliders: function(coords) {
             var mainVals = this.bands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
             var advVals = this.advancedBands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
+            var usedMain = new Set();
+            var usedAdv = new Set();
             var self = this;
-            coords.forEach(function(pt) { self.mapSingleFilter(pt.hz, pt.g, 1.0, 'peaking', mainVals, advVals); });
+            coords.forEach(function(pt) { self.mapSingleFilter(pt.hz, pt.g, 1.0, 'peaking', mainVals, advVals, usedMain, usedAdv); });
             this.loadValues({ preVal: 0, mainVals: mainVals, advVals: advVals });
         },
 };

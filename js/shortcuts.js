@@ -39,8 +39,9 @@ const Shortcuts = {
         // focus: Space would otherwise both activate the control (native
         // behavior) and trigger the playback binding.
         const el = e.target;
-        if (el && (el.tagName === 'BUTTON' || el.tagName === 'A' || (el.getAttribute && el.getAttribute('role') === 'button'))) return;
-        const key = e.key.toLowerCase();
+        if (el && (el.tagName === 'BUTTON' || el.tagName === 'A' || (el.getAttribute && typeof el.getAttribute === 'function' && el.getAttribute('role') === 'button'))) return;
+        const key = (e.key || '').toLowerCase();
+        if (!key) return;
         const match = Shortcuts._bindings.find(b => {
             if (!b.action) return false;
             const bKey = (b.key || '').toLowerCase();
