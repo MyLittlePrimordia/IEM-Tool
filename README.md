@@ -113,8 +113,8 @@ You do **not** need to redownload or reinstall the entire application to get new
 | Repository | Description |
 | :--- | :--- |
 | **[🎧 IEM Tool](https://github.com/MyLittlePrimordia/IEM-Tool)** | The main desktop workspace for finding, tuning, testing, and reviewing IEMs. |
-| **[📦 Database](https://github.com/MyLittlePrimordia/Database)** | The central upstream repository hosting `database.json`, `database.json.gz`, and raw measurement curves. |
 | **[🛠️ DB Tool](https://github.com/MyLittlePrimordia/Database-Tool)** | A standalone desktop app for editing, auditing, and maintaining the catalog. |
+| **[📦 DB](https://github.com/MyLittlePrimordia/Database)** | The repository hosting `database.json`, `database.json.gz`, and raw measurement curves. |
 
 ---
 
