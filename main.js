@@ -187,6 +187,22 @@ function getAppRoot() {
   return app.getAppPath();
 }
 
+// database.json / database.json.gz / data/ are shipped as electron-builder
+// "extraResources" instead of being baked into the asar (see package.json),
+// specifically so a user can update the curve database in place -- replace
+// these files/folder on disk and relaunch, no reinstall needed. Once
+// packaged they live in `resources/` (a sibling of app.asar), not inside the
+// asar alongside index.html/css/js. In dev (unpackaged, `npm start`) there is
+// no separate resources dir, so they just sit at the project root as before.
+function getDataRoot() {
+  return app.isPackaged ? process.resourcesPath : getAppRoot();
+}
+
+const DATA_ROOT_RELATIVE = new Set(['database.json', 'database.json.gz']);
+function isDataRootPath(relPosix) {
+  return DATA_ROOT_RELATIVE.has(relPosix) || relPosix === 'data' || relPosix.startsWith('data/');
+}
+
 function startLocalServer(rootDir) {
   return new Promise((resolve, reject) => {
     server = http.createServer((req, res) => {
@@ -214,6 +230,23 @@ function startLocalServer(rootDir) {
             relPosix === 'package.json' || relPosix === 'package-lock.json' || relPosix === 'main.js' || relPosix === 'preload.js' || relPosix === '.gitignore') {
           sendEmpty(res, 403);
           return;
+        }
+
+        // database.json / database.json.gz / data/** are re-rooted to the
+        // (separate, writable, see getDataRoot() above) data root instead of
+        // rootDir -- re-validated against THAT root since it's a different
+        // base directory than the one relativePath/isSafe were just checked
+        // against.
+        if (isDataRootPath(relPosix)) {
+          const dataRoot = getDataRoot();
+          const dataFilePath = path.normalize(path.join(dataRoot, relativePath));
+          const dataRelative = path.relative(dataRoot, dataFilePath);
+          const dataSafe = (dataRelative === '') || (!dataRelative.startsWith('..') && !path.isAbsolute(dataRelative));
+          if (!dataSafe) {
+            sendEmpty(res, 403);
+            return;
+          }
+          filePath = dataFilePath;
         }
 
         fs.stat(filePath, (err, stats) => {
@@ -260,7 +293,7 @@ async function createWindow() {
     minHeight: 360,
     autoHideMenuBar: true,
     show: false,
-    icon: path.join(__dirname, 'icon.png'),
+    icon: path.join(__dirname, 'app', 'icon.png'),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -301,7 +334,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     if (process.platform === 'darwin' && app.dock) {
-      try { app.dock.setIcon(path.join(__dirname, 'icon.png')); } catch (e) {}
+      try { app.dock.setIcon(path.join(__dirname, 'app', 'icon.png')); } catch (e) {}
     }
     createWindow();  });
 }

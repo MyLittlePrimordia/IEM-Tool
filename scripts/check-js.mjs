@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const dirs = ['js', 'effects', 'scripts'];
+const dirs = ['app/js', 'app/effects', 'scripts'];
 
 let failed = 0, checked = 0;
 for (const d of dirs) {

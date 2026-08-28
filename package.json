@@ -6,19 +6,24 @@
   "author": "🍄 MyLittlePrimordia",
   "license": "MIT",
   "scripts": {
+    "prestart": "node scripts/build-bundle.mjs",
     "start": "electron .",
+    "predist": "node scripts/build-bundle.mjs --strict",
     "dist": "electron-builder --publish never",
+    "predist-win": "node scripts/build-bundle.mjs --strict",
     "dist-win": "electron-builder --win --publish never",
+    "predist-mac": "node scripts/build-bundle.mjs --strict",
     "dist-mac": "electron-builder --mac --publish never",
+    "predist-linux": "node scripts/build-bundle.mjs --strict",
     "dist-linux": "electron-builder --linux --publish never",
     "build:js": "node scripts/build-bundle.mjs",
     "check:js": "node scripts/check-js.mjs",
     "check:reach": "node scripts/check-reachability.mjs",
-    "build:css": "tailwindcss -c twbuild/tailwind.config.js -i twbuild/input.css -o css/tailwind.output.css --minify"
+    "build:css": "tailwindcss -c twbuild/tailwind.config.js -i twbuild/input.css -o app/css/tailwind.output.css --minify"
   },
   "devDependencies": {
     "electron": "^43.4.0",
-    "electron-builder": "^26.15.3",
+    "electron-builder": "^26.15.7",
     "tailwindcss": "^3.4.19",
     "terser": "^5.50.0"
   },
@@ -31,25 +36,22 @@
       "preload.js",
       "package.json",
       "index.html",
-      "css/**/*",
-      "js/**/*",
-      "icons/**/*",
-      "fonts/**/*",
-      "data/**/*",
-      "audio/**/*",
-      "sounds/**/*",
-      "effects/**/*",
-      "database.json",
-      "database.json.gz",
-      "icon.*",
-      "favicon.png"
+      "app/css/**/*",
+      "app/js/**/*",
+      "app/icons/**/*",
+      "app/fonts/**/*",
+      "app/audio/**/*",
+      "app/sounds/**/*",
+      "app/effects/**/*",
+      "app/icon.*",
+      "app/favicon.png"
     ],
     "directories": {
       "output": "dist"
     },
     "win": {
       "target": "nsis",
-      "icon": "icon.ico"
+      "icon": "app/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -68,7 +70,7 @@
           ]
         }
       ],
-      "icon": "icon.icns",
+      "icon": "app/icon.icns",
       "category": "public.app-category.utilities"
     },
     "linux": {
@@ -81,9 +83,23 @@
           ]
         }
       ],
-      "icon": "icon.png",
+      "icon": "app/icon.png",
       "category": "Utility"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "database.json",
+        "to": "database.json"
+      },
+      {
+        "from": "database.json.gz",
+        "to": "database.json.gz"
+      },
+      {
+        "from": "data",
+        "to": "data"
+      }
+    ]
   },
   "allowScripts": {
     "electron@43.4.0": true

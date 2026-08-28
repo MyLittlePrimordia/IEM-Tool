@@ -40,9 +40,9 @@ if errorlevel 1 goto :fail
 
 echo.
 echo Verifying rebuilt bundle parses...
-node --check js\app.bundle.js
+node --check app\js\app.bundle.js
 if errorlevel 1 goto :fail
-node --check js\app.bundle.min.js
+node --check app\js\app.bundle.min.js
 if errorlevel 1 goto :fail
 
 echo.

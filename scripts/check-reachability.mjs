@@ -12,12 +12,12 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const dirs = ['js', 'effects'];
+const dirs = ['app/js', 'app/effects'];
 
 // Generated bundle artifacts that index.html builds dynamically
 // ('js/app.bundle' + (isPackaged ? '.min' : '') + '.js') and that
 // build-bundle.mjs writes as build output.
-const GENERATED = ['js/app.bundle.js', 'js/app.bundle.min.js'];
+const GENERATED = ['app/js/app.bundle.js', 'app/js/app.bundle.min.js'];
 
 const files = new Set();
 for (const d of dirs) {
@@ -29,7 +29,7 @@ for (const d of dirs) {
   }
 }
 
-const scanTargets = ['index.html', 'scripts/build-bundle.mjs', 'effects/visualizer.json'];
+const scanTargets = ['index.html', 'scripts/build-bundle.mjs', 'app/effects/visualizer.json'];
 for (const d of dirs) {
   const abs = join(root, d);
   if (!statSync(abs, { throwIfNoEntry: false })) continue;
@@ -65,7 +65,7 @@ for (const rel of scanTargets) {
   if (rel.endsWith('visualizer.json')) {
     try {
       for (const effect of JSON.parse(text)) {
-        if (effect && typeof effect.file === 'string') addRef(`effects/${effect.file}`);
+        if (effect && typeof effect.file === 'string') addRef(`app/effects/${effect.file}`);
       }
     } catch (e) {
       console.error('FAIL', rel, 'invalid JSON:', e.message);
@@ -74,12 +74,12 @@ for (const rel of scanTargets) {
     continue;
   }
 
-  const refRe = /(?:js|effects)\/[\w.-]+\.js\b/g;
+  const refRe = /app\/(?:js|effects)\/[\w.-]+\.js\b/g;
   for (const m of text.matchAll(refRe)) addRef(m[0]);
 
   // index.html builds the bundle name dynamically:
   // bundleScript.src = 'js/app.bundle' + (isPackaged ? '.min' : '') + '.js?...'
-  if (/js\/app\.bundle/.test(text)) {
+  if (/app\/js\/app\.bundle/.test(text)) {
     for (const g of GENERATED) reachable.add(g);
   }
 }

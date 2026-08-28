@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: ["index.html", "js/**/*.js"],
+  content: ["index.html", "app/js/**/*.js"],
   // Default Tailwind theme — matches what the browser Play CDN build (js/tailwindcss.js)
   // was using, since no inline tailwind.config override was present in the app.
   theme: {
