@@ -25888,6 +25888,32 @@
     ]
   },
   {
+    "id": "cozoy_d2",
+    "brand": "Cozoy",
+    "model": "D2",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 55,
+    "driver_type": "DD",
+    "driver_config": "2DD",
+    "impedance": 20,
+    "sensitivity": 102,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Gaming",
+      "Good-Imaging",
+      "Punchy Bass",
+      "Sub-Bass",
+      "Vocal-Focused",
+      "Budget"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/COZOY D2.txt"
+    ]
+  },
+  {
     "id": "cozoy_hera_c103",
     "brand": "Cozoy",
     "model": "Hera C103",
