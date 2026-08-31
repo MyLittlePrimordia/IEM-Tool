@@ -10,6 +10,13 @@ function computeCoeffSmoothingFactor(sampleRate) {
     return 1 - Math.exp(-1 / (COEFF_SMOOTHING_TAU * sampleRate));
 }
 
+// Shared RBJ shelf alpha — must stay identical to CurveUtils.computeShelfAlpha in utils.js
+function computeShelfAlpha(sinW0, A, Q) {
+    const shelfQ = Math.max(0.3, Math.min(3.0, Number.isFinite(Q) ? Q : 1.0));
+    const inner = (A + 1 / A) * (1 / shelfQ - 1) + 2;
+    return (sinW0 / 2) * Math.sqrt(Math.max(0.02, inner));
+}
+
 class BiquadFilter {
     constructor() {
         // Active Coefficients (Currently running in processing loop)
@@ -94,16 +101,10 @@ class BiquadFilter {
         const cosW0 = Math.cos(w0);
         const sinW0 = Math.sin(w0);
         const A = Math.pow(10, gain / 40);
-        // Shelves use the RBJ shelf alpha (slope S ≈ Q) so the audible
-        // response matches getBiquadMagnitude (drawn curve & exports).
-        // Clamp shelf slope to avoid degenerate narrow alpha for high Q / high gain.
-        let shelfQ = q;
-        if (this.type === 'lowshelf' || this.type === 'highshelf') {
-            shelfQ = Math.max(0.3, Math.min(3.0, q));
-        }
+        // Shared helper above — single source of truth with utils.js
         const alpha = (this.type === 'lowshelf' || this.type === 'highshelf')
-            ? (sinW0 / 2) * Math.sqrt(Math.max(0.02, (A + 1 / A) * (1 / Math.max(0.1, shelfQ) - 1) + 2))
-            : sinW0 / (2 * q);
+            ? computeShelfAlpha(sinW0, A, q)
+            : sinW0 / (2 * (Number.isFinite(q) && q > 1e-6 ? q : 1.0));
 
         let b0 = 1, b1 = 0, b2 = 0, a0 = 1, a1 = 0, a2 = 0;
 

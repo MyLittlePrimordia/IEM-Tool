@@ -30,7 +30,8 @@ const EQ_Module = {
 
                 newTracks.push({ file: f, url: url, name: f.name, key: key });
                 if (!this._urlRegistry) this._urlRegistry = {};
-                if (this._urlRegistry[key]) URL.revokeObjectURL(this._urlRegistry[key]);
+                // loadedFiles already guards duplicates; the revoke check above was dead
+                // code (never reached). Keep registries in sync via single assignment.
                 this._urlRegistry[key] = url;
             }
         }
@@ -150,6 +151,9 @@ const EQ_Module = {
         },
 
         togglePersonalityMode: function(mode) {
+        // `mode` arg historically ignored — boot calls with 'simple' but UX is
+        // intended to start advanced (reverted per audit: keep always-advanced
+        // unless product confirms simple default). Keep compat helper separate.
         this.personalityMode = 'advanced';
         const panelAdvanced = document.getElementById('panel-personality-advanced');
         if (panelAdvanced) panelAdvanced.classList.remove('hidden');
@@ -2723,11 +2727,9 @@ getLiveFiltersState: function() {
                 a1 = -2 * cosW0;
                 a2 = 1 - alpha / A;
             } else if (type === 'lowshelf') {
-                // Clamp shelf slope exactly like the worklet (dsp-processor.js)
-                // so out-of-range Q values still draw/export what is audible.
-                const shelfQLow = Math.max(0.3, Math.min(3.0, Number.isFinite(Q) ? Q : 1.0));
-                const innerSqrt = (A + 1 / A) * (1 / shelfQLow - 1) + 2;
-                const alpha = (sinW0 / 2) * Math.sqrt(Math.max(0.001, innerSqrt));
+                const alpha = (typeof CurveUtils !== 'undefined' && CurveUtils.computeShelfAlpha)
+                    ? CurveUtils.computeShelfAlpha(sinW0, A, Q)
+                    : (sinW0 / 2) * Math.sqrt(Math.max(0.02, (A + 1 / A) * (1 / Math.max(0.3, Math.min(3.0, Number.isFinite(Q) ? Q : 1.0)) - 1) + 2));
 
                 b0 = A * ((A + 1) - (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha);
                 b1 = 2 * A * ((A - 1) - (A + 1) * cosW0);
@@ -2736,9 +2738,9 @@ getLiveFiltersState: function() {
                 a1 = -2 * ((A - 1) + (A + 1) * cosW0);
                 a2 = (A + 1) + (A - 1) * cosW0 - 2 * Math.sqrt(A) * alpha;
             } else if (type === 'highshelf') {
-                const shelfQHigh = Math.max(0.3, Math.min(3.0, Number.isFinite(Q) ? Q : 1.0));
-                const innerSqrt = (A + 1 / A) * (1 / shelfQHigh - 1) + 2;
-                const alpha = (sinW0 / 2) * Math.sqrt(Math.max(0.001, innerSqrt));
+                const alpha = (typeof CurveUtils !== 'undefined' && CurveUtils.computeShelfAlpha)
+                    ? CurveUtils.computeShelfAlpha(sinW0, A, Q)
+                    : (sinW0 / 2) * Math.sqrt(Math.max(0.02, (A + 1 / A) * (1 / Math.max(0.3, Math.min(3.0, Number.isFinite(Q) ? Q : 1.0)) - 1) + 2));
 
                 b0 = A * ((A + 1) + (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha);
                 b1 = -2 * A * ((A - 1) + (A + 1) * cosW0);

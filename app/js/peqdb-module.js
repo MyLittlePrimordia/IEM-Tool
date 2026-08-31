@@ -378,6 +378,13 @@
                 alignHz: '500',
                 alignDb: 75.0,
                 parseRawCurveText: function(rawText) {
+            if (typeof rawText !== 'string') return [];
+            // Guard against pathological drag-drop (e.g. multi-MB log file)
+            if (rawText.length > 2000000) {
+                console.warn("[PEQDB] Curve text too large (" + rawText.length + " chars), truncating to 2M");
+                try { if (typeof showToast === 'function') showToast("Curve file too large — truncated to 2M chars.", "⚠️"); } catch(_){}
+                rawText = rawText.slice(0, 2000000);
+            }
 
             const lines = rawText.split(/\r\n|\r|\n/);
             const data = [];
@@ -432,6 +439,18 @@
                         }
                     });
                     data.sort((a,b) => a[0] - b[0]);
+
+                    // Cap point count to protect spline solve (O(n log n) + tridiagonal)
+                    if (data.length > 10000) {
+                        console.warn("[PEQDB] Curve has " + data.length + " points, downsampling to 10k");
+                        const step = Math.ceil(data.length / 10000);
+                        const down = [];
+                        for (let i = 0; i < data.length; i += step) down.push(data[i]);
+                        // Ensure last point kept for interpolation range
+                        if (down[down.length-1] !== data[data.length-1]) down.push(data[data.length-1]);
+                        data.length = 0;
+                        for (let i = 0; i < down.length; i++) data.push(down[i]);
+                    }
 
                     const deduped = [];
                     for (let i = 0; i < data.length; i++) {

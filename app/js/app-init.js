@@ -39,6 +39,8 @@
                 try {
                     if (window.FindEngine && FindEngine._findWorker) FindEngine._findWorker.terminate();
                     if (window.FindEngine && FindEngine.similarityWorker) FindEngine.similarityWorker.terminate();
+                    // Loudness worker blob URL is ~1 KB but its worker holds decoded buffers
+                    if (window.EQ && EQ._loudnessWorkerBlobUrl) { try { URL.revokeObjectURL(EQ._loudnessWorkerBlobUrl); } catch(_){} EQ._loudnessWorkerBlobUrl = null; }
                 } catch (_) {}
             });
         })();

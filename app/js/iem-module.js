@@ -419,11 +419,18 @@ window.updateExpandedAutoHide = function() {
                     if (window.SharedAudio && SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
                         SharedAudio.ctx.resume().catch(()=>{});
                     }
-                    EQ_Module.vizLoopRunning = false;
-                    requestAnimationFrame(() => {
-                        EQ_Module.startVisualizer();
-                        setTimeout(()=> { if (!EQ_Module.vizLoopRunning) EQ_Module.startVisualizer(); }, 120);
-                    });
+                    // Fix frozen-every-other-switch: App previously forced
+                    // vizLoopRunning=false then rAF→startVisualizer. The running
+                    // drawViz loop sets vizLoopRunning=true before that rAF fires,
+                    // so startVisualizer cancelled the loop's next tick and then
+                    // early-returned with vizLoopRunning still true but no rAF
+                    // scheduled → frozen. Only start if loop is actually dead.
+                    if (!EQ_Module.vizLoopRunning) {
+                        requestAnimationFrame(() => EQ_Module.startVisualizer());
+                    } else if (!EQ_Module.vizFrameId && !EQ_Module._vizIdleTimer) {
+                        EQ_Module.vizLoopRunning = false;
+                        requestAnimationFrame(() => EQ_Module.startVisualizer());
+                    }
                 }
                 if (window.TestLab) {
                     if (tabId === 'testlab') {
@@ -3692,38 +3699,26 @@ onDbSearchInput: function(value) {
             const vDivider = impVal / (impVal + Rs);
             const vReqSource = vReqIem / vDivider;
 
+            // Total power drawn from the source (including Rs) — kept for reference but
+            // NOT used for the compatibility ratio: dac.p is a load-referenced rating
+            // (e.g. “100 mW @ 32Ω”), so the correct comparison is load power pReqIem.
             const pDrawnSource = (vReqSource * vReqSource) / (impVal + Rs) * 1000;
 
             const dampingFactor = impVal / Rs;
 
             const voltageRatio = vReqSource / dac.v;
-            const powerRatio = pDrawnSource / dac.p;
+            const powerRatio = pReqIem / dac.p;
 
-            let compatColor = '#ef4444';
-            if (voltageRatio <= 1.0 && powerRatio <= 1.0) {
-                compatColor = '#10b981';
-            } else if (voltageRatio <= 1.5 && powerRatio <= 1.5) {
-                compatColor = '#22c55e';
-            } else if (voltageRatio <= 2 && powerRatio <= 2) {
-                compatColor = '#f59e0b';
-            }
-
-            let matchText = '';
-            let matchClass = '';
-
-            if (voltageRatio <= 1.0 && powerRatio <= 1.0) {
-                matchText = '✅ Good Match';
-                matchClass = 'anim-good-match';
-            } else if (voltageRatio <= 1.5 && powerRatio <= 1.5) {
-                matchText = '🟡 Okay Match';
-                matchClass = 'anim-okay-match';
-            } else if (voltageRatio <= 2.0 && powerRatio <= 2.0) {
-                matchText = '⚠️ Risky Match';
-                matchClass = 'anim-risky-match';
-            } else {
-                matchText = '❌ Poor Match';
-                matchClass = 'anim-poor-match';
-            }
+            // Single helper for color + badge — previously duplicated thresholds drifted
+            const compatInfo = (function(v, p) {
+                if (v <= 1.0 && p <= 1.0) return { color: '#10b981', text: '✅ Good Match', cls: 'anim-good-match' };
+                if (v <= 1.5 && p <= 1.5) return { color: '#22c55e', text: '🟡 Okay Match', cls: 'anim-okay-match' };
+                if (v <= 2.0 && p <= 2.0) return { color: '#f59e0b', text: '⚠️ Risky Match', cls: 'anim-risky-match' };
+                return { color: '#ef4444', text: '❌ Poor Match', cls: 'anim-poor-match' };
+            })(voltageRatio, powerRatio);
+            const compatColor = compatInfo.color;
+            const matchText = compatInfo.text;
+            const matchClass = compatInfo.cls;
 
             let bassText = '';
             let bassClass = '';
@@ -3754,7 +3749,7 @@ onDbSearchInput: function(value) {
             const statusNode = document.getElementById('compatibility-status');
 
             if (vValNode) vValNode.textContent = vReqSource.toFixed(2) + " V";
-            if (pValNode) pDrawnSource === Infinity ? pValNode.textContent = "0.0 mW" : pValNode.textContent = pDrawnSource.toFixed(1) + " mW";
+            if (pValNode) pReqIem === Infinity ? pValNode.textContent = "0.0 mW" : pValNode.textContent = pReqIem.toFixed(1) + " mW";
 
             if (statusNode) {
                 statusNode.innerHTML = `<span class="${matchClass} text-sm sm:text-base">${matchText}</span>`;
@@ -3889,8 +3884,15 @@ if(this.radarChart) {
 
         const finalScore = this.updateAll(); const id = `${brand}-${model}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
         const sliderValues = {}; this.sliderNodes.forEach(n => { if (n.element.id) sliderValues[n.element.id] = n.element.value; });
+        // Price easter-egg writes non-numeric words (e.g. "Priceless 👑") via direct assignment
+        // bypassing the digit-only input handler. Coerce to digits for storage so
+        // library re-load and numeric consumers never see NaN, while keeping the
+        // on-screen easter-egg until next edit.
+        const rawPrice = document.getElementById('price').value || "";
+        const priceDigits = rawPrice.replace(/[^0-9]/g, '').slice(0, 4);
+        const price = priceDigits;
 
-        const profile = { id, brand, model, score: parseFloat(finalScore), price: document.getElementById('price').value, impedance: document.getElementById('impedance').value, sensitivity: document.getElementById('sensitivity').value, sensUnit: this.sensUnit || 'mW', image: this.currentImageBlob || this.currentImage, notes: document.getElementById('review-notes').value, refVolume: document.getElementById('listening-volume').value, selectedTags: Array.from(this.selectedTags), selectedGenres: Array.from(this.selectedGenres), selectedBass: Array.from(this.selectedBass), sliders: sliderValues, selectedDriverTypes: this.selectedDriverTypes, formFactor: this.formFactor || 'IEM', connector: this.connector || '2-pin', timestamp: Date.now(), radarData: Array.from(this.radarChart.data.datasets[0].data), toneData: (typeof Tone_Module !== 'undefined' && Tone_Module.getState) ? Tone_Module.getState() : null, eqData: (typeof EQ_Module !== 'undefined' && EQ_Module.getRealValues) ? EQ_Module.getRealValues() : null };
+        const profile = { id, brand, model, score: parseFloat(finalScore), price: price, impedance: document.getElementById('impedance').value, sensitivity: document.getElementById('sensitivity').value, sensUnit: this.sensUnit || 'mW', image: this.currentImageBlob || this.currentImage, notes: document.getElementById('review-notes').value, refVolume: document.getElementById('listening-volume').value, selectedTags: Array.from(this.selectedTags), selectedGenres: Array.from(this.selectedGenres), selectedBass: Array.from(this.selectedBass), sliders: sliderValues, selectedDriverTypes: this.selectedDriverTypes, formFactor: this.formFactor || 'IEM', connector: this.connector || '2-pin', timestamp: Date.now(), radarData: Array.from(this.radarChart.data.datasets[0].data), toneData: (typeof Tone_Module !== 'undefined' && Tone_Module.getState) ? Tone_Module.getState() : null, eqData: (typeof EQ_Module !== 'undefined' && EQ_Module.getRealValues) ? EQ_Module.getRealValues() : null };
 
         const success = await DBCache.saveReview(profile);
         if (success) {
@@ -5034,15 +5036,16 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
                 const Rs = dacImpedances[tier.id] || 1.0;
                 const vDivider = impVal / (impVal + Rs);
                 const vReqSource = vReq / vDivider;
+                // Keep total-draw for reference but classification uses load power pReqIemExport
                 const pDrawnSource = (vReqSource * vReqSource) / (impVal + Rs) * 1000;
 
-                let text = "POOR", col = "#ef4444", ratio = Math.min(1.0, dac.p / pDrawnSource);
+                let text = "POOR", col = "#ef4444", ratio = Math.min(1.0, dac.p / pReqIemExport);
 
-                if (pDrawnSource > dac.p * 1.5 || vReqSource > dac.v * 1.5) {
-                    text = "WEAK"; col = "#ef4444"; ratio = Math.max(0.12, Math.min(1.0, dac.p / pDrawnSource));
-                } else if (pDrawnSource > dac.p || vReqSource > dac.v) {
-                    text = "RISKY"; col = "#f59e0b"; ratio = Math.min(1.0, dac.p / pDrawnSource);
-                } else if (pDrawnSource > dac.p * 0.4 || vReqSource > dac.v * 0.4) {
+                if (pReqIemExport > dac.p * 1.5 || vReqSource > dac.v * 1.5) {
+                    text = "WEAK"; col = "#ef4444"; ratio = Math.max(0.12, Math.min(1.0, dac.p / pReqIemExport));
+                } else if (pReqIemExport > dac.p || vReqSource > dac.v) {
+                    text = "RISKY"; col = "#f59e0b"; ratio = Math.min(1.0, dac.p / pReqIemExport);
+                } else if (pReqIemExport > dac.p * 0.4 || vReqSource > dac.v * 0.4) {
                     text = "OK"; col = "#22c55e"; ratio = 0.88;
                 } else {
                     text = "GREAT"; col = "#10b981"; ratio = 1.0;

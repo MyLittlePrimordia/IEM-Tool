@@ -347,6 +347,15 @@ const CurveUtils = {
         return Math.max(0, Math.min(100, 100 * Math.exp(-0.11 * mae)));
     },
 
+    // Shared RBJ shelf alpha — single source of truth for both the worklet
+    // (dsp-processor.js:calculateCoefficients) and the GUI (eq-core.js:getBiquadMagnitude).
+    // Q is clamped to [0.3, 3.0] with NaN guard; inner term floored at 0.02.
+    computeShelfAlpha: function(sinW0, A, Q) {
+        const shelfQ = Math.max(0.3, Math.min(3.0, Number.isFinite(Q) ? Q : 1.0));
+        const inner = (A + 1 / A) * (1 / shelfQ - 1) + 2;
+        return (sinW0 / 2) * Math.sqrt(Math.max(0.02, inner));
+    },
+
     gaussianSmooth: function(freqs, values, octaveBandwidth = 0.08) {
         const n = freqs.length;
         const smoothed = new Float32Array(n);

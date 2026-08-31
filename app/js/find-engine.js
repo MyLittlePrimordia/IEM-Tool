@@ -538,9 +538,10 @@
                     if (!db || !value) return true;
                     const t = String(value).toLowerCase().trim();
                     const c = db.connector;
-                    if (Array.isArray(c)) return c.some(x => String(x).toLowerCase().trim() === t);
-                    if (!c) return false;
-                    return String(c).toLowerCase().includes(t);
+                    // Normalize string connectors that may contain comma/slash lists
+                    const list = Array.isArray(c) ? c : (typeof c === 'string' ? c.split(/[,/\\|]+/).map(s => s.trim()).filter(Boolean) : []);
+                    if (list.length === 0) return false;
+                    return list.some(x => String(x).toLowerCase().trim() === t);
                 },
 
                 _formFactorMatches: function(db, value) {

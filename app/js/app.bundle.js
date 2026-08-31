@@ -348,6 +348,15 @@ const CurveUtils = {
         return Math.max(0, Math.min(100, 100 * Math.exp(-0.11 * mae)));
     },
 
+    // Shared RBJ shelf alpha — single source of truth for both the worklet
+    // (dsp-processor.js:calculateCoefficients) and the GUI (eq-core.js:getBiquadMagnitude).
+    // Q is clamped to [0.3, 3.0] with NaN guard; inner term floored at 0.02.
+    computeShelfAlpha: function(sinW0, A, Q) {
+        const shelfQ = Math.max(0.3, Math.min(3.0, Number.isFinite(Q) ? Q : 1.0));
+        const inner = (A + 1 / A) * (1 / shelfQ - 1) + 2;
+        return (sinW0 / 2) * Math.sqrt(Math.max(0.02, inner));
+    },
+
     gaussianSmooth: function(freqs, values, octaveBandwidth = 0.08) {
         const n = freqs.length;
         const smoothed = new Float32Array(n);
@@ -8826,11 +8835,18 @@ window.updateExpandedAutoHide = function() {
                     if (window.SharedAudio && SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
                         SharedAudio.ctx.resume().catch(()=>{});
                     }
-                    EQ_Module.vizLoopRunning = false;
-                    requestAnimationFrame(() => {
-                        EQ_Module.startVisualizer();
-                        setTimeout(()=> { if (!EQ_Module.vizLoopRunning) EQ_Module.startVisualizer(); }, 120);
-                    });
+                    // Fix frozen-every-other-switch: App previously forced
+                    // vizLoopRunning=false then rAF→startVisualizer. The running
+                    // drawViz loop sets vizLoopRunning=true before that rAF fires,
+                    // so startVisualizer cancelled the loop's next tick and then
+                    // early-returned with vizLoopRunning still true but no rAF
+                    // scheduled → frozen. Only start if loop is actually dead.
+                    if (!EQ_Module.vizLoopRunning) {
+                        requestAnimationFrame(() => EQ_Module.startVisualizer());
+                    } else if (!EQ_Module.vizFrameId && !EQ_Module._vizIdleTimer) {
+                        EQ_Module.vizLoopRunning = false;
+                        requestAnimationFrame(() => EQ_Module.startVisualizer());
+                    }
                 }
                 if (window.TestLab) {
                     if (tabId === 'testlab') {
@@ -12099,38 +12115,26 @@ onDbSearchInput: function(value) {
             const vDivider = impVal / (impVal + Rs);
             const vReqSource = vReqIem / vDivider;
 
+            // Total power drawn from the source (including Rs) — kept for reference but
+            // NOT used for the compatibility ratio: dac.p is a load-referenced rating
+            // (e.g. “100 mW @ 32Ω”), so the correct comparison is load power pReqIem.
             const pDrawnSource = (vReqSource * vReqSource) / (impVal + Rs) * 1000;
 
             const dampingFactor = impVal / Rs;
 
             const voltageRatio = vReqSource / dac.v;
-            const powerRatio = pDrawnSource / dac.p;
+            const powerRatio = pReqIem / dac.p;
 
-            let compatColor = '#ef4444';
-            if (voltageRatio <= 1.0 && powerRatio <= 1.0) {
-                compatColor = '#10b981';
-            } else if (voltageRatio <= 1.5 && powerRatio <= 1.5) {
-                compatColor = '#22c55e';
-            } else if (voltageRatio <= 2 && powerRatio <= 2) {
-                compatColor = '#f59e0b';
-            }
-
-            let matchText = '';
-            let matchClass = '';
-
-            if (voltageRatio <= 1.0 && powerRatio <= 1.0) {
-                matchText = '✅ Good Match';
-                matchClass = 'anim-good-match';
-            } else if (voltageRatio <= 1.5 && powerRatio <= 1.5) {
-                matchText = '🟡 Okay Match';
-                matchClass = 'anim-okay-match';
-            } else if (voltageRatio <= 2.0 && powerRatio <= 2.0) {
-                matchText = '⚠️ Risky Match';
-                matchClass = 'anim-risky-match';
-            } else {
-                matchText = '❌ Poor Match';
-                matchClass = 'anim-poor-match';
-            }
+            // Single helper for color + badge — previously duplicated thresholds drifted
+            const compatInfo = (function(v, p) {
+                if (v <= 1.0 && p <= 1.0) return { color: '#10b981', text: '✅ Good Match', cls: 'anim-good-match' };
+                if (v <= 1.5 && p <= 1.5) return { color: '#22c55e', text: '🟡 Okay Match', cls: 'anim-okay-match' };
+                if (v <= 2.0 && p <= 2.0) return { color: '#f59e0b', text: '⚠️ Risky Match', cls: 'anim-risky-match' };
+                return { color: '#ef4444', text: '❌ Poor Match', cls: 'anim-poor-match' };
+            })(voltageRatio, powerRatio);
+            const compatColor = compatInfo.color;
+            const matchText = compatInfo.text;
+            const matchClass = compatInfo.cls;
 
             let bassText = '';
             let bassClass = '';
@@ -12161,7 +12165,7 @@ onDbSearchInput: function(value) {
             const statusNode = document.getElementById('compatibility-status');
 
             if (vValNode) vValNode.textContent = vReqSource.toFixed(2) + " V";
-            if (pValNode) pDrawnSource === Infinity ? pValNode.textContent = "0.0 mW" : pValNode.textContent = pDrawnSource.toFixed(1) + " mW";
+            if (pValNode) pReqIem === Infinity ? pValNode.textContent = "0.0 mW" : pValNode.textContent = pReqIem.toFixed(1) + " mW";
 
             if (statusNode) {
                 statusNode.innerHTML = `<span class="${matchClass} text-sm sm:text-base">${matchText}</span>`;
@@ -12296,8 +12300,15 @@ if(this.radarChart) {
 
         const finalScore = this.updateAll(); const id = `${brand}-${model}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
         const sliderValues = {}; this.sliderNodes.forEach(n => { if (n.element.id) sliderValues[n.element.id] = n.element.value; });
+        // Price easter-egg writes non-numeric words (e.g. "Priceless 👑") via direct assignment
+        // bypassing the digit-only input handler. Coerce to digits for storage so
+        // library re-load and numeric consumers never see NaN, while keeping the
+        // on-screen easter-egg until next edit.
+        const rawPrice = document.getElementById('price').value || "";
+        const priceDigits = rawPrice.replace(/[^0-9]/g, '').slice(0, 4);
+        const price = priceDigits;
 
-        const profile = { id, brand, model, score: parseFloat(finalScore), price: document.getElementById('price').value, impedance: document.getElementById('impedance').value, sensitivity: document.getElementById('sensitivity').value, sensUnit: this.sensUnit || 'mW', image: this.currentImageBlob || this.currentImage, notes: document.getElementById('review-notes').value, refVolume: document.getElementById('listening-volume').value, selectedTags: Array.from(this.selectedTags), selectedGenres: Array.from(this.selectedGenres), selectedBass: Array.from(this.selectedBass), sliders: sliderValues, selectedDriverTypes: this.selectedDriverTypes, formFactor: this.formFactor || 'IEM', connector: this.connector || '2-pin', timestamp: Date.now(), radarData: Array.from(this.radarChart.data.datasets[0].data), toneData: (typeof Tone_Module !== 'undefined' && Tone_Module.getState) ? Tone_Module.getState() : null, eqData: (typeof EQ_Module !== 'undefined' && EQ_Module.getRealValues) ? EQ_Module.getRealValues() : null };
+        const profile = { id, brand, model, score: parseFloat(finalScore), price: price, impedance: document.getElementById('impedance').value, sensitivity: document.getElementById('sensitivity').value, sensUnit: this.sensUnit || 'mW', image: this.currentImageBlob || this.currentImage, notes: document.getElementById('review-notes').value, refVolume: document.getElementById('listening-volume').value, selectedTags: Array.from(this.selectedTags), selectedGenres: Array.from(this.selectedGenres), selectedBass: Array.from(this.selectedBass), sliders: sliderValues, selectedDriverTypes: this.selectedDriverTypes, formFactor: this.formFactor || 'IEM', connector: this.connector || '2-pin', timestamp: Date.now(), radarData: Array.from(this.radarChart.data.datasets[0].data), toneData: (typeof Tone_Module !== 'undefined' && Tone_Module.getState) ? Tone_Module.getState() : null, eqData: (typeof EQ_Module !== 'undefined' && EQ_Module.getRealValues) ? EQ_Module.getRealValues() : null };
 
         const success = await DBCache.saveReview(profile);
         if (success) {
@@ -13441,15 +13452,16 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
                 const Rs = dacImpedances[tier.id] || 1.0;
                 const vDivider = impVal / (impVal + Rs);
                 const vReqSource = vReq / vDivider;
+                // Keep total-draw for reference but classification uses load power pReqIemExport
                 const pDrawnSource = (vReqSource * vReqSource) / (impVal + Rs) * 1000;
 
-                let text = "POOR", col = "#ef4444", ratio = Math.min(1.0, dac.p / pDrawnSource);
+                let text = "POOR", col = "#ef4444", ratio = Math.min(1.0, dac.p / pReqIemExport);
 
-                if (pDrawnSource > dac.p * 1.5 || vReqSource > dac.v * 1.5) {
-                    text = "WEAK"; col = "#ef4444"; ratio = Math.max(0.12, Math.min(1.0, dac.p / pDrawnSource));
-                } else if (pDrawnSource > dac.p || vReqSource > dac.v) {
-                    text = "RISKY"; col = "#f59e0b"; ratio = Math.min(1.0, dac.p / pDrawnSource);
-                } else if (pDrawnSource > dac.p * 0.4 || vReqSource > dac.v * 0.4) {
+                if (pReqIemExport > dac.p * 1.5 || vReqSource > dac.v * 1.5) {
+                    text = "WEAK"; col = "#ef4444"; ratio = Math.max(0.12, Math.min(1.0, dac.p / pReqIemExport));
+                } else if (pReqIemExport > dac.p || vReqSource > dac.v) {
+                    text = "RISKY"; col = "#f59e0b"; ratio = Math.min(1.0, dac.p / pReqIemExport);
+                } else if (pReqIemExport > dac.p * 0.4 || vReqSource > dac.v * 0.4) {
                     text = "OK"; col = "#22c55e"; ratio = 0.88;
                 } else {
                     text = "GREAT"; col = "#10b981"; ratio = 1.0;
@@ -13715,7 +13727,8 @@ const EQ_Module = {
 
                 newTracks.push({ file: f, url: url, name: f.name, key: key });
                 if (!this._urlRegistry) this._urlRegistry = {};
-                if (this._urlRegistry[key]) URL.revokeObjectURL(this._urlRegistry[key]);
+                // loadedFiles already guards duplicates; the revoke check above was dead
+                // code (never reached). Keep registries in sync via single assignment.
                 this._urlRegistry[key] = url;
             }
         }
@@ -13835,6 +13848,9 @@ const EQ_Module = {
         },
 
         togglePersonalityMode: function(mode) {
+        // `mode` arg historically ignored — boot calls with 'simple' but UX is
+        // intended to start advanced (reverted per audit: keep always-advanced
+        // unless product confirms simple default). Keep compat helper separate.
         this.personalityMode = 'advanced';
         const panelAdvanced = document.getElementById('panel-personality-advanced');
         if (panelAdvanced) panelAdvanced.classList.remove('hidden');
@@ -16408,11 +16424,9 @@ getLiveFiltersState: function() {
                 a1 = -2 * cosW0;
                 a2 = 1 - alpha / A;
             } else if (type === 'lowshelf') {
-                // Clamp shelf slope exactly like the worklet (dsp-processor.js)
-                // so out-of-range Q values still draw/export what is audible.
-                const shelfQLow = Math.max(0.3, Math.min(3.0, Number.isFinite(Q) ? Q : 1.0));
-                const innerSqrt = (A + 1 / A) * (1 / shelfQLow - 1) + 2;
-                const alpha = (sinW0 / 2) * Math.sqrt(Math.max(0.001, innerSqrt));
+                const alpha = (typeof CurveUtils !== 'undefined' && CurveUtils.computeShelfAlpha)
+                    ? CurveUtils.computeShelfAlpha(sinW0, A, Q)
+                    : (sinW0 / 2) * Math.sqrt(Math.max(0.02, (A + 1 / A) * (1 / Math.max(0.3, Math.min(3.0, Number.isFinite(Q) ? Q : 1.0)) - 1) + 2));
 
                 b0 = A * ((A + 1) - (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha);
                 b1 = 2 * A * ((A - 1) - (A + 1) * cosW0);
@@ -16421,9 +16435,9 @@ getLiveFiltersState: function() {
                 a1 = -2 * ((A - 1) + (A + 1) * cosW0);
                 a2 = (A + 1) + (A - 1) * cosW0 - 2 * Math.sqrt(A) * alpha;
             } else if (type === 'highshelf') {
-                const shelfQHigh = Math.max(0.3, Math.min(3.0, Number.isFinite(Q) ? Q : 1.0));
-                const innerSqrt = (A + 1 / A) * (1 / shelfQHigh - 1) + 2;
-                const alpha = (sinW0 / 2) * Math.sqrt(Math.max(0.001, innerSqrt));
+                const alpha = (typeof CurveUtils !== 'undefined' && CurveUtils.computeShelfAlpha)
+                    ? CurveUtils.computeShelfAlpha(sinW0, A, Q)
+                    : (sinW0 / 2) * Math.sqrt(Math.max(0.02, (A + 1 / A) * (1 / Math.max(0.3, Math.min(3.0, Number.isFinite(Q) ? Q : 1.0)) - 1) + 2));
 
                 b0 = A * ((A + 1) + (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha);
                 b1 = -2 * A * ((A - 1) + (A + 1) * cosW0);
@@ -18751,6 +18765,13 @@ const DBCache = {
                 alignHz: '500',
                 alignDb: 75.0,
                 parseRawCurveText: function(rawText) {
+            if (typeof rawText !== 'string') return [];
+            // Guard against pathological drag-drop (e.g. multi-MB log file)
+            if (rawText.length > 2000000) {
+                console.warn("[PEQDB] Curve text too large (" + rawText.length + " chars), truncating to 2M");
+                try { if (typeof showToast === 'function') showToast("Curve file too large — truncated to 2M chars.", "⚠️"); } catch(_){}
+                rawText = rawText.slice(0, 2000000);
+            }
 
             const lines = rawText.split(/\r\n|\r|\n/);
             const data = [];
@@ -18805,6 +18826,18 @@ const DBCache = {
                         }
                     });
                     data.sort((a,b) => a[0] - b[0]);
+
+                    // Cap point count to protect spline solve (O(n log n) + tridiagonal)
+                    if (data.length > 10000) {
+                        console.warn("[PEQDB] Curve has " + data.length + " points, downsampling to 10k");
+                        const step = Math.ceil(data.length / 10000);
+                        const down = [];
+                        for (let i = 0; i < data.length; i += step) down.push(data[i]);
+                        // Ensure last point kept for interpolation range
+                        if (down[down.length-1] !== data[data.length-1]) down.push(data[data.length-1]);
+                        data.length = 0;
+                        for (let i = 0; i < down.length; i++) data.push(down[i]);
+                    }
 
                     const deduped = [];
                     for (let i = 0; i < data.length; i++) {
@@ -25807,9 +25840,10 @@ loadSoundLibrary: async function() {
                     if (!db || !value) return true;
                     const t = String(value).toLowerCase().trim();
                     const c = db.connector;
-                    if (Array.isArray(c)) return c.some(x => String(x).toLowerCase().trim() === t);
-                    if (!c) return false;
-                    return String(c).toLowerCase().includes(t);
+                    // Normalize string connectors that may contain comma/slash lists
+                    const list = Array.isArray(c) ? c : (typeof c === 'string' ? c.split(/[,/\\|]+/).map(s => s.trim()).filter(Boolean) : []);
+                    if (list.length === 0) return false;
+                    return list.some(x => String(x).toLowerCase().trim() === t);
                 },
 
                 _formFactorMatches: function(db, value) {
@@ -30718,6 +30752,8 @@ const handlers = {
                 try {
                     if (window.FindEngine && FindEngine._findWorker) FindEngine._findWorker.terminate();
                     if (window.FindEngine && FindEngine.similarityWorker) FindEngine.similarityWorker.terminate();
+                    // Loudness worker blob URL is ~1 KB but its worker holds decoded buffers
+                    if (window.EQ && EQ._loudnessWorkerBlobUrl) { try { URL.revokeObjectURL(EQ._loudnessWorkerBlobUrl); } catch(_){} EQ._loudnessWorkerBlobUrl = null; }
                 } catch (_) {}
             });
         })();
