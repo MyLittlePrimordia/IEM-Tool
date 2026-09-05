@@ -47,8 +47,18 @@ const SharedAudio = {
         this.limiter.threshold.value = -0.5;
         this.limiter.knee.value = 4.0;
         this.limiter.ratio.value = 20.0;
-        this.limiter.attack.value = 0.003;
+        // 0.5ms attack: the previous 3ms let fast transients (kick, plucks,
+        // crossfeed-summed peaks) overshoot ~1-2dB past the -0.5dB threshold
+        // before gain reduction engaged — audible as clipping on hot masters.
+        // 0.5ms is the Web Audio minimum-musical value that still tracks
+        // transients without distortion (sub-millisecond pumping artifacts
+        // are absorbed by the 4dB soft knee).
+        this.limiter.attack.value = 0.0005;
         this.limiter.release.value = 0.08;
+
+        // (the former post-merger DynamicsCompressor safety stage was
+        // replaced by the worklet's final-stage lookahead limiter — see
+        // dsp-processor.js LookaheadLimiter + eq-core.js applyMergerLimiterRouting)
         
         this.autoGainNode = this.ctx.createGain();
         this.autoGainNode.gain.value = 1.0;

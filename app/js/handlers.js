@@ -154,6 +154,8 @@ const handlers = {
         "click_269_TestLab_lockResonancePeak": function(event, element) { TestLab.lockResonancePeak() },
         "click_26_App_switchTab__settings____App_toggleMobileDrawer": function(event, element) { App.switchTab('settings'); App.toggleMobileDrawer(); },
         "click_272_EQ_toggleCompressor": function(event, element) { EQ.toggleCompressor() },
+        "click_9999_EQ_toggleMergerLimiter": function(event, element) { EQ.toggleMergerLimiter() },
+        "click_3201_TestLab_hearingNotHeard": function(event, element) { TestLab.hearingNotHeard() },
         "click_273_TestLab_cycleBurninSignal": function(event, element) { TestLab.cycleBurninSignal() },
         "click_274_FindEngine_scanAndMatch": function(event, element) { FindEngine.scanAndMatch() },
         "click_275_EQ_exitTuningLab_false": function(event, element) { EQ.exitTuningLab(false) },

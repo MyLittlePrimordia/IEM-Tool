@@ -63,7 +63,7 @@ const EQ_CrossfeedMethods = {
             // perceived level, and full unity replacement would over-brighten
             // the direct path. For centered/mono content direct+cross peaks
             // around +1..+3 dB depending on preset level — bounded by design
-            // and absorbed by the downstream limiter (-0.5 dB threshold).
+            // and absorbed by the downstream limiter (-1.0 dB ceiling).
             // Do not "fix" this to equal-power without also retuning the
             // presets; users have calibrated levels around this response.
             const directVal = 1.0 - (crossVal * 0.35);

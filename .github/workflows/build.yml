@@ -1,6 +1,8 @@
 name: Build IEM Tool (Win + Mac + Linux)
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch: {}
   release:
     types: [created]
@@ -29,21 +31,23 @@ jobs:
         timeout-minutes: 30
         run: npm run dist-linux
 
+      - name: Rename to exact file name
+        run: |
+          src=$(ls dist/*.AppImage | head -n 1)
+          cp "$src" "dist/IEM-Tool.appimage"
+          ls -la dist/IEM-Tool.appimage
+
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v5
         with:
           name: IEM-Tool-Linux
-          path: |
-            dist/*.AppImage
-            dist/*.tar.gz
+          path: dist/IEM-Tool.appimage
 
       - name: Upload to Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/*.AppImage
-            dist/*.tar.gz
+          files: dist/IEM-Tool.appimage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -67,17 +71,23 @@ jobs:
         timeout-minutes: 30
         run: npm run dist-win
 
+      - name: Rename to exact file name
+        run: |
+          $src = Get-ChildItem "dist/*.exe" | Select-Object -First 1
+          Copy-Item $src.FullName "dist/IEM-Tool.exe"
+          Get-ChildItem "dist/IEM-Tool.exe"
+
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v5
         with:
           name: IEM-Tool-Windows
-          path: dist/*.exe
+          path: dist/IEM-Tool.exe
 
       - name: Upload to Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.exe
+          files: dist/IEM-Tool.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -101,16 +111,43 @@ jobs:
         timeout-minutes: 30
         run: npm run dist-mac
 
+      - name: Rename to exact file name
+        run: |
+          src=$(ls dist/*.dmg | head -n 1)
+          cp "$src" "dist/IEM-Tool.dmg"
+          ls -la dist/IEM-Tool.dmg
+
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v5
         with:
           name: IEM-Tool-macOS
-          path: dist/*.dmg
+          path: dist/IEM-Tool.dmg
 
       - name: Upload to Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.dmg
+          files: dist/IEM-Tool.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-release:
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: release-files
+
+      - name: Update rolling latest release (overwrite)
+        uses: ncipollo/release-action@v1
+        with:
+          tag: latest
+          name: Latest Build
+          body: Automatically rebuilt on every push to main. Contains IEM-Tool.exe, IEM-Tool.dmg and IEM-Tool.appimage.
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: true
+          artifacts: release-files/IEM-Tool-Windows/IEM-Tool.exe,release-files/IEM-Tool-macOS/IEM-Tool.dmg,release-files/IEM-Tool-Linux/IEM-Tool.appimage

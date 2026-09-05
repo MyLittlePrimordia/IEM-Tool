@@ -74,7 +74,9 @@ function buildCanonicalProfiles(dataset) {
     const freqs = CU.generateLogGrid(100);
 
     dataset.forEach(item => {
-        if (!item.data) return;
+        // <2-point "curves" would interpolate as flat-75 (perfectly neutral)
+        // and score as ideal — skip them instead of rewarding missing data.
+        if (!item.data || item.data.length < 2) return;
 
         const nameLower = item.name.toString().toLowerCase();
 
@@ -231,8 +233,10 @@ function verifyGoalAcoustics(candInterp, baseInterp, freqs, goal) {
     const candBassBoost = candSubBass - candMidrange;
 
     if (goal === 'direct') {
+        // Level-fit first (mirror scoreInterp): a pure level offset is not
+        // a tuning difference. alignOffset already aligns 400-1000Hz mids.
         let totalDiff = 0;
-        for (let i = 0; i < freqs.length; i++) totalDiff += Math.abs(candInterp[i] - baseInterp[i]);
+        for (let i = 0; i < freqs.length; i++) totalDiff += Math.abs((candInterp[i] + alignOffset) - baseInterp[i]);
         const mae = totalDiff / freqs.length;
         const passed = (mae <= 2.8);
         return { passed, reason: passed ? "High Tonal Match to Base IEM" : "Tuning Deviates From Base" };
@@ -251,7 +255,7 @@ function verifyGoalAcoustics(candInterp, baseInterp, freqs, goal) {
         return { passed, reason: passed ? "Measured Spatial Air & Pinna Balance" : "Narrow High-Frequency Energy" };
     } else if (goal === 'refine') {
         let totalDiff = 0;
-        for (let i = 0; i < freqs.length; i++) totalDiff += Math.abs(candInterp[i] - baseInterp[i]);
+        for (let i = 0; i < freqs.length; i++) totalDiff += Math.abs((candInterp[i] + alignOffset) - baseInterp[i]);
         const mae = totalDiff / freqs.length;
         const passed = (mae <= 2.2);
         return { passed, reason: passed ? "High Tonal Shape Continuity" : "Tonal Shape Deviates Too Far" };
@@ -346,9 +350,9 @@ function scoreEndgameCategories(cc, freqs, maxPrice) {
         for (let i = 0; i < priced.length; i++) {
             const e = priced[i];
             const res = EG.scoreCategory(cat, e.tags, e.interp, freqs);
-            // Small budget-position bonus so the Champion tends toward the
-            // better (usually pricier) option the user can actually afford.
-            const bonus = Math.min(5, (e.price / maxPrice) * 5);
+            // No price bonus: at equal acoustics the cheapest option should
+            // win, not the priciest affordable one (price ≠ quality).
+            const bonus = 0;
             scored.push({
                 entry: e,
                 composite: res.score + bonus,

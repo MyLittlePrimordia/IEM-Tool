@@ -1,0 +1,2 @@
+saveCurrentAsCustomPreset" class="btn-clear text-stone-200 font-bold rounded-none text-xs h-8 px-2 sm:px-2.5 shadow-sm flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap" title="Save this EQ as a preset">
+                                 

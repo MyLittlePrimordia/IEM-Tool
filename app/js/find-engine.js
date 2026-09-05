@@ -409,8 +409,13 @@
                 parseDriverConfig: function(configStr) {
                     if (!configStr) return [];
                     const found = [];
-                    String(configStr).split(/[+,\/]/).forEach(token => {
-
+                    // Split on &, "and", "with" as well as + , / — "DD & BA"
+                    // previously tokenized as one chunk and matched DD only.
+                    // Non-capturing groups only: a capturing group would make
+                    // split() inject the captured separators (or undefined)
+                    // into the token list and crash .trim() below.
+                    String(configStr).split(/[+]|[,/;|]|&(?:amp;)?|\b(?:and|with|plus)\b/gi).forEach(token => {
+                        if (!token) return;
                         const m = token.trim().match(/^[\d.]*\s*x?\s*([A-Za-z]+)/i);
                         if (!m) return;
                         const canonical = this.driverTechCanon[m[1].toUpperCase()];
@@ -612,9 +617,19 @@
                     const metaPicks = (f.picks || []).filter(p => p.kind === 'meta');
                     if (metaPicks.length) {
                         if (!db.tags || !Array.isArray(db.tags)) return false;
-                        const dbTagsLower = db.tags.map(t => String(t).toLowerCase());
-                        const anyTag = metaPicks.some(p => {
-                            const reqLower = String(p.value).toLowerCase();
+                        // Lowercase once per entry (cached) and once per
+                        // filter set (precomputed below) instead of per
+                        // item × pick on every filter pass.
+                        let dbTagsLower = this._tagsLowerCache ? this._tagsLowerCache.get(db) : null;
+                        if (!dbTagsLower) {
+                            dbTagsLower = db.tags.map(t => String(t).toLowerCase());
+                            if (!this._tagsLowerCache) this._tagsLowerCache = new WeakMap();
+                            this._tagsLowerCache.set(db, dbTagsLower);
+                        }
+                        // Local per-call (not cached on f: filter objects can be
+                        // reused across runs with different picks).
+                        const metaReqLower = metaPicks.map(p => String(p.value).toLowerCase());
+                        const anyTag = metaReqLower.some(reqLower => {
                             return dbTagsLower.some(t => t.includes(reqLower) || reqLower.includes(t));
                         });
                         if (!anyTag) return false;
@@ -628,6 +643,18 @@
 
                         if (window.CurveIndexer && Array.isArray(CurveIndexer.catalog) && CurveIndexer.catalog.length > 0) {
                             this.iemDatabase = CurveIndexer.catalog;
+                        } else if (typeof DecompressionStream !== 'undefined') {
+                            // Prefer the 12x-smaller .gz (0.22MB vs 2.64MB) and
+                            // stream-decompress; fall back to plain JSON.
+                            try {
+                                const gz = await fetch('database.json.gz');
+                                if (!gz.ok || !gz.body) throw new Error('gz unavailable');
+                                const text = await new Response(gz.body.pipeThrough(new DecompressionStream('gzip'))).text();
+                                this.iemDatabase = JSON.parse(text);
+                            } catch (gzErr) {
+                                const res = await fetch('database.json');
+                                if (res.ok) this.iemDatabase = await res.json();
+                            }
                         } else {
                             const res = await fetch('database.json');
                             if (res.ok) this.iemDatabase = await res.json();
@@ -884,14 +911,37 @@
                     return 'moderate';
                 },
 
+                // O(1) entry index: the old two-pass linear find (with a
+                // nested files.some + toLowerCase per file per call) ran on
+                // ~15 render paths per card. Rebuilt when the DB array changes.
+                _dbEntryIndex: null,
+                _dbEntryIndexSize: -1,
+                _rebuildDbEntryIndex: function() {
+                    const byId = new Map();
+                    const byFile = new Map();
+                    const db = this.iemDatabase || [];
+                    for (let i = 0; i < db.length; i++) {
+                        const entry = db[i];
+                        if (!entry) continue;
+                        if (entry.id !== undefined && entry.id !== null) byId.set(entry.id, entry);
+                        if (Array.isArray(entry.files)) {
+                            for (let k = 0; k < entry.files.length; k++) {
+                                const fk = String(entry.files[k]).toLowerCase();
+                                if (!byFile.has(fk)) byFile.set(fk, entry);
+                            }
+                        }
+                    }
+                    this._dbEntryIndex = { byId, byFile };
+                    this._dbEntryIndexSize = db.length;
+                },
                 getDbEntry: function(item) {
                     if (!this.iemDatabase || this.iemDatabase.length === 0) return null;
-
-                    let match = this.iemDatabase.find(db => db.id === item.id);
-                    if (match) return match;
-
-                    match = this.iemDatabase.find(db => db.files && db.files.some(f => f.toLowerCase() === item.id.toLowerCase()));
-                    return match;
+                    if (!this._dbEntryIndex || this._dbEntryIndexSize !== this.iemDatabase.length) {
+                        this._rebuildDbEntryIndex();
+                    }
+                    const byIdHit = this._dbEntryIndex.byId.get(item.id);
+                    if (byIdHit) return byIdHit;
+                    return this._dbEntryIndex.byFile.get(String(item.id).toLowerCase()) || null;
                 },
 
                 checkInitialProgress: function() {
@@ -1033,11 +1083,18 @@
                     showToast(`Toggled baseline to "${opt.label}"!`, "🎯");
                 },
 
+                stopActiveSlotObserver: function() {
+                    if (this._activeSlotIntervalId) {
+                        clearInterval(this._activeSlotIntervalId);
+                        this._activeSlotIntervalId = null;
+                    }
+                    this._activeSlotObserverStarted = false;
+                },
                 startActiveSlotObserver: function() {
                     if (this._activeSlotObserverStarted) return;
                     this._activeSlotObserverStarted = true;
 
-                    setInterval(() => {
+                    this._activeSlotIntervalId = setInterval(() => {
                         if (document.hidden) return;
                         // Skip work entirely when the Find tab isn't visible —
                         // the next tick after returning corrects any stale state.
@@ -1274,7 +1331,16 @@
 
                 saveCanonicalProfilesToCache: function() {
                     try {
-                        localStorage.setItem('find_canonical_profiles', JSON.stringify(this.canonicalCache));
+                        const payload = JSON.stringify(this.canonicalCache);
+                        // Global localStorage already routes through SafeStorage
+                        // (quota fallback + LRU eviction), but a Float32-heavy
+                        // payload over ~1MB would synchronously block AND evict
+                        // every other key on fallback — skip and keep memory-only.
+                        if (payload.length * 2 > 1024 * 1024) {
+                            console.warn("[FindEngine] Canonical cache too large for persistent storage; keeping memory-only.");
+                            return;
+                        }
+                        localStorage.setItem('find_canonical_profiles', payload);
                     } catch (e) {
                         console.warn("Failed to save canonical profiles cache.", e);
                     }
@@ -1702,17 +1768,29 @@
                 _buildWorkerSlim: function(items) {
                     const list = [];
                     let dbMap = null;
+                    let dbFileMap = null;
                     if (this.iemDatabase && this.iemDatabase.length) {
                         dbMap = new Map();
-                        this.iemDatabase.forEach(db => { if (db && db.id) dbMap.set(db.id, db); });
+                        dbFileMap = new Map();
+                        this.iemDatabase.forEach(db => {
+                            if (!db) return;
+                            if (db.id) dbMap.set(db.id, db);
+                            // Pre-index file paths once so first-miss
+                            // fallbacks don't each scan the whole DB.
+                            if (Array.isArray(db.files)) {
+                                db.files.forEach(f => {
+                                    const k = String(f).toLowerCase();
+                                    if (!dbFileMap.has(k)) dbFileMap.set(k, db);
+                                });
+                            }
+                        });
                     }
                     const resolveDb = (item) => {
                         if (!dbMap || !item || !item.id) return null;
                         let db = dbMap.get(item.id);
                         if (!db) {
                             // Same fallback getDbEntry uses: match by file path.
-                            const idLower = String(item.id).toLowerCase();
-                            db = this.iemDatabase.find(d => d.files && d.files.some(f => f.toLowerCase() === idLower)) || null;
+                            db = dbFileMap.get(String(item.id).toLowerCase()) || null;
                             if (db) dbMap.set(item.id, db);
                         }
                         return db;
@@ -1738,6 +1816,11 @@
                     if (!worker) return Promise.resolve(null);
                     const sig = this._workerSetSig(items);
                     const workerHasSet = (sig === this._workerCanonicalSig);
+                    // Every request carries a unique reqId; the worker echoes
+                    // it back, and this listener ignores replies belonging to
+                    // any OTHER request (tuning/upgrade/endgame share the same
+                    // worker, so every listener observes every message).
+                    const reqId = 't' + ((this._workerReqSeq = (this._workerReqSeq || 0) + 1));
                     let slim = null; // built lazily — only when the payload must cross the boundary
                     const buildSlim = () => {
                         if (!slim) slim = this._buildWorkerSlim(items);
@@ -1748,13 +1831,17 @@
                         const onMsg = (e) => {
                             const d = e.data || {};
                             if (d.type !== 'result') return;
+                            // Drop replies from other requests outright —
+                            // including the reprime handshake of a different
+                            // scan (only OUR reprime triggers OUR resend).
+                            if (d.reqId !== reqId) return;
                             // Worker lost its memoized set (fresh/restarted
                             // worker): resend the full payload once instead of
                             // falling back to the slow main-thread scan.
                             if (!d.ok && d.reprime && !retriedWithItems) {
                                 retriedWithItems = true;
                                 try {
-                                    worker.postMessage({ type: 'tuning', items: buildSlim(), targetInterp: targetInterp, freqs: freqs, sig: sig });
+                                    worker.postMessage({ type: 'tuning', reqId: reqId, items: buildSlim(), targetInterp: targetInterp, freqs: freqs, sig: sig });
                                     this._workerCanonicalSig = sig;
                                 } catch (postErr) {
                                     worker.removeEventListener('message', onMsg);
@@ -1763,10 +1850,6 @@
                                 }
                                 return;
                             }
-                            // Only consume replies that carry tuning matches: the
-                            // endgame/upgrade scans share this worker and their
-                            // result shapes differ (no `matches` field).
-                            if (d.matches === undefined) return;
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
                             if (this._scanToken !== token) return resolve(null);
@@ -1796,9 +1879,9 @@
                             if (workerHasSet) {
                                 // Same item set the worker already memoized:
                                 // send only the target + signature.
-                                worker.postMessage({ type: 'tuning', targetInterp: targetInterp, freqs: freqs, sig: sig });
+                                worker.postMessage({ type: 'tuning', reqId: reqId, targetInterp: targetInterp, freqs: freqs, sig: sig });
                             } else {
-                                worker.postMessage({ type: 'tuning', items: buildSlim(), targetInterp: targetInterp, freqs: freqs, sig: sig });
+                                worker.postMessage({ type: 'tuning', reqId: reqId, items: buildSlim(), targetInterp: targetInterp, freqs: freqs, sig: sig });
                                 this._workerCanonicalSig = sig;
                             }
                         } catch (e) {
@@ -2262,16 +2345,21 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                     // is unchanged (sig matches itemsKey() in find-worker.js).
                     const sig = this._workerSetSig(items);
                     const workerHasSet = (sig === this._workerCanonicalSig);
+                    const reqId = 'e' + ((this._workerReqSeq = (this._workerReqSeq || 0) + 1));
                     return new Promise((resolve) => {
                         let retriedWithItems = false;
                         const onMsg = (e) => {
                             const d = e.data || {};
                             if (d.type !== 'result') return;
+                            // Drop replies from other requests (tuning/upgrade
+                            // listeners share this worker; every listener sees
+                            // every message).
+                            if (d.reqId !== reqId) return;
                             // Worker lost its memoized set: resend full payload once.
                             if (!d.ok && d.reprime && !retriedWithItems) {
                                 retriedWithItems = true;
                                 try {
-                                    worker.postMessage({ type: 'endgame', items: items, maxPrice: maxPrice, freqs: freqs, sig: sig });
+                                    worker.postMessage({ type: 'endgame', reqId: reqId, items: items, maxPrice: maxPrice, freqs: freqs, sig: sig });
                                     this._workerCanonicalSig = sig;
                                 } catch (postErr) {
                                     cleanup();
@@ -2279,9 +2367,6 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                                 }
                                 return;
                             }
-                            // Only consume replies that belong to THIS request type:
-                            // tuning/upgrade listeners share the same worker.
-                            if (d.endgame === undefined) return;
                             cleanup();
                             if (!d.ok) { console.warn("[FindEngine] worker endgame failed:", d.error); return resolve(null); }
                             resolve(d.endgame);
@@ -2299,9 +2384,9 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                         worker.addEventListener('error', onErr);
                         try {
                             if (workerHasSet) {
-                                worker.postMessage({ type: 'endgame', maxPrice: maxPrice, freqs: freqs, sig: sig });
+                                worker.postMessage({ type: 'endgame', reqId: reqId, maxPrice: maxPrice, freqs: freqs, sig: sig });
                             } else {
-                                worker.postMessage({ type: 'endgame', items: items, maxPrice: maxPrice, freqs: freqs, sig: sig });
+                                worker.postMessage({ type: 'endgame', reqId: reqId, items: items, maxPrice: maxPrice, freqs: freqs, sig: sig });
                                 this._workerCanonicalSig = sig;
                             }
                         } catch (e) {
@@ -2992,11 +3077,15 @@ getDriveabilityStatus: function(impedance, sensitivity) {
         getEqBandDeltas: function(bandDeltas) {
             if (!bandDeltas || bandDeltas.length < 10) return null;
             const [b31, b62, b125, b250, b500, b1k, b2k, b4k, b8k, b16k] = bandDeltas;
-            const sub = (b31 + b62) / 2;
-            const warmth = (b125 + b250) / 2;
-            const vocal = b1k;
-            const treble = (b2k + b4k) / 2;
-            const air = (b8k + b16k) / 2;
+            // Mirror getCurveDeltas: axes are relative to the 500Hz mids
+            // reference, so the 500Hz fader acts as the reference (moving it
+            // moves the badge) instead of being dropped.
+            const m = b500;
+            const sub = (b31 + b62) / 2 - m;
+            const warmth = (b125 + b250) / 2 - m;
+            const vocal = b1k - m;
+            const treble = (b2k + b4k) / 2 - m;
+            const air = (b8k + b16k) / 2 - m;
             return [sub, warmth, vocal, treble, air];
         },
 
@@ -4132,13 +4221,17 @@ applyGenreFilters: function(matches) {
                                 }
 
                                 if (goal === 'tech') {
-                                    const typeScore = { 'DD': 1, 'BA': 2, 'Planar': 3, 'Hybrid': 4, 'Tribrid': 5 };
+                                    const typeScore = { 'DD': 1, 'BA': 2, 'Planar': 3, 'Hybrid': 4, 'Tribrid': 5, 'EST': 3, 'PZT': 2, 'BC': 2, 'MEMS': 3 };
                                     const baseT = typeScore[baseDb ? baseDb.driver_type : 'DD'] || 1;
                                     const candT = typeScore[candDb ? candDb.driver_type : 'DD'] || 1;
                                     if (candT > baseT) score += (candT - baseT) * 15;
                                 } else if (goal === 'refine') {
-                                    score = tonalMatch * 1.5;
+                                    // Preserve the acoustic/tag adjustments above;
+                                    // add a small continuity premium instead of
+                                    // overwriting them.
+                                    score += tonalMatch * 0.15;
                                 }
+                                score = Math.max(0, Math.min(100, score));
 
                                 scoredCandidates.push({
                                     item: cand,

@@ -208,7 +208,13 @@ window.bootstrapAlphabetIndex = function () {
             // hashing only a loaded curve's id let band edits hit the cache and
             // return stale results while the graph visibly changed.
             const realValues = EQ_Module.getRealValues();
-            let contentHash = this.hashString(JSON.stringify([realValues.preVal, realValues.mainVals, realValues.advVals]));
+            // Fold in the effective preamp too: the composite the search
+            // scores against is built with computeEffectivePreamp (auto-gain,
+            // hearing/loudness/tone compensation), so a change in any of those
+            // must invalidate the cache the same way a raw slider move does.
+            const effPreamp = (typeof EQ_Module.computeEffectivePreamp === 'function')
+                ? EQ_Module.computeEffectivePreamp() : realValues.preVal;
+            let contentHash = this.hashString(JSON.stringify([effPreamp, realValues.mainVals, realValues.advVals]));
             if (baseCurve) {
                 contentHash += '-' + this.hashCurvePoints(baseCurve.data);
             }

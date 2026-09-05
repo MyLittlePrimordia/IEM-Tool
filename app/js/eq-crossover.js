@@ -136,7 +136,7 @@ const order = ['crossoverFreq1', 'crossoverFreq2', 'crossoverFreq3', 'crossoverF
             }
 
             order.forEach((key, i) => {
-                if (key === changedKey) return;
+                if (!Number.isFinite(this[key])) this[key] = key === changedKey ? sliderMin[key] : this[key];
                 this[key] = Math.max(sliderMin[key], Math.min(sliderMax[key], this[key]));
                 const paramName = paramNames[i];
                 const slider = document.getElementById(`xo-${paramName}-slider`);
@@ -148,6 +148,7 @@ const order = ['crossoverFreq1', 'crossoverFreq2', 'crossoverFreq3', 'crossoverF
 
         updateCrossoverParam: function(param, val) {
             const num = parseFloat(val);
+            if (!Number.isFinite(num)) return;
             const valEl = document.getElementById(`xo-${param}-val`);
             const trimEl = document.getElementById(`xo-trim-${param.toLowerCase().replace('trim','')}-val`);
 

@@ -35,7 +35,22 @@ const src = [
   'app/js/eq-loudness.js','app/js/eq-tempo.js','app/js/eq-smart-import.js','app/js/eq-hearing-cal.js','app/js/eq-viz-fullscreen.js',
   'app/js/eq-source-sim.js','app/js/eq-presets.js','app/js/eq-band-handlers.js','app/js/eq-draw-curve.js','app/js/eq-squig-graph.js',
   'app/js/eq-math-utils.js','app/js/iem-search.js','app/js/eq-sculptor.js','app/js/app-theme.js','app/js/events.js',
-  'app/js/app-core-shared.js','app/js/mascot-module.js','app/js/iem-module.js','app/js/tone-module.js','app/js/eq-core.js',
+  'app/js/app-core-shared.js','app/js/mascot-module.js','app/js/iem-module.js','app/js/tone-module.js',
+  // eq-core.js god-file split (Phase 7): data + method-set files extracted
+  // from eq-core.js. eq-presets-data.js loads BEFORE the trunk (pure data,
+  // no deps); the method-set files load AFTER the trunk and BEFORE
+  // db-cache.js (which merges them into EQ_Module via Object.assign) —
+  // identical evaluation order to the pre-split single file.
+  'app/js/eq-presets-data.js',
+  'app/js/eq-core.js',
+  'app/js/eq-tape-mod.js',
+  'app/js/eq-biquad-math.js',
+  'app/js/eq-magnitude-engine.js',
+  'app/js/eq-genre-targets.js',
+  'app/js/eq-dsp-graph.js',
+  'app/js/eq-media-transport.js',
+  'app/js/eq-graph-input.js',
+  'app/js/eq-visualizer.js',
   'app/js/db-cache.js','app/js/peqdb-module.js','app/js/testlab-module.js','app/js/find-engine.js',
   'app/js/handlers.js','app/js/app-init.js'
 ];

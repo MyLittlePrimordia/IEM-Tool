@@ -9,7 +9,7 @@ const EQ_TempoMethods = {
             if (btn) btn.classList.add('is-on');
             if (lbl) lbl.textContent = 'Tempo: ON';
             if (container) container.classList.remove('opacity-40', 'pointer-events-none');
-            showToast("Tempo Engine engaged! Playback rate active.", "⏱️");
+            showToast("Speed active (playbackRate: pitch shifts with speed).", "⏱️");
         } else {
             if (btn) btn.classList.remove('is-on');
             if (lbl) lbl.textContent = 'Tempo: OFF';

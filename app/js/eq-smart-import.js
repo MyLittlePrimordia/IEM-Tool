@@ -90,10 +90,17 @@ const EQ_SmartImportMethods = {
                     var clean = line.trim();
                     if (clean.startsWith('#') || clean === '') return;
                     var parts = clean.split(/[\s,;\t]+/).filter(function(p) { return p.length > 0; }).map(Number);
-                    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[0] >= 1 && parts[0] <= 24000) {
+                    // Validate like the Peace branch: sane freq + dB range.
+                    // One bad line (e.g. "20 999") must not corrupt the spline.
+                    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[0] >= 1 && parts[0] <= 24000 && parts[1] >= -60 && parts[1] <= 60) {
                         dataCoords.push([parts[0], parts[1]]);
                     }
                 });
+                // Sort ascending and drop duplicate frequencies so the cubic
+                // spline receives strictly increasing x (unsorted pastes and
+                // dupes previously poisoned normalization for the whole curve).
+                dataCoords.sort(function(a, b) { return a[0] - b[0]; });
+                dataCoords = dataCoords.filter(function(p, i) { return i === 0 || p[0] !== dataCoords[i - 1][0]; });
                 if (dataCoords.length >= 5) {
                     var id = 'imported_' + Date.now();
                     var newItem = { id: id, name: "Imported Curve", variant: 'Imported', source: 'Universal Paste', searchKey: 'imported curve', data: dataCoords };
@@ -110,6 +117,7 @@ const EQ_SmartImportMethods = {
                 var lines = text.split(/\r?\n/);
                 var preamp = 0;
                 var mappedAny = false;
+                this._importFullWarned = false;
                 var mainVals = this.bands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
                 var advVals = this.advancedBands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
                 var self = this;
@@ -177,7 +185,20 @@ const EQ_SmartImportMethods = {
                 // the current EQ, so processSmartImport can fall through to the
                 // raw curve importer instead.
                 if (preamp === 0 && !mappedAny) return false;
-                
+
+                // Preamp-only paste: apply just the preamp, leave all bands
+                // untouched (loading all-zero mainVals here would flatten 20
+                // bands over a "Preamp: -6 dB" note).
+                if (preamp !== 0 && !mappedAny) {
+                    const preValEl = document.getElementById("eq-preampVal");
+                    const preSlider = document.getElementById("eq-preampSlider");
+                    if (preValEl) preValEl.value = preamp.toFixed(1);
+                    if (preSlider) preSlider.value = Math.max(-20, Math.min(20, preamp));
+                    if (this.updatePreamp) this.updatePreamp();
+                    showToast("Preamp imported (" + preamp.toFixed(1) + " dB) — bands untouched.", "🎚️");
+                    return true;
+                }
+
                 this.loadValues({ preVal: preamp, mainVals: mainVals, advVals: advVals });
                 showToast("Parametric EQ profile processed!", "🪄");
                 return true;
@@ -195,15 +216,24 @@ const EQ_SmartImportMethods = {
             if (/\bpeak\b|\bpk\b|\bpeq\b/.test(s)) return 'peaking';
             return null;
         },
+        // Logarithmic distance: pitch/filters live on a log axis — linear Hz
+        // systematically snaps high-frequency imports downward on ties
+        // (e.g. 12kHz between 8k/16k slots tied 4k/4k linear, but 16k is
+        // 0.415 oct away vs 8k's 0.585).
+        _filterDist: function(slotHz, hz) {
+            if (!Number.isFinite(slotHz) || slotHz <= 0 || !Number.isFinite(hz) || hz <= 0) return Infinity;
+            return Math.abs(Math.log2(slotHz / hz));
+        },
         mapSingleFilter: function(hz, g, q, type, mainVals, advVals, usedMain, usedAdv) {
             var filterType = type || 'peaking';
             var uM = usedMain || new Set();
             var uA = usedAdv || new Set();
+            var self = this;
 
             var bestM = -1, bestMd = Infinity;
             mainVals.forEach(function(v, i) {
                 if (!uM.has(i)) {
-                    var d = Math.abs(v.hz - hz);
+                    var d = self._filterDist(v.hz, hz);
                     if (d < bestMd) { bestMd = d; bestM = i; }
                 }
             });
@@ -211,15 +241,20 @@ const EQ_SmartImportMethods = {
             var bestA = -1, bestAd = Infinity;
             advVals.forEach(function(v, i) {
                 if (!uA.has(i)) {
-                    var d = Math.abs(v.hz - hz);
+                    var d = self._filterDist(v.hz, hz);
                     if (d < bestAd) { bestAd = d; bestA = i; }
                 }
             });
 
             // If all slots in both banks were used, fallback to closest overall
+            // — but warn instead of silently overwriting a mapped filter.
             if (bestM === -1 && bestA === -1) {
-                mainVals.forEach(function(v, i) { var d = Math.abs(v.hz - hz); if (d < bestMd) { bestMd = d; bestM = i; } });
-                advVals.forEach(function(v, i) { var d = Math.abs(v.hz - hz); if (d < bestAd) { bestAd = d; bestA = i; } });
+                mainVals.forEach(function(v, i) { var d = self._filterDist(v.hz, hz); if (d < bestMd) { bestMd = d; bestM = i; } });
+                advVals.forEach(function(v, i) { var d = self._filterDist(v.hz, hz); if (d < bestAd) { bestAd = d; bestA = i; } });
+                if (!self._importFullWarned) {
+                    self._importFullWarned = true;
+                    showToast("Import slots full — closest filter overwritten.", "⚠️");
+                }
             }
 
             if (bestM !== -1 && (bestA === -1 || bestMd <= bestAd)) {

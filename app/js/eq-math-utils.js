@@ -21,6 +21,7 @@ const EQ_MathUtilMethods = {
     },
     sliderToLogHz: function(val) {
         const minF = 20, maxF = 20000;
-        return Math.round(Math.pow(10, Math.log10(minF) + (val / 1000) * (Math.log10(maxF) - Math.log10(minF))));
+        const safeVal = Number.isFinite(val) ? Math.max(0, Math.min(1000, val)) : 0;
+        return Math.round(Math.pow(10, Math.log10(minF) + (safeVal / 1000) * (Math.log10(maxF) - Math.log10(minF))));
     }
 };

@@ -126,6 +126,7 @@ const EQ_SourceSimMethods = {
             this.simState.tip = this.tipOptions[nextIdx];
             this.updateSelectorColors();
             this.updateSimulation();
+            this.saveFitMemoryForCurrentIem();
         },
 
         cycleFitDepth: function() {
@@ -134,6 +135,7 @@ const EQ_SourceSimMethods = {
             this.simState.depth = this.depthOptions[nextIdx];
             this.updateSelectorColors();
             this.updateSimulation();
+            this.saveFitMemoryForCurrentIem();
         },
 
         cycleSealQuality: function() {
@@ -142,6 +144,76 @@ const EQ_SourceSimMethods = {
             this.simState.seal = this.sealOptions[nextIdx];
             this.updateSelectorColors();
             this.updateSimulation();
+            this.saveFitMemoryForCurrentIem();
+        },
+
+        // ===== F-8: Per-IEM fit memory =====
+        // Remembering how a specific IEM sits in YOUR ears: every tip/depth/
+        // seal combination is personal to both the IEM shell geometry and
+        // the user's ears, so the sim settings are remembered per IEM id and
+        // silently restored the next time that measurement is loaded as the
+        // base curve. Stored in localStorage under one compact key.
+        _fitMemoryKey: 'iem_fit_memory_v1',
+        getFitMemory: function() {
+            try {
+                return JSON.parse(localStorage.getItem(this._fitMemoryKey) || '{}');
+            } catch (e) {
+                return {};
+            }
+        },
+        saveFitMemoryForCurrentIem: function() {
+            const iemId = this.getCurrentBaseIemId();
+            if (!iemId) return;
+            const mem = this.getFitMemory();
+            mem[iemId] = {
+                tip: this.simState.tip,
+                depth: this.simState.depth,
+                seal: this.simState.seal,
+                savedAt: Date.now()
+            };
+            try {
+                // Bound the memory: keep the most recent 200 entries so a long
+                // browsing history can't grow the blob unbounded.
+                const keys = Object.keys(mem);
+                if (keys.length > 200) {
+                    keys.sort((a, b) => (mem[a].savedAt || 0) - (mem[b].savedAt || 0));
+                    keys.slice(0, keys.length - 200).forEach(k => delete mem[k]);
+                }
+                localStorage.setItem(this._fitMemoryKey, JSON.stringify(mem));
+            } catch (e) { /* storage full — non-fatal */ }
+        },
+        getCurrentBaseIemId: function() {
+            const active = (PEQDB_Module && PEQDB_Module.STATE && PEQDB_Module.STATE.activeCurves) || [];
+            const base = active.find(c => c.role === 'base' && c.visible);
+            return base ? base.id : null;
+        },
+        // Restores the remembered fit for the currently-loaded base IEM (if
+        // any). Called when a curve becomes the base; shows a toast only when
+        // something was actually restored so the feature is discoverable.
+        restoreFitMemoryForCurrentIem: function() {
+            const iemId = this.getCurrentBaseIemId();
+            if (!iemId) return;
+            const mem = this.getFitMemory();
+            const saved = mem[iemId];
+            if (!saved) return;
+
+            const cur = this.simState;
+            const changed = (saved.tip && saved.tip !== cur.tip)
+                || (saved.depth && saved.depth !== cur.depth)
+                || (saved.seal && saved.seal !== cur.seal);
+            if (!changed) return;
+
+            if (saved.tip && this.tipOptions.includes(saved.tip)) cur.tip = saved.tip;
+            if (saved.depth && this.depthOptions.includes(saved.depth)) cur.depth = saved.depth;
+            if (saved.seal && this.sealOptions.includes(saved.seal)) cur.seal = saved.seal;
+
+            this.updateSelectorColors();
+            this.updateSimulation();
+            const parts = [];
+            if (saved.tip) parts.push(saved.tip.toUpperCase() + ' tip');
+            if (saved.depth) parts.push(saved.depth + ' depth');
+            if (saved.seal) parts.push(saved.seal + ' seal');
+            showToast(`Fit memory restored for this IEM: ${parts.join(', ')}.`, "🧠");
         },
 
         updateSimulation: function() {

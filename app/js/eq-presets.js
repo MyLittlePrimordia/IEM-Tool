@@ -351,6 +351,29 @@ const EQ_PresetMethods = {
                     });
                 }
 
+                // Headroom safety net: no curated or custom preset may leave
+                // net-positive gain (max band boost + preamp > 0 clips). The
+                // data fixes cover today's three offenders; this guards all
+                // future presets and user-authored customs alike.
+                try {
+                    let maxBoost = 0;
+                    (p.m || []).forEach(val => {
+                        const g = (val && typeof val === 'object') ? val.g : val;
+                        if (Number.isFinite(g) && g > maxBoost) maxBoost = g;
+                    });
+                    (p.a || []).forEach(val => {
+                        const g = (val && typeof val === 'object') ? val.g : val;
+                        if (Number.isFinite(g) && g > maxBoost) maxBoost = g;
+                    });
+                    const preSlider2 = document.getElementById("eq-preampSlider");
+                    const preValEl2 = document.getElementById("eq-preampVal");
+                    if (preSlider2 && maxBoost > 0 && parseFloat(preSlider2.value) > -maxBoost) {
+                        preSlider2.value = -maxBoost;
+                        if (preValEl2) preValEl2.value = (-maxBoost).toFixed(1);
+                        this.updatePreamp();
+                    }
+                } catch (e) {}
+
                 } finally {
                     EQ_Module.isProgrammaticSliderUpdate = false; // Release protection flag even if a band throws
                 }

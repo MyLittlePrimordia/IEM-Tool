@@ -21,14 +21,14 @@ const EQ_LoudnessMethods = {
                 if (container) {
                     container.className = "flex flex-col gap-2 mt-1 opacity-40 pointer-events-none transition-all duration-200";
                 }
-                showToast("Equal Loudness Compensator deactivated.", "🔊");
+                showToast("Loudness Compensator (two-shelf approx) deactivated.", "🔊");
             } else {
                 if (btn) btn.classList.add('is-on');
                 if (lbl) lbl.textContent = "Loudness: ON";
                 if (container) {
                     container.className = "flex flex-col gap-2 mt-1 opacity-100 transition-all duration-200";
                 }
-                showToast("Equal Loudness Compensator active. Calibrating volume-dynamic curves...", "🔊");
+                showToast("Loudness Compensator active (two-shelf approx). Calibrating volume-dynamic curves...", "🔊");
             }
             this.updateLoudnessDSP();
             this.drawCurve();
@@ -54,7 +54,15 @@ const EQ_LoudnessMethods = {
             const vol = Math.max(10, Math.min(90, Math.round(rawVol)));
             this.updateLoudnessParam('calibration', vol);
             const calSlider = document.getElementById("loudness-cal-slider");
-            if (calSlider) calSlider.value = vol;
+            if (calSlider) {
+                calSlider.value = vol;
+                // Programmatic .value writes don't fire input events, so the
+                // custom-painted track fill stays at the old position until
+                // the next full slider sync — repaint it now (same pattern
+                // as the graph-drag path in eq-core.js).
+                if (window.paintSliderTrack) window.paintSliderTrack(calSlider);
+                else calSlider.style.setProperty('--range-fill', ((vol - parseFloat(calSlider.min || 0)) / (parseFloat(calSlider.max || 100) - parseFloat(calSlider.min || 0)) * 100) + '%');
+            }
             showToast(`Calibration set to current volume (${vol}%).`, "🎯");
         },
         updateLoudnessDSP: function() {
@@ -73,11 +81,11 @@ const EQ_LoudnessMethods = {
 
             if (this.loudnessActive) {
                 const volumeDiff = Math.max(0, calibrationVol - currentVol);
-                // Perceptual log shape: Fletcher-Munson (ISO 226) is not linear —
+                // Perceptual log shape: human loudness contours are not linear —
                 // even small drops need noticeable bass compensation, while very
                 // quiet keeps boosting. Power-law exponents 0.6 (bass) and 0.65
-                // (treble) are a cheap log approximation that matches ISO226 within
-                // ~1.5 dB vs the previous linear 5-6 dB error.
+                // (treble) are a cheap two-shelf approximation (not an ISO 226
+                // phon-curve implementation).
                 // Max gains (at 0% volume, 100% calibration, 100% strength):
                 //   bass:  14.0 dB lowshelf @ 100 Hz, Q=0.7
                 //   treble: 8.0 dB highshelf @ 7500 Hz, Q=0.7
@@ -94,7 +102,7 @@ const EQ_LoudnessMethods = {
             // attenuate by up to ~8 dB at maximum compensation.
             this._loudnessMaxBoost = this.loudnessActive ? Math.max(bassBoost, trebleBoost) : 0;
 
-            // Map Fletcher-Munson filters directly to worklet simulation indices 8 and 9.
+            // Map loudness-compensation filters directly to worklet simulation indices 8 and 9.
             // (Slots 6/7 belong to the tape-mod sim; 12-19 to hearing calibration;
             // 22/23 to the master tone — using shared slots silently clobbered
             // each other's filters.)

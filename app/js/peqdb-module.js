@@ -266,6 +266,7 @@
                             item.data = parsed;
                             const norm = PEQDB_Module.getNormalizedData(parsed, item.name);
                             item.cachedInterp = Array.from(PEQDB_Module.DSP.interpolate(norm));
+                            item._cachedInterpVer = PEQDB_Module._alignmentVersion || 0;
                         }
 
                         this._dbPut({
@@ -279,6 +280,7 @@
                         if (fileIndex === 0) {
                             item.data = null;
                             item.cachedInterp = null;
+                            item._cachedInterpVer = 0;
                         }
                         return false;
                     }
@@ -465,7 +467,8 @@
                 },
         debouncedFindSimilar: null,
         listRenderLimit: 40,
-        similarityWorker: null,
+        // (similarityWorker removed — dead code; similarity runs inline via
+        // computeSimilarityScores / CurveUtils on the main thread)
 
         startBackgroundLoading: function() {
             if (this.databaseFullyLoaded) return;
@@ -733,46 +736,9 @@
             this.renderList();
             showToast(`Imported ${curvesToLoad.length} frequency response curves!`, "📥");
         },
-        initSimilarityWorker: function() {
-                if (typeof Worker === 'undefined') return;
-                const workerCode = `
-                    self.onmessage = function(e) {
-                        const { dataset, targetInterp, freqs, threshold } = e.data;
-                        const matches = [];
-                        for (let idx = 0; idx < dataset.length; idx++) {
-                            const item = dataset[idx];
-                            if (!item.cachedInterp) continue;
-                            let totalDiff = 0;
-                            let count = 0;
-                            for (let i = 0; i < freqs.length; i += 8) {
-                                const f = freqs[i];
-                                if (f > 10000) break;
-                                totalDiff += Math.abs(targetInterp[i] - item.cachedInterp[i]);
-                                count++;
-                            }
-                            const mae = totalDiff / count;
-                            const similarity = Math.max(0, 100 * (1 - (mae / threshold)));
-                            matches.push({
-                                id: item.id, name: item.name, variant: item.variant, source: item.source, similarity: similarity
-                            });
-                        }
-                        matches.sort((a, b) => b.similarity - a.similarity);
-                        self.postMessage({ matches });
-                    };
-                `;
-                try {
-                    const blob = new Blob([workerCode], { type: 'application/javascript' });
-                    const blobUrl = URL.createObjectURL(blob);
-                    this.similarityWorker = new Worker(blobUrl);
-                    URL.revokeObjectURL(blobUrl);
-                    this.similarityWorker.onmessage = (e) => {
-                        this.handleSimilarityResults(e.data.matches);
-                    };
-                } catch (err) {
-                    console.warn("Similarity Web Worker creation restricted on local files. Running inline.");
-                    this.similarityWorker = null;
-                }
-            },
+        // (initSimilarityWorker deleted — the blob worker was never posted to
+        // and its onmessage path was unreachable; all similarity results flow
+        // through computeSimilarityScores inline in findSimilarCurves.)
 
         getRefDb: function(data) {
             if (!data || data.length === 0) return 0;
@@ -876,11 +842,14 @@
                 });
             }
 
-            if (this.STATE.dataset) {
-                this.STATE.dataset.forEach(item => {
-                    item.cachedInterp = null;
-                });
-            }
+            // Version-stamp instead of bulk-null: walking the whole dataset
+            // (10k+ items) and clearing every cachedInterp here cost ~100ms+
+            // per alignment toggle and thrashed GC. The cache entries now
+            // carry the alignment version they were computed under, and
+            // consumers (findSimilarCurves / precalculateInterps) recompute
+            // lazily only the entries they actually touch.
+            this._alignmentVersion = (this._alignmentVersion || 0) + 1;
+            this.STATE.lightweightDataset = null;
 
             try {
                 localStorage.setItem('settings_align_hz', this.alignHz);
@@ -1211,10 +1180,13 @@
 
 const savedHz = localStorage.getItem('settings_align_hz');
 const savedDb = localStorage.getItem('settings_align_db');
-this.setAlignHz(savedHz || 'mean');
-this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
+            this.setAlignHz(savedHz || '500');
+            this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
 
-            this.initSimilarityWorker();
+            // (initSimilarityWorker removed — the blob worker was dead code:
+            // every result arrived through computeSimilarityScores inline and
+            // the worker's onmessage handler never fired, since nothing ever
+            // posted to it.)
 
             const searchInput = document.getElementById("peqdb-search");
             if (searchInput) {
@@ -1803,6 +1775,12 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
                     visible: true,
                     offset: 0
                 });
+
+                // F-8: when this curve became the new BASE, silently restore
+                // the user's remembered tip/depth/seal fit for this IEM.
+                if (role === 'base' && EQ_Module.restoreFitMemoryForCurrentIem) {
+                    try { EQ_Module.restoreFitMemoryForCurrentIem(); } catch (_) {}
+                }
             }
 
             this.updateRowSelectionUI(id);
@@ -1918,11 +1896,8 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             }
 
             EQ_Module.virtualBands = [];
-            if (EQ_Module.virtualFilters) {
-                EQ_Module.virtualFilters.forEach(f => {
-                    setAudioParamSmooth(f.gain, 0);
-                });
-            }
+            // (native virtualFilters zeroing removed — virtual bands live in
+            // the worklet and are pushed via updateAudioConnections)
 
             EQ_Module.isProgrammaticSliderUpdate = false;
 
@@ -2045,11 +2020,7 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             EQ_Module.updatePreamp();
 
             EQ_Module.virtualBands = [];
-            if (EQ_Module.virtualFilters) {
-                EQ_Module.virtualFilters.forEach(f => {
-                    setAudioParamSmooth(f.gain, 0);
-                });
-            }
+            // (native virtualFilters zeroing removed — see above)
 
             EQ_Module.isProgrammaticSliderUpdate = true;
 
@@ -2117,13 +2088,9 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
 
                         const virtIdx = idx - 20;
                         virtuals.push({ hz: b.freq, g: b.gain, q: b.q, type: 'peaking' });
-
-                        if (EQ_Module.virtualFilters && EQ_Module.virtualFilters[virtIdx]) {
-                            const f = EQ_Module.virtualFilters[virtIdx];
-                            setAudioParamSmooth(f.frequency, b.freq);
-                            setAudioParamSmooth(f.gain, EQ_Module.eqEnabled ? b.gain : 0);
-                            setAudioParamSmooth(f.Q, b.q);
-                        }
+                        // (native virtualFilter param sync removed — the
+                        // worklet owns slots 50+; updateAudioConnections
+                        // pushes the whole virtual bank below)
                     }
                 });
                 EQ_Module.virtualBands = virtuals;
@@ -2531,53 +2498,16 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
                 EQ_Module.enterTuningLab();
             }
         },
-generateDynamicFallbackCurve: function(name) {
-            const freqs = [20, 30, 45, 70, 100, 150, 250, 350, 500, 700, 1000, 1500, 2200, 3000, 4000, 5500, 7000, 8500, 10000, 13000, 16000, 20000];
-            const curve = [];
-            let seed = 0;
-            for (let i = 0; i < name.length; i++) seed += name.charCodeAt(i);
-
-            const bassBoost = 5 + (seed % 8);
-            const pinnaPeak = 7 + (seed % 6);
-            const trebleDip = 1 + (seed % 4);
-
-            freqs.forEach(f => {
-                let db = 0;
-                if (f <= 150) {
-                    const factor = (150 - f) / 130;
-                    db = 68.0 + bassBoost * Math.pow(factor, 1.5);
-                } else if (f <= 500) {
-                    const factor = (f - 150) / 350;
-                    db = 68.0 + bassBoost * 0.1 * (1.0 - factor);
-                } else if (f <= 1000) {
-                    db = 68.0;
-                } else if (f <= 3000) {
-                    const factor = (f - 1000) / 2000;
-                    db = 68.0 + pinnaPeak * Math.pow(factor, 1.8);
-                } else if (f <= 6000) {
-                    const factor = (f - 3000) / 3000;
-                    db = (68.0 + pinnaPeak) - ((68.0 + pinnaPeak) - 71.0) * factor;
-                } else if (f <= 8500) {
-                    const factor = Math.abs(f - 8000) / 2000;
-                    db = (68.0 + pinnaPeak) - 2.0 - trebleDip - 5.0 * factor;
-                } else {
-                    const factor = (f - 8500) / 11500;
-                    db = 72.0 * (1.0 - factor) + 60.0 * factor;
-                }
-                curve.push([f, db]);
-            });
-            return curve;
-        },
-
-        // (duplicate toggleTargetSculptor definition removed � it shadowed the
-        // identical copy above and only invited drift)
-
+        // NOTE: there is deliberately NO fallback curve here. Empty input
+        // returns empty: downstream renders/interpolates it as flat (no
+        // data → no claim) and scoring entry points skip <2-point curves.
+        // A previous hash-seeded "dynamic fallback" invented plausible
+        // bass/pinna values from the curve NAME and every consumer treated
+        // them as measurement — removed.
         getNormalizedData: function(raw_data, curveName) {
             let data = this.standardizeCurveData(raw_data);
 
-            if (!data || data.length === 0) {
-                data = this.generateDynamicFallbackCurve(curveName || "Target");
-            }
+            if (!data || data.length === 0) return [];
 
             const ref_db = this.getRefDb(data);
             return data.map(item => [item[0], item[1] - ref_db + this.alignDb]);
@@ -2661,12 +2591,18 @@ generateDynamicFallbackCurve: function(name) {
 
         precalculateInterps: function() {
             if (!this.STATE.dataset) return;
+            const ver = this._alignmentVersion || 0;
             this.STATE.dataset.forEach(item => {
-                if (item.cachedInterp) return;
+                // Skip items already cached under the CURRENT alignment
+                // version — the version bump in updateAlignmentCfgActual
+                // invalidates them without a bulk walk that nulls 10k+
+                // arrays on every align toggle.
+                if (item.cachedInterp && item._cachedInterpVer === ver) return;
                 if (!item.data) return;
                 try {
                     const norm = this.getNormalizedData(item.data, item.name);
                     item.cachedInterp = Array.from(this.DSP.interpolate(norm));
+                    item._cachedInterpVer = ver;
                 } catch(e) {
                     item.cachedInterp = null;
                 }
@@ -2676,7 +2612,7 @@ generateDynamicFallbackCurve: function(name) {
                 name: item.name,
                 variant: item.variant,
                 source: item.source,
-                cachedInterp: item.cachedInterp
+                cachedInterp: (item.cachedInterp && item._cachedInterpVer === ver) ? item.cachedInterp : null
             })).filter(item => item.cachedInterp !== null);
         },
 
@@ -2903,11 +2839,19 @@ setSearchMode: function(mode) {
                 this.freqsBuffer = new Float32Array(this.DSP.FREQS);
             }
 
-            const freqs = this.freqsBuffer;
-            const composite = this.compositeBuffer;
-            composite.fill(80.0);
+                const freqs = this.freqsBuffer;
+                const composite = this.compositeBuffer;
+                composite.fill(80.0);
 
                 const realValues = EQ_Module.getRealValues();
+                // The graph draws with the EFFECTIVE preamp (auto-gain,
+                // hearing/loudness/tone headroom folded in), so the Similar
+                // composite must use the same value or the match target sits
+                // off by exactly that compensation delta whenever any of
+                // those features is active.
+                const effPreamp = (typeof EQ_Module.computeEffectivePreamp === 'function')
+                    ? EQ_Module.computeEffectivePreamp()
+                    : realValues.preVal;
 
                 let baselineInterp = null;
                 const activeBase = this.STATE.activeCurves.find(c => c.role === 'base');
@@ -2916,7 +2860,7 @@ setSearchMode: function(mode) {
                 }
 
                 for (let i = 0; i < points; i++) {
-                    composite[i] = (baselineInterp ? baselineInterp[i] : 80.0) + realValues.preVal;
+                    composite[i] = (baselineInterp ? baselineInterp[i] : 80.0) + effPreamp;
                 }
 
                 // Match against the cached composite magnitude that the graph
@@ -2937,15 +2881,19 @@ setSearchMode: function(mode) {
             // Slim candidate list: only id/name/variant/source/cachedInterp.
             // Lazily-loaded or imported curves get their interpolation computed
             // inline here so they are never silently dropped by a stale cache.
+            // Entries cached under an older alignment version are recomputed
+            // (version-stamp invalidation — see updateAlignmentCfgActual).
             const lightweightDs = [];
             const fullDs = this.STATE.dataset || [];
+            const alignVer = this._alignmentVersion || 0;
             for (let i = 0; i < fullDs.length; i++) {
                 const item = fullDs[i];
-                if (!item.cachedInterp) {
+                if (!item.cachedInterp || item._cachedInterpVer !== alignVer) {
                     if (item.data) {
                         try {
                             const norm = this.getNormalizedData(item.data, item.name);
                             item.cachedInterp = Array.from(this.DSP.interpolate(norm));
+                            item._cachedInterpVer = alignVer;
                         } catch (e) {
                             continue;
                         }
@@ -3266,7 +3214,7 @@ const countEl = document.getElementById('peqdb-result-count');
                 <div class="flex items-center justify-between gap-2 mb-1.5 border-b border-white/[0.05] pb-1.5">
                     <span class="text-[9px] font-mono text-[var(--text-secondary)]">#${similarInfo.rank}</span>
                     <span class="flex items-center gap-1.5">
-                        <span class="text-[11px] font-black text-[var(--accent-green)]">${similarInfo.similarity.toFixed(1)}%</span>
+                        <span class="text-[11px] font-black text-[var(--accent-green)]" title="Probe similarity (linear MAE scale) — not the Find tab's exponential tuning-match %">${similarInfo.similarity.toFixed(1)}%</span>
                         ${similarInfo.badgeHtml || ''}
                     </span>
                 </div>

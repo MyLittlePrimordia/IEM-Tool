@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en" class="theme-slate">
 <head>
     <meta charset="UTF-8">
@@ -1180,8 +1180,7 @@
                                 </button>
                                 <button data-action="click_207_EQ_saveCurrentAsCustomPreset" class="btn-clear text-stone-200 font-bold rounded-none text-xs h-8 px-2 sm:px-2.5 shadow-sm flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap" title="Save this EQ as a preset">
                                     <span>⭐</span><span class="hidden sm:inline">Save</span>
-                                </button>
-                                <button id="btn-spectrum-toggle" data-action="click_132_EQ_toggleSpectrumOverlay" class="retro-switch-btn font-bold rounded-none text-xs h-8 px-2 sm:px-2.5 shadow-sm flex items-center justify-center cursor-pointer whitespace-nowrap" title="Show the live audio spectrum on the graph"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg></button>
+                                </button><button id="btn-spectrum-toggle" data-action="click_132_EQ_toggleSpectrumOverlay" class="retro-switch-btn font-bold rounded-none text-xs h-8 px-2 sm:px-2.5 shadow-sm flex items-center justify-center cursor-pointer whitespace-nowrap" title="Show the live audio spectrum on the graph"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg></button>
                             </div>
 
                             <div class="w-auto md:w-28 flex justify-end flex-shrink-0">
@@ -1214,6 +1213,8 @@
                         </div>
 
                         <div id="viewport-canvas-wrapper-main" class="w-full flex-1 min-h-[240px] relative">
+
+                            
 
                             <div id="graph-match-badges-overlay" class="absolute top-2 left-2 flex items-center gap-4 bg-transparent p-1 z-40 text-xs select-none">
                                 <div class="flex items-center gap-2 min-w-0 relative">
@@ -1490,6 +1491,7 @@
                                             <span id="crossfeed-level-val" class="font-mono text-indigo-400">0%</span>
                                         </div>
                                         <input type="range" id="crossfeed-level" min="0" max="100" value="0" class="w-full h-1 cursor-pointer" data-action-input="input_177_EQ_updateCrossfeedLevel_this_value">
+
                                     </div>
 
                                     <div class="flex flex-col gap-1.5 py-0.5">
@@ -1558,6 +1560,21 @@
                                                 <span id="comp-gain-val" class="font-mono text-cyan-400">0.0 dB</span>
                                             </div>
                                             <input type="range" id="comp-gain-slider" min="0" max="450" value="0" class="w-full h-1 cursor-pointer" data-action-input="input_179_EQ_updateCompressorParam__gain___this_value___10">
+                                        </div>
+                                    </div>
+
+                                    <div class="w-full mt-1">
+                                        <button id="btn-merger-limiter" data-action="click_9999_EQ_toggleMergerLimiter" class="w-full retro-switch-btn font-black text-xs h-8 flex items-center justify-center gap-1.5 cursor-pointer truncate active-btn" title="Post-crossfeed safety limiter — catches >0dBFS sums at the stereo merger (clipping protection for crossfeed/expand)">
+    <span id="lbl-merger-limiter-state">Safety: ON</span>
+</button>
+                                        <div id="gr-meter-wrap" class="mt-1 hidden">
+                                            <div class="flex items-center justify-between mb-0.5">
+                                                <span class="text-[8px] font-black uppercase tracking-wider text-zinc-500">Limiter GR</span>
+                                                <span id="gr-meter-label" class="text-[9px] font-mono font-bold text-zinc-400">0.0 dB</span>
+                                            </div>
+                                            <div class="w-full h-1.5 bg-black/60 border border-white/10 rounded-sm overflow-hidden">
+                                                <div id="gr-meter-bar" class="h-full rounded-sm" style="width:0%; background: linear-gradient(90deg, var(--accent-green), var(--accent-amber) 60%, #f87171 100%);"></div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -2097,6 +2114,7 @@
                                             <span class="text-zinc-400" id="abx-confidence-wrapper">Conf: <span id="abx-confidence-pct" class="font-mono">0.0%</span> (<span id="abx-confidence-text">No Trials</span>)</span>
                                         </div>
                                         <div class="text-zinc-500 uppercase tracking-widest text-[8px]" id="abx-progress-lbl">Trial 0/10</div>
+                                    
                                     </div>
                                 </div>
                             </div>
@@ -2115,6 +2133,7 @@
                                     </div>
                                     <div class="grid grid-cols-2 gap-1.5 pt-0.5">
                                         <button id="hearing-test-btn" data-action="click_17_TestLab_nextHearingStep" class="w-full bg-cyan-500/10 border-2 border-black text-cyan-400 font-bold text-xs h-8">Start Test</button>
+                                        <button id="hearing-not-heard-btn" data-action="click_3201_TestLab_hearingNotHeard" class="w-full bg-amber-500/10 border-2 border-black text-amber-400 font-bold text-xs h-8 hidden">Not Heard (−)</button>
                                         <button data-action="click_298_TestLab_resetHearingTest" class="w-full btn-clear text-stone-300 font-bold text-xs h-8">Reset</button>
                                     </div>
                                     <button id="hearing-eq-generate-btn" data-action="click_205_TestLab_convertHearingToEQ" class="w-full py-1 bg-zinc-800 text-zinc-500 font-bold rounded-none text-xs mt-1 transition-all text-center cursor-not-allowed hidden border-2 border-black" disabled>🪄 Generate EQ Correction</button>
@@ -2619,7 +2638,7 @@
 
         <canvas id="global-spores-canvas" style="position: fixed; inset: 0; pointer-events: none; z-index: 99999; display: none;"></canvas>
 
-        <script src="app/js/bundle-version.js?v=f1c01547d5e4"></script>
+        <script src="app/js/bundle-version.js?v=17f89ad37e58"></script>
         <script>
           // Packaged builds serve the minified bundle via ?packaged=1.
           // Cache-bust with the content hash written by scripts/build-bundle.mjs

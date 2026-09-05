@@ -684,7 +684,7 @@ const CurveUtils = {
                 const pinna = getBandAvg(interp, freqs, 1500, 3500);
                 const airLift = air - mid;
                 const pinnaLift = pinna - mid;
-                const airScore = dbAtLeastScore(airLift, -1.0, 3.0);
+                const airScore = dbAtLeastScore(airLift, 2.0, 3.0);
                 const pinnaScore = dbAtLeastScore(pinnaLift, 2.5, 3.0);
                 const score = (airScore * 0.5) + (pinnaScore * 0.5);
                 return {
@@ -699,20 +699,22 @@ const CurveUtils = {
             label: 'Technical',
             emoji: '⚙️',
             tagRegex: /technical|analytical|resolving/i,
-            tagWeight: 0.60,
-            curveWeight: 0.40,
+            tagWeight: 0.35,
+            curveWeight: 0.65,
             // Weakest curve signal of the 8 — "technicalities" (speed,
             // layering, resolution) isn't really present in a single FR
-            // trace at all. Tag-heavy on purpose; the curve check is a
-            // loose treble-extension tiebreaker, not a real measurement
-            // of technical performance.
+            // trace at all. Tag still matters, but capped at 0.35 so a tag
+            // alone cannot outrank a clearly better measurement (a 40-curve
+            // with tag must not beat a 100-curve without one).
             curveCheck: function (interp, freqs) {
                 const mid = midRef(interp, freqs);
                 const upperMid = getBandAvg(interp, freqs, 2000, 5000);
                 const treble = getBandAvg(interp, freqs, 10000, 16000);
                 const upperMidLift = upperMid - mid;
                 const trebleLift = treble - mid;
-                const score = dbAtLeastScore((upperMidLift + trebleLift) / 2, 1.5, 4.0);
+                // Score each band then average (consistent with Detail/Fun)
+                // so a deficiency in one band cannot hide behind the other.
+                const score = (dbAtLeastScore(upperMidLift, 1.5, 4.0) + dbAtLeastScore(trebleLift, 1.5, 4.0)) / 2;
                 return {
                     score: score,
                     reason: `Upper-mid/treble clarity lift +${((upperMidLift + trebleLift) / 2).toFixed(1)}dB (weak proxy — tag-weighted)`
@@ -725,19 +727,18 @@ const CurveUtils = {
             label: 'Gaming',
             emoji: '🎮',
             tagRegex: /gaming|competitive-gaming/i,
-            tagWeight: 0.60,
-            curveWeight: 0.40,
+            tagWeight: 0.35,
+            curveWeight: 0.65,
             // Weak curve signal, same caveat as Technical — imaging speed
-            // and transient response aren't captured by FR. Tag-heavy;
-            // curve check just rewards an imaging-friendly wide-treble
-            // shape similar to Soundstage's proxy.
+            // and transient response aren't captured by FR. Tag capped at
+            // 0.35 for the same measurement-first reason as Technical.
             curveCheck: function (interp, freqs) {
                 const mid = midRef(interp, freqs);
                 const pinna = getBandAvg(interp, freqs, 1500, 3500);
                 const air = getBandAvg(interp, freqs, 8000, 14000);
                 const pinnaLift = pinna - mid;
                 const airLift = air - mid;
-                const score = dbAtLeastScore((pinnaLift + airLift) / 2, 2.0, 4.0);
+                const score = (dbAtLeastScore(pinnaLift, 2.0, 4.0) + dbAtLeastScore(airLift, 2.0, 4.0)) / 2;
                 return {
                     score: score,
                     reason: `Imaging-band lift +${((pinnaLift + airLift) / 2).toFixed(1)}dB (weak proxy — tag-weighted)`
@@ -895,8 +896,18 @@ const SharedAudio = {
         this.limiter.threshold.value = -0.5;
         this.limiter.knee.value = 4.0;
         this.limiter.ratio.value = 20.0;
-        this.limiter.attack.value = 0.003;
+        // 0.5ms attack: the previous 3ms let fast transients (kick, plucks,
+        // crossfeed-summed peaks) overshoot ~1-2dB past the -0.5dB threshold
+        // before gain reduction engaged — audible as clipping on hot masters.
+        // 0.5ms is the Web Audio minimum-musical value that still tracks
+        // transients without distortion (sub-millisecond pumping artifacts
+        // are absorbed by the 4dB soft knee).
+        this.limiter.attack.value = 0.0005;
         this.limiter.release.value = 0.08;
+
+        // (the former post-merger DynamicsCompressor safety stage was
+        // replaced by the worklet's final-stage lookahead limiter — see
+        // dsp-processor.js LookaheadLimiter + eq-core.js applyMergerLimiterRouting)
         
         this.autoGainNode = this.ctx.createGain();
         this.autoGainNode.gain.value = 1.0;
@@ -2717,7 +2728,15 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
             if (newGain) newGain.gain.setTargetAtTime(Math.max(0.05, Math.min(4, loudG)), now, tc);
 
             standby.play().then(() => {
-                if (seq !== this._playSeq) return;
+                // A newer switch took over while play() was pending: this
+                // standby element is retired — kill playback and zero its
+                // arm so the stale track can't keep bleeding into the graph
+                // (the seam fade already moved on to a different arm).
+                if (seq !== this._playSeq) {
+                    try { standby.pause(); } catch (e) {}
+                    if (newGain) newGain.gain.setTargetAtTime(0, SharedAudio.ctx.currentTime, 0.005);
+                    return;
+                }
                 const slider = document.getElementById("eq-musicVolumeSlider");
                 const vol = slider ? parseFloat(slider.value) / 100 : 0.5;
                 this.fadeMusicVolume(vol, 0.05);
@@ -3678,7 +3697,7 @@ const EQ_CrossfeedMethods = {
             // perceived level, and full unity replacement would over-brighten
             // the direct path. For centered/mono content direct+cross peaks
             // around +1..+3 dB depending on preset level — bounded by design
-            // and absorbed by the downstream limiter (-0.5 dB threshold).
+            // and absorbed by the downstream limiter (-1.0 dB ceiling).
             // Do not "fix" this to equal-power without also retuning the
             // presets; users have calibrated levels around this response.
             const directVal = 1.0 - (crossVal * 0.35);
@@ -3857,7 +3876,7 @@ const order = ['crossoverFreq1', 'crossoverFreq2', 'crossoverFreq3', 'crossoverF
             }
 
             order.forEach((key, i) => {
-                if (key === changedKey) return;
+                if (!Number.isFinite(this[key])) this[key] = key === changedKey ? sliderMin[key] : this[key];
                 this[key] = Math.max(sliderMin[key], Math.min(sliderMax[key], this[key]));
                 const paramName = paramNames[i];
                 const slider = document.getElementById(`xo-${paramName}-slider`);
@@ -3869,6 +3888,7 @@ const order = ['crossoverFreq1', 'crossoverFreq2', 'crossoverFreq3', 'crossoverF
 
         updateCrossoverParam: function(param, val) {
             const num = parseFloat(val);
+            if (!Number.isFinite(num)) return;
             const valEl = document.getElementById(`xo-${param}-val`);
             const trimEl = document.getElementById(`xo-trim-${param.toLowerCase().replace('trim','')}-val`);
 
@@ -4110,14 +4130,14 @@ const EQ_LoudnessMethods = {
                 if (container) {
                     container.className = "flex flex-col gap-2 mt-1 opacity-40 pointer-events-none transition-all duration-200";
                 }
-                showToast("Equal Loudness Compensator deactivated.", "🔊");
+                showToast("Loudness Compensator (two-shelf approx) deactivated.", "🔊");
             } else {
                 if (btn) btn.classList.add('is-on');
                 if (lbl) lbl.textContent = "Loudness: ON";
                 if (container) {
                     container.className = "flex flex-col gap-2 mt-1 opacity-100 transition-all duration-200";
                 }
-                showToast("Equal Loudness Compensator active. Calibrating volume-dynamic curves...", "🔊");
+                showToast("Loudness Compensator active (two-shelf approx). Calibrating volume-dynamic curves...", "🔊");
             }
             this.updateLoudnessDSP();
             this.drawCurve();
@@ -4143,7 +4163,15 @@ const EQ_LoudnessMethods = {
             const vol = Math.max(10, Math.min(90, Math.round(rawVol)));
             this.updateLoudnessParam('calibration', vol);
             const calSlider = document.getElementById("loudness-cal-slider");
-            if (calSlider) calSlider.value = vol;
+            if (calSlider) {
+                calSlider.value = vol;
+                // Programmatic .value writes don't fire input events, so the
+                // custom-painted track fill stays at the old position until
+                // the next full slider sync — repaint it now (same pattern
+                // as the graph-drag path in eq-core.js).
+                if (window.paintSliderTrack) window.paintSliderTrack(calSlider);
+                else calSlider.style.setProperty('--range-fill', ((vol - parseFloat(calSlider.min || 0)) / (parseFloat(calSlider.max || 100) - parseFloat(calSlider.min || 0)) * 100) + '%');
+            }
             showToast(`Calibration set to current volume (${vol}%).`, "🎯");
         },
         updateLoudnessDSP: function() {
@@ -4162,11 +4190,11 @@ const EQ_LoudnessMethods = {
 
             if (this.loudnessActive) {
                 const volumeDiff = Math.max(0, calibrationVol - currentVol);
-                // Perceptual log shape: Fletcher-Munson (ISO 226) is not linear —
+                // Perceptual log shape: human loudness contours are not linear —
                 // even small drops need noticeable bass compensation, while very
                 // quiet keeps boosting. Power-law exponents 0.6 (bass) and 0.65
-                // (treble) are a cheap log approximation that matches ISO226 within
-                // ~1.5 dB vs the previous linear 5-6 dB error.
+                // (treble) are a cheap two-shelf approximation (not an ISO 226
+                // phon-curve implementation).
                 // Max gains (at 0% volume, 100% calibration, 100% strength):
                 //   bass:  14.0 dB lowshelf @ 100 Hz, Q=0.7
                 //   treble: 8.0 dB highshelf @ 7500 Hz, Q=0.7
@@ -4183,7 +4211,7 @@ const EQ_LoudnessMethods = {
             // attenuate by up to ~8 dB at maximum compensation.
             this._loudnessMaxBoost = this.loudnessActive ? Math.max(bassBoost, trebleBoost) : 0;
 
-            // Map Fletcher-Munson filters directly to worklet simulation indices 8 and 9.
+            // Map loudness-compensation filters directly to worklet simulation indices 8 and 9.
             // (Slots 6/7 belong to the tape-mod sim; 12-19 to hearing calibration;
             // 22/23 to the master tone — using shared slots silently clobbered
             // each other's filters.)
@@ -4217,7 +4245,7 @@ const EQ_TempoMethods = {
             if (btn) btn.classList.add('is-on');
             if (lbl) lbl.textContent = 'Tempo: ON';
             if (container) container.classList.remove('opacity-40', 'pointer-events-none');
-            showToast("Tempo Engine engaged! Playback rate active.", "⏱️");
+            showToast("Speed active (playbackRate: pitch shifts with speed).", "⏱️");
         } else {
             if (btn) btn.classList.remove('is-on');
             if (lbl) lbl.textContent = 'Tempo: OFF';
@@ -4331,10 +4359,17 @@ const EQ_SmartImportMethods = {
                     var clean = line.trim();
                     if (clean.startsWith('#') || clean === '') return;
                     var parts = clean.split(/[\s,;\t]+/).filter(function(p) { return p.length > 0; }).map(Number);
-                    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[0] >= 1 && parts[0] <= 24000) {
+                    // Validate like the Peace branch: sane freq + dB range.
+                    // One bad line (e.g. "20 999") must not corrupt the spline.
+                    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[0] >= 1 && parts[0] <= 24000 && parts[1] >= -60 && parts[1] <= 60) {
                         dataCoords.push([parts[0], parts[1]]);
                     }
                 });
+                // Sort ascending and drop duplicate frequencies so the cubic
+                // spline receives strictly increasing x (unsorted pastes and
+                // dupes previously poisoned normalization for the whole curve).
+                dataCoords.sort(function(a, b) { return a[0] - b[0]; });
+                dataCoords = dataCoords.filter(function(p, i) { return i === 0 || p[0] !== dataCoords[i - 1][0]; });
                 if (dataCoords.length >= 5) {
                     var id = 'imported_' + Date.now();
                     var newItem = { id: id, name: "Imported Curve", variant: 'Imported', source: 'Universal Paste', searchKey: 'imported curve', data: dataCoords };
@@ -4351,6 +4386,7 @@ const EQ_SmartImportMethods = {
                 var lines = text.split(/\r?\n/);
                 var preamp = 0;
                 var mappedAny = false;
+                this._importFullWarned = false;
                 var mainVals = this.bands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
                 var advVals = this.advancedBands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
                 var self = this;
@@ -4418,7 +4454,20 @@ const EQ_SmartImportMethods = {
                 // the current EQ, so processSmartImport can fall through to the
                 // raw curve importer instead.
                 if (preamp === 0 && !mappedAny) return false;
-                
+
+                // Preamp-only paste: apply just the preamp, leave all bands
+                // untouched (loading all-zero mainVals here would flatten 20
+                // bands over a "Preamp: -6 dB" note).
+                if (preamp !== 0 && !mappedAny) {
+                    const preValEl = document.getElementById("eq-preampVal");
+                    const preSlider = document.getElementById("eq-preampSlider");
+                    if (preValEl) preValEl.value = preamp.toFixed(1);
+                    if (preSlider) preSlider.value = Math.max(-20, Math.min(20, preamp));
+                    if (this.updatePreamp) this.updatePreamp();
+                    showToast("Preamp imported (" + preamp.toFixed(1) + " dB) — bands untouched.", "🎚️");
+                    return true;
+                }
+
                 this.loadValues({ preVal: preamp, mainVals: mainVals, advVals: advVals });
                 showToast("Parametric EQ profile processed!", "🪄");
                 return true;
@@ -4436,15 +4485,24 @@ const EQ_SmartImportMethods = {
             if (/\bpeak\b|\bpk\b|\bpeq\b/.test(s)) return 'peaking';
             return null;
         },
+        // Logarithmic distance: pitch/filters live on a log axis — linear Hz
+        // systematically snaps high-frequency imports downward on ties
+        // (e.g. 12kHz between 8k/16k slots tied 4k/4k linear, but 16k is
+        // 0.415 oct away vs 8k's 0.585).
+        _filterDist: function(slotHz, hz) {
+            if (!Number.isFinite(slotHz) || slotHz <= 0 || !Number.isFinite(hz) || hz <= 0) return Infinity;
+            return Math.abs(Math.log2(slotHz / hz));
+        },
         mapSingleFilter: function(hz, g, q, type, mainVals, advVals, usedMain, usedAdv) {
             var filterType = type || 'peaking';
             var uM = usedMain || new Set();
             var uA = usedAdv || new Set();
+            var self = this;
 
             var bestM = -1, bestMd = Infinity;
             mainVals.forEach(function(v, i) {
                 if (!uM.has(i)) {
-                    var d = Math.abs(v.hz - hz);
+                    var d = self._filterDist(v.hz, hz);
                     if (d < bestMd) { bestMd = d; bestM = i; }
                 }
             });
@@ -4452,15 +4510,20 @@ const EQ_SmartImportMethods = {
             var bestA = -1, bestAd = Infinity;
             advVals.forEach(function(v, i) {
                 if (!uA.has(i)) {
-                    var d = Math.abs(v.hz - hz);
+                    var d = self._filterDist(v.hz, hz);
                     if (d < bestAd) { bestAd = d; bestA = i; }
                 }
             });
 
             // If all slots in both banks were used, fallback to closest overall
+            // — but warn instead of silently overwriting a mapped filter.
             if (bestM === -1 && bestA === -1) {
-                mainVals.forEach(function(v, i) { var d = Math.abs(v.hz - hz); if (d < bestMd) { bestMd = d; bestM = i; } });
-                advVals.forEach(function(v, i) { var d = Math.abs(v.hz - hz); if (d < bestAd) { bestAd = d; bestA = i; } });
+                mainVals.forEach(function(v, i) { var d = self._filterDist(v.hz, hz); if (d < bestMd) { bestMd = d; bestM = i; } });
+                advVals.forEach(function(v, i) { var d = self._filterDist(v.hz, hz); if (d < bestAd) { bestAd = d; bestA = i; } });
+                if (!self._importFullWarned) {
+                    self._importFullWarned = true;
+                    showToast("Import slots full — closest filter overwritten.", "⚠️");
+                }
             }
 
             if (bestM !== -1 && (bestA === -1 || bestMd <= bestAd)) {
@@ -4561,14 +4624,19 @@ const EQ_HearingCalMethods = {
             },
             applyHearingCalibrationGains: function() {
                 const hearingFreqs = [250, 500, 1000, 2000, 4000, 8000, 12000, 16000];
-                let maxBoost = 0;
+                let maxBoost = 0, secondBoost = 0;
                 if (this.hearingCalEnabled && Array.isArray(this.hearingOffsets)) {
                     for (let i = 0; i < this.hearingOffsets.length; i++) {
                         const g = this.hearingOffsets[i] || 0;
-                        if (g > maxBoost) maxBoost = g;
+                        if (g > maxBoost) { secondBoost = maxBoost; maxBoost = g; }
+                        else if (g > secondBoost) secondBoost = g;
                     }
                 }
-                this._hearingMaxBoost = this.hearingCalEnabled ? maxBoost : 0;
+                // Q=1.0 peaks 1 octave apart overlap (~1.4 oct BW); adjacent
+                // boosts stack at midpoints, so max() alone under-compensates
+                // by ~2-3 dB. Add half the second-largest boost, capped at +3 dB.
+                const overlapped = maxBoost + Math.min(3, secondBoost * 0.5);
+                this._hearingMaxBoost = this.hearingCalEnabled ? overlapped : 0;
                 if (!this.graphBuilt || !SharedAudio.workletNode) {
                     if (this._queuePendingDsp) this._queuePendingDsp('hearing');
                     else { this._pendingDspQueue = this._pendingDspQueue || []; if (!this._pendingDspQueue.includes('hearing')) this._pendingDspQueue.push('hearing'); if (!this.graphBuilt) this.ensureDSPGraph && this.ensureDSPGraph().catch(()=>{}); }
@@ -4614,6 +4682,7 @@ const EQ_HearingCalMethods = {
                     }
                     // Initialize frequency tracker if not set
                     if (!this.deEsserCurrentFreq) this.deEsserCurrentFreq = 6000;
+                    if (!Number.isFinite(this.deEsserSensitivity)) this.deEsserSensitivity = 100;
                     showToast("De-Esser active. Monitoring vocal sibilance peaks (4k-8kHz)", "🛡️");
                 } else {
                     if (btn) {
@@ -4648,14 +4717,21 @@ const EQ_HearingCalMethods = {
                 this.drawCurve();
             },
 updateDeEsserSens: function(val) {
-                this.deEsserSensitivity = parseFloat(val);
+                const parsed = parseFloat(val);
+                this.deEsserSensitivity = Number.isFinite(parsed) ? parsed : 100;
+                // The per-frame viz tracker owns deEsserReductionDb (dynamic
+                // sibilance gain, up to -15 dB) and posts it to both the
+                // worklet and the drawn curve — do NOT write a static value
+                // here or it fights the tracker for a frame and spams the
+                // worklet with an immediately-superseded gain.
                 const sensVal = document.getElementById('deesser-sens-val');
                 if (sensVal) sensVal.textContent = val + "%";
                 this.drawCurve();
             },
             updateDeEsserFreq: function(freq) {
                 this.deEsserCurrentFreq = Math.round(freq);
-                // Push to worklet if active
+                if (!Number.isFinite(this.deEsserSensitivity)) this.deEsserSensitivity = 100;
+                // Seed post only; the tracker takes over on the next frame.
                 if (this.deEsserEnabled && SharedAudio.workletNode) {
                     SharedAudio.workletNode.port.postMessage({
                         type: 'updateSimulations',
@@ -4982,6 +5058,7 @@ const EQ_SourceSimMethods = {
             this.simState.tip = this.tipOptions[nextIdx];
             this.updateSelectorColors();
             this.updateSimulation();
+            this.saveFitMemoryForCurrentIem();
         },
 
         cycleFitDepth: function() {
@@ -4990,6 +5067,7 @@ const EQ_SourceSimMethods = {
             this.simState.depth = this.depthOptions[nextIdx];
             this.updateSelectorColors();
             this.updateSimulation();
+            this.saveFitMemoryForCurrentIem();
         },
 
         cycleSealQuality: function() {
@@ -4998,6 +5076,76 @@ const EQ_SourceSimMethods = {
             this.simState.seal = this.sealOptions[nextIdx];
             this.updateSelectorColors();
             this.updateSimulation();
+            this.saveFitMemoryForCurrentIem();
+        },
+
+        // ===== F-8: Per-IEM fit memory =====
+        // Remembering how a specific IEM sits in YOUR ears: every tip/depth/
+        // seal combination is personal to both the IEM shell geometry and
+        // the user's ears, so the sim settings are remembered per IEM id and
+        // silently restored the next time that measurement is loaded as the
+        // base curve. Stored in localStorage under one compact key.
+        _fitMemoryKey: 'iem_fit_memory_v1',
+        getFitMemory: function() {
+            try {
+                return JSON.parse(localStorage.getItem(this._fitMemoryKey) || '{}');
+            } catch (e) {
+                return {};
+            }
+        },
+        saveFitMemoryForCurrentIem: function() {
+            const iemId = this.getCurrentBaseIemId();
+            if (!iemId) return;
+            const mem = this.getFitMemory();
+            mem[iemId] = {
+                tip: this.simState.tip,
+                depth: this.simState.depth,
+                seal: this.simState.seal,
+                savedAt: Date.now()
+            };
+            try {
+                // Bound the memory: keep the most recent 200 entries so a long
+                // browsing history can't grow the blob unbounded.
+                const keys = Object.keys(mem);
+                if (keys.length > 200) {
+                    keys.sort((a, b) => (mem[a].savedAt || 0) - (mem[b].savedAt || 0));
+                    keys.slice(0, keys.length - 200).forEach(k => delete mem[k]);
+                }
+                localStorage.setItem(this._fitMemoryKey, JSON.stringify(mem));
+            } catch (e) { /* storage full — non-fatal */ }
+        },
+        getCurrentBaseIemId: function() {
+            const active = (PEQDB_Module && PEQDB_Module.STATE && PEQDB_Module.STATE.activeCurves) || [];
+            const base = active.find(c => c.role === 'base' && c.visible);
+            return base ? base.id : null;
+        },
+        // Restores the remembered fit for the currently-loaded base IEM (if
+        // any). Called when a curve becomes the base; shows a toast only when
+        // something was actually restored so the feature is discoverable.
+        restoreFitMemoryForCurrentIem: function() {
+            const iemId = this.getCurrentBaseIemId();
+            if (!iemId) return;
+            const mem = this.getFitMemory();
+            const saved = mem[iemId];
+            if (!saved) return;
+
+            const cur = this.simState;
+            const changed = (saved.tip && saved.tip !== cur.tip)
+                || (saved.depth && saved.depth !== cur.depth)
+                || (saved.seal && saved.seal !== cur.seal);
+            if (!changed) return;
+
+            if (saved.tip && this.tipOptions.includes(saved.tip)) cur.tip = saved.tip;
+            if (saved.depth && this.depthOptions.includes(saved.depth)) cur.depth = saved.depth;
+            if (saved.seal && this.sealOptions.includes(saved.seal)) cur.seal = saved.seal;
+
+            this.updateSelectorColors();
+            this.updateSimulation();
+            const parts = [];
+            if (saved.tip) parts.push(saved.tip.toUpperCase() + ' tip');
+            if (saved.depth) parts.push(saved.depth + ' depth');
+            if (saved.seal) parts.push(saved.seal + ' seal');
+            showToast(`Fit memory restored for this IEM: ${parts.join(', ')}.`, "🧠");
         },
 
         updateSimulation: function() {
@@ -5492,6 +5640,29 @@ const EQ_PresetMethods = {
                     });
                 }
 
+                // Headroom safety net: no curated or custom preset may leave
+                // net-positive gain (max band boost + preamp > 0 clips). The
+                // data fixes cover today's three offenders; this guards all
+                // future presets and user-authored customs alike.
+                try {
+                    let maxBoost = 0;
+                    (p.m || []).forEach(val => {
+                        const g = (val && typeof val === 'object') ? val.g : val;
+                        if (Number.isFinite(g) && g > maxBoost) maxBoost = g;
+                    });
+                    (p.a || []).forEach(val => {
+                        const g = (val && typeof val === 'object') ? val.g : val;
+                        if (Number.isFinite(g) && g > maxBoost) maxBoost = g;
+                    });
+                    const preSlider2 = document.getElementById("eq-preampSlider");
+                    const preValEl2 = document.getElementById("eq-preampVal");
+                    if (preSlider2 && maxBoost > 0 && parseFloat(preSlider2.value) > -maxBoost) {
+                        preSlider2.value = -maxBoost;
+                        if (preValEl2) preValEl2.value = (-maxBoost).toFixed(1);
+                        this.updatePreamp();
+                    }
+                } catch (e) {}
+
                 } finally {
                     EQ_Module.isProgrammaticSliderUpdate = false; // Release protection flag even if a band throws
                 }
@@ -5821,34 +5992,30 @@ const EQ_BandHandlerMethods = {
 
 /* ===== app/js/eq-draw-curve.js ===== */
  const EQ_DrawCurveMethods = {
+     // F-7 frame-budget draw scheduler. The old wall-clock throttle
+     // (16/24/50ms buckets) still rasterized twice inside a single animation
+     // frame whenever two state changes landed in the same bucket window —
+     // and each raster strokes ~6 full-curve passes over a 1000-point grid.
+     // The rAF coalescer guarantees AT MOST ONE raster per animation frame:
+     // every drawCurve() call inside a frame collapses into the next frame's
+     // single paint, which always reads the LATEST state (no intermediate
+     // snapshots, so slider drags can never end on a stale frame). The
+     // drawPending flag doubles as an in-flight guard so re-entrant calls
+     // from rAF callbacks themselves (e.g. resize storms) can't queue a
+     // second raster for the same frame.
      drawCurve: function() {
          if (this.drawPending) return;
          const cv = document.getElementById("eq-squiglinkViz");
          if (!cv || cv.clientWidth === 0 || cv.clientHeight === 0) return;
-         
-         const now = Date.now();
-         const isDragging = this.isDragging;
-         
-         const liveDrag = !!(this._liveDragUntil && performance.now() < this._liveDragUntil);
-         
-         const limit = (isDragging || liveDrag) ? 16 : (this.showSpectrumOverlay ? 24 : 50);
-         if (now - this.lastDrawTime < limit) {
-             if (!this.drawTrailingPending) {
-                 this.drawTrailingPending = true;
-                 const wait = limit - (now - this.lastDrawTime) + 1;
-                 setTimeout(() => {
-                     this.drawTrailingPending = false;
-                     if (!this.drawPending) this.drawCurve();
-                 }, Math.max(0, wait));
-             }
-             return;
-         }
-         
          this.drawPending = true;
          requestAnimationFrame(() => {
+             this.drawPending = false;
+             // Re-check size inside the frame: a hidden canvas (tab switch,
+             // fullscreen exit) must not schedule endless empty rAFs.
+             const c = document.getElementById("eq-squiglinkViz");
+             if (!c || c.clientWidth === 0 || c.clientHeight === 0) return;
              this.lastDrawTime = Date.now();
              this.drawSquiglinkGraphInternal();
-             this.drawPending = false;
          });
      }
  };
@@ -5962,14 +6129,21 @@ const EQ_SquigGraphMethods = {
             cc.restore();
         },
         drawSquiglinkGraphInternal: function() {
-            const cv = document.getElementById("eq-squiglinkViz");
+            // Cache canvas element + 2d context: getElementById/getContext
+            // ran on every draw (every slider tick + up to 60Hz overlay).
+            // Revalidate via isConnected in case the DOM was rebuilt.
+            if (!this._squigCv || !this._squigCv.isConnected) {
+                this._squigCv = document.getElementById("eq-squiglinkViz");
+                this._squigCc = this._squigCv ? this._squigCv.getContext("2d") : null;
+            }
+            const cv = this._squigCv;
             if (!cv || cv.clientWidth === 0 || cv.clientHeight === 0) {
                 // Canvas is hidden/zero-size (e.g. tab not visible) - do not keep
                 // scheduling frames; drawCurve() will be called again once the
                 // graph becomes visible/sized (tab switch, resize, etc).
                 return;
             }
-            const cc = cv.getContext("2d"); 
+            const cc = this._squigCc;
             const { w, h } = this.setupDPRCanvas(cv);
 
             // Read cached theme color variables directly without triggering a browser layout recalculation
@@ -5980,9 +6154,27 @@ const EQ_SquigGraphMethods = {
             const targetW = Math.floor(w * dpr);
             const targetH = Math.floor(h * dpr);
 
-            // Initialize or resize the off-screen cache canvas
+            // Initialize or resize the off-screen cache canvas.
+            // F-7: prefer OffscreenCanvas when available — the static layer
+            // (background, grid, band tints, reference curves) rasterizes
+            // identically through the same 2D API but composites without a
+            // DOM canvas backing, and the resulting ImageBitmap path avoids
+            // main-thread texture upload on every drawImage. Falls back to
+            // the original DOM canvas where OffscreenCanvas is unsupported
+            // (older Safari; the bundle runs through both paths).
             if (!this.staticCacheCanvas) {
-                this.staticCacheCanvas = document.createElement('canvas');
+                if (typeof OffscreenCanvas !== 'undefined') {
+                    try {
+                        this.staticCacheCanvas = new OffscreenCanvas(1, 1);
+                        this._staticLayerOffscreen = true;
+                    } catch (e) {
+                        this.staticCacheCanvas = document.createElement('canvas');
+                        this._staticLayerOffscreen = false;
+                    }
+                } else {
+                    this.staticCacheCanvas = document.createElement('canvas');
+                    this._staticLayerOffscreen = false;
+                }
                 this.staticCacheCtx = this.staticCacheCanvas.getContext('2d');
                 this.staticDirty = true;
             }
@@ -6452,7 +6644,22 @@ const EQ_SquigGraphMethods = {
         _renderModeLayer: function(cc, w, h, dpr, targetW, targetH, minF, maxF, min, max,
                 eqDb, steps, freqs, baseSpline, targetSpline, accentGreen, modeState) {
             if (!this.modeCacheCanvas) {
-                this.modeCacheCanvas = document.createElement('canvas');
+                // F-7: same OffscreenCanvas preference as the static layer —
+                // the mode layer (curves/heatmap/DSP line) is the busiest
+                // surface (rebuilt on every EQ change), so keeping its
+                // rasterization off the DOM canvas path pays off most.
+                if (typeof OffscreenCanvas !== 'undefined') {
+                    try {
+                        this.modeCacheCanvas = new OffscreenCanvas(1, 1);
+                        this._modeLayerOffscreen = true;
+                    } catch (e) {
+                        this.modeCacheCanvas = document.createElement('canvas');
+                        this._modeLayerOffscreen = false;
+                    }
+                } else {
+                    this.modeCacheCanvas = document.createElement('canvas');
+                    this._modeLayerOffscreen = false;
+                }
                 this.modeCacheCtx = this.modeCacheCanvas.getContext('2d');
                 this.modeDirty = true;
             }
@@ -6483,6 +6690,9 @@ const EQ_SquigGraphMethods = {
                         this._heatmapGradCount = 0;
                     }
                     const y0 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb, h);
+                    // Group verticals by gradient key: identical strokes
+                    // share one path/stroke instead of one stroke per sample.
+                    const heatBuckets = new Map();
                     for (let i = 0; i < steps; i++) {
                         const curX = (i / (steps - 1)) * w;
                         const dbVal = eqDb[i];
@@ -6508,13 +6718,24 @@ const EQ_SquigGraphMethods = {
                                 this._heatmapGradCount = 0;
                             }
                         }
-                        mcc.strokeStyle = grad;
-                        mcc.lineWidth = w / steps + 1;
-                        mcc.beginPath();
-                        mcc.moveTo(curX, y0);
-                        mcc.lineTo(curX, y1);
-                        mcc.stroke();
+                        let bucket = heatBuckets.get(key);
+                        if (!bucket) {
+                            bucket = { grad, y1, xs: [] };
+                            heatBuckets.set(key, bucket);
+                        }
+                        bucket.xs.push(curX);
                     }
+                    mcc.lineWidth = w / steps + 1;
+                    heatBuckets.forEach(bucket => {
+                        mcc.strokeStyle = bucket.grad;
+                        mcc.beginPath();
+                        const xs = bucket.xs;
+                        for (let k = 0; k < xs.length; k++) {
+                            mcc.moveTo(xs[k], y0);
+                            mcc.lineTo(xs[k], bucket.y1);
+                        }
+                        mcc.stroke();
+                    });
                     mcc.restore();
 
                     mcc.beginPath();
@@ -6602,6 +6823,7 @@ const EQ_SquigGraphMethods = {
                         let lastX = 0;
                         let lastY = 0;
                         let started = false;
+                        const errBuckets = [];
                         for (let i = 0; i < steps; i++) {
                             const curX = (i / (steps - 1)) * w;
                             const f = freqs[i];
@@ -6617,23 +6839,27 @@ const EQ_SquigGraphMethods = {
                                 continue;
                             }
 
-                            mcc.beginPath();
-                            mcc.moveTo(lastX, lastY);
-                            mcc.lineTo(curX, y);
-
+                            // Batch by color: ~1000 strokes (with a style
+                            // switch each) become 3 paths / 3 strokes.
                             const absErr = Math.abs(err);
-                            if (absErr <= 1.5) {
-                                mcc.strokeStyle = '#10b981';
-                            } else if (absErr <= 3.0) {
-                                mcc.strokeStyle = '#f59e0b';
-                            } else {
-                                mcc.strokeStyle = '#ef4444';
-                            }
-                            mcc.lineWidth = 2.5;
-                            mcc.stroke();
+                            const bucket = absErr <= 1.5 ? 0 : (absErr <= 3.0 ? 1 : 2);
+                            (errBuckets[bucket] = errBuckets[bucket] || []).push(lastX, lastY, curX, y);
 
                             lastX = curX;
                             lastY = y;
+                        }
+                        mcc.lineWidth = 2.5;
+                        const errColors = ['#10b981', '#f59e0b', '#ef4444'];
+                        for (let b = 0; b < 3; b++) {
+                            const segs = errBuckets[b];
+                            if (!segs || !segs.length) continue;
+                            mcc.strokeStyle = errColors[b];
+                            mcc.beginPath();
+                            for (let s = 0; s < segs.length; s += 4) {
+                                mcc.moveTo(segs[s], segs[s + 1]);
+                                mcc.lineTo(segs[s + 2], segs[s + 3]);
+                            }
+                            mcc.stroke();
                         }
                     } else {
                         mcc.fillStyle = "rgba(255, 255, 255, 0.35)";
@@ -6674,6 +6900,83 @@ const EQ_SquigGraphMethods = {
             }
 
             cc.drawImage(this.modeCacheCanvas, 0, 0, w, h);
+
+            // F-10: curve-difference overlay. In normal mode, when a base and
+            // at least one other visible curve are loaded, draw the signed
+            // base-vs-reference delta as a subtle dashed trace hugging the
+            // alignment line — the "how far apart are these two?" readout at
+            // a glance, without switching to the dedicated Difference mode.
+            // Auto-shows (no new UI): it only appears with 2+ visible curves
+            // and never in tuning lab / heatmap / difference modes.
+            this.drawCurveDiffOverlay(cc, w, h, minF, maxF, steps, freqs);
+        },
+
+        drawCurveDiffOverlay: function(cc, w, h, minF, maxF, steps, freqs) {
+            if (EQ_Module.graphMode !== 'normal') return;
+            if (EQ_Module.isTuningLabActive) return;
+
+            const active = PEQDB_Module.STATE.activeCurves || [];
+            const base = active.find(c => c.role === 'base' && c.visible && c.cachedSpline);
+            if (!base) return;
+            const refs = active.filter(c => c !== base && c.visible && c.cachedSpline && c.role !== 'base');
+            if (!refs.length) return;
+
+            // Memoize the evaluated polylines: steps×refs spline evals ran on
+            // EVERY draw (up to 60Hz overlay) even when nothing changed.
+            // Recompute only when curves/view fingerprint changes; replay the
+            // cached points otherwise (vers bump on spline rebuilds above).
+            const fp = [base.id || base.uid, base._splineVersion || 0,
+                refs.map(r => (r.id || r.uid) + ':' + (r._splineVersion || 0)).join(','),
+                minF, maxF, steps, w, h, PEQDB_Module.alignDb].join('|');
+            let paths = this._diffOverlayPaths;
+            if (!paths || paths.fp !== fp) {
+                paths = {
+                    fp,
+                    refs: refs.map(ref => {
+                        const pts = [];
+                        for (let i = 0; i < steps; i++) {
+                            const f = freqs[i];
+                            if (f < minF || f > maxF) continue;
+                            const x = w * (Math.log10(f / minF) / Math.log10(maxF / minF));
+                            const evalF = PEQDB_Module.getShiftedFrequency(f, 'target');
+                            const baseDb = PEQDB_Module.Spline.evaluate(base.cachedSpline, evalF);
+                            const refDb = PEQDB_Module.Spline.evaluate(ref.cachedSpline, evalF);
+                            pts.push([x, EQ_Module.dbToY_squig(PEQDB_Module.alignDb + (refDb - baseDb), h)]);
+                        }
+                        return { color: ref.color, pts };
+                    })
+                };
+                this._diffOverlayPaths = paths;
+            }
+
+            cc.save();
+            cc.setLineDash([5, 5]);
+            cc.lineWidth = 1.2;
+
+            for (let r = 0; r < refs.length; r++) {
+                const ref = refs[r];
+                const cached = paths.refs[r];
+                const rgb = PEQDB_Module.hexToRgb ? PEQDB_Module.hexToRgb(ref.color) : '160, 174, 192';
+                cc.strokeStyle = `rgba(${rgb}, 0.45)`;
+                cc.beginPath();
+                const pts = cached ? cached.pts : [];
+                for (let i = 0; i < pts.length; i++) {
+                    if (i === 0) cc.moveTo(pts[i][0], pts[i][1]);
+                    else cc.lineTo(pts[i][0], pts[i][1]);
+                }
+                cc.stroke();
+            }
+
+            cc.setLineDash([]);
+            // Legend chip: small "±diff" tag above the alignment line so the
+            // dashed trace is self-explanatory on first sight.
+            cc.fillStyle = "rgba(148, 163, 184, 0.85)";
+            cc.font = this.getActiveCanvasFont(9, 'bold');
+            cc.textAlign = 'left';
+            cc.fillText(refs.length === 1
+                ? `vs ${refs[0].name.split(' (')[0]} (dashed = dB difference)`
+                : `vs ${refs.length} curves (dashed = dB difference)`, 22, h - 32);
+            cc.restore();
         },
 
         drawNormalCurves: function(cc, w, h, minF, maxF, eqDb) {
@@ -6763,12 +7066,16 @@ const EQ_SquigGraphMethods = {
                 
                 let started = false;
                 const renderStep = w > 800 ? 3 : 2;
+                // Reused by the EQ-corrected base pass below so the spline
+                // is evaluated once per pixel, not twice.
+                let baseDbs = (c.role === 'base') ? [] : null;
                 for (let i = 0; i < w; i += renderStep) {
                     const f = minF * Math.pow(maxF / minF, i / (w - 1));
                     const evalF = PEQDB_Module.getShiftedFrequency(f, c.role);
                     const db = PEQDB_Module.Spline.evaluate(spline, evalF);
+                    if (baseDbs) baseDbs.push(db);
                     const y = this.dbToY_squig(db + (c.offset || 0), h);
-                    
+
                     if (!started) {
                         cc.moveTo(i, y);
                         started = true;
@@ -6795,11 +7102,12 @@ const EQ_SquigGraphMethods = {
                     cc.shadowColor = "transparent";
                     
                     let startedCorrected = false;
+                    let bi = 0;
                     for (let i = 0; i < w; i += renderStep) {
-                        const f = minF * Math.pow(maxF / minF, i / (w - 1));
-                        const evalF = PEQDB_Module.getShiftedFrequency(f, c.role);
-                        const db = PEQDB_Module.Spline.evaluate(spline, evalF);
-                        
+                        // Spline value reused from the faint-base pass above
+                        // (same pixel grid, same spline) — no re-evaluate.
+                        const db = baseDbs ? baseDbs[bi++] : PEQDB_Module.Spline.evaluate(spline, PEQDB_Module.getShiftedFrequency(minF * Math.pow(maxF / minF, i / (w - 1)), c.role));
+
                         const eqIdx = Math.round((i / (w - 1)) * (steps - 1));
                         const eqVal = eqDb ? (eqDb[Math.max(0, Math.min(steps - 1, eqIdx))] || 0) : 0;
                         const y = this.dbToY_squig(db + (c.offset || 0) + eqVal, h);
@@ -6889,7 +7197,8 @@ const EQ_MathUtilMethods = {
     },
     sliderToLogHz: function(val) {
         const minF = 20, maxF = 20000;
-        return Math.round(Math.pow(10, Math.log10(minF) + (val / 1000) * (Math.log10(maxF) - Math.log10(minF))));
+        const safeVal = Number.isFinite(val) ? Math.max(0, Math.min(1000, val)) : 0;
+        return Math.round(Math.pow(10, Math.log10(minF) + (safeVal / 1000) * (Math.log10(maxF) - Math.log10(minF))));
     }
 };
 
@@ -6929,19 +7238,23 @@ const IemSearchIndex = {
             const tags = Array.isArray(item.tags) ? item.tags : [];
             const source = item.source || '';
 
-            // Tokenize all searchable fields
+            // Tokenize all searchable fields (tags go through the same
+            // tokenizer as queries so multiword tags like "sub-bass" match
+            // token queries ["sub","bass"] instead of missing wholesale)
             [brand, model, variant, name, source].forEach(field => {
                 this._tokenizer(field).forEach(t => tokens.add(t));
             });
-            tags.forEach(tag => tokens.add(tag.toLowerCase()));
+            tags.forEach(tag => this._tokenizer(tag).forEach(t => tokens.add(t)));
 
-            // Also add n-gram tokens for partial matching (e.g., "moon" matches "moondrop")
+            // Prefix + suffix n-grams for partial matching ("moon" and
+            // "drop" both match "moondrop"; pure-prefix missed the latter)
             [brand, model, variant, name].forEach(field => {
                 const words = this._tokenizer(field);
                 words.forEach(w => {
                     if (w.length >= 3) {
                         for (let len = 3; len <= w.length; len++) {
                             tokens.add(w.substring(0, len));
+                            tokens.add(w.substring(w.length - len));
                         }
                     }
                 });
@@ -6964,11 +7277,13 @@ const IemSearchIndex = {
         if (tokens.length === 0) return this._db;
 
         let candidateIds = null;
+        let allMatched = true;
 
         for (const token of tokens) {
             const ids = this._index.get(token);
             if (!ids || ids.size === 0) {
-                return []; // No matches for this token
+                allMatched = false;
+                break; // Fall through to OR-ranked fallback below
             }
             if (candidateIds === null) {
                 candidateIds = new Set(ids);
@@ -6977,18 +7292,34 @@ const IemSearchIndex = {
                 for (const id of candidateIds) {
                     if (!ids.has(id)) candidateIds.delete(id);
                 }
-                if (candidateIds.size === 0) return [];
+                if (candidateIds.size === 0) { allMatched = false; break; }
             }
         }
 
-        // Return full items in original order
-        const results = [];
-        if (candidateIds) {
+        if (allMatched && candidateIds) {
+            // Exact AND match — return full items in original order
+            const results = [];
             for (const item of this._db) {
                 if (candidateIds.has(item.id)) results.push(item);
             }
+            return results;
         }
-        return results;
+
+        // OR fallback: a single typo/unknown token previously zeroed the
+        // result set. Rank by tokens-matched (desc), keep DB order on ties.
+        const hitCount = new Map();
+        for (const token of tokens) {
+            const ids = this._index.get(token);
+            if (!ids) continue;
+            for (const id of ids) hitCount.set(id, (hitCount.get(id) || 0) + 1);
+        }
+        if (hitCount.size === 0) return [];
+        const results = [];
+        for (const item of this._db) {
+            if (hitCount.has(item.id)) results.push({ item, hits: hitCount.get(item.id) });
+        }
+        results.sort((a, b) => b.hits - a.hits);
+        return results.map(r => r.item);
     },
 
     getDb: function() {
@@ -7807,7 +8138,13 @@ window.bootstrapAlphabetIndex = function () {
             // hashing only a loaded curve's id let band edits hit the cache and
             // return stale results while the graph visibly changed.
             const realValues = EQ_Module.getRealValues();
-            let contentHash = this.hashString(JSON.stringify([realValues.preVal, realValues.mainVals, realValues.advVals]));
+            // Fold in the effective preamp too: the composite the search
+            // scores against is built with computeEffectivePreamp (auto-gain,
+            // hearing/loudness/tone compensation), so a change in any of those
+            // must invalidate the cache the same way a raw slider move does.
+            const effPreamp = (typeof EQ_Module.computeEffectivePreamp === 'function')
+                ? EQ_Module.computeEffectivePreamp() : realValues.preVal;
+            let contentHash = this.hashString(JSON.stringify([effPreamp, realValues.mainVals, realValues.advVals]));
             if (baseCurve) {
                 contentHash += '-' + this.hashCurvePoints(baseCurve.data);
             }
@@ -10125,7 +10462,24 @@ setGlobalFont: function(fontId) {
         },
 
         toggleSensUnit: function() {
-            this.sensUnit = this.sensUnit === 'mW' ? 'V' : 'mW';
+            // Convert the numeric value so the PHYSICAL sensitivity is
+            // preserved: dB/V = dB/mW + 10*log10(1000/R). Without this the
+            // same number under a new reference silently shifts power ~30x.
+            const sensEl = document.getElementById('sensitivity');
+            const impEl = document.getElementById('impedance');
+            const rawSens = sensEl ? parseFloat(sensEl.value) : NaN;
+            const rawImp = impEl ? parseFloat(impEl.value) : NaN;
+            const imp = Number.isFinite(rawImp) && rawImp > 0 ? rawImp : 32;
+            const toV = this.sensUnit === 'mW';
+            this.sensUnit = toV ? 'V' : 'mW';
+            if (sensEl && Number.isFinite(rawSens)) {
+                const delta = 10 * Math.log10(1000 / imp);
+                const converted = toV ? rawSens + delta : rawSens - delta;
+                const clamped = Math.max(80, Math.min(125, converted));
+                sensEl.value = clamped.toFixed(0);
+                const slider = document.getElementById('sensitivity-slider');
+                if (slider) slider.value = clamped;
+            }
             this.updateSensUnitUI();
             this.updateAll();
         },
@@ -10623,6 +10977,17 @@ onDbSearchInput: function(value) {
                     const canonical = FindEngine.driverTechCanon[m[2].toUpperCase()];
                     if (canonical) counts[canonical] = (counts[canonical] || 0) + parseInt(m[1], 10);
                 }
+                // Bare mentions without a digit ("2x BA + EST", "DD & BA"):
+                // count 1 for each mentioned tech the digit pass missed.
+                techs.forEach(t => {
+                    if (!counts[t]) {
+                        const aliasHit = Object.keys(FindEngine.driverTechCanon).some(alias => {
+                            if (FindEngine.driverTechCanon[alias] !== t) return false;
+                            return new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(String(item.driver_config));
+                        });
+                        if (aliasHit) counts[t] = 1;
+                    }
+                });
                 if (Object.keys(counts).length === 0) {
                     techs.forEach(t => { counts[t] = (counts[t] || 0) + 1; });
                 }
@@ -11457,19 +11822,19 @@ onDbSearchInput: function(value) {
                 this.wayOverride = false;
             }
 
+            // Single-type arrays share one circuit (no crossover) — Planar,
+            // DD, EST/PZT/BC/MEMS alike. BA arrays are the exception: multi-BA
+            // sets standardly use crossovers. Multi-type mixes use PASS.
+            const singleTypeNoXo = solvedActiveTypesCount === 1 && !containsBA;
             if (!this.crossoverOverride) {
                 if (totalDrivers === 0) {
                     this.currentCrossover = 'UNK';
                 } else if (totalDrivers === 1) {
                     this.currentCrossover = 'NONE';
-                } else if (totalDrivers === 2) {
+                } else if (singleTypeNoXo) {
+                    this.currentCrossover = 'NONE';
+                } else {
                     this.currentCrossover = 'PASS';
-                } else if (totalDrivers >= 3) {
-                    if (containsPlanar && solvedActiveTypesCount === 1) {
-                        this.currentCrossover = 'NONE';
-                    } else {
-                        this.currentCrossover = 'PASS';
-                    }
                 }
                 this.updateCrossoverButtonsUI();
             }
@@ -11480,14 +11845,14 @@ onDbSearchInput: function(value) {
                 } else if (totalDrivers === 1) {
                     this.currentWay = '1W';
                 } else {
-                    if (containsPlanar && solvedActiveTypesCount === 1) {
-                        this.currentWay = '1W';
-                    } else if (containsBA && solvedActiveTypesCount === 1) {
+                    if (singleTypeNoXo || (containsBA && solvedActiveTypesCount === 1)) {
                         this.currentWay = '1W';
                     } else {
                         if (totalDrivers === 2) this.currentWay = '2W';
                         else if (totalDrivers === 3) this.currentWay = '3W';
-                        else if (totalDrivers >= 4) this.currentWay = '4W';
+                        else if (totalDrivers === 4) this.currentWay = '4W';
+                        else if (totalDrivers === 5) this.currentWay = '5W';
+                        else if (totalDrivers >= 6) this.currentWay = '6W+';
                     }
                 }
                 this.updateWayButtonsUI();
@@ -12047,6 +12412,12 @@ onDbSearchInput: function(value) {
                 'soundstage-width', 'soundstage-depth', 'resolution-detail', 'macro-dynamics',
                 'imaging-precision', 'instrument-separation', 'timbre-coherence'
             ];
+            // Sibilance is a defect: higher harshness must score LOWER, so its
+            // contribution is inverted. upper-mids/vocals are the same
+            // measurement (fillToneSliders assigns identical values); count
+            // the pair once (0.5 weight each) instead of twice.
+            const scoreWeight = (id) => (id === 'upper-mids' || id === 'vocals') ? 0.5 : 1.0;
+            const scoredVal = (id, norm) => (id === 'sibilance' ? 10 - norm : norm);
             this.sliderNodes.forEach(node => {
                 let val = parseFloat(node.element.value);
 
@@ -12060,8 +12431,8 @@ onDbSearchInput: function(value) {
                 if (node.displayValueNode) {
                     node.displayValueNode.textContent = (val >= 0 ? "+" : "") + val.toFixed(1);
                     if (acousticSliders.includes(node.element.id)) {
-                        totalScore += normVal;
-                        count++;
+                        totalScore += scoredVal(node.element.id, normVal) * scoreWeight(node.element.id);
+                        count += scoreWeight(node.element.id);
                     }
                 }
                 // Repaint the bipolar fill here: DB profile fills, library loads
@@ -12073,6 +12444,13 @@ onDbSearchInput: function(value) {
                 else if (window.syncGlobalSliders) window.syncGlobalSliders(node.element);
             });
             const avg = (...ids) => ids.reduce((sum, id) => sum + (valMap[id] !== undefined ? valMap[id] : 5.0), 0) / ids.length;
+            // Scoring view: sibilance inverted (defect), upper-mids/vocals
+            // de-duplicated (same measurement counted once).
+            const scoreOf = (id) => {
+                const v = valMap[id] !== undefined ? valMap[id] : 5.0;
+                return id === 'sibilance' ? 10 - v : v;
+            };
+            const avgScore = (...ids) => ids.reduce((sum, id) => sum + scoreOf(id), 0) / ids.length;
 
             let impVal = parseFloat(document.getElementById('impedance').value);
             if (isNaN(impVal) || impVal <= 0) impVal = 5;
@@ -12164,8 +12542,8 @@ onDbSearchInput: function(value) {
             const compatBarNode = document.getElementById('compatibility-bar');
             const statusNode = document.getElementById('compatibility-status');
 
-            if (vValNode) vValNode.textContent = vReqSource.toFixed(2) + " V";
-            if (pValNode) pReqIem === Infinity ? pValNode.textContent = "0.0 mW" : pValNode.textContent = pReqIem.toFixed(1) + " mW";
+            if (vValNode) vValNode.textContent = Number.isFinite(vReqSource) ? vReqSource.toFixed(2) + " V" : "— V";
+            if (pValNode) pValNode.textContent = Number.isFinite(pReqIem) ? pReqIem.toFixed(1) + " mW" : "— mW (over-range)";
 
             if (statusNode) {
                 statusNode.innerHTML = `<span class="${matchClass} text-sm sm:text-base">${matchText}</span>`;
@@ -12241,7 +12619,7 @@ onDbSearchInput: function(value) {
             const techScore = avg('resolution-detail', 'imaging-precision', 'macro-dynamics', 'instrument-separation');
             const toneScore = avg('timbre-coherence', 'mid-naturalness', 'vocals', 'treble-smooth');
             const bassScore = avg('bass', 'sub-bass-extension', 'mid-bass-punch');
-            const trebleScore = avg('treble-energy', 'treble-detail', 'sibilance');
+            const trebleScore = avgScore('treble-energy', 'treble-detail', 'sibilance');
 
             const badge = document.getElementById('bias-badge');
             let biasStr, biasClass;
@@ -12277,8 +12655,8 @@ if(this.radarChart) {
                     }
                 }
                 this.radarChart.data.datasets[0].data = [
-                    avg('bass', 'sub-bass-extension', 'bass-texture', 'bass-speed', 'mid-bass-punch'), avg('vocals', 'vocal-fullness', 'lower-mids', 'upper-mids', 'mid-naturalness'),
-                    avg('treble-energy', 'treble-smooth', 'treble-extension', 'sibilance', 'treble-detail'), valMap['resolution-detail'], avg('soundstage-width', 'soundstage-depth'),
+                    avg('bass', 'sub-bass-extension', 'bass-texture', 'bass-speed', 'mid-bass-punch'), avg('vocal-fullness', 'lower-mids', 'upper-mids', 'mid-naturalness'),
+                    avgScore('treble-energy', 'treble-smooth', 'treble-extension', 'sibilance', 'treble-detail'), valMap['resolution-detail'], avg('soundstage-width', 'soundstage-depth'),
                     valMap['imaging-precision'], valMap['macro-dynamics'], avg('vocals', 'mid-naturalness', 'treble-smooth', 'timbre-coherence'), avg('instrument-separation', 'timbre-coherence', 'ease-of-drive', 'driver-flex')
                 ];
                 this.radarChart.update('none');
@@ -13443,7 +13821,7 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
                 { id: 'Phone', emoji: '📱' },
                 { id: 'Laptop', emoji: '💻' },
                 { id: 'Dongle', emoji: '🔌' },
-                { id: 'Amp', emoji: '🖥️' }
+                { id: 'Desktop', emoji: '🖥️' }
             ];
 
             let guideY = 485;
@@ -13454,13 +13832,18 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
                 const vReqSource = vReq / vDivider;
                 // Keep total-draw for reference but classification uses load power pReqIemExport
                 const pDrawnSource = (vReqSource * vReqSource) / (impVal + Rs) * 1000;
+                // Bar must reflect the WORST of power/voltage like the live
+                // view (maxRatio); power-only showed full-green on V-failures.
+                const pRatio = pReqIemExport > 0 ? dac.p / pReqIemExport : 0;
+                const vRatio = vReqSource > 0 ? dac.v / vReqSource : 0;
+                const worstRatio = Math.min(pRatio, vRatio);
 
-                let text = "POOR", col = "#ef4444", ratio = Math.min(1.0, dac.p / pReqIemExport);
+                let text = "POOR", col = "#ef4444", ratio = Math.min(1.0, worstRatio);
 
                 if (pReqIemExport > dac.p * 1.5 || vReqSource > dac.v * 1.5) {
-                    text = "WEAK"; col = "#ef4444"; ratio = Math.max(0.12, Math.min(1.0, dac.p / pReqIemExport));
+                    text = "WEAK"; col = "#ef4444"; ratio = Math.max(0.12, Math.min(1.0, worstRatio));
                 } else if (pReqIemExport > dac.p || vReqSource > dac.v) {
-                    text = "RISKY"; col = "#f59e0b"; ratio = Math.min(1.0, dac.p / pReqIemExport);
+                    text = "RISKY"; col = "#f59e0b"; ratio = Math.min(1.0, worstRatio);
                 } else if (pReqIemExport > dac.p * 0.4 || vReqSource > dac.v * 0.4) {
                     text = "OK"; col = "#22c55e"; ratio = 0.88;
                 } else {
@@ -13693,6 +14076,216 @@ return;
         }
     };
 
+
+/* ===== app/js/eq-presets-data.js ===== */
+// Split out of eq-core.js (2026 god-file refactor, Step 3).
+// Static preset catalog: the raw eqPresets JSON, the curated preset
+// gains, the per-category preset id lists (presetsByCategory), and the
+// category tab definitions (presetCategories). Read-only data — consumed
+// by EQ_Module.init (parsed + Object.assign'd into this.eqPresets at boot)
+// and by eq-presets.js / switchCategory. Loads BEFORE eq-core.js in the
+// bundle; no methods, no DOM, no audio.
+
+const EQ_PresetsData = {
+    presetsByCategory: {
+         music: [
+     { id: 'balanced', name: '⚖️ Balanced' }, { id: 'harman', name: '🎧 Harman' },
+     { id: 'vshape', name: '🔺 V-Shape' }, { id: 'warm', name: '🌿 Warm' },
+     { id: 'vocal_music', name: '🎤 Vocal' }, { id: 'rock', name: '🎸 Rock' },
+     { id: 'edm', name: '🎛️ EDM' }, { id: 'hiphop', name: '🎤 Hip-Hop' },
+     { id: 'jazz', name: '🎺 Jazz' }, { id: 'classical', name: '🎻 Classical' },
+     { id: 'metal', name: '🤘 Metal' }, { id: 'acoustic', name: '🎹 Acoustic' },
+     { id: 'rnb', name: '🎷 R&B' }, { id: 'pop', name: '🎹 Pop' },
+     { id: 'lofi', name: '☕ Lo-Fi' }, { id: 'reggae', name: '🍁 Reggae' },
+     { id: 'funk', name: '🕶️ Funk' }, { id: 'synthwave', name: '🛸 Synthwave' },
+     { id: 'disco', name: '🪩 Disco' }, { id: 'orchestra', name: '🎼 Orchestra' },
+     { id: 'indie', name: '🎸 Indie' }, { id: 'kpop', name: '🎤 K-Pop' }
+         ],
+         gaming: [
+     { id: 'fps', name: '🎮 Footsteps' }, { id: 'competitive', name: '🔫 Competitive' },
+     { id: 'footsteps', name: '👣 Steps' }, { id: 'immersive', name: '🌍 Immersive' },
+     { id: 'gaming_imaging', name: '🎯 Positional' }, { id: 'story', name: '🎬 Story' },
+     { id: 'rpg', name: '🗣️ RPG' }, { id: 'racing', name: '🏎️ Racing' },
+     { id: 'retro', name: '🕹️ Arcade' }, { id: 'stealth', name: '🥷 Stealth' },
+     { id: 'scifi', name: '🚀 Sci-Fi' }, { id: 'horror', name: '🧟 Horror' },
+     { id: 'sniper', name: '🔭 Sniper' }, { id: 'tactical', name: '💣 Tactical' },
+     { id: 'cyberpunk', name: '🦾 Cyberpunk' }, { id: 'arena', name: '⚔️ Arena' },
+     { id: 'survival', name: '🩻 Wasteland' }, { id: 'rhythm', name: '🥁 Rhythm' },
+     { id: 'flight', name: '🛩️ Flight' }, { id: 'moba', name: '🛡️ MOBA' },
+     { id: 'sims', name: '🏡 Casual' }, { id: 'fighting', name: '🥊 Fighting' }
+         ],
+         media: [
+     { id: 'cinema', name: '🎥 Cinema' }, { id: 'dialogue', name: '📢 Dialogue' },
+     { id: 'podcast', name: '🎙️ Podcast' }, { id: 'audiobook', name: '📚 Audiobook' },
+     { id: 'shows', name: '📺 Television' }, { id: 'movie', name: '🍿 Movies' },
+     { id: 'sports', name: '🏟️ Sports' }, { id: 'vintage', name: '🎞️ Vintage' },
+     { id: 'documentary', name: '📽️ Documentary' }, { id: 'anime', name: '🎤 Anime' },
+     { id: 'asmr', name: '🎐 ASMR' }, { id: 'radio', name: '📻 Broadcast' },
+     { id: 'news', name: '📰 News' }, { id: 'thriller', name: '⚡ Thriller' },
+     { id: 'comedy', name: '🎪 Comedy' }, { id: 'theater', name: '🏛️ Theater' },
+     { id: 'vlog', name: '🤳 Vlog' }, { id: 'action', name: '🧨 Blockbuster' },
+     { id: 'nature', name: '🏕️ Nature' }, { id: 'whisper', name: '🤫 Whisper' },
+     { id: 'sitcom', name: '🛋️ Sitcom' }, { id: 'streaming', name: '🎞️ Stream' }
+         ],
+         audiophile: [
+     { id: 'flat', name: '📏 Flat' }, { id: 'reference', name: '🎯 Studio' },
+     { id: 'analytical', name: '🔬 Analytical' }, { id: 'detail', name: '🧠 Detail' },
+     { id: 'airy', name: '☁️ Airy' }, { id: 'soundstage', name: '🌌 Soundstage' },
+     { id: 'natural', name: '🎼 Natural' }, { id: 'transparent', name: '🪞 Transparent' },
+     { id: 'critlistening', name: '🎧 Critical' }, { id: 'diffuse', name: '🌐 Diffuse' },
+     { id: 'freefield', name: '📐 Free-Field' }, { id: 'tube', name: '🕯️ Tube' },
+     { id: 'mastering', name: '🎚️ Mastering' }, { id: 'binaural', name: '👥 Binaural' },
+     { id: 'purist', name: '🕊️ Purist' }, { id: 'holographic', name: '🔮 Holographic' },
+     { id: 'coherence', name: '🧬 Phase' }, { id: 'organic', name: '🍃 Organic' },
+     { id: 'resolution', name: '🔍 Resolution' }, { id: 'linear', name: '🏁 Linear' },
+     { id: 'field', name: '🌲 Field' }, { id: 'booth', name: '🚪 Booth' }
+         ],
+         basshead: [
+     { id: 'bass', name: '🥁 Basshead' }, { id: 'subbass', name: '🌋 Sub-Bass' },
+     { id: 'punchy', name: '🥊 Slam' }, { id: 'slam', name: '🏎️ Kinetic' },
+     { id: 'extremebass', name: '💥 Megabass' }, { id: 'club', name: '🔈 Club' },
+     { id: 'pressure', name: '🌪️ Pressure' }, { id: 'rumble', name: '🌊 Rumble' },
+     { id: 'subwoofer', name: '🛞 Subwoofer' }, { id: 'tectonic', name: '🧱 Tectonic' },
+     { id: 'impact', name: '🧨 Impact' }, { id: 'techno', name: '🏭 Techno' },
+     { id: 'anvil', name: '⛓️ Anvil' }, { id: 'crusher', name: '🚜 Crusher' },
+     { id: 'quake', name: '🪨 Quake' }, { id: 'vortex', name: '🕳️ Vortex' },
+     { id: 'carnage', name: '👹 Carnage' }, { id: 'piston', name: '⚙️ Piston' },
+     { id: 'detonation', name: '💣 Detonation' }, { id: 'rave', name: '🕶️ Rave' },
+     { id: 'hammer', name: '🔨 Hammer' }, { id: 'thunder', name: '⚡ Thunder' }
+         ]
+     },
+
+    presetCategories: [
+        { id: 'music', label: 'Music', emoji: '🎵' },
+        { id: 'gaming', label: 'Gaming', emoji: '🎮' },
+        { id: 'media', label: 'Film', emoji: '🎬' },
+        { id: 'audiophile', label: 'Audio', emoji: '🎧' },
+        { id: 'basshead', label: 'Bass', emoji: '🔥' },
+        { id: 'custom', label: 'Custom', emoji: '⭐' }
+    ],
+
+    // Raw JSON of the base preset bank (p = preamp, m/a = main/adv gains).
+    // Kept as a string literal; parsed once by EQ_Module.init.
+    eqPresetsJson: '{"balanced":{"p":0,"m":[0,0,0,0,0,0,0,0,0,0],"a":[0,0,0,0,0,0,0,0,0,0]},"warm":{"p":-1,"m":[0,1.5,3,2,0,0,-1,-1.5,-2,0],"a":[1,2,3.5,2.5,0,0,0,-1,-2,0]},"vshape":{"p":-6.0,"m":[4,4.5,2,-1.5,-2,-1,1.5,3.5,4.5,2],"a":[5,4,1.5,-1,-2,-1,2,4,3,1]},"harman":{"p":-5.0,"m":[2,4.5,3,1,-0.5,-1,1.5,4.5,3.5,-1],"a":[3,4.5,2.5,0.5,-0.5,-1,1,3.5,3,0]},"rock":{"p":-3.0,"m":[3,2.5,1.5,-1,0.5,1,2,2.5,1.5,0],"a":[2,3,1.5,0,0.5,1,1.5,2,1.5,0]},"edm":{"p":-6.5,"m":[5,4,2.5,-1,-1.5,-0.5,1.5,3.5,4,2],"a":[6,4,1.5,-1,-1.5,0,2,3,3.5,1]},"hiphop":{"p":-2.5,"m":[2,4.5,3,1,-0.5,-1,1.5,4.5,3.5,-1],"a":[3,4.5,2.5,0.5,-0.5,-1,1,3.5,3,0]},"classical":{"p":-1.5,"m":[-1.5,-1,0.5,1,1.5,2,2.5,3,2.5,1.5],"a":[-2,-1,0.5,1.5,2,1.5,2,2.5,2,1]},"acoustic":{"p":-1.5,"m":[0.5,1,1.5,2.5,3,2.5,2,1.5,1,0.5],"a":[0,1,2,3,2.5,2,1.5,1,0.5,0]},"orchestra":{"p":-1.5,"m":[-1,-0.5,1,2,2.5,2.5,3,2.5,2,1],"a":[-1,0,1.5,2,2.5,2,2.5,2,1.5,0.5]},"relaxed":{"p":1,"m":[1.5,1.5,1,0,-1.5,-2,-2.5,-3,-2,-1],"a":[2,1.5,0.5,-0.5,-1.5,-2,-2,-2,-1,0]},"party":{"p":-2.5,"m":[4.5,4,2,-0.5,-1,0.5,2.5,4,3,1.5],"a":[5,4,1.5,0,-0.5,1,2,3,2.5,1]},"fps":{"p":-2,"m":[-4,-4,-2,0,0,1,2,3,1.5,0],"a":[-5,-3,0,0,1,1.5,4,2,1,0]},"competitive":{"p":-2.5,"m":[-5,-3,-1,1.5,2,2.5,3.5,4.5,2,0.5],"a":[-6,-4,0,1,2,3,4,3,1.5,0]},"footsteps":{"p":-2,"m":[-6,-4,-1,2.5,3.5,4,2.5,1,0,0],"a":[-7,-5,0,2.5,4,3,2,0.5,0,0]},"immersive":{"p":-2,"m":[4,3.5,1.5,0,-1,0,1,2,3,4],"a":[5,4,2,0,-1,0,1.5,2,2.5,3]},"gaming_imaging":{"p":-1.5,"m":[-2,-1,0,1.5,2,2.5,3,2.5,1.5,1],"a":[-2,-1,0,1,2,2.5,3,2,1,0.5]},"precision":{"p":-2,"m":[-3,-2,0,1.5,2.5,3,3.5,2.5,1.5,1],"a":[-3,-1,0.5,1.5,2.5,2.5,3,2,1,0.5]},"storymode":{"p":-2,"m":[3,3,1.5,0,0.5,1,1.5,2.5,3,2],"a":[4,3,1,0,0.5,1,2,2.5,2,1]},"casualgaming":{"p":-1,"m":[1.5,1.5,1,0.5,0.5,1,1.5,2,1.5,1],"a":[2,1.5,1,0.5,0.5,1,1.5,1.5,1,0.5]},"cinema":{"p":-2.5,"m":[4.5,3.5,1.5,-0.5,-1,0.5,2,3.5,4,2.5],"a":[5,3.5,1,-0.5,-1,1,2.5,3,3,2]},"dialogue":{"p":0,"m":[-6,-4,-2,1.5,3,3.5,2,0,-2,-5],"a":[-8,-5,-2,2,3.5,3,1.5,0,-1.5,-4]},"tvshows":{"p":-1,"m":[-2,-1,0.5,1,2,2,1.5,1,0.5,0],"a":[-2,-1,0.5,1.5,2,1.5,1,0.5,0,0]},"podcast":{"p":0,"m":[-5,-3,-1,1.5,3,3,1.5,0.5,-1,-3],"a":[-6,-4,-1,2,3,2.5,1,0.5,-0.5,-2]},"audiobook":{"p":0,"m":[-6,-4,-1,2,3.5,3,1,0.5,-2,-4],"a":[-7,-5,-1,2.5,3.5,2.5,1,0.5,-1,-3]},"streaming":{"p":-1.5,"m":[2,2,1,0.5,0.5,1,1.5,2.5,3,1.5],"a":[3,2,1,0.5,0.5,1,1.5,2,2,1]},"movienight":{"p":-2,"m":[4,3,1,0,-0.5,0.5,1.5,3,3,1.5],"a":[5,3.5,1,0,-0.5,0.5,2,2.5,2,1]},"analytical":{"p":0,"m":[-1.5,-1,-0.5,0,0.5,1,1.5,2,1,0.5],"a":[-2,-1,-0.5,0,0.5,1,1.5,1.5,1,0.5]},"detail":{"p":-1,"m":[0,0,0,0,0,1,2.5,3.5,2,0],"a":[0,0,0,0,0,1.5,4,2,2,1]},"airy":{"p":-1.5,"m":[0,0,0,0,0,0.5,1.5,3,4.5,3.5],"a":[0,0,0,0,0,0,1,3,4,2.5]},"soundstage":{"p":-2,"m":[1,1,0.5,0,-0.5,0.5,1.5,3.5,4,5],"a":[1,1,0.5,0,-0.5,0.5,1.5,3,3.5,4.5]},"audiophile_imaging":{"p":-1.5,"m":[-1,-0.5,0,1,1.5,2,2.5,3,2,1],"a":[-1,-0.5,0,1,1.5,2,2,2,1.5,1]},"reference":{"p":0,"m":[0,0,0,0,0,0.5,0.5,0,0,0],"a":[0,0,0,0,0,0,0,0,0,0]},"natural":{"p":-1,"m":[1,1,1.5,1.5,1,0.5,1,1.5,1,0.5],"a":[1,1,1,1.5,1,0.5,0.5,1,0.5,0]},"timbre":{"p":-1,"m":[0.5,1,1.5,1,0.5,1,1.5,2,1,0.5],"a":[0.5,1,1,1,0.5,1,1,1.5,1,0.5]},"transparent":{"p":-1,"m":[-1,-0.5,0.5,1,1.5,2,2.5,3,2,1.5],"a":[-1,-0.5,0.5,1,1.5,1.5,2,2.5,1.5,1]},"critlistening":{"p":-0.5,"m":[0,0,0,0.5,0.5,0.5,1,1,0.5,0],"a":[0,0,0,0.5,0.5,0.5,0.5,0.5,0.5,0]},"bass":{"p":-5.5,"m":[9.0,8.5,6.0,2.5,0,-1,-1.5,-1,-0.5,0],"a":[10.0,8.0,4.5,1.5,0,0,0,0,0,0]},"subbass":{"p":-3,"m":[6,5.5,3.5,1,0,0,0,0,0,0],"a":[7,5.5,2,0,0,0,0,0,0,0]},"punchy":{"p":-2,"m":[2,4.5,5.5,3.5,1,0,0,0,0,0],"a":[3,5,4,1.5,0,0,0,0,0,0]},"caraudio":{"p":-3.5,"m":[6.5,5.5,4,2,0.5,-0.5,1,2.5,3.5,1.5],"a":[7,6,3,1.5,0,-0.5,1,2,2.5,1]},"bass_party":{"p":-3,"m":[5.5,5,3.5,1,-0.5,0.5,2,3,3,1],"a":[6,5,3,1,-0.5,0.5,1.5,2,2,0.5]},"slam":{"p":-3,"m":[4,5.5,6,4,1.5,0.5,1.5,3,3.5,1.5],"a":[4.5,6,4.5,2,1,0.5,1,2,2.5,1]},"extremebass":{"p":-5,"m":[9,8.5,6.5,4,1.5,0,0,0.5,1.5,1],"a":[10,8.5,5,2.5,1,0,0,0,1,1]},"club":{"p":-3,"m":[5,5,4.5,2.5,1,0.5,1.5,2.5,2,1],"a":[5,5,4.5,2.5,1,0.5,1.5,2.5,2,1]},"bassboost":{"p":-2.5,"m":[4.5,3.5,1.5,0,0,0,0,0,0,0],"a":[5.0,3.0,0.5,0,0,0,0,0,0,0]},"deeprumble":{"p":-2,"m":[5.5,4.0,2.0,0.5,0,0,0,0,0,0],"a":[6,4,1.5,0,0,0,0,0,0,0]},"rpg":{"p":-1.5,"m":[1.5,1,0.5,0,0.5,1.5,2,2.5,2,1],"a":[2,1.5,0.5,0,0.5,1,1.5,2,1.5,1]},"racing":{"p":-2,"m":[3,3.5,2,0.5,-1,-0.5,1,2.5,2,1],"a":[3,3.5,1.5,0,-0.5,0.5,1.5,2,1.5,1]},"retro":{"p":-1,"m":[-2,-1,0.5,2,2.5,2,1.5,1,0.5,-1],"a":[-3,-1,1,2,2.5,2,1.5,1,0,-2]},"stealth":{"p":-2,"m":[-4,-3,-1,1.5,2,2.5,3.5,4,2.5,1],"a":[-5,-3,0,1,2.5,3,3.5,2.5,1.5,0.5]},"chill":{"p":-1,"m":[2,2.5,1.5,0.5,-0.5,-1,-1.5,-2,-1,0],"a":[3,2.5,1,0,-0.5,-1,-1,-1.5,-1,0]},"sports":{"p":-1.5,"m":[1,2,2.5,1,0,0.5,1.5,2,1,0],"a":[1,2,2,0.5,0,0.5,1,1.5,1,0]},"vintage":{"p":-1,"m":[0.5,1.5,2,2.5,2,1.5,1,0,-2,-4],"a":[1,2,2,2.5,1.5,1,0.5,0,-1,-3]},"documentary":{"p":0,"m":[-3,-1,0.5,1.5,2.5,3,2,1,0,-2],"a":[-4,-2,0,1,2,2.5,1.5,1,0,-1]},"anime":{"p":-1.5,"m":[1,2.5,2,0.5,1,2,2.5,3,2,1],"a":[1,2.5,1.5,0.5,1,1.5,2,2.5,1.5,0.5]},"vocals":{"p":-1,"m":[-2,-1,0.5,1.5,2.5,3.5,3,2,1,0.5],"a":[-2,-1,0.5,2,3,3,2,1.5,1,0.5]},"flat":{"p":0,"m":[0,0,0,0,0,0,0,0,0,0],"a":[0,0,0,0,0,0,0,0,0,0]},"bass_cannon":{"p":-4,"m":[7,7,5.5,3,1,0,0,0,0,0],"a":[8,7,4.5,2,0.5,0,0,0,0,0]},"shaker":{"p":-3.5,"m":[5,6,4.5,2,0.5,0,0,0,1,2],"a":[6,6,3.5,1.5,0,0,0,0,1,1.5]}}',
+
+    // Curated gain presets layered on top of the base bank at boot.
+    curatedPresets: {
+"balanced": { "p": 0.0, "m": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+            "harman": { "p": -5.0, "m": [5.0, 4.5, 2.5, 0.5, -0.5, 0.0, 1.5, 4.0, 1.5, -1.0] },
+            "vshape": { "p": -4.5, "m": [4.5, 4.0, 2.0, -1.5, -2.0, -1.0, 1.5, 3.5, 4.5, 3.0] },
+            "warm": { "p": -3.0, "m": [3.0, 3.5, 2.5, 1.0, 0.5, 0.0, -0.5, -1.0, -2.0, -2.5] },
+            "vocal_music": { "p": -3.5, "m": [-3.0, -1.5, 0.5, 1.5, 2.5, 3.5, 4.0, 2.5, 1.0, 0.5] },
+            "rock": { "p": -3.0, "m": [3.0, 2.5, 1.5, -1.0, 0.5, 1.0, 2.0, 2.5, 1.5, 0.0] },
+            "edm": { "p": -6.0, "m": [6.0, 4.5, 2.0, -1.0, -1.5, 0.0, 1.5, 3.5, 4.0, 2.5] },
+            "hiphop": { "p": -5.5, "m": [5.5, 5.0, 3.0, 1.0, -0.5, 0.0, 1.0, 2.0, 2.5, 1.0] },
+            "jazz": { "p": -2.5, "m": [1.0, 2.0, 2.5, 1.5, 0.5, 0.0, 0.5, 1.5, 2.0, 1.0] },
+            "classical": { "p": -2.0, "m": [-1.0, -0.5, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 2.5, 1.5] },
+            "metal": { "p": -3.0, "m": [2.5, 2.0, -0.5, -1.5, 0.0, 1.0, 2.0, 3.0, 2.0, 0.5] },
+            "acoustic": { "p": -2.5, "m": [0.5, 1.5, 2.0, 2.5, 2.0, 1.5, 1.0, 1.5, 1.0, 0.5] },
+            "rnb": { "p": -3.5, "m": [3.5, 4.0, 2.5, 1.0, 0.5, 1.0, 2.0, 2.5, 1.5, 0.5] },
+            "pop": { "p": -3.5, "m": [3.0, 4.0, 2.0, 0.0, -0.5, 0.5, 1.5, 3.0, 2.5, 1.0] },
+            "lofi": { "p": -2.5, "m": [2.0, 3.0, 1.5, 0.0, 0.5, 1.0, 0.0, -1.5, -3.0, -4.5] },
+            "reggae": { "p": -6.5, "m": [6.5, 5.5, 3.0, 0.5, 0.0, 0.5, 1.0, 1.5, 0.5, 0.0] },
+            "funk": { "p": -3.0, "m": [2.0, 3.5, 2.0, -1.0, 0.0, 1.0, 2.0, 2.5, 1.5, 0.5] },
+            "synthwave": { "p": -4.0, "m": [4.0, 3.5, 1.5, 0.0, -1.0, 0.5, 1.5, 2.5, 2.0, 1.5] },
+            "disco": { "p": -3.0, "m": [3.0, 2.5, 1.0, -1.0, -1.5, 0.0, 1.0, 2.0, 3.0, 2.0] },
+            "orchestra": { "p": -2.0, "m": [-1.0, -0.5, 1.0, 2.0, 2.5, 2.5, 3.0, 2.5, 2.0, 1.0] },
+            "indie": { "p": -3.0, "m": [2.0, 2.5, 1.5, 0.5, 1.0, 2.0, 2.5, 2.0, 1.0, 0.5] },
+            "kpop": { "p": -4.0, "m": [3.5, 4.0, 2.0, -0.5, 0.0, 1.0, 2.5, 3.5, 3.0, 2.0] },
+
+            "fps": { "p": -4.5, "m": [-6.0, -5.0, -1.0, 2.5, 3.5, 4.0, 4.5, 3.0, 1.0, 0.0] },
+            "competitive": { "p": -4.0, "m": [-5.0, -3.0, 0.0, 1.5, 2.5, 3.5, 4.0, 2.5, 1.0, 0.0] },
+            "footsteps": { "p": -4.0, "m": [-7.0, -4.0, 1.0, 3.5, 4.0, 3.5, 3.0, 1.5, 0.0, 0.0] },
+            "immersive": { "p": -4.0, "m": [4.0, 3.5, 1.5, 0.0, -1.0, 0.0, 1.5, 2.5, 3.0, 3.5] },
+            "gaming_imaging": { "p": -3.0, "m": [-2.0, -1.0, 0.0, 1.5, 2.0, 2.5, 3.0, 2.5, 1.5, 1.0] },
+            "story": { "p": -3.0, "m": [2.0, 2.5, 1.5, 0.5, 0.5, 1.5, 2.0, 2.5, 2.0, 1.0] },
+            "rpg": { "p": -2.5, "m": [1.5, 1.0, 0.5, 0.5, 1.0, 2.0, 2.5, 2.0, 1.5, 1.0] },
+            "racing": { "p": -3.5, "m": [3.5, 3.5, 2.0, 0.5, -1.0, -0.5, 1.0, 2.5, 2.0, 1.0] },
+            "retro": { "p": -2.5, "m": [-3.0, -1.0, 1.0, 2.0, 2.5, 2.0, 1.5, 1.0, 0.0, -2.0] },
+            "stealth": { "p": -4.0, "m": [-5.0, -3.0, 0.0, 1.0, 2.5, 3.0, 4.0, 3.0, 1.5, 0.5] },
+            "scifi": { "p": -3.5, "m": [3.0, 2.0, 0.5, -1.0, -1.5, 0.5, 1.5, 3.0, 3.5, 2.5] },
+            "horror": { "p": -4.5, "m": [4.5, 3.0, 1.0, 0.0, 1.0, 2.0, 3.0, 3.5, 2.5, 1.5] },
+            "sniper": { "p": -4.0, "m": [-6.0, -4.0, 0.0, 1.5, 2.5, 3.5, 4.5, 3.0, 1.0, 0.0] },
+            "tactical": { "p": -3.5, "m": [-4.0, -2.0, 0.0, 1.0, 2.0, 2.5, 3.5, 2.5, 1.0, 0.0] },
+            "cyberpunk": { "p": -4.0, "m": [4.5, 3.5, 1.5, -1.0, -1.5, 0.5, 2.0, 3.0, 4.0, 2.5] },
+            "arena": { "p": -3.0, "m": [-2.0, -1.0, 0.5, 1.5, 2.5, 2.0, 1.0, 0.5, 0.0, 0.0] },
+            "survival": { "p": -4.0, "m": [-7.0, -5.0, -1.0, 2.5, 3.5, 3.0, 2.0, 1.0, 1.5, 2.0] },
+            "rhythm": { "p": -3.0, "m": [1.5, 3.5, 4.0, 2.5, 1.0, 0.5, 1.0, 1.5, 1.0, 0.5] },
+            "flight": { "p": -3.5, "m": [3.0, 2.5, 1.0, 0.0, -0.5, 0.5, 1.5, 2.5, 2.0, 1.0] },
+            "moba": { "p": -2.5, "m": [-3.0, -1.5, 0.5, 1.5, 2.5, 2.0, 1.5, 1.0, 0.5, 0.0] },
+            "sims": { "p": -2.0, "m": [1.5, 1.5, 1.0, 0.5, 0.5, 1.0, 1.5, 1.5, 1.0, 0.5] },
+            "fighting": { "p": -3.5, "m": [3.0, 3.5, 2.5, 1.0, 0.5, 1.0, 2.0, 2.5, 1.5, 0.5] },
+
+            "cinema": { "p": -4.5, "m": [4.5, 3.5, 1.5, -0.5, -1.0, 0.5, 2.0, 3.5, 4.0, 2.5] },
+            "dialogue": { "p": -3.5, "m": [-6.0, -4.0, -1.0, 2.0, 3.5, 3.5, 2.5, 1.0, -1.0, -3.0] },
+            "podcast": { "p": -3.0, "m": [-5.0, -3.0, -0.5, 1.5, 3.0, 3.0, 1.5, 0.5, -1.0, -3.0] },
+            "audiobook": { "p": -3.5, "m": [-6.0, -4.0, -1.0, 2.0, 3.5, 3.0, 1.5, 0.5, -1.0, -3.0] },
+            "shows": { "p": -2.5, "m": [-2.0, -1.0, 0.5, 1.5, 2.0, 2.0, 1.5, 1.0, 0.5, 0.0] },
+            "movie": { "p": -4.0, "m": [4.0, 3.0, 1.0, 0.0, -0.5, 0.5, 1.5, 3.0, 3.0, 1.5] },
+            "sports": { "p": -3.0, "m": [1.0, 2.0, 2.5, 1.0, 0.5, 1.0, 2.0, 3.0, 1.5, 0.5] },
+            "vintage": { "p": -2.5, "m": [0.5, 1.5, 2.0, 2.5, 2.0, 1.5, 1.0, 0.0, -2.0, -4.0] },
+            "documentary": { "p": -2.5, "m": [-3.0, -1.0, 0.5, 1.5, 2.5, 3.0, 2.0, 1.0, 0.0, -2.0] },
+            "anime": { "p": -3.0, "m": [1.0, 2.5, 2.0, 0.5, 1.0, 2.0, 2.5, 3.0, 2.0, 1.0] },
+            "asmr": { "p": -4.5, "m": [-6.0, -4.0, -2.0, 0.0, 1.0, 2.0, 3.5, 4.5, 4.5, 3.0] },
+            "radio": { "p": -4.0, "m": [-10.0, -8.0, -2.0, 2.0, 4.0, 3.0, 1.0, -2.0, -6.0, -10.0] },
+            "news": { "p": -3.0, "m": [-5.0, -3.0, 0.0, 2.0, 3.5, 3.5, 2.0, 0.5, -1.0, -3.0] },
+            "thriller": { "p": -4.0, "m": [3.5, 4.0, 2.0, 0.0, 0.5, 1.0, 2.0, 3.0, 2.5, 1.5] },
+            "comedy": { "p": -2.5, "m": [1.5, 2.5, 2.0, 0.5, 0.0, 0.5, 1.5, 2.5, 2.0, 1.0] },
+            "theater": { "p": -3.5, "m": [4.0, 3.0, 1.5, -0.5, -1.0, 0.5, 2.0, 3.0, 3.5, 4.0] },
+            "vlog": { "p": -2.5, "m": [-3.0, -2.0, -1.0, 1.0, 2.0, 2.5, 1.5, 0.5, 0.0, 0.0] },
+            "action": { "p": -4.5, "m": [5.0, 4.0, 2.0, 0.0, -1.0, 0.5, 2.0, 3.5, 4.0, 3.0] },
+            "nature": { "p": -2.5, "m": [1.0, 2.0, 2.5, 1.5, 1.0, 0.5, 1.0, 1.5, 1.0, 0.5] },
+            "whisper": { "p": -4.0, "m": [-8.0, -6.0, -4.0, -1.0, 1.5, 2.5, 3.5, 4.5, 5.0, 5.0] },
+            "sitcom": { "p": -2.0, "m": [-2.0, -1.0, 1.0, 2.0, 2.0, 1.5, 1.0, 0.5, 0.0, 0.0] },
+            "streaming": { "p": -3.0, "m": [2.0, 2.0, 1.0, 0.5, 0.5, 1.0, 1.5, 2.5, 2.0, 1.0] },
+
+            "flat": { "p": 0.0, "m": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+            "reference": { "p": -0.5, "m": [0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0] },
+            "analytical": { "p": -2.0, "m": [-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 1.0, 0.5] },
+            "detail": { "p": -2.5, "m": [0.0, 0.0, 0.0, 0.0, 0.5, 1.5, 2.5, 3.0, 2.0, 1.0] },
+            "airy": { "p": -4.5, "m": [0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 1.5, 3.0, 4.5, 3.5] },
+            "soundstage": { "p": -4.5, "m": [1.5, 1.0, 0.5, 0.0, -0.5, 0.5, 1.5, 3.5, 4.0, 4.5] },
+            "natural": { "p": -1.5, "m": [1.0, 1.5, 1.5, 1.0, 0.5, 0.5, 1.0, 1.5, 1.0, 0.5] },
+            "transparent": { "p": -2.5, "m": [-1.0, -0.5, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 2.0, 1.5] },
+            "critlistening": { "p": -1.0, "m": [0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 0.5, 0.0] },
+            "diffuse": { "p": -5.0, "m": [-3.0, -1.5, 0.5, 1.5, 2.5, 3.5, 5.0, 4.0, 2.0, 1.0] },
+            "freefield": { "p": -4.5, "m": [-4.0, -2.5, 0.0, 1.5, 3.5, 4.5, 3.0, 1.5, 0.0, -1.0] },
+            "tube": { "p": -2.0, "m": [2.0, 2.0, 1.5, 0.5, 0.0, 0.0, -0.5, -1.0, -1.5, -2.0] },
+            "mastering": { "p": -1.0, "m": [-0.5, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.0, 0.0] },
+            "binaural": { "p": -2.5, "m": [0.5, 1.0, 1.5, 2.0, 1.5, 1.0, 1.5, 2.0, 1.5, 0.5] },
+            "purist": { "p": 0.0, "m": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+            "holographic": { "p": -3.5, "m": [1.0, 1.0, 0.5, 0.0, -0.5, 0.5, 1.5, 3.5, 4.5, 5.5] },
+            "coherence": { "p": -1.5, "m": [0.5, 1.0, 1.5, 1.0, 0.5, 1.0, 1.5, 2.0, 1.0, 0.5] },
+            "organic": { "p": -2.0, "m": [1.5, 1.5, 2.0, 1.5, 1.0, 0.5, 1.0, 1.5, 1.0, 0.5] },
+            "resolution": { "p": -2.5, "m": [0.0, 0.0, 0.0, 0.0, 0.5, 1.5, 3.0, 4.0, 2.5, 1.0] },
+            "linear": { "p": -0.5, "m": [0.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.0, 0.0, 0.0] },
+            "field": { "p": -2.0, "m": [-1.0, -0.5, 0.0, 0.5, 1.0, 1.0, 1.5, 2.0, 1.5, 1.0] },
+            "booth": { "p": -2.0, "m": [-1.5, -0.5, 0.5, 1.5, 2.0, 1.5, 1.0, 0.5, 0.0, 0.0] },
+
+            "bass": { "p": -9.0, "m": [9.0, 8.5, 6.0, 2.5, 0.0, -1.0, -1.5, -1.0, -0.5, 0.0] },
+            "subbass": { "p": -7.0, "m": [7.0, 5.5, 3.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] },
+            "punchy": { "p": -5.5, "m": [2.0, 4.5, 5.5, 3.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0] },
+            "slam": { "p": -6.0, "m": [4.0, 6.0, 5.5, 3.0, 1.0, 0.5, 1.0, 2.0, 2.5, 1.0] },
+            "extremebass": { "p": -10.0, "m": [10.0, 9.0, 7.0, 4.0, 1.5, 0.0, 0.0, 0.5, 1.5, 1.0] },
+            "club": { "p": -5.0, "m": [5.0, 5.0, 4.5, 2.5, 1.0, 0.5, 1.5, 2.5, 2.0, 1.0] },
+            "pressure": { "p": -6.5, "m": [6.5, 5.5, 3.5, 1.5, 0.0, -0.5, -1.0, -0.5, 0.0, 0.5] },
+            "rumble": { "p": -5.5, "m": [5.5, 4.0, 2.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] },
+            "subwoofer": { "p": -9.5, "m": [9.5, 9.0, 6.5, 3.0, 0.5, -1.0, -2.0, -1.5, -1.0, 0.0] },
+            "tectonic": { "p": -8.5, "m": [8.5, 7.5, 4.5, 1.0, -1.0, -2.0, -2.0, -1.5, -1.0, 0.0] },
+            "impact": { "p": -4.0, "m": [2.0, 4.0, 3.0, 1.0, 0.0, 0.5, 1.5, 2.0, 1.0, 0.0] },
+            "techno": { "p": -4.0, "m": [4.0, 4.0, 3.5, 1.5, 0.0, 1.0, 1.5, 2.0, 1.0, 0.0] },
+            "anvil": { "p": -6.5, "m": [3.0, 5.5, 6.5, 4.5, 1.5, 0.5, 1.0, 1.5, 1.0, 0.0] },
+            "crusher": { "p": -10.5, "m": [10.5, 9.5, 7.0, 4.0, 1.5, 0.0, 0.0, 0.5, 1.0, 1.5] },
+            "quake": { "p": -7.5, "m": [7.5, 6.5, 3.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] },
+            "vortex": { "p": -6.5, "m": [6.5, 6.0, 4.0, 2.0, 0.5, -0.5, -1.0, -1.5, -1.5, -1.0] },
+            "carnage": { "p": -9.0, "m": [9.0, 8.5, 7.0, 4.5, 2.0, 0.5, 1.0, 1.5, 2.0, 1.0] },
+            "piston": { "p": -5.0, "m": [2.5, 5.0, 4.5, 2.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0] },
+            "detonation": { "p": -6.5, "m": [4.5, 6.5, 5.5, 3.5, 1.0, 0.5, 1.0, 1.5, 1.0, 0.5] },
+            "rave": { "p": -5.0, "m": [5.0, 4.5, 2.5, -0.5, -1.5, 0.5, 1.5, 3.0, 3.0, 1.0] },
+            "hammer": { "p": -6.5, "m": [2.5, 6.5, 5.5, 3.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0] },
+            "thunder": { "p": -8.0, "m": [8.0, 6.5, 3.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] }
+    },
+};
 
 /* ===== app/js/eq-core.js ===== */
 // Split out of the former monolithic app-core.js (2026 refactor).
@@ -14080,14 +14673,7 @@ const EQ_Module = {
         this.switchFaderTab(this.faderModes[nextIdx].id);
     },
 
-    presetCategories: [
-        { id: 'music', label: 'Music', emoji: '🎵' },
-        { id: 'gaming', label: 'Gaming', emoji: '🎮' },
-        { id: 'media', label: 'Film', emoji: '🎬' },
-        { id: 'audiophile', label: 'Audio', emoji: '🎧' },
-        { id: 'basshead', label: 'Bass', emoji: '🔥' },
-        { id: 'custom', label: 'Custom', emoji: '⭐' }
-    ],
+            // (presetCategories extracted to eq-presets-data.js — EQ_PresetsData)
     cyclePresetCategory: function(dir) {
         const currentIdx = this.presetCategories.findIndex(m => m.id === (this.activePresetCategory || 'music'));
         const total = this.presetCategories.length;
@@ -14173,61 +14759,8 @@ simState: { tip: 'off', depth: 'off', seal: 'off' },
             depthOptions: ['off', 'shallow', 'medium', 'deep'],
             sealOptions: ['off', 'good', 'loose', 'broken'],
 
-            tapeModState: 'off',
-            tapeModOptions: ['off', 'front', 'rear', 'full'],
-            cycleTapeMod: function(dir = 1) {
-                const total = this.tapeModOptions.length;
-                const curIdx = this.tapeModOptions.indexOf(this.tapeModState);
-                const nextIdx = (curIdx + dir + total) % total;
-                this.tapeModState = this.tapeModOptions[nextIdx];
-                this.updateTapeModUI();
-                if (this.updateTapeModDSP) this.updateTapeModDSP();
-                this.drawCurve();
-                if (this.updateAudioConnections) this.updateAudioConnections();
-            },
-            updateTapeModDSP: function() {
-                if (!this.graphBuilt || !SharedAudio.workletNode) return;
-                const tapeMode = this.tapeModState;
-                let s6 = { index: 6, bypassed: true, filterType: 'lowshelf', frequency: 120, gain: 0, q: 0.7 };
-                let s7 = { index: 7, bypassed: true, filterType: 'peaking', frequency: 35, gain: 0, q: 1.2 };
-                if (tapeMode === 'front') {
-                    s6 = { index: 6, bypassed: false, filterType: 'lowshelf', frequency: 120, gain: 6.0, q: 0.7 };
-                    s7 = { index: 7, bypassed: false, filterType: 'peaking', frequency: 35, gain: 2.5, q: 1.2 };
-                } else if (tapeMode === 'rear') {
-                    s6 = { index: 6, bypassed: false, filterType: 'lowshelf', frequency: 250, gain: 3.5, q: 0.7 };
-                    s7 = { index: 7, bypassed: false, filterType: 'peaking', frequency: 150, gain: 2.0, q: 1.0 };
-                } else if (tapeMode === 'full') {
-                    s6 = { index: 6, bypassed: false, filterType: 'lowshelf', frequency: 180, gain: 8.5, q: 0.8 };
-                    s7 = { index: 7, bypassed: false, filterType: 'peaking', frequency: 30, gain: 4.0, q: 1.5 };
-                }
-                SharedAudio.workletNode.port.postMessage({
-                    type: 'updateSimulations',
-                    sims: [s6, s7]
-                });
-            },
-            updateTapeModUI: function() {
-                const label = document.getElementById('label-tape-mod');
-                const subLabel = document.getElementById('tape-mod-sub-label');
-                const displayNames = {
-                    off: 'Off (Stock Vents)',
-                    front: 'Front Vent (Sub-Bass)',
-                    rear: 'Rear Vent (Warmth)',
-                    full: 'Full Tape (Max Slam)'
-                };
-                const subNames = {
-                    off: 'Off',
-                    front: '+6.0dB Sub',
-                    rear: '+3.5dB Mid',
-                    full: '+8.5dB Slam'
-                };
-                if (label) label.textContent = displayNames[this.tapeModState] || 'Off';
-                if (subLabel) {
-                    subLabel.textContent = subNames[this.tapeModState] || 'Off';
-                    subLabel.className = this.tapeModState === 'off' 
-                        ? "font-mono text-emerald-400 font-bold text-[10px]" 
-                        : "font-mono text-amber-400 font-bold text-[10px]";
-                }
-            },
+            // (tape-mod methods extracted to eq-tape-mod.js — EQ_TapeModMethods,
+            // merged via Object.assign in db-cache.js)
 
             crossoverActive: false,
             crossoverType: '3way',
@@ -14242,84 +14775,21 @@ simState: { tip: 'off', depth: 'off', seal: 'off' },
             crossoverHighTrim: 0,
 
 vizModalActive: false,
-        vizModeIndex: 4,
-            vizModes: [
-                'horizontalSpectrogram', 'fullScreenWaterfall', 'acousticTunnel', 'oledSpectrum', 'oscilloscope', 'audioMesh'
-            ],
+        // (vizModeIndex/vizModes + startVisualizer extracted to eq-visualizer.js
+        //  — EQ_VisualizerMethods, merged via Object.assign in db-cache.js)
             fullscreenVizCanvas: null,
             fullscreenVizCtx: null,
 
-            presetsByCategory: {
-         music: [
-             { id: 'balanced', name: '⚖️ Balanced' }, { id: 'harman', name: '🎧 Harman' },
-             { id: 'vshape', name: '🔺 V-Shape' }, { id: 'warm', name: '🌿 Warm' },
-             { id: 'vocal_music', name: '🎤 Vocal' }, { id: 'rock', name: '🎸 Rock' },
-             { id: 'edm', name: '🎛️ EDM' }, { id: 'hiphop', name: '🎤 Hip-Hop' },
-             { id: 'jazz', name: '🎺 Jazz' }, { id: 'classical', name: '🎻 Classical' },
-             { id: 'metal', name: '🤘 Metal' }, { id: 'acoustic', name: '🎹 Acoustic' },
-             { id: 'rnb', name: '🎷 R&B' }, { id: 'pop', name: '🎹 Pop' },
-             { id: 'lofi', name: '☕ Lo-Fi' }, { id: 'reggae', name: '🍁 Reggae' },
-             { id: 'funk', name: '🕶️ Funk' }, { id: 'synthwave', name: '🛸 Synthwave' },
-             { id: 'disco', name: '🪩 Disco' }, { id: 'orchestra', name: '🎼 Orchestra' },
-             { id: 'indie', name: '🎸 Indie' }, { id: 'kpop', name: '🎤 K-Pop' }
-         ],
-         gaming: [
-             { id: 'fps', name: '🎮 Footsteps' }, { id: 'competitive', name: '🔫 Competitive' },
-             { id: 'footsteps', name: '👣 Steps' }, { id: 'immersive', name: '🌍 Immersive' },
-             { id: 'gaming_imaging', name: '🎯 Positional' }, { id: 'story', name: '🎬 Story' },
-             { id: 'rpg', name: '🗣️ RPG' }, { id: 'racing', name: '🏎️ Racing' },
-             { id: 'retro', name: '🕹️ Arcade' }, { id: 'stealth', name: '🥷 Stealth' },
-             { id: 'scifi', name: '🚀 Sci-Fi' }, { id: 'horror', name: '🧟 Horror' },
-             { id: 'sniper', name: '🔭 Sniper' }, { id: 'tactical', name: '💣 Tactical' },
-             { id: 'cyberpunk', name: '🦾 Cyberpunk' }, { id: 'arena', name: '⚔️ Arena' },
-             { id: 'survival', name: '🩻 Wasteland' }, { id: 'rhythm', name: '🥁 Rhythm' },
-             { id: 'flight', name: '🛩️ Flight' }, { id: 'moba', name: '🛡️ MOBA' },
-             { id: 'sims', name: '🏡 Casual' }, { id: 'fighting', name: '🥊 Fighting' }
-         ],
-         media: [
-             { id: 'cinema', name: '🎥 Cinema' }, { id: 'dialogue', name: '📢 Dialogue' },
-             { id: 'podcast', name: '🎙️ Podcast' }, { id: 'audiobook', name: '📚 Audiobook' },
-             { id: 'shows', name: '📺 Television' }, { id: 'movie', name: '🍿 Movies' },
-             { id: 'sports', name: '🏟️ Sports' }, { id: 'vintage', name: '🎞️ Vintage' },
-             { id: 'documentary', name: '📽️ Documentary' }, { id: 'anime', name: '🎤 Anime' },
-             { id: 'asmr', name: '🎐 ASMR' }, { id: 'radio', name: '📻 Broadcast' },
-             { id: 'news', name: '📰 News' }, { id: 'thriller', name: '⚡ Thriller' },
-             { id: 'comedy', name: '🎪 Comedy' }, { id: 'theater', name: '🏛️ Theater' },
-             { id: 'vlog', name: '🤳 Vlog' }, { id: 'action', name: '🧨 Blockbuster' },
-             { id: 'nature', name: '🏕️ Nature' }, { id: 'whisper', name: '🤫 Whisper' },
-             { id: 'sitcom', name: '🛋️ Sitcom' }, { id: 'streaming', name: '🎞️ Stream' }
-         ],
-         audiophile: [
-             { id: 'flat', name: '📏 Flat' }, { id: 'reference', name: '🎯 Studio' },
-             { id: 'analytical', name: '🔬 Analytical' }, { id: 'detail', name: '🧠 Detail' },
-             { id: 'airy', name: '☁️ Airy' }, { id: 'soundstage', name: '🌌 Soundstage' },
-             { id: 'natural', name: '🎼 Natural' }, { id: 'transparent', name: '🪞 Transparent' },
-             { id: 'critlistening', name: '🎧 Critical' }, { id: 'diffuse', name: '🌐 Diffuse' },
-             { id: 'freefield', name: '📐 Free-Field' }, { id: 'tube', name: '🕯️ Tube' },
-             { id: 'mastering', name: '🎚️ Mastering' }, { id: 'binaural', name: '👥 Binaural' },
-             { id: 'purist', name: '🕊️ Purist' }, { id: 'holographic', name: '🔮 Holographic' },
-             { id: 'coherence', name: '🧬 Phase' }, { id: 'organic', name: '🍃 Organic' },
-             { id: 'resolution', name: '🔍 Resolution' }, { id: 'linear', name: '🏁 Linear' },
-             { id: 'field', name: '🌲 Field' }, { id: 'booth', name: '🚪 Booth' }
-         ],
-         basshead: [
-             { id: 'bass', name: '🥁 Basshead' }, { id: 'subbass', name: '🌋 Sub-Bass' },
-             { id: 'punchy', name: '🥊 Slam' }, { id: 'slam', name: '🏎️ Kinetic' },
-             { id: 'extremebass', name: '💥 Megabass' }, { id: 'club', name: '🔈 Club' },
-             { id: 'pressure', name: '🌪️ Pressure' }, { id: 'rumble', name: '🌊 Rumble' },
-             { id: 'subwoofer', name: '🛞 Subwoofer' }, { id: 'tectonic', name: '🧱 Tectonic' },
-             { id: 'impact', name: '🧨 Impact' }, { id: 'techno', name: '🏭 Techno' },
-             { id: 'anvil', name: '⛓️ Anvil' }, { id: 'crusher', name: '🚜 Crusher' },
-             { id: 'quake', name: '🪨 Quake' }, { id: 'vortex', name: '🕳️ Vortex' },
-             { id: 'carnage', name: '👹 Carnage' }, { id: 'piston', name: '⚙️ Piston' },
-             { id: 'detonation', name: '💣 Detonation' }, { id: 'rave', name: '🕶️ Rave' },
-             { id: 'hammer', name: '🔨 Hammer' }, { id: 'thunder', name: '⚡ Thunder' }
-         ]
-     },
+            // (presetsByCategory extracted to eq-presets-data.js — EQ_PresetsData)
 
         eqPresets: null,
 
-        audioEl: null, source: null, preampNode: null, filters: [], advFilters: [], offlineCtx: null, mathFilters: [], eqEnabled: true, preventClipping: false, connected: false, graphBuilt: false,
+        // NOTE: the legacy native-BiquadFilterNode arrays (filters, advFilters,
+        // virtualFilters, mathFilters + offlineCtx) are GONE — all filtering runs
+        // in the AudioWorklet (dsp-processor.js) and all curve math evaluates
+        // through getBiquadMagnitude. The worklet's filter bank is the single
+        // source of truth for both audio and drawing.
+        audioEl: null, source: null, preampNode: null, eqEnabled: true, preventClipping: false, connected: false, graphBuilt: false,
         vizIndex: 0, vizMode: 'waveform',
         // Same headroom-tracking pattern as _hearingMaxBoost/_loudnessMaxBoost
         // (see updatePreamp/effectivePreampDb) -- the master Bass/Treble
@@ -14357,403 +14827,20 @@ vizModalActive: false,
 
         init: function() {
             const self = this;
-            this.eqPresets = JSON.parse('{"balanced":{"p":0,"m":[0,0,0,0,0,0,0,0,0,0],"a":[0,0,0,0,0,0,0,0,0,0]},"warm":{"p":-1,"m":[0,1.5,3,2,0,0,-1,-1.5,-2,0],"a":[1,2,3.5,2.5,0,0,0,-1,-2,0]},"vshape":{"p":-6.0,"m":[4,4.5,2,-1.5,-2,-1,1.5,3.5,4.5,2],"a":[5,4,1.5,-1,-2,-1,2,4,3,1]},"harman":{"p":-5.0,"m":[2,4.5,3,1,-0.5,-1,1.5,4.5,3.5,-1],"a":[3,4.5,2.5,0.5,-0.5,-1,1,3.5,3,0]},"rock":{"p":-3.0,"m":[3,2.5,1.5,-1,0.5,1,2,2.5,1.5,0],"a":[2,3,1.5,0,0.5,1,1.5,2,1.5,0]},"edm":{"p":-6.5,"m":[5,4,2.5,-1,-1.5,-0.5,1.5,3.5,4,2],"a":[6,4,1.5,-1,-1.5,0,2,3,3.5,1]},"hiphop":{"p":-2.5,"m":[2,4.5,3,1,-0.5,-1,1.5,4.5,3.5,-1],"a":[3,4.5,2.5,0.5,-0.5,-1,1,3.5,3,0]},"classical":{"p":-1.5,"m":[-1.5,-1,0.5,1,1.5,2,2.5,3,2.5,1.5],"a":[-2,-1,0.5,1.5,2,1.5,2,2.5,2,1]},"acoustic":{"p":-1.5,"m":[0.5,1,1.5,2.5,3,2.5,2,1.5,1,0.5],"a":[0,1,2,3,2.5,2,1.5,1,0.5,0]},"orchestra":{"p":-1.5,"m":[-1,-0.5,1,2,2.5,2.5,3,2.5,2,1],"a":[-1,0,1.5,2,2.5,2,2.5,2,1.5,0.5]},"relaxed":{"p":1,"m":[1.5,1.5,1,0,-1.5,-2,-2.5,-3,-2,-1],"a":[2,1.5,0.5,-0.5,-1.5,-2,-2,-2,-1,0]},"party":{"p":-2.5,"m":[4.5,4,2,-0.5,-1,0.5,2.5,4,3,1.5],"a":[5,4,1.5,0,-0.5,1,2,3,2.5,1]},"fps":{"p":-2,"m":[-4,-4,-2,0,0,1,2,3,1.5,0],"a":[-5,-3,0,0,1,1.5,4,2,1,0]},"competitive":{"p":-2.5,"m":[-5,-3,-1,1.5,2,2.5,3.5,4.5,2,0.5],"a":[-6,-4,0,1,2,3,4,3,1.5,0]},"footsteps":{"p":-2,"m":[-6,-4,-1,2.5,3.5,4,2.5,1,0,0],"a":[-7,-5,0,2.5,4,3,2,0.5,0,0]},"immersive":{"p":-2,"m":[4,3.5,1.5,0,-1,0,1,2,3,4],"a":[5,4,2,0,-1,0,1.5,2,2.5,3]},"gaming_imaging":{"p":-1.5,"m":[-2,-1,0,1.5,2,2.5,3,2.5,1.5,1],"a":[-2,-1,0,1,2,2.5,3,2,1,0.5]},"precision":{"p":-2,"m":[-3,-2,0,1.5,2.5,3,3.5,2.5,1.5,1],"a":[-3,-1,0.5,1.5,2.5,2.5,3,2,1,0.5]},"storymode":{"p":-2,"m":[3,3,1.5,0,0.5,1,1.5,2.5,3,2],"a":[4,3,1,0,0.5,1,2,2.5,2,1]},"casualgaming":{"p":-1,"m":[1.5,1.5,1,0.5,0.5,1,1.5,2,1.5,1],"a":[2,1.5,1,0.5,0.5,1,1.5,1.5,1,0.5]},"cinema":{"p":-2.5,"m":[4.5,3.5,1.5,-0.5,-1,0.5,2,3.5,4,2.5],"a":[5,3.5,1,-0.5,-1,1,2.5,3,3,2]},"dialogue":{"p":0,"m":[-6,-4,-2,1.5,3,3.5,2,0,-2,-5],"a":[-8,-5,-2,2,3.5,3,1.5,0,-1.5,-4]},"tvshows":{"p":-1,"m":[-2,-1,0.5,1,2,2,1.5,1,0.5,0],"a":[-2,-1,0.5,1.5,2,1.5,1,0.5,0,0]},"podcast":{"p":0,"m":[-5,-3,-1,1.5,3,3,1.5,0.5,-1,-3],"a":[-6,-4,-1,2,3,2.5,1,0.5,-0.5,-2]},"audiobook":{"p":0,"m":[-6,-4,-1,2,3.5,3,1,0.5,-2,-4],"a":[-7,-5,-1,2.5,3.5,2.5,1,0.5,-1,-3]},"streaming":{"p":-1.5,"m":[2,2,1,0.5,0.5,1,1.5,2.5,3,1.5],"a":[3,2,1,0.5,0.5,1,1.5,2,2,1]},"movienight":{"p":-2,"m":[4,3,1,0,-0.5,0.5,1.5,3,3,1.5],"a":[5,3.5,1,0,-0.5,0.5,2,2.5,2,1]},"analytical":{"p":0,"m":[-1.5,-1,-0.5,0,0.5,1,1.5,2,1,0.5],"a":[-2,-1,-0.5,0,0.5,1,1.5,1.5,1,0.5]},"detail":{"p":-1,"m":[0,0,0,0,0,1,2.5,3.5,2,0],"a":[0,0,0,0,0,1.5,4,2,2,1]},"airy":{"p":-1.5,"m":[0,0,0,0,0,0.5,1.5,3,4.5,3.5],"a":[0,0,0,0,0,0,1,3,4,2.5]},"soundstage":{"p":-2,"m":[1,1,0.5,0,-0.5,0.5,1.5,3.5,4,5],"a":[1,1,0.5,0,-0.5,0.5,1.5,3,3.5,4.5]},"audiophile_imaging":{"p":-1.5,"m":[-1,-0.5,0,1,1.5,2,2.5,3,2,1],"a":[-1,-0.5,0,1,1.5,2,2,2,1.5,1]},"reference":{"p":0,"m":[0,0,0,0,0,0.5,0.5,0,0,0],"a":[0,0,0,0,0,0,0,0,0,0]},"natural":{"p":-1,"m":[1,1,1.5,1.5,1,0.5,1,1.5,1,0.5],"a":[1,1,1,1.5,1,0.5,0.5,1,0.5,0]},"timbre":{"p":-1,"m":[0.5,1,1.5,1,0.5,1,1.5,2,1,0.5],"a":[0.5,1,1,1,0.5,1,1,1.5,1,0.5]},"transparent":{"p":-1,"m":[-1,-0.5,0.5,1,1.5,2,2.5,3,2,1.5],"a":[-1,-0.5,0.5,1,1.5,1.5,2,2.5,1.5,1]},"critlistening":{"p":-0.5,"m":[0,0,0,0.5,0.5,0.5,1,1,0.5,0],"a":[0,0,0,0.5,0.5,0.5,0.5,0.5,0.5,0]},"bass":{"p":-5.5,"m":[9.0,8.5,6.0,2.5,0,-1,-1.5,-1,-0.5,0],"a":[10.0,8.0,4.5,1.5,0,0,0,0,0,0]},"subbass":{"p":-3,"m":[6,5.5,3.5,1,0,0,0,0,0,0],"a":[7,5.5,2,0,0,0,0,0,0,0]},"punchy":{"p":-2,"m":[2,4.5,5.5,3.5,1,0,0,0,0,0],"a":[3,5,4,1.5,0,0,0,0,0,0]},"caraudio":{"p":-3.5,"m":[6.5,5.5,4,2,0.5,-0.5,1,2.5,3.5,1.5],"a":[7,6,3,1.5,0,-0.5,1,2,2.5,1]},"bass_party":{"p":-3,"m":[5.5,5,3.5,1,-0.5,0.5,2,3,3,1],"a":[6,5,3,1,-0.5,0.5,1.5,2,2,0.5]},"slam":{"p":-3,"m":[4,5.5,6,4,1.5,0.5,1.5,3,3.5,1.5],"a":[4.5,6,4.5,2,1,0.5,1,2,2.5,1]},"extremebass":{"p":-5,"m":[9,8.5,6.5,4,1.5,0,0,0.5,1.5,1],"a":[10,8.5,5,2.5,1,0,0,0,1,1]},"club":{"p":-3,"m":[5,5,4.5,2.5,1,0.5,1.5,2.5,2,1],"a":[5,5,4.5,2.5,1,0.5,1.5,2.5,2,1]},"bassboost":{"p":-2.5,"m":[4.5,3.5,1.5,0,0,0,0,0,0,0],"a":[5.0,3.0,0.5,0,0,0,0,0,0,0]},"deeprumble":{"p":-2,"m":[5.5,4.0,2.0,0.5,0,0,0,0,0,0],"a":[6,4,1.5,0,0,0,0,0,0,0]},"rpg":{"p":-1.5,"m":[1.5,1,0.5,0,0.5,1.5,2,2.5,2,1],"a":[2,1.5,0.5,0,0.5,1,1.5,2,1.5,1]},"racing":{"p":-2,"m":[3,3.5,2,0.5,-1,-0.5,1,2.5,2,1],"a":[3,3.5,1.5,0,-0.5,0.5,1.5,2,1.5,1]},"retro":{"p":-1,"m":[-2,-1,0.5,2,2.5,2,1.5,1,0.5,-1],"a":[-3,-1,1,2,2.5,2,1.5,1,0,-2]},"stealth":{"p":-2,"m":[-4,-3,-1,1.5,2,2.5,3.5,4,2.5,1],"a":[-5,-3,0,1,2.5,3,3.5,2.5,1.5,0.5]},"chill":{"p":-1,"m":[2,2.5,1.5,0.5,-0.5,-1,-1.5,-2,-1,0],"a":[3,2.5,1,0,-0.5,-1,-1,-1.5,-1,0]},"sports":{"p":-1.5,"m":[1,2,2.5,1,0,0.5,1.5,2,1,0],"a":[1,2,2,0.5,0,0.5,1,1.5,1,0]},"vintage":{"p":-1,"m":[0.5,1.5,2,2.5,2,1.5,1,0,-2,-4],"a":[1,2,2,2.5,1.5,1,0.5,0,-1,-3]},"documentary":{"p":0,"m":[-3,-1,0.5,1.5,2.5,3,2,1,0,-2],"a":[-4,-2,0,1,2,2.5,1.5,1,0,-1]},"anime":{"p":-1.5,"m":[1,2.5,2,0.5,1,2,2.5,3,2,1],"a":[1,2.5,1.5,0.5,1,1.5,2,2.5,1.5,0.5]},"vocals":{"p":-1,"m":[-2,-1,0.5,1.5,2.5,3.5,3,2,1,0.5],"a":[-2,-1,0.5,2,3,3,2,1.5,1,0.5]},"flat":{"p":0,"m":[0,0,0,0,0,0,0,0,0,0],"a":[0,0,0,0,0,0,0,0,0,0]},"bass_cannon":{"p":-4,"m":[7,7,5.5,3,1,0,0,0,0,0],"a":[8,7,4.5,2,0.5,0,0,0,0,0]},"shaker":{"p":-3.5,"m":[5,6,4.5,2,0.5,0,0,0,1,2],"a":[6,6,3.5,1.5,0,0,0,0,1,1.5]}}');
+            this.eqPresets = JSON.parse(EQ_PresetsData.eqPresetsJson);
 
-            const curatedPresets = {
-
-                "balanced": { "p": 0.0, "m": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-                "harman": { "p": -5.0, "m": [5.0, 4.5, 2.5, 0.5, -0.5, 0.0, 1.5, 4.0, 1.5, -1.0] },
-                "vshape": { "p": -4.5, "m": [4.5, 4.0, 2.0, -1.5, -2.0, -1.0, 1.5, 3.5, 4.5, 3.0] },
-                "warm": { "p": -3.0, "m": [3.0, 3.5, 2.5, 1.0, 0.5, 0.0, -0.5, -1.0, -2.0, -2.5] },
-                "vocal_music": { "p": -3.5, "m": [-3.0, -1.5, 0.5, 1.5, 2.5, 3.5, 4.0, 2.5, 1.0, 0.5] },
-                "rock": { "p": -3.0, "m": [3.0, 2.5, 1.5, -1.0, 0.5, 1.0, 2.0, 2.5, 1.5, 0.0] },
-                "edm": { "p": -6.0, "m": [6.0, 4.5, 2.0, -1.0, -1.5, 0.0, 1.5, 3.5, 4.0, 2.5] },
-                "hiphop": { "p": -5.5, "m": [5.5, 5.0, 3.0, 1.0, -0.5, 0.0, 1.0, 2.0, 2.5, 1.0] },
-                "jazz": { "p": -2.5, "m": [1.0, 2.0, 2.5, 1.5, 0.5, 0.0, 0.5, 1.5, 2.0, 1.0] },
-                "classical": { "p": -2.0, "m": [-1.0, -0.5, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 2.5, 1.5] },
-                "metal": { "p": -3.0, "m": [2.5, 2.0, -0.5, -1.5, 0.0, 1.0, 2.0, 3.0, 2.0, 0.5] },
-                "acoustic": { "p": -2.5, "m": [0.5, 1.5, 2.0, 2.5, 2.0, 1.5, 1.0, 1.5, 1.0, 0.5] },
-                "rnb": { "p": -3.5, "m": [3.5, 4.0, 2.5, 1.0, 0.5, 1.0, 2.0, 2.5, 1.5, 0.5] },
-                "pop": { "p": -3.5, "m": [3.0, 4.0, 2.0, 0.0, -0.5, 0.5, 1.5, 3.0, 2.5, 1.0] },
-                "lofi": { "p": -2.5, "m": [2.0, 3.0, 1.5, 0.0, 0.5, 1.0, 0.0, -1.5, -3.0, -4.5] },
-                "reggae": { "p": -4.5, "m": [6.5, 5.5, 3.0, 0.5, 0.0, 0.5, 1.0, 1.5, 0.5, 0.0] },
-                "funk": { "p": -3.0, "m": [2.0, 3.5, 2.0, -1.0, 0.0, 1.0, 2.0, 2.5, 1.5, 0.5] },
-                "synthwave": { "p": -4.0, "m": [4.0, 3.5, 1.5, 0.0, -1.0, 0.5, 1.5, 2.5, 2.0, 1.5] },
-                "disco": { "p": -3.0, "m": [3.0, 2.5, 1.0, -1.0, -1.5, 0.0, 1.0, 2.0, 3.0, 2.0] },
-                "orchestra": { "p": -2.0, "m": [-1.0, -0.5, 1.0, 2.0, 2.5, 2.5, 3.0, 2.5, 2.0, 1.0] },
-                "indie": { "p": -3.0, "m": [2.0, 2.5, 1.5, 0.5, 1.0, 2.0, 2.5, 2.0, 1.0, 0.5] },
-                "kpop": { "p": -4.0, "m": [3.5, 4.0, 2.0, -0.5, 0.0, 1.0, 2.5, 3.5, 3.0, 2.0] },
-
-                "fps": { "p": -4.5, "m": [-6.0, -5.0, -1.0, 2.5, 3.5, 4.0, 4.5, 3.0, 1.0, 0.0] },
-                "competitive": { "p": -4.0, "m": [-5.0, -3.0, 0.0, 1.5, 2.5, 3.5, 4.0, 2.5, 1.0, 0.0] },
-                "footsteps": { "p": -4.0, "m": [-7.0, -4.0, 1.0, 3.5, 4.0, 3.5, 3.0, 1.5, 0.0, 0.0] },
-                "immersive": { "p": -4.0, "m": [4.0, 3.5, 1.5, 0.0, -1.0, 0.0, 1.5, 2.5, 3.0, 3.5] },
-                "gaming_imaging": { "p": -3.0, "m": [-2.0, -1.0, 0.0, 1.5, 2.0, 2.5, 3.0, 2.5, 1.5, 1.0] },
-                "story": { "p": -3.0, "m": [2.0, 2.5, 1.5, 0.5, 0.5, 1.5, 2.0, 2.5, 2.0, 1.0] },
-                "rpg": { "p": -2.5, "m": [1.5, 1.0, 0.5, 0.5, 1.0, 2.0, 2.5, 2.0, 1.5, 1.0] },
-                "racing": { "p": -3.5, "m": [3.5, 3.5, 2.0, 0.5, -1.0, -0.5, 1.0, 2.5, 2.0, 1.0] },
-                "retro": { "p": -2.5, "m": [-3.0, -1.0, 1.0, 2.0, 2.5, 2.0, 1.5, 1.0, 0.0, -2.0] },
-                "stealth": { "p": -4.0, "m": [-5.0, -3.0, 0.0, 1.0, 2.5, 3.0, 4.0, 3.0, 1.5, 0.5] },
-                "scifi": { "p": -3.5, "m": [3.0, 2.0, 0.5, -1.0, -1.5, 0.5, 1.5, 3.0, 3.5, 2.5] },
-                "horror": { "p": -4.5, "m": [4.5, 3.0, 1.0, 0.0, 1.0, 2.0, 3.0, 3.5, 2.5, 1.5] },
-                "sniper": { "p": -4.0, "m": [-6.0, -4.0, 0.0, 1.5, 2.5, 3.5, 4.5, 3.0, 1.0, 0.0] },
-                "tactical": { "p": -3.5, "m": [-4.0, -2.0, 0.0, 1.0, 2.0, 2.5, 3.5, 2.5, 1.0, 0.0] },
-                "cyberpunk": { "p": -4.0, "m": [4.5, 3.5, 1.5, -1.0, -1.5, 0.5, 2.0, 3.0, 4.0, 2.5] },
-                "arena": { "p": -3.0, "m": [-2.0, -1.0, 0.5, 1.5, 2.5, 2.0, 1.0, 0.5, 0.0, 0.0] },
-                "survival": { "p": -4.0, "m": [-7.0, -5.0, -1.0, 2.5, 3.5, 3.0, 2.0, 1.0, 1.5, 2.0] },
-                "rhythm": { "p": -3.0, "m": [1.5, 3.5, 4.0, 2.5, 1.0, 0.5, 1.0, 1.5, 1.0, 0.5] },
-                "flight": { "p": -3.5, "m": [3.0, 2.5, 1.0, 0.0, -0.5, 0.5, 1.5, 2.5, 2.0, 1.0] },
-                "moba": { "p": -2.5, "m": [-3.0, -1.5, 0.5, 1.5, 2.5, 2.0, 1.5, 1.0, 0.5, 0.0] },
-                "sims": { "p": -2.0, "m": [1.5, 1.5, 1.0, 0.5, 0.5, 1.0, 1.5, 1.5, 1.0, 0.5] },
-                "fighting": { "p": -3.5, "m": [3.0, 3.5, 2.5, 1.0, 0.5, 1.0, 2.0, 2.5, 1.5, 0.5] },
-
-                "cinema": { "p": -4.5, "m": [4.5, 3.5, 1.5, -0.5, -1.0, 0.5, 2.0, 3.5, 4.0, 2.5] },
-                "dialogue": { "p": -3.5, "m": [-6.0, -4.0, -1.0, 2.0, 3.5, 3.5, 2.5, 1.0, -1.0, -3.0] },
-                "podcast": { "p": -3.0, "m": [-5.0, -3.0, -0.5, 1.5, 3.0, 3.0, 1.5, 0.5, -1.0, -3.0] },
-                "audiobook": { "p": -3.5, "m": [-6.0, -4.0, -1.0, 2.0, 3.5, 3.0, 1.5, 0.5, -1.0, -3.0] },
-                "shows": { "p": -2.5, "m": [-2.0, -1.0, 0.5, 1.5, 2.0, 2.0, 1.5, 1.0, 0.5, 0.0] },
-                "movie": { "p": -4.0, "m": [4.0, 3.0, 1.0, 0.0, -0.5, 0.5, 1.5, 3.0, 3.0, 1.5] },
-                "sports": { "p": -3.0, "m": [1.0, 2.0, 2.5, 1.0, 0.5, 1.0, 2.0, 3.0, 1.5, 0.5] },
-                "vintage": { "p": -2.5, "m": [0.5, 1.5, 2.0, 2.5, 2.0, 1.5, 1.0, 0.0, -2.0, -4.0] },
-                "documentary": { "p": -2.5, "m": [-3.0, -1.0, 0.5, 1.5, 2.5, 3.0, 2.0, 1.0, 0.0, -2.0] },
-                "anime": { "p": -3.0, "m": [1.0, 2.5, 2.0, 0.5, 1.0, 2.0, 2.5, 3.0, 2.0, 1.0] },
-                "asmr": { "p": -4.5, "m": [-6.0, -4.0, -2.0, 0.0, 1.0, 2.0, 3.5, 4.5, 4.5, 3.0] },
-                "radio": { "p": -4.0, "m": [-10.0, -8.0, -2.0, 2.0, 4.0, 3.0, 1.0, -2.0, -6.0, -10.0] },
-                "news": { "p": -3.0, "m": [-5.0, -3.0, 0.0, 2.0, 3.5, 3.5, 2.0, 0.5, -1.0, -3.0] },
-                "thriller": { "p": -4.0, "m": [3.5, 4.0, 2.0, 0.0, 0.5, 1.0, 2.0, 3.0, 2.5, 1.5] },
-                "comedy": { "p": -2.5, "m": [1.5, 2.5, 2.0, 0.5, 0.0, 0.5, 1.5, 2.5, 2.0, 1.0] },
-                "theater": { "p": -3.5, "m": [4.0, 3.0, 1.5, -0.5, -1.0, 0.5, 2.0, 3.0, 3.5, 4.0] },
-                "vlog": { "p": -2.5, "m": [-3.0, -2.0, -1.0, 1.0, 2.0, 2.5, 1.5, 0.5, 0.0, 0.0] },
-                "action": { "p": -4.5, "m": [5.0, 4.0, 2.0, 0.0, -1.0, 0.5, 2.0, 3.5, 4.0, 3.0] },
-                "nature": { "p": -2.5, "m": [1.0, 2.0, 2.5, 1.5, 1.0, 0.5, 1.0, 1.5, 1.0, 0.5] },
-                "whisper": { "p": -4.0, "m": [-8.0, -6.0, -4.0, -1.0, 1.5, 2.5, 3.5, 4.5, 5.0, 5.0] },
-                "sitcom": { "p": -2.0, "m": [-2.0, -1.0, 1.0, 2.0, 2.0, 1.5, 1.0, 0.5, 0.0, 0.0] },
-                "streaming": { "p": -3.0, "m": [2.0, 2.0, 1.0, 0.5, 0.5, 1.0, 1.5, 2.5, 2.0, 1.0] },
-
-                "flat": { "p": 0.0, "m": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-                "reference": { "p": -0.5, "m": [0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0] },
-                "analytical": { "p": -2.0, "m": [-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 1.0, 0.5] },
-                "detail": { "p": -2.5, "m": [0.0, 0.0, 0.0, 0.0, 0.5, 1.5, 2.5, 3.0, 2.0, 1.0] },
-                "airy": { "p": -4.5, "m": [0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 1.5, 3.0, 4.5, 3.5] },
-                "soundstage": { "p": -4.5, "m": [1.5, 1.0, 0.5, 0.0, -0.5, 0.5, 1.5, 3.5, 4.0, 4.5] },
-                "natural": { "p": -1.5, "m": [1.0, 1.5, 1.5, 1.0, 0.5, 0.5, 1.0, 1.5, 1.0, 0.5] },
-                "transparent": { "p": -2.5, "m": [-1.0, -0.5, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 2.0, 1.5] },
-                "critlistening": { "p": -1.0, "m": [0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 0.5, 0.0] },
-                "diffuse": { "p": -5.0, "m": [-3.0, -1.5, 0.5, 1.5, 2.5, 3.5, 5.0, 4.0, 2.0, 1.0] },
-                "freefield": { "p": -4.5, "m": [-4.0, -2.5, 0.0, 1.5, 3.5, 4.5, 3.0, 1.5, 0.0, -1.0] },
-                "tube": { "p": -2.0, "m": [2.0, 2.0, 1.5, 0.5, 0.0, 0.0, -0.5, -1.0, -1.5, -2.0] },
-                "mastering": { "p": -1.0, "m": [-0.5, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.0, 0.0] },
-                "binaural": { "p": -2.5, "m": [0.5, 1.0, 1.5, 2.0, 1.5, 1.0, 1.5, 2.0, 1.5, 0.5] },
-                "purist": { "p": 0.0, "m": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-                "holographic": { "p": -3.5, "m": [1.0, 1.0, 0.5, 0.0, -0.5, 0.5, 1.5, 3.5, 4.5, 5.5] },
-                "coherence": { "p": -1.5, "m": [0.5, 1.0, 1.5, 1.0, 0.5, 1.0, 1.5, 2.0, 1.0, 0.5] },
-                "organic": { "p": -2.0, "m": [1.5, 1.5, 2.0, 1.5, 1.0, 0.5, 1.0, 1.5, 1.0, 0.5] },
-                "resolution": { "p": -2.5, "m": [0.0, 0.0, 0.0, 0.0, 0.5, 1.5, 3.0, 4.0, 2.5, 1.0] },
-                "linear": { "p": -0.5, "m": [0.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.0, 0.0, 0.0] },
-                "field": { "p": -2.0, "m": [-1.0, -0.5, 0.0, 0.5, 1.0, 1.0, 1.5, 2.0, 1.5, 1.0] },
-                "booth": { "p": -2.0, "m": [-1.5, -0.5, 0.5, 1.5, 2.0, 1.5, 1.0, 0.5, 0.0, 0.0] },
-
-                "bass": { "p": -9.0, "m": [9.0, 8.5, 6.0, 2.5, 0.0, -1.0, -1.5, -1.0, -0.5, 0.0] },
-                "subbass": { "p": -7.0, "m": [7.0, 5.5, 3.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] },
-                "punchy": { "p": -5.5, "m": [2.0, 4.5, 5.5, 3.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0] },
-                "slam": { "p": -6.0, "m": [4.0, 6.0, 5.5, 3.0, 1.0, 0.5, 1.0, 2.0, 2.5, 1.0] },
-                "extremebass": { "p": -10.0, "m": [10.0, 9.0, 7.0, 4.0, 1.5, 0.0, 0.0, 0.5, 1.5, 1.0] },
-                "club": { "p": -5.0, "m": [5.0, 5.0, 4.5, 2.5, 1.0, 0.5, 1.5, 2.5, 2.0, 1.0] },
-                "pressure": { "p": -6.5, "m": [6.5, 5.5, 3.5, 1.5, 0.0, -0.5, -1.0, -0.5, 0.0, 0.5] },
-                "rumble": { "p": -5.5, "m": [5.5, 4.0, 2.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] },
-                "subwoofer": { "p": -9.5, "m": [9.5, 9.0, 6.5, 3.0, 0.5, -1.0, -2.0, -1.5, -1.0, 0.0] },
-                "tectonic": { "p": -8.5, "m": [8.5, 7.5, 4.5, 1.0, -1.0, -2.0, -2.0, -1.5, -1.0, 0.0] },
-                "impact": { "p": -4.0, "m": [2.0, 4.0, 3.0, 1.0, 0.0, 0.5, 1.5, 2.0, 1.0, 0.0] },
-                "techno": { "p": -4.0, "m": [4.0, 4.0, 3.5, 1.5, 0.0, 1.0, 1.5, 2.0, 1.0, 0.0] },
-                "anvil": { "p": -5.5, "m": [3.0, 5.5, 6.5, 4.5, 1.5, 0.5, 1.0, 1.5, 1.0, 0.0] },
-                "crusher": { "p": -10.0, "m": [10.5, 9.5, 7.0, 4.0, 1.5, 0.0, 0.0, 0.5, 1.0, 1.5] },
-                "quake": { "p": -7.5, "m": [7.5, 6.5, 3.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] },
-                "vortex": { "p": -6.5, "m": [6.5, 6.0, 4.0, 2.0, 0.5, -0.5, -1.0, -1.5, -1.5, -1.0] },
-                "carnage": { "p": -9.0, "m": [9.0, 8.5, 7.0, 4.5, 2.0, 0.5, 1.0, 1.5, 2.0, 1.0] },
-                "piston": { "p": -5.0, "m": [2.5, 5.0, 4.5, 2.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0] },
-                "detonation": { "p": -6.5, "m": [4.5, 6.5, 5.5, 3.5, 1.0, 0.5, 1.0, 1.5, 1.0, 0.5] },
-                "rave": { "p": -5.0, "m": [5.0, 4.5, 2.5, -0.5, -1.5, 0.5, 1.5, 3.0, 3.0, 1.0] },
-                "hammer": { "p": -6.5, "m": [2.5, 6.5, 5.5, 3.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0] },
-                "thunder": { "p": -8.0, "m": [8.0, 6.5, 3.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] }
-            };
-
-            Object.assign(this.eqPresets, curatedPresets);
+            // (curatedPresets extracted to eq-presets-data.js — EQ_PresetsData.curatedPresets)
+            Object.assign(this.eqPresets, EQ_PresetsData.curatedPresets);
 
             this.initDOMCache();
             this.allocateResponseBuffers(150);
             this.injectDynamicPresetsOnLoad();
-        this.audioEl = document.getElementById("eq-audio");
-        // Gapless/crossfade standby element ("B" arm). Grabbed here so the
-        // timeupdate/durationchange listeners below bind at boot; its
-        // MediaElementSource + gain arm are created later in _buildDSPGraph.
-        this.gaplessEl = document.getElementById("eq-audio-gapless");
-        if (!this.audioEl) {
-            console.error("[EQ_Module.init] #eq-audio element not found — audio playback wiring skipped.");
-        } else {
-                this.audioEl.volume = 0.5;
-                this.audioEl.preservesPitch = true;
+            this.attachMediaTransport();
 
-                this.audioEl.addEventListener('volumechange', () => {
-
-                });
-
-                this.audioEl.onplay = async () => {
-                    Mascot.update();
-
-                    const btn = document.getElementById("playlist-play-btn");
-                    const mobBtn = document.getElementById("mobile-play-btn");
-                    if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
-                    if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
-                    const modalBtn = document.getElementById("modal-play-btn");
-                    if(modalBtn) modalBtn.innerHTML = "<span>⏸</span><span>Pause</span>";
-
-                    if (SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
-                        await SharedAudio.ctx.resume();
-                    }
-                    // On the normal path the MediaElementSource is created once in
-                    // ensureDSPGraph() before any playback starts (that's what fixes
-                    // the boot-mute). This branch is only a safety net for the rare
-                    // case where the graph was built without the element present.
-                    if(!this.connected) {
-                        await this.ensureDSPGraph();
-                        if (!this.source && this.audioEl && SharedAudio.ctx && this.inputGainNode) {
-                            this.source = SharedAudio.ctx.createMediaElementSource(this.audioEl);
-                            // Route through the same gain arm _buildDSPGraph uses
-                            // so per-track loudness match applies on this path too.
-                            if (!this.sourceGain) {
-                                this.sourceGain = SharedAudio.ctx.createGain();
-                                this.sourceGain.gain.value = Math.max(0.05, Math.min(4, this._activeLoudnessGain || 1));
-                            }
-                            this.source.connect(this.sourceGain);
-                            this.sourceGain.connect(this.inputGainNode);
-                        }
-                        if (this.audioEl) this.audioEl.volume = 1.0;
-                        this.connected = true;
-                    }
-
-                    if (!this.vizLoopRunning) {
-                        this.startVisualizer();
-                    }
-                };
-                this.audioEl.addEventListener('play', () => {
-                    Mascot.update();
-                    EQ_Module.updateReverbDSP();
-                });
-                this.audioEl.addEventListener('pause', () => {
-                    Mascot.update();
-                    EQ_Module.updateReverbDSP();
-                    // Update play button if both elements are paused (gapless may still be playing)
-                    const active = this._activeEl ? this._activeEl() : this.audioEl;
-                    const gaplessPaused = !this.gaplessEl || this.gaplessEl.paused;
-                    const audioPaused = this.audioEl.paused;
-                    if (active && active.paused && gaplessPaused && audioPaused) {
-                        const btn = document.getElementById("playlist-play-btn");
-                        if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
-                        const mobBtn = document.getElementById("mobile-play-btn");
-                        if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
-                        const modalBtn = document.getElementById("modal-play-btn");
-                        if(modalBtn) modalBtn.innerHTML = "<span>▶</span><span>Play</span>";
-                    }
-                });
-                this.audioEl.addEventListener('ended', () => {
-                    Mascot.update();
-                    EQ_Module.updateReverbDSP();
-                    this.nextTrack();
-                });
-                if (this.gaplessEl) {
-                    this.gaplessEl.onplay = async () => {
-                        Mascot.update();
-                        const btn = document.getElementById("playlist-play-btn");
-                        const mobBtn = document.getElementById("mobile-play-btn");
-                        if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
-                        if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
-                        const modalBtn = document.getElementById("modal-play-btn");
-                        if(modalBtn) modalBtn.innerHTML = "<span>⏸</span><span>Pause</span>";
-                        if (SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
-                            await SharedAudio.ctx.resume();
-                        }
-                        if (!this.vizLoopRunning) {
-                            this.startVisualizer();
-                        }
-                    };
-                    this.gaplessEl.addEventListener('play', () => {
-                        Mascot.update();
-                        EQ_Module.updateReverbDSP();
-                    });
-                    this.gaplessEl.addEventListener('pause', () => {
-                        Mascot.update();
-                        EQ_Module.updateReverbDSP();
-                        const active = this._activeEl ? this._activeEl() : null;
-                        if (!active || active.paused) {
-                            const btn = document.getElementById("playlist-play-btn");
-                            if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
-                            const mobBtn = document.getElementById("mobile-play-btn");
-                            if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
-                            const modalBtn = document.getElementById("modal-play-btn");
-                            if(modalBtn) modalBtn.innerHTML = "<span>▶</span><span>Play</span>";
-                        }
-                    });
-                    this.gaplessEl.addEventListener('ended', () => {
-                        Mascot.update();
-                        EQ_Module.updateReverbDSP();
-                        this.nextTrack();
-                    });
-                }
-            }
-
-            const eqFileInput = document.getElementById("eq-file");
-            if (!eqFileInput) {
-                console.error("[EQ_Module.init] #eq-file element not found — file upload wiring skipped.");
-            } else {
-                eqFileInput.addEventListener("change", e => {
-                    this.handleAudioFileSelection(e.target.files);
-                    e.target.value = '';
-                });
-            }
-
-            const updateScrubDisplay = (activeEl) => {
-                if (!activeEl) return;
-                const dur = activeEl.duration;
-                const cur = activeEl.currentTime;
-                if (!this.isSeeking && dur && Number.isFinite(dur) && dur > 0) {
-                    const pct = Math.max(0, Math.min(100, (cur / dur) * 100));
-                    ['playlist-scrub', 'mobile-scrub', 'modal-scrub'].forEach(id => {
-                        const s = document.getElementById(id);
-                        if (!s) return;
-                        s.value = pct;
-                        if (window.paintSliderTrack) window.paintSliderTrack(s);
-                        else s.style.setProperty('--range-fill', pct + '%');
-                    });
-                }
-                const formatted = this.formatTime(cur || 0);
-                const timeCur = document.getElementById('playlist-time-current');
-                const mobTimeCur = document.getElementById('mobile-time-current');
-                const modalTimeCur = document.getElementById('modal-time-current');
-                if (timeCur) timeCur.textContent = formatted;
-                if (mobTimeCur) mobTimeCur.textContent = formatted;
-                if (modalTimeCur) modalTimeCur.textContent = formatted;
-            };
-
-            const attachTimeUpdate = (el) => {
-                if (!el) return;
-                el.addEventListener('timeupdate', () => updateScrubDisplay(el));
-                el.addEventListener('canplay', () => updateScrubDisplay(el));
-                el.addEventListener('loadeddata', () => updateScrubDisplay(el));
-                el.addEventListener('durationchange', () => {
-                    const dur = el.duration;
-                    if (dur && Number.isFinite(dur) && dur > 0) {
-                        const formatted = this.formatTime(dur);
-                        const timeDur = document.getElementById('playlist-time-duration');
-                        const mobTimeDur = document.getElementById('mobile-time-duration');
-                        const modalTimeDur = document.getElementById('modal-time-duration');
-                        if (timeDur) timeDur.textContent = formatted;
-                        if (mobTimeDur) mobTimeDur.textContent = formatted;
-                        if (modalTimeDur) modalTimeDur.textContent = formatted;
-                    }
-                });
-            };
-
-            attachTimeUpdate(this.audioEl);
-            if (this.gaplessEl) attachTimeUpdate(this.gaplessEl);
-
-            const scrub = document.getElementById('playlist-scrub');
-            const mobScrub = document.getElementById('mobile-scrub');
-            const modalScrub = document.getElementById('modal-scrub');
-
-            const startSeek = () => {
-                this.isSeeking = true;
-            };
-
-            const bindScrubEvents = (el) => {
-                if (!el) return;
-                el.addEventListener('mousedown', startSeek);
-                el.addEventListener('touchstart', startSeek, { passive: true });
-
-                let scrubFlushPending = false;
-                el.addEventListener('input', () => {
-                    this.isSeeking = true;
-                    if (scrubFlushPending) return;
-                    scrubFlushPending = true;
-                    requestAnimationFrame(() => {
-                        scrubFlushPending = false;
-                        const val = parseFloat(el.value) || 0;
-                        if (window.paintSliderTrack) window.paintSliderTrack(el);
-                        else el.style.setProperty('--range-fill', val + '%');
-
-                        const active = (this._activeEl && this._activeEl()) || this.audioEl;
-                        if (active && active.duration) {
-                            const tempTime = (val / 100) * active.duration;
-                            const formatted = this.formatTime(tempTime);
-                            const timeCur = document.getElementById('playlist-time-current');
-                            const mobTimeCur = document.getElementById('mobile-time-current');
-                            const modalTimeCur = document.getElementById('modal-time-current');
-                            if (timeCur) timeCur.textContent = formatted;
-                            if (mobTimeCur) mobTimeCur.textContent = formatted;
-                            if (modalTimeCur) modalTimeCur.textContent = formatted;
-                        }
-                    });
-                });
-
-                el.addEventListener('change', () => {
-                    const val = parseFloat(el.value) || 0;
-                    const active = (this._activeEl && this._activeEl()) || this.audioEl;
-                    if (active && active.duration) {
-                        const targetTime = (val / 100) * active.duration;
-                        // performCleanSeek owns isSeeking until the media
-                        // element actually reports the new position.
-                        this.performCleanSeek(targetTime, val);
-                    } else {
-                        setTimeout(() => { this.isSeeking = false; }, 100);
-                    }
-                });
-            };
-
-            bindScrubEvents(scrub);
-            bindScrubEvents(mobScrub);
-            bindScrubEvents(modalScrub);
-
-            window.addEventListener('mouseup', () => { this.isSeeking = false; });
-            window.addEventListener('touchend', () => { this.isSeeking = false; });
-
-            // rAF scrub ticker: timeupdate only fires ~4x/sec, which made the
-            // thumb crawl in visible 250ms steps. Paint per-frame instead;
-            // skipped entirely while paused, seeking, or dragging.
-            if (this._scrubRaf) cancelAnimationFrame(this._scrubRaf);
-            let _scrubStuckWarn = 0;
-            const paintPlaybackScrub = () => {
-                this._scrubRaf = requestAnimationFrame(paintPlaybackScrub);
-                if (this.isSeeking) return;
-                const active = (this._activeEl && this._activeEl()) || this.audioEl;
-                if (!active || active.paused) return;
-                // Wait until the audio has loaded enough data to report
-                // a non-zero currentTime before overriding the scrub.
-                // updateScrubDisplay (via timeupdate) handles the interim.
-                if (!active.duration || !Number.isFinite(active.duration) || active.readyState < 2) return;
-                _scrubStuckWarn = 0;
-                const pct = Math.max(0, Math.min(100, (active.currentTime / active.duration) * 100));
-                ['playlist-scrub', 'mobile-scrub', 'modal-scrub'].forEach(id => {
-                    const s = document.getElementById(id);
-                    if (!s) return;
-                    if (Math.abs(parseFloat(s.value) - pct) < 0.05) return;
-                    s.value = pct;
-                    if (window.paintSliderTrack) window.paintSliderTrack(s);
-                    else s.style.setProperty('--range-fill', pct + '%');
-                });
-            };
-            paintPlaybackScrub();
-
-            const MathCtx = window.AudioContext || window.webkitAudioContext;
-            const activeSampleRate = (window.SharedAudio && SharedAudio.ctx) ? SharedAudio.ctx.sampleRate : 44100;
-            this.offlineCtx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 44100, activeSampleRate);
-
-            // Idempotency guard: re-running init (boot retry, diagnostics) must
-            // not push a second set of 70 biquads and desync every mathFilters
-            // index from the band slots.
-            if (this.mathFilters.length === 0) {
-                for(let i = 0; i < 70; i++) {
-                    this.mathFilters.push(this.offlineCtx.createBiquadFilter());
-                }
-            }
+            // The graph used to keep 70 OfflineAudioContext biquads ("mathFilters")
+            // alive purely for getFrequencyResponse curve drawing. The curve now
+            // evaluates through getBiquadMagnitude (the worklet's exact RBJ math),
+            // so neither the offline context nor the filter bank exists anymore.
 
         this.buildEQ();
 
@@ -14774,450 +14861,7 @@ vizModalActive: false,
 
         window.addEventListener('resize', () => this.drawCurve());
 
-            const squigCanvas = document.getElementById("eq-squiglinkViz");
-            if (squigCanvas) {
-                let isPanning = false;
-                let isDraggingSculptNode = false;
-                let isDraggingEQNode = false;
-                let panStartX = 0;
-                let panStartY = 0;
-                let lastMinF = 20;
-                let lastMaxF = 20000;
-
-            const getEQNodeAtCoords = (clickX, clickY, w, h, minF, maxF, min, max) => {
-                const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignDb : 75.0;
-                const preSlider = document.getElementById("eq-preampSlider");
-                const preVal = preSlider ? parseFloat(preSlider.value) : 0;
-
-                for (let i = 0; i < EQ_Module.bands.length; i++) {
-                    const hz = parseFloat(document.getElementById("eq-f" + i)?.value || EQ_Module.bands[i].hz);
-                    const g = parseFloat(document.getElementById("eq-s" + i)?.value || 0);
-                    const nodeX = w * (Math.log10(hz / minF) / Math.log10(maxF / minF));
-
-                    const nodeY = h - (((alignDb + g + preVal) - min) / (max - min)) * h;
-                    if (Math.hypot(nodeX - clickX, nodeY - clickY) < 18) {
-                        return { type: 'main', i };
-                    }
-                }
-                return null;
-            };
-
-            squigCanvas.addEventListener('mousedown', e => {
-                const rect = squigCanvas.getBoundingClientRect();
-                const clickX = e.clientX - rect.left;
-                const clickY = e.clientY - rect.top;
-
-                const minF = PEQDB_Module.viewMinF || 20;
-                const maxF = PEQDB_Module.viewMaxF || 20000;
-                const min = (typeof PEQDB_Module.squigYMin === 'number') ? PEQDB_Module.squigYMin : 50;
-                const max = (typeof PEQDB_Module.squigYMax === 'number') ? PEQDB_Module.squigYMax : 110;
-                const w = rect.width;
-                const h = rect.height;
-
-                if (PEQDB_Module.isDrawingModeActive) {
-                    PEQDB_Module.isUserDrawing = true;
-                    PEQDB_Module.drawnPoints = [[clickX, clickY]];
-                    squigCanvas.style.cursor = 'crosshair';
-                    return;
-                }
-
-                if (EQ_Module.graphFocus === 'eq' && !EQ_Module.isTuningLabActive) {
-                    const eqNode = getEQNodeAtCoords(clickX, clickY, w, h, minF, maxF, min, max);
-                    if (eqNode) {
-                        isDraggingEQNode = true;
-                        EQ_Module.isDragging = true;
-                        EQ_Module.activeEQNode = eqNode;
-                        squigCanvas.style.cursor = 'move';
-                        return;
-                    }
-                }
-
-                    if (PEQDB_Module.targetMode === 'sculptor' && EQ_Module.graphFocus === 'sculpt') {
-
-                        for (let i = 0; i < PEQDB_Module.sculptPoints.length; i++) {
-                            const p = PEQDB_Module.sculptPoints[i];
-                            const nodeX = w * (Math.log10(p.hz / minF) / Math.log10(maxF / minF));
-                            const nodeY = h - ((p.val - min) / (max - min)) * h;
-
-                            if (Math.hypot(nodeX - clickX, nodeY - clickY) < 18) {
-                                isDraggingSculptNode = true;
-                                PEQDB_Module.isDragging = true;
-                                EQ_Module.isDragging = true;
-                                PEQDB_Module.activeSculptIndex = i;
-                                PEQDB_Module.activeRenameUid = i;
-
-                                squigCanvas.style.cursor = PEQDB_Module.sculptMode === 'simple' ? 'ns-resize' : 'move';
-                                return;
-                            }
-                        }
-                    }
-
-                    if (PEQDB_Module.targetMode !== 'sculptor') {
-                        isPanning = true;
-                        EQ_Module.isDragging = true;
-                        panStartX = e.clientX;
-                        panStartY = e.clientY;
-                        lastMinF = PEQDB_Module.viewMinF || 20;
-                        lastMaxF = PEQDB_Module.viewMaxF || 20000;
-                        squigCanvas.style.cursor = 'grabbing';
-                    }
-                });
-
-                const dispatchSyntheticMouse = (type, touch) => {
-                    squigCanvas.dispatchEvent(new MouseEvent(type, {
-                        bubbles: true,
-                        cancelable: true,
-                        clientX: touch.clientX,
-                        clientY: touch.clientY
-                    }));
-                };
-                squigCanvas.addEventListener('touchstart', e => {
-                    if (e.touches.length !== 1) return;
-                    e.preventDefault();
-                    dispatchSyntheticMouse('mousedown', e.touches[0]);
-                }, { passive: false });
-                window.addEventListener('touchmove', e => {
-                    if (!isDraggingEQNode && !isDraggingSculptNode && !isPanning && !PEQDB_Module.isUserDrawing) return;
-                    if (e.touches.length !== 1) return;
-                    e.preventDefault();
-                    dispatchSyntheticMouse('mousemove', e.touches[0]);
-                }, { passive: false });
-                window.addEventListener('touchend', e => {
-                    const lastTouch = e.changedTouches && e.changedTouches[0];
-                    dispatchSyntheticMouse('mouseup', lastTouch || { clientX: 0, clientY: 0 });
-                });
-
-                squigCanvas.addEventListener('dblclick', e => {
-                    if (!EQ_Module.isTuningLabActive) return;
-                    const rect = squigCanvas.getBoundingClientRect();
-                    const clickX = e.clientX - rect.left;
-                    const clickY = e.clientY - rect.top;
-                    const w = rect.width;
-                    const h = rect.height;
-
-                    const minF = PEQDB_Module.viewMinF || 20;
-                    const maxF = PEQDB_Module.viewMaxF || 20000;
-                    const min = PEQDB_Module.squigYMin || 50;
-                    const max = PEQDB_Module.squigYMax || 110;
-
-                    const f = Math.max(20, Math.min(20000, Math.round(Math.pow(10, Math.log10(minF) + (clickX / w) * (Math.log10(maxF) - Math.log10(minF))))));
-                    const db = Math.max(min, Math.min(max, min + (1 - (clickY / h)) * (max - min)));
-
-                    if (PEQDB_Module.sculptPoints.some(p => p.hz === f)) return;
-
-                    PEQDB_Module.sculptPoints.push({ hz: f, val: db });
-                    PEQDB_Module.sculptPoints.sort((a, b) => a.hz - b.hz);
-
-                    PEQDB_Module.activeSculptIndex = PEQDB_Module.sculptPoints.findIndex(p => p.hz === f);
-                    PEQDB_Module.updateSculptTargetData();
-                    showToast("Tuning point added!", "➕");
-                });
-
-                let dragFrameId = null;
-                window.addEventListener('mousemove', e => {
-
-                    if (dragFrameId) return;
-
-                    dragFrameId = requestAnimationFrame(() => {
-                        dragFrameId = null;
-
-                        const rect = squigCanvas.getBoundingClientRect();
-                        const clientX = e.clientX - rect.left;
-                        const clientY = e.clientY - rect.top;
-                        const w = rect.width;
-                        const h = rect.height;
-
-                        const minF = PEQDB_Module.viewMinF || 20;
-                        const maxF = PEQDB_Module.viewMaxF || 20000;
-                        const min = (typeof PEQDB_Module.squigYMin === 'number') ? PEQDB_Module.squigYMin : 50;
-                        const max = (typeof PEQDB_Module.squigYMax === 'number') ? PEQDB_Module.squigYMax : 110;
-
-                        if (PEQDB_Module.isDrawingModeActive && PEQDB_Module.isUserDrawing) {
-                            PEQDB_Module.drawnPoints.push([clientX, clientY]);
-                            EQ_Module.drawCurve();
-                            return;
-                        }
-
-                        if (isDraggingEQNode && EQ_Module.activeEQNode) {
-                            const eqNode = EQ_Module.activeEQNode;
-                            const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignDb : 75.0;
-                            const preSlider = document.getElementById("eq-preampSlider");
-                            const preVal = preSlider ? parseFloat(preSlider.value) : 0;
-
-                            let f = Math.pow(10, Math.log10(minF) + (clientX / w) * (Math.log10(maxF) - Math.log10(minF)));
-                            f = Math.max(20, Math.min(20000, Math.round(f)));
-
-                            let rawDb = min + (1 - (clientY / h)) * (max - min);
-                            let relativeGain = rawDb - alignDb - preVal;
-                            relativeGain = Math.max(-20, Math.min(20, relativeGain));
-
-                            let prefix = eqNode.type === 'main' ? 'eq-f' : 'eq-af';
-                            let gainPrefix = eqNode.type === 'main' ? 'eq-s' : 'eq-a';
-
-                            const hzNode = document.getElementById(prefix + eqNode.i);
-                            if (hzNode) hzNode.value = Math.round(f);
-                            const fsNode = document.getElementById(eqNode.type === 'main' ? `eq-fs_m${eqNode.i}` : `eq-fs_a${eqNode.i}`);
-                            if (fsNode) fsNode.value = EQ_Module.logHzToSlider(f);
-                            const gainNode = document.getElementById(gainPrefix + eqNode.i);
-                            if (gainNode) gainNode.value = relativeGain.toFixed(1);
-                            const gainNumNode = document.getElementById(eqNode.type === 'main' ? `eq-s${eqNode.i}_num` : `eq-a${eqNode.i}_num`);
-                            if (gainNumNode) gainNumNode.value = relativeGain.toFixed(1);
-
-                            EQ_Module.updateSlider(eqNode.i, eqNode.type);
-                            // updateAudioConnections posts the filter payload to
-                            // the worklet synchronously in this build, so the
-                            // graph drag reaches DSP immediately.
-                            if (EQ_Module.graphBuilt && SharedAudio.workletNode) {
-                                EQ_Module.updateAudioConnections();
-                            } else if (!EQ_Module.graphBuilt) {
-                                // Queue for when the worklet finishes booting
-                                EQ_Module._pendingDspQueue = EQ_Module._pendingDspQueue || [];
-                                if (!EQ_Module._pendingDspQueue.includes('filters')) EQ_Module._pendingDspQueue.push('filters');
-                                EQ_Module.ensureDSPGraph().catch(()=>{});
-                            }
-                            EQ_Module.drawCurve();
-                            if (window.syncGlobalSliders) {
-                                if (hzNode) window.syncGlobalSliders(hzNode);
-                                if (gainNode) window.syncGlobalSliders(gainNode);
-                                if (fsNode) window.syncGlobalSliders(fsNode);
-                            }
-                            return;
-                        }
-
-                        if (isDraggingSculptNode && PEQDB_Module.activeSculptIndex > -1) {
-                            const points = PEQDB_Module.sculptPoints;
-                            const idx = PEQDB_Module.activeSculptIndex;
-                            const p = points[idx];
-
-                            let db = min + (1 - (clientY / h)) * (max - min);
-                            p.val = Math.max(min, Math.min(max, db));
-
-                            let f = Math.pow(10, Math.log10(minF) + (clientX / w) * (Math.log10(maxF) - Math.log10(minF)));
-
-                            const minBound = idx > 0 ? points[idx - 1].hz + 5 : 20;
-                            const maxBound = idx < points.length - 1 ? points[idx + 1].hz - 5 : 20000;
-
-                            p.hz = Math.max(minBound, Math.min(maxBound, Math.round(f)));
-
-                            const hzInput = document.getElementById('sculptor-node-hz');
-                            const dbInput = document.getElementById('sculptor-node-db');
-                            if (hzInput) hzInput.value = p.hz;
-                            if (dbInput) dbInput.value = p.val.toFixed(1);
-
-                            PEQDB_Module.updateSculptTargetData();
-
-                            if (PEQDB_Module.searchMode === 'similar') {
-                                PEQDB_Module.findSimilarCurves();
-                            }
-
-                            self.drawCurve();
-                            return;
-                        }
-
-                        if (!isPanning && !isDraggingEQNode && !isDraggingSculptNode) {
-                            let eqHoverNode = null;
-                            if (EQ_Module.graphFocus === 'eq') {
-                                eqHoverNode = getEQNodeAtCoords(clientX, clientY, w, h, minF, maxF, min, max);
-                            }
-
-                            const hoverChanged = (EQ_Module.hoverEQNode?.i !== eqHoverNode?.i) || (EQ_Module.hoverEQNode?.type !== eqHoverNode?.type);
-                            if (hoverChanged) {
-                                EQ_Module.hoverEQNode = eqHoverNode;
-                                EQ_Module.drawCurve();
-                            }
-
-                            let sculptHoverIdx = -1;
-                            if (PEQDB_Module.targetMode === 'sculptor' && EQ_Module.graphFocus === 'sculpt') {
-                                for (let i = 0; i < PEQDB_Module.sculptPoints.length; i++) {
-                                    const p = PEQDB_Module.sculptPoints[i];
-                                    const nodeX = w * (Math.log10(p.hz / minF) / Math.log10(maxF / minF));
-                                    const nodeY = h - ((p.val - min) / (max - min)) * h;
-                                    if (Math.hypot(nodeX - clientX, nodeY - clientY) < 18) {
-                                        sculptHoverIdx = i;
-                                        break;
-                                    }
-                                }
-                            }
-
-                            if (PEQDB_Module.hoverSculptIndex !== sculptHoverIdx) {
-                                PEQDB_Module.hoverSculptIndex = sculptHoverIdx;
-                                EQ_Module.drawCurve();
-                            }
-
-                            if (eqHoverNode) {
-                                squigCanvas.style.cursor = 'pointer';
-                            } else if (sculptHoverIdx !== -1) {
-                                squigCanvas.style.cursor = PEQDB_Module.sculptMode === 'simple' ? 'ns-resize' : 'pointer';
-                            } else {
-                                squigCanvas.style.cursor = 'default';
-                            }
-                        }
-
-                        if (!isPanning) return;
-                        const deltaX = e.clientX - panStartX;
-                        const deltaY = e.clientY - panStartY;
-
-                        if (Math.abs(deltaX) < 5 && Math.abs(deltaY) < 5) return;
-
-                        const logRange = Math.log10(lastMaxF / lastMinF);
-                        const shiftX = -(deltaX / rect.width) * logRange;
-                        let newMinF = Math.pow(10, Math.log10(lastMinF) + shiftX);
-                        let newMaxF = Math.pow(10, Math.log10(lastMaxF) + shiftX);
-
-                        if (newMinF < 20) {
-                            newMinF = 20;
-                            newMaxF = 20 * Math.pow(10, logRange);
-                        }
-                        if (newMaxF > 20000) {
-                            newMaxF = 20000;
-                            newMinF = 20000 / Math.pow(10, logRange);
-                        }
-
-                        PEQDB_Module.viewMinF = newMinF;
-                        PEQDB_Module.viewMaxF = newMaxF;
-                        // Deliberately frequency-axis (X) only. Dragging the
-                        // graph background must never move the Y-axis / shift
-                        // every band's on-screen level together -- that's
-                        // exactly what it looks like when the whole curve and
-                        // all 10 nodes appear to move up/down at once, and it
-                        // should only ever happen via the Amp (preamp) and
-                        // Align (dB reference) controls, which adjust the
-                        // actual EQ state rather than just panning the view.
-                        // A prior pass here computed and clamped a vertical
-                        // newMinY/newMaxY pan and committed it to
-                        // PEQDB_Module.squigYMin/squigYMax -- since those two
-                        // values are exactly what getEQNodeAtCoords() (above)
-                        // adds into every node's Y position, that vertical
-                        // commit was the bug: it silently shifted every
-                        // node's *displayed* level in lockstep on any
-                        // background drag, with no actual gain change behind
-                        // it. Removed; only horizontal panning is wired up.
-
-                        self.drawCurve();
-                    });
-                });
-
-                window.addEventListener('mouseup', () => {
-                    if (PEQDB_Module.isDrawingModeActive && PEQDB_Module.isUserDrawing) {
-                        PEQDB_Module.isUserDrawing = false;
-                        squigCanvas.style.cursor = 'default';
-
-                        const w = squigCanvas.clientWidth;
-                        const h = squigCanvas.clientHeight;
-
-                        const minF = PEQDB_Module.viewMinF || 20;
-                        const maxF = PEQDB_Module.viewMaxF || 20000;
-                        const min = PEQDB_Module.squigYMin || 50;
-                        const max = PEQDB_Module.squigYMax || 110;
-
-                        const rawCoords = PEQDB_Module.drawnPoints.map(([x, y]) => {
-                            const f = Math.pow(10, Math.log10(minF) + (x / w) * (Math.log10(maxF) - Math.log10(minF)));
-                            const db = min + (1 - (y / h)) * (max - min);
-                            return [f, db];
-                        }).sort((a, b) => a[0] - b[0]);
-
-                        const uniqueCoords = [];
-                        for (let i = 0; i < rawCoords.length; i++) {
-                            if (i === 0 || Math.abs(rawCoords[i][0] - rawCoords[i-1][0]) > 0.5) {
-                                uniqueCoords.push(rawCoords[i]);
-                            }
-                        }
-
-                        if (uniqueCoords.length >= 2) {
-                            const tempSpline = PEQDB_Module.Spline.build(uniqueCoords);
-                            if (tempSpline) {
-                                PEQDB_Module.sculptPoints = PEQDB_Module.sculptPoints.map(p => {
-                                    const newVal = PEQDB_Module.Spline.evaluate(tempSpline, p.hz);
-                                    return { hz: p.hz, val: Math.max(min, Math.min(max, newVal)) };
-                                });
-                                if (window.EQ_Sculptor) {
-                                    EQ_Sculptor.sculptPoints = PEQDB_Module.sculptPoints.map(p=> ({hz:p.hz,val:p.val}));
-                                }
-                                PEQDB_Module.updateSculptTargetData();
-                                if (PEQDB_Module.searchMode === 'similar') {
-                                    PEQDB_Module.findSimilarCurves();
-                                }
-                            }
-                        }
-                        PEQDB_Module.drawnPoints = [];
-                        EQ_Module.drawCurve();
-                    }
-                    if (isDraggingEQNode) {
-                        isDraggingEQNode = false;
-                        EQ_Module.isDragging = false;
-                        EQ_Module.activeEQNode = null;
-                        squigCanvas.style.cursor = 'default';
-                    }
-                    if (isDraggingSculptNode) {
-                        isDraggingSculptNode = false;
-                        PEQDB_Module.isDragging = false;
-                        EQ_Module.isDragging = false;
-                        squigCanvas.style.cursor = 'default';
-                        // Every mid-drag findSimilarCurves call bailed out via the
-                        // isDragging guard, and nothing re-ran the scan after
-                        // release — Similar-mode kept showing pre-drag matches.
-                        // The debounced rescan coalesces rapid re-drags.
-                        if (PEQDB_Module.searchMode === 'similar' && PEQDB_Module.debouncedFindSimilarCurves) {
-                            PEQDB_Module.debouncedFindSimilarCurves();
-                        }
-                    }
-                    if (isPanning) {
-                        isPanning = false;
-                        EQ_Module.isDragging = false;
-                        squigCanvas.style.cursor = 'default';
-                    }
-                });
-
-                squigCanvas.addEventListener('wheel', e => {
-
-                    if (PEQDB_Module.targetMode === 'sculptor') return;
-
-                    e.preventDefault();
-                    const rect = squigCanvas.getBoundingClientRect();
-                    const mouseX = e.clientX - rect.left;
-
-                    const minF = PEQDB_Module.viewMinF || 20;
-                    const maxF = PEQDB_Module.viewMaxF || 20000;
-                    const mouseF = minF * Math.pow(10, (mouseX / rect.width) * Math.log10(maxF / minF));
-
-                    const zoomFactor = e.deltaY > 0 ? 1.15 : 0.85;
-
-                    let newMinF = mouseF / Math.pow(mouseF / minF, zoomFactor);
-                    let newMaxF = mouseF * Math.pow(maxF / mouseF, zoomFactor);
-
-                    if (newMinF < 20) newMinF = 20;
-                    if (newMaxF > 20000) newMaxF = 20000;
-
-                    PEQDB_Module.viewMinF = newMinF;
-                    PEQDB_Module.viewMaxF = newMaxF;
-                    self.drawCurve();
-                }, { passive: false });
-
-                squigCanvas.addEventListener('dblclick', () => {
-
-                    if (PEQDB_Module.targetMode === 'sculptor') return;
-
-                    PEQDB_Module.viewMinF = 20;
-                    PEQDB_Module.viewMaxF = 20000;
-
-                    PEQDB_Module.updateAlignmentCfgActual();
-                });
-
-                squigCanvas.addEventListener('mousemove', e => {
-                    const rect = squigCanvas.getBoundingClientRect();
-
-                    EQ_Module.squigMouseX = (e.clientX - rect.left);
-                    EQ_Module.squigMouseY = (e.clientY - rect.top);
-                    if (!isPanning && !isDraggingSculptNode) {
-                        self.drawCurve();
-                    }
-                });
-                squigCanvas.addEventListener('mouseleave', () => {
-                    EQ_Module.squigMouseX = null;
-                    EQ_Module.squigMouseY = null;
-                    self.drawCurve();
-                });
-            }
+            this.attachGraphInput();
         },
 
         switchFaderTab: function(tabId) {
@@ -15494,7 +15138,7 @@ vizModalActive: false,
                     eqBtn.classList.add('is-on');
                     eqBtn.textContent = "EQ: ON";
                 }
-                this.updateAudioConnections();
+                this._uacCoalesced();
             }
 
             const setSliderFill = (slider, val, min, max) => {
@@ -15560,7 +15204,7 @@ vizModalActive: false,
                 this.updatePreamp();
 
                 if (this.graphBuilt && !EQ_Module.isProgrammaticSliderUpdate) {
-                    this.updateAudioConnections();
+                    this._uacCoalesced();
                 }
 
                 const stdSlider = document.getElementById(`eq-s${i}-std`);
@@ -15587,13 +15231,13 @@ vizModalActive: false,
                 const qSlider = document.getElementById("eq-q_a" + i);
 
                 if (slider) setSliderFill(slider, b.g !== undefined ? b.g : 0, -20, 20);
-                if (qSlider) setSliderFill(qSlider, b.q !== undefined ? b.q : b.defaultQ, 0.1, 10);
+                if (qSlider) setSliderFill(qSlider, b.q !== undefined ? b.q : 0.1, 10);
 
                 this.recalculateAutoGainMatch();
                 this.updatePreamp();
 
                 if (this.graphBuilt && !EQ_Module.isProgrammaticSliderUpdate) {
-                    this.updateAudioConnections();
+                    this._uacCoalesced();
                 }
             }
 
@@ -15785,126 +15429,485 @@ vizModalActive: false,
         // classifier that drives the *automatic* match badges) so picking
         // "Rock" here targets the exact same tonal profile the badge would
         // show if a curve naturally matched Rock.
-        _genreTargetState: { music: { open: false, listOpen: false, selectedIdx: -1 }, game: { open: false, listOpen: false, selectedIdx: -1 } },
+        // (genre-target picker cluster extracted to eq-genre-targets.js —
 
-        toggleGenreTargetPicker: function(side) {
-            const st = this._genreTargetState[side];
-            st.open = !st.open;
-            const panel = document.getElementById(`${side}-genre-target-panel`);
-            if (panel) panel.classList.toggle('hidden', !st.open);
-            if (st.open) {
-                this._renderGenreTargetLabel(side);
-            } else {
-                st.listOpen = false;
-                const list = document.getElementById(`${side}-genre-target-list`);
-                if (list) list.classList.add('hidden');
+        // (getBiquadMagnitude extracted to eq-biquad-math.js — EQ_BiquadMathMethods,
+        // merged via Object.assign in db-cache.js)
+
+        // hzToX/xToHz/dbToY/yToDb/getFilterAtCoords were removed here: they
+        // referenced a canvas ID (#eq-largeResponseViz) that doesn't exist
+        // anywhere in index.html, had zero callers outside this cluster,
+        // and used hardcoded 980x320 canvas dimensions that don't match
+        // the real EQ graph canvas (#eq-squiglinkViz, which is DPR-scaled
+        // and dynamically sized). The live hit-testing path is the
+        // closure-scoped getEQNodeAtCoords used by the graph's own
+        // mouse/touch handlers -- this was an orphaned duplicate, not a
+        // second code path anything depended on.
+
+        //  match badges + calculateTargetMatches — EQ_GenreTargetMethods, merged via Object.assign in db-cache.js)
+
+        // (startVisualizer + viz mode state extracted to eq-visualizer.js —
+        //  EQ_VisualizerMethods, merged via Object.assign in db-cache.js)
+
+        // (DSP graph lifecycle + worklet bridge + safety limiter + toggleEQ
+        //  extracted to eq-dsp-graph.js — EQ_DspGraphMethods, merged via Object.assign in db-cache.js)
+
+switchCategory: function(catId) {
+            try {
+                this.activePresetCategory = catId;
+
+                const stepperLabel = document.getElementById('preset-category-stepper-label');
+                if (stepperLabel && this.presetCategories) {
+                    const info = this.presetCategories.find(m => m.id === catId) || this.presetCategories[0];
+                    stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
+                }
+
+                const categoryContainers = document.querySelectorAll('#rc-panel-presets button');
+                categoryContainers.forEach(pill => {
+                    if (pill && (pill.id.startsWith('cat-') || pill.id === 'cat-custom')) {
+                        pill.classList.remove('active');
+                    }
+                });
+                const activePill = document.getElementById('cat-' + catId);
+                if (activePill) activePill.classList.add('active');
+
+                const grid = document.getElementById('preset-grid-content');
+                if (!grid) return;
+                grid.innerHTML = '';
+
+                if (catId === 'custom') {
+                    this.renderCustomPresets();
+                    return;
+                }
+
+                const list = this.presetsByCategory[catId] || [];
+                list.forEach(p => {
+                    const btn = document.createElement('button');
+                    btn.id = 'preset-btn-' + p.id;
+
+                    btn.className = 'w-full text-center text-[10px] h-8 px-1 py-1 rounded bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate flex items-center justify-center gap-1 cursor-pointer';
+                    btn.innerHTML = `<span>${p.name}</span>`;
+                    btn.onclick = () => { this.applyPreset(p.id); };
+                    grid.appendChild(btn);
+
+                    if (p.id === this.activePreset) {
+                        btn.classList.remove('bg-[var(--bg-card)]', 'text-[var(--text-main)]');
+                        btn.classList.add('bg-[var(--accent-blue)]', 'text-white', 'border-[var(--accent-blue)]');
+                    }
+                });
+            } catch (err) {
+                console.warn("Preset generation catch block active:", err);
             }
         },
 
-        closeGenreTargetPicker: function(side) {
-            const st = this._genreTargetState[side];
-            st.open = false;
-            st.listOpen = false;
-            const panel = document.getElementById(`${side}-genre-target-panel`);
-            if (panel) panel.classList.add('hidden');
-            const list = document.getElementById(`${side}-genre-target-list`);
-            if (list) list.classList.add('hidden');
+        lastDrawTime: 0,
+
+        applyGeneratedPEQ: function(bands) {
+            EQ_Module.isProgrammaticSliderUpdate = true;
+
+            this.bands.forEach((b, i) => {
+                const sSlider = document.getElementById("eq-s" + i);
+                const fInput = document.getElementById("eq-f" + i);
+                const qSlider = document.getElementById("eq-q_m" + i);
+
+                if (sSlider) sSlider.value = 0;
+                if (fInput) fInput.value = b.hz;
+                if (qSlider) qSlider.value = b.defaultQ;
+
+                const freqSlider = document.getElementById(`eq-fs_m${i}`);
+                if (freqSlider) freqSlider.value = this.logHzToSlider(b.hz);
+
+                const gainNum = document.getElementById(`eq-s${i}_num`);
+                if (gainNum) gainNum.value = "0.0";
+                const qNum = document.getElementById(`eq-q_m${i}_num`);
+                if (qNum) qNum.value = b.defaultQ.toFixed(2);
+            });
+
+            this.advancedBands.forEach((b, i) => {
+                const aSlider = document.getElementById("eq-a" + i);
+                const afInput = document.getElementById("eq-af" + i);
+                const qSlider = document.getElementById("eq-q_a" + i);
+                const typeBtn = document.getElementById(`eq-t_a${i}`);
+
+                if (aSlider) aSlider.value = 0;
+                if (afInput) afInput.value = b.hz;
+                if (qSlider) qSlider.value = b.defaultQ;
+                if (typeBtn) typeBtn.textContent = 'PK';
+                b.type = 'peaking';
+
+                const freqSlider = document.getElementById(`eq-fs_a${i}`);
+                if (freqSlider) freqSlider.value = this.logHzToSlider(b.hz);
+
+                const gainNum = document.getElementById(`eq-a${i}_num`);
+                if (gainNum) gainNum.value = "0.0";
+                const qNum = document.getElementById(`eq-q_a${i}_num`);
+                if (qNum) qNum.value = b.defaultQ.toFixed(2);
+
+                const gainRow = document.getElementById(`row-gain_a${i}`);
+                if (gainRow) {
+                    gainRow.style.opacity = '1';
+                    gainRow.style.pointerEvents = 'auto';
+                }
+            });
+
+            if (!bands || bands.length === 0) {
+                document.getElementById("eq-preampSlider").value = 0;
+                if (this.preampNode) setAudioParamSmooth(this.preampNode.gain, 1);
+                EQ_Module.isProgrammaticSliderUpdate = false;
+                this.drawCurve();
+                if (window.syncGlobalSliders) window.syncGlobalSliders();
+                return;
+            }
+
+            const maxGain = Math.max(...bands.map(b => b.gain));
+            const preamp = maxGain > 0 ? -maxGain : 0;
+            const preampSlider = document.getElementById("eq-preampSlider");
+            if (preampSlider) preampSlider.value = preamp.toFixed(1);
+            this.updatePreamp();
+
+            bands.forEach((b, i) => {
+                if (i < this.bands.length) {
+                    const sSlider = document.getElementById("eq-s" + i);
+                    const fInput = document.getElementById("eq-f" + i);
+                    const qSlider = document.getElementById("eq-q_m" + i);
+
+                    if (fInput) fInput.value = Math.round(b.freq);
+                    if (sSlider) sSlider.value = b.gain.toFixed(1);
+                    if (qSlider) qSlider.value = b.q.toFixed(1);
+
+                    const freqSlider = document.getElementById(`eq-fs_m${i}`);
+                    if (freqSlider) freqSlider.value = EQ_Module.logHzToSlider(b.freq);
+
+                    const gainNum = document.getElementById(`eq-s${i}_num`);
+                    if (gainNum) gainNum.value = b.gain.toFixed(1);
+                    const qNum = document.getElementById(`eq-q_m${i}_num`);
+                    if (qNum) qNum.value = b.q.toFixed(2);
+
+                    EQ_Module.updateSlider(i, 'main');
+                }
+            });
+
+            EQ_Module.isProgrammaticSliderUpdate = false;
+
+            if (EQ_Module.graphBuilt) {
+                EQ_Module.updateAudioConnections();
+            }
+
+            this.drawCurve();
+
+            this.bands.forEach((_, i) => this.updateSlider(i, 'main'));
+            this.advancedBands.forEach((_, i) => this.updateSlider(i, 'adv'));
+
+            if (window.syncGlobalSliders) window.syncGlobalSliders();
+
+            // Generated PEQ reshaped the DSP curve programmatically — unlock
+            // live Similar-mode matching.
+            PEQDB_Module._similarTargetEverModified = true;
         },
 
-        toggleGenreTargetList: function(side) {
-            const st = this._genreTargetState[side];
-            const list = document.getElementById(`${side}-genre-target-list`);
-            if (!list) return;
-            st.listOpen = !st.listOpen;
-            list.classList.toggle('hidden', !st.listOpen);
-            if (st.listOpen) this._renderGenreTargetList(side);
+        clearAudio: function() { this.audioEl.pause(); this.audioEl.removeAttribute("src"); this.audioEl.load(); document.getElementById("eq-file").value = ""; this.audioEl.volume = 0.5; },
+        resetEQ: function(skipDraw) {
+            this.activePreset = null;
+            EQ_Module.isProgrammaticSliderUpdate = true;
+            const _prevSuppress = this._suppressDraw;
+            if (skipDraw) this._suppressDraw = true;
+
+            this.bands.forEach((b, i) => {
+                const fInput = document.getElementById("eq-f" + i);
+                if (fInput) fInput.value = b.hz;
+                const fsSlider = document.getElementById(`eq-fs_m${i}`);
+                if (fsSlider) fsSlider.value = this.logHzToSlider(b.hz);
+
+                const sSlider = document.getElementById("eq-s" + i);
+                if (sSlider) sSlider.value = 0;
+                const sNum = document.getElementById(`eq-s${i}_num`);
+                if (sNum) sNum.value = "0.0";
+
+                const qSlider = document.getElementById("eq-q_m" + i);
+                if (qSlider) qSlider.value = b.defaultQ;
+                const qNum = document.getElementById(`eq-q_m${i}_num`);
+                if (qNum) qNum.value = b.defaultQ.toFixed(2);
+
+                this.updateSlider(i, 'main');
+            });
+
+            this.advancedBands.forEach((b, i) => {
+                const fInput = document.getElementById("eq-af" + i);
+                if (fInput) fInput.value = b.hz;
+                const fsSlider = document.getElementById(`eq-fs_a${i}`);
+                if (fsSlider) fsSlider.value = this.logHzToSlider(b.hz);
+
+                const aSlider = document.getElementById("eq-a" + i);
+                if (aSlider) aSlider.value = 0;
+                const aNum = document.getElementById(`eq-a${i}_num`);
+                if (aNum) aNum.value = "0.0";
+
+                const qSlider = document.getElementById("eq-q_a" + i);
+                if (qSlider) qSlider.value = b.defaultQ;
+                const qNum = document.getElementById(`eq-q_a${i}_num`);
+                if (qNum) qNum.value = b.defaultQ.toFixed(2);
+
+                const typeBtn = document.getElementById(`eq-t_a${i}`);
+                if (typeBtn) typeBtn.textContent = 'PK';
+                b.type = 'peaking';
+                b.g = 0;
+
+                const gainRow = document.getElementById(`row-gain_a${i}`);
+                if (gainRow) {
+                    gainRow.style.opacity = '1';
+                    gainRow.style.pointerEvents = 'auto';
+                }
+
+                this.updateSlider(i, 'adv');
+            });
+
+            this.virtualBands = [];
+            // (native virtualFilters zeroing removed — the worklet's virtual
+            // bank is cleared by the next updateAudioConnections push)
+
+            const preSlider = document.getElementById("eq-preampSlider");
+            if (preSlider) preSlider.value = "0.0";
+            const preVal = document.getElementById("eq-preampVal");
+            if (preVal) preVal.value = "0.0";
+            if (this.preampNode) setAudioParamSmooth(this.preampNode.gain, 1.0);
+
+            this.updatePreamp();
+
+            EQ_Module.isProgrammaticSliderUpdate = false;
+
+            const sliderDefaults = {
+                'comp-attack-slider': { val: 15, param: 'attack', text: '15.0 ms' },
+                'comp-release-slider': { val: 100, param: 'release', text: '100.0 ms' },
+                'comp-ratio-slider': { val: 40, param: 'ratio', text: '4.0 : 1' },
+                'comp-frequency-slider': { val: 1000, param: 'frequency', text: '1.0k Hz' },
+                'comp-threshold-slider': { val: -150, param: 'threshold', text: '-15.0 dB' },
+                'comp-gain-slider': { val: 0, param: 'gain', text: '0.0 dB' }
+            };
+
+            Object.entries(sliderDefaults).forEach(([id, config]) => {
+                const el = document.getElementById(id);
+                if (el) el.value = config.val;
+
+                const disp = document.getElementById(`comp-${config.param}-val`);
+                if (disp) disp.textContent = config.text;
+
+                if (SharedAudio.compressor) {
+                    const value = config.val;
+                    if (config.param === 'attack') setAudioParamSmooth(SharedAudio.compressor.attack, value / 1000, 0.015);
+                    else if (config.param === 'release') setAudioParamSmooth(SharedAudio.compressor.release, value / 1000, 0.015);
+                    else if (config.param === 'ratio') setAudioParamSmooth(SharedAudio.compressor.ratio, value / 10, 0.015);
+                    else if (config.param === 'frequency' && SharedAudio.compressorFilter) setAudioParamSmooth(SharedAudio.compressorFilter.frequency, value, 0.015);
+                    else if (config.param === 'threshold') setAudioParamSmooth(SharedAudio.compressor.threshold, value / 10, 0.015);
+                    else if (config.param === 'gain' && SharedAudio.compressorGain) setAudioParamSmooth(SharedAudio.compressorGain.gain, Math.pow(10, (value / 10) / 20), 0.015);
+                }
+            });
+
+            if (this.compressorActive) {
+                this.toggleCompressor();
+            }
+
+            this._suppressDraw = _prevSuppress;
+            if (!skipDraw) this.drawCurve();
+            if (window.syncGlobalSliders) window.syncGlobalSliders();
         },
 
-        _renderGenreTargetList: function(side) {
-            const list = document.getElementById(`${side}-genre-target-list`);
-            if (!list) return;
-            const st = this._genreTargetState[side];
-            const families = (typeof FindEngine !== 'undefined' && FindEngine.genreFamilies) ? FindEngine.genreFamilies : [];
-            list.innerHTML = '';
-            families.forEach((fam, i) => {
-                const variant = side === 'music' ? (fam.musicVariants && fam.musicVariants[0]) : (fam.gameVariants && fam.gameVariants[0]);
-                if (!variant) return;
-                const item = document.createElement('button');
-                item.type = 'button';
-                item.className = 'genre-target-item' + (st.selectedIdx === i ? ' genre-target-item-active' : '');
-                const numSpan = document.createElement('span');
-                numSpan.className = 'genre-target-item-num';
-                numSpan.textContent = String(i + 1);
-                item.appendChild(numSpan);
-                item.appendChild(document.createTextNode(`${variant.emoji} ${variant.name}`));
-                item.onclick = () => {
-                    st.selectedIdx = i;
-                    st.listOpen = false;
-                    list.classList.add('hidden');
-                    this._renderGenreTargetLabel(side);
+    };
+
+/* ===== app/js/eq-tape-mod.js ===== */
+// Split out of eq-core.js (2026 god-file refactor, Step 1).
+// Tape-mod vent simulation: models vent-taping mods on an IEM shell as two
+// worklet sim filters (slots 6/7). Fully this-scoped — merged into EQ_Module
+// via Object.assign in db-cache.js; all methods keep their original names.
+const EQ_TapeModMethods = {
+            tapeModState: 'off',
+            tapeModOptions: ['off', 'front', 'rear', 'full'],
+            cycleTapeMod: function(dir = 1) {
+                const total = this.tapeModOptions.length;
+                const curIdx = this.tapeModOptions.indexOf(this.tapeModState);
+                const nextIdx = (curIdx + dir + total) % total;
+                this.tapeModState = this.tapeModOptions[nextIdx];
+                this.updateTapeModUI();
+                if (this.updateTapeModDSP) this.updateTapeModDSP();
+                this.drawCurve();
+                if (this.updateAudioConnections) this.updateAudioConnections();
+            },
+            updateTapeModDSP: function() {
+                if (!this.graphBuilt || !SharedAudio.workletNode) return;
+                const tapeMode = this.tapeModState;
+                let s6 = { index: 6, bypassed: true, filterType: 'lowshelf', frequency: 120, gain: 0, q: 0.7 };
+                let s7 = { index: 7, bypassed: true, filterType: 'peaking', frequency: 35, gain: 0, q: 1.2 };
+                if (tapeMode === 'front') {
+                    s6 = { index: 6, bypassed: false, filterType: 'lowshelf', frequency: 120, gain: 6.0, q: 0.7 };
+                    s7 = { index: 7, bypassed: false, filterType: 'peaking', frequency: 35, gain: 2.5, q: 1.2 };
+                } else if (tapeMode === 'rear') {
+                    s6 = { index: 6, bypassed: false, filterType: 'lowshelf', frequency: 250, gain: 3.5, q: 0.7 };
+                    s7 = { index: 7, bypassed: false, filterType: 'peaking', frequency: 150, gain: 2.0, q: 1.0 };
+                } else if (tapeMode === 'full') {
+                    s6 = { index: 6, bypassed: false, filterType: 'lowshelf', frequency: 180, gain: 8.5, q: 0.8 };
+                    s7 = { index: 7, bypassed: false, filterType: 'peaking', frequency: 30, gain: 4.0, q: 1.5 };
+                }
+                SharedAudio.workletNode.port.postMessage({
+                    type: 'updateSimulations',
+                    sims: [s6, s7]
+                });
+            },
+            updateTapeModUI: function() {
+                const label = document.getElementById('label-tape-mod');
+                const subLabel = document.getElementById('tape-mod-sub-label');
+                const displayNames = {
+                    off: 'Off (Stock Vents)',
+                    front: 'Front Vent (Sub-Bass)',
+                    rear: 'Rear Vent (Warmth)',
+                    full: 'Full Tape (Max Slam)'
                 };
-                list.appendChild(item);
-            });
-            const count = families.length;
-            const countLabel = document.getElementById(`${side}-genre-target-count`);
-            if (countLabel) countLabel.textContent = count + ' genres';
+                const subNames = {
+                    off: 'Off',
+                    front: '+6.0dB Sub',
+                    rear: '+3.5dB Mid',
+                    full: '+8.5dB Slam'
+                };
+                if (label) label.textContent = displayNames[this.tapeModState] || 'Off';
+                if (subLabel) {
+                    subLabel.textContent = subNames[this.tapeModState] || 'Off';
+                    subLabel.className = this.tapeModState === 'off'
+                        ? "font-mono text-emerald-400 font-bold text-[10px]"
+                        : "font-mono text-amber-400 font-bold text-[10px]";
+                }
+            },
+};
+
+/* ===== app/js/eq-biquad-math.js ===== */
+// Split out of eq-core.js (2026 god-file refactor, Step 2).
+// RBJ biquad magnitude evaluation — the EXACT coefficient math the worklet
+// runs (dsp-processor.js), used by the graph renderer, the exporters, and the
+// AutoEQ solver so drawn/exported curves match the audible response. Pure
+// function except for the SharedAudio sample-rate read; merged into EQ_Module
+// via Object.assign in db-cache.js.
+const EQ_BiquadMathMethods = {
+        _biquadCoeffs: function(type, f0, Q, G, Fs) {
+            const rawFs = Fs || (window.SharedAudio && SharedAudio.ctx ? SharedAudio.ctx.sampleRate : 44100);
+            const activeFs = Number.isFinite(rawFs) && rawFs >= 2000 ? rawFs : 44100;
+            const maxF0 = Math.min(activeFs * 0.45, activeFs / 2 - 1000);
+            const safeF0 = Math.max(10, Math.min(maxF0, Number.isFinite(f0) ? f0 : 1000));
+            const safeQ = Math.max(0.01, Math.min(50, Number.isFinite(Q) ? Q : 1.0));
+            const safeG = Math.max(-40, Math.min(40, Number.isFinite(G) ? G : 0));
+            return { activeFs, safeF0, safeQ, safeG };
+        },
+        getBiquadComplex: function(type, f, f0, Q, G, Fs = null) {
+            if ((G === 0 || !Number.isFinite(G)) && (type === 'peaking' || type === 'lowshelf' || type === 'highshelf')) return [1, 0];
+            const { activeFs, safeF0, safeQ, safeG } = this._biquadCoeffs(type, f0, Q, G, Fs);
+            const fClamped = Math.max(1.0, Number.isFinite(f) ? f : 1000);
+            // Nyquist-mirror guard: evaluation above Fs/2 mirrors instead of
+            // representing a real response; clamp into (0, Fs/2).
+            const fEval = Math.min(fClamped, activeFs / 2 * 0.999);
+            const w = 2 * Math.PI * fEval / activeFs;
+            const cosW = Math.cos(w);
+            const sinW = Math.sin(w);
+
+            // Clamp to 0.45xSR with a >=1 kHz margin from Nyquist. MUST stay
+            // identical to BiquadFilter.updateCoefficients (dsp-processor.js).
+            const w0 = 2 * Math.PI * safeF0 / activeFs;
+            const cosW0 = Math.cos(w0);
+            const sinW0 = Math.sin(w0);
+            const A = Math.pow(10, safeG / 40);
+
+            let b0 = 0, b1 = 0, b2 = 0, a0 = 1, a1 = 0, a2 = 0;
+
+            if (type === 'peaking') {
+                const alpha = sinW0 / (2 * safeQ);
+                b0 = 1 + alpha * A;
+                b1 = -2 * cosW0;
+                b2 = 1 - alpha * A;
+                a0 = 1 + alpha / A;
+                a1 = -2 * cosW0;
+                a2 = 1 - alpha / A;
+            } else if (type === 'lowshelf') {
+                const alpha = (typeof CurveUtils !== 'undefined' && CurveUtils.computeShelfAlpha)
+                    ? CurveUtils.computeShelfAlpha(sinW0, A, safeQ)
+                    : (sinW0 / 2) * Math.sqrt(Math.max(0.02, (A + 1 / A) * (1 / Math.max(0.3, Math.min(3.0, safeQ)) - 1) + 2));
+
+                b0 = A * ((A + 1) - (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha);
+                b1 = 2 * A * ((A - 1) - (A + 1) * cosW0);
+                b2 = A * ((A + 1) - (A - 1) * cosW0 - 2 * Math.sqrt(A) * alpha);
+                a0 = (A + 1) + (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha;
+                a1 = -2 * ((A - 1) + (A + 1) * cosW0);
+                a2 = (A + 1) + (A - 1) * cosW0 - 2 * Math.sqrt(A) * alpha;
+            } else if (type === 'highshelf') {
+                const alpha = (typeof CurveUtils !== 'undefined' && CurveUtils.computeShelfAlpha)
+                    ? CurveUtils.computeShelfAlpha(sinW0, A, safeQ)
+                    : (sinW0 / 2) * Math.sqrt(Math.max(0.02, (A + 1 / A) * (1 / Math.max(0.3, Math.min(3.0, safeQ)) - 1) + 2));
+
+                b0 = A * ((A + 1) + (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha);
+                b1 = -2 * A * ((A - 1) + (A + 1) * cosW0);
+                b2 = A * ((A + 1) + (A - 1) * cosW0 - 2 * Math.sqrt(A) * alpha);
+                a0 = (A + 1) - (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha;
+                a1 = 2 * ((A - 1) - (A + 1) * cosW0);
+                a2 = (A + 1) - (A - 1) * cosW0 - 2 * Math.sqrt(A) * alpha;
+            } else if (type === 'lowpass') {
+                const alpha = sinW0 / (2 * safeQ);
+                b0 = (1 - cosW0) / 2;
+                b1 = 1 - cosW0;
+                b2 = (1 - cosW0) / 2;
+                a0 = 1 + alpha;
+                a1 = -2 * cosW0;
+                a2 = 1 - alpha;
+            } else if (type === 'highpass') {
+                const alpha = sinW0 / (2 * safeQ);
+                b0 = (1 + cosW0) / 2;
+                b1 = -(1 + cosW0);
+                b2 = (1 + cosW0) / 2;
+                a0 = 1 + alpha;
+                a1 = -2 * cosW0;
+                a2 = 1 - alpha;
+            } else if (type === 'notch') {
+                const alpha = sinW0 / (2 * safeQ);
+                b0 = 1;
+                b1 = -2 * cosW0;
+                b2 = 1;
+                a0 = 1 + alpha;
+                a1 = -2 * cosW0;
+                a2 = 1 - alpha;
+            } else {
+                return [1, 0];
+            }
+
+            const nB0 = b0 / a0, nB1 = b1 / a0, nB2 = b2 / a0;
+            const nA1 = a1 / a0, nA2 = a2 / a0;
+
+            const cos2W = cosW * cosW - sinW * sinW;
+            const sin2W = 2 * sinW * cosW;
+
+            const numReal = nB0 + nB1 * cosW + nB2 * cos2W;
+            const numImag = -(nB1 * sinW + nB2 * sin2W);
+            const denReal = 1 + nA1 * cosW + nA2 * cos2W;
+            const denImag = -(nA1 * sinW + nA2 * sin2W);
+            const denMag2 = denReal * denReal + denImag * denImag;
+            const safeDen = Math.max(1e-12, denMag2);
+            if (!Number.isFinite(safeDen) || !Number.isFinite(numReal) || !Number.isFinite(numImag) || !Number.isFinite(denReal) || !Number.isFinite(denImag)) return [1, 0];
+            // (a+ib)/(c+id) = ((ac+bd) + i(bc-ad)) / (c^2+d^2)
+            const re = (numReal * denReal + numImag * denImag) / safeDen;
+            const im = (numImag * denReal - numReal * denImag) / safeDen;
+            return Number.isFinite(re) && Number.isFinite(im) ? [re, im] : [1, 0];
+        },
+        getBiquadMagnitude: function(type, f, f0, Q, G, Fs = null) {
+            const c = this.getBiquadComplex(type, f, f0, Q, G, Fs);
+            const mag = Math.sqrt(c[0] * c[0] + c[1] * c[1]);
+            return Number.isFinite(mag) ? mag : 1.0;
         },
 
-        _renderGenreTargetLabel: function(side) {
-            const st = this._genreTargetState[side];
-            const label = document.getElementById(`${side}-genre-target-label`);
-            const hint = document.getElementById(`${side}-genre-target-hint`);
-            const families = (typeof FindEngine !== 'undefined' && FindEngine.genreFamilies) ? FindEngine.genreFamilies : [];
-            const fam = families[st.selectedIdx];
-            const variant = fam ? (side === 'music' ? fam.musicVariants[0] : fam.gameVariants[0]) : null;
-            if (label) label.textContent = variant ? `${variant.emoji} ${variant.name}` : 'Choose a genre…';
-            if (hint) hint.textContent = variant
-                ? `Apply AutoEQ to push the active curve toward ${variant.name}'s tonal signature.`
-                : 'Pick a genre, then Apply AutoEQ.';
-        },
 
-        applyGenreTargetAutoEQ: function(side) {
-            const st = this._genreTargetState[side];
-            const families = (typeof FindEngine !== 'undefined' && FindEngine.genreFamilies) ? FindEngine.genreFamilies : [];
-            const fam = families[st.selectedIdx];
-            if (!fam) { showToast("Pick a genre first.", "⚠️"); return; }
+};
 
-            const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
-            if (!baseCurve) { showToast("Load a curve into Base first.", "⚠️"); return; }
-
-            const variant = side === 'music' ? fam.musicVariants[0] : fam.gameVariants[0];
-            // fam.profile is the same [sub, warmth, vocal, treble, air] delta
-            // shape getEqBandDeltas() derives from a real 10-band FR (see
-            // FindEngine.getEqBandDeltas / nearestGenreFamilyIndex) --
-            // expanding it back out to those same band frequencies, plus
-            // 20Hz/20kHz endpoints so the curve interpolates cleanly across
-            // the full audible range instead of collapsing to 0 past the
-            // outermost defined point.
-            const [sub, warmth, vocal, treble, air] = fam.profile;
-            const data = [
-                [20, sub], [31, sub], [62, sub],
-                [125, warmth], [250, warmth],
-                [1000, vocal],
-                [2000, treble], [4000, treble],
-                [8000, air], [16000, air], [20000, air]
-            ];
-
-            PEQDB_Module.STATE.activeCurves = PEQDB_Module.STATE.activeCurves.filter(c => c.role !== 'target');
-            PEQDB_Module.STATE.activeCurves.push({
-                uid: 'target-genre-' + side + '-' + st.selectedIdx,
-                id: 'genre-' + side + '-' + st.selectedIdx,
-                name: (variant ? variant.name : 'Genre') + ' Target',
-                role: 'target',
-                color: side === 'music' ? '#2563eb' : '#f59e0b',
-                visible: true,
-                data: data
-            });
-
-            this.closeGenreTargetPicker(side);
-            PEQDB_Module.updateAll();
-            PEQDB_Module.generateLeastSquaresAutoEQ();
-        },
-
+/* ===== app/js/eq-magnitude-engine.js ===== */
+// Split out of eq-core.js (2026 god-file refactor, Step 4).
+// Magnitude engine: the composite filter magnitude cache that the graph
+// renderer, the Similar-mode matcher, and the exporters all read, plus the
+// live-band-state readers (getLiveFiltersState / getLiveAdvancedFiltersState
+// / getRealValues) every consumer uses to snapshot the current EQ.
+// Fully this-scoped (cache buffers + the one-shot document input listener
+// guarded by _magLiveTrackSetup live on EQ_Module); merged into EQ_Module
+// via Object.assign in db-cache.js. All method names unchanged.
+const EQ_MagnitudeEngineMethods = {
                 getLiveAdvancedFiltersState: function() {
 if (window.bypassedBands === undefined) window.bypassedBands = new Set();
 const adv = this.advancedBands.map((b, i) => {
@@ -15913,14 +15916,17 @@ const adv = this.advancedBands.map((b, i) => {
                     const qEl = document.getElementById("eq-q_a" + i);
                     const isBypassed = window.bypassedBands.has("a" + i);
 
-                    const hzVal = fEl ? parseFloat(fEl.value) : b.hz;
+                    const rawHz = fEl ? parseFloat(fEl.value) : b.hz;
+                    const hzVal = Number.isFinite(rawHz) ? rawHz : b.hz;
                     let gVal = 0;
                     if (sEl) {
-                        gVal = isBypassed ? 0 : parseFloat(sEl.value);
+                        const rawG = isBypassed ? 0 : parseFloat(sEl.value);
+                        gVal = Number.isFinite(rawG) ? rawG : 0;
                     } else {
                         gVal = isBypassed ? 0 : (b.g !== undefined ? b.g : 0.0);
                     }
-                    const qVal = qEl ? parseFloat(qEl.value) : (b.q !== undefined ? b.q : b.defaultQ);
+                    const rawQ = qEl ? parseFloat(qEl.value) : (b.q !== undefined ? b.q : b.defaultQ);
+                    const qVal = Number.isFinite(rawQ) ? rawQ : (b.q !== undefined ? b.q : b.defaultQ);
 
                     return {
                         hz: hzVal,
@@ -15939,10 +15945,13 @@ getLiveFiltersState: function() {
                 const sEl = document.getElementById("eq-s" + i);
                 const qEl = document.getElementById("eq-q_m" + i);
                 const isBypassed = window.bypassedBands.has("m" + i);
+                const rawHz = fEl ? parseFloat(fEl.value) : b.hz;
+                const rawG = (isBypassed || !sEl) ? 0 : parseFloat(sEl.value);
+                const rawQ = qEl ? parseFloat(qEl.value) : b.defaultQ;
                 return {
-                    hz: fEl ? parseFloat(fEl.value) : b.hz,
-                    g: (isBypassed || !sEl) ? 0 : parseFloat(sEl.value),
-                    q: qEl ? parseFloat(qEl.value) : b.defaultQ,
+                    hz: Number.isFinite(rawHz) ? rawHz : b.hz,
+                    g: Number.isFinite(rawG) ? rawG : 0,
+                    q: Number.isFinite(rawQ) ? rawQ : b.defaultQ,
                     type: b.type || 'peaking',
                     slope: b.slope || 12
                 };
@@ -15960,12 +15969,8 @@ getLiveFiltersState: function() {
         getCompositeFilterMagnitude: function(freqs, numPoints) {
             if (!this.cachedFilterMag || this.cachedFilterMag.length !== numPoints) {
                 this.cachedFilterMag = new Float32Array(numPoints);
-                this.cachedMagRes = new Float32Array(numPoints);
-                this.cachedPhaseRes = new Float32Array(numPoints);
             }
             const filterMag = this.cachedFilterMag;
-            const magRes = this.cachedMagRes;
-            const phaseRes = this.cachedPhaseRes;
 
             // Read all mutable state ONCE; the recompute body below reuses these
             // same locals. The graph redraws on every EQ change AND also ~20-60x/s
@@ -15989,8 +15994,10 @@ getLiveFiltersState: function() {
                     if (el && el.id && /^(?:eq-q_a|eq-q_m|eq-af|eq-f|eq-s|eq-a)/.test(el.id)) self._magFiltersVersion++;
                 }, true);
             }
-            const simStrength = parseFloat(document.getElementById('sim-tip-strength')?.value || 100) / 100;
-            const loudnessVol = parseFloat(document.getElementById("eq-musicVolumeSlider")?.value || 50);
+            const rawSimStrength = parseFloat(document.getElementById('sim-tip-strength')?.value);
+            const simStrength = Number.isFinite(rawSimStrength) ? rawSimStrength / 100 : 1.0;
+            const rawLoudVol = parseFloat(document.getElementById("eq-musicVolumeSlider")?.value);
+            const loudnessVol = Number.isFinite(rawLoudVol) ? rawLoudVol : 50;
             // The de-esser notch FOLLOWS the detected sibilance peak in the audio
             // path (updateSimulations index 5 receives deEsserCurrentFreq), so the
             // drawn curve must use the same tracked value — deEsserFilter is a
@@ -16000,10 +16007,25 @@ getLiveFiltersState: function() {
                 ? this.deEsserCurrentFreq
                 : ((this.deEsserFilter && this.deEsserFilter.frequency) ? this.deEsserFilter.frequency.value : 6000);
             const bypassSize = window.bypassedBands ? window.bypassedBands.size : -1;
-            const masterBassVal = parseFloat(document.getElementById("eq-masterBass")?.value || 0);
-            const masterTrebVal = parseFloat(document.getElementById("eq-masterTreble")?.value || 0);
+            const rawMasterBass = parseFloat(document.getElementById("eq-masterBass")?.value);
+            const rawMasterTreb = parseFloat(document.getElementById("eq-masterTreble")?.value);
+            const masterBassVal = Number.isFinite(rawMasterBass) ? rawMasterBass : 0;
+            const masterTrebVal = Number.isFinite(rawMasterTreb) ? rawMasterTreb : 0;
             const hearingCalStr = (this.hearingCalEnabled && this.hearingOffsets) ? this.hearingOffsets.join(',') : 'off';
             const gearIdx = (this.currentGearIdx !== undefined) ? this.currentGearIdx : 0;
+            // The magnitude cache is keyed by content, but callers pass
+            // DIFFERENT frequency grids (the graph's 1000-pt view grid vs the
+            // Similar scan's fixed 500-pt DSP grid, and the view grid is
+            // regenerated on every pan/zoom while keeping the same length).
+            // Including the grid's endpoints (and the caller's view range)
+            // in the key prevents a cached 20Hz-20kHz sweep from being served
+            // to a zoomed 200Hz-8kHz view — the drawn curve previously froze
+            // on the pre-zoom shape until the next slider change.
+            const gridKey = (numPoints > 0 && freqs && freqs.length >= numPoints)
+                ? (Math.round(freqs[0] * 100) + '-' + Math.round(freqs[numPoints - 1] * 100)) : 'x';
+            const viewRange = (window.PEQDB_Module && PEQDB_Module.viewMinF !== undefined)
+                ? (PEQDB_Module.viewMinF + '-' + PEQDB_Module.viewMaxF) : 'x';
+
             const cheapKey = [simStrength, loudnessVol, Number.isFinite(deEsserFreq) ? +deEsserFreq.toFixed(2) : 0,
                 this.deEsserEnabled ? 1 : 0, this.deEsserReductionDb || 0,
                 this.loudnessActive ? 1 : 0, this.loudnessCalibrationVol, this.loudnessStrength,
@@ -16016,7 +16038,7 @@ getLiveFiltersState: function() {
                 this.tapeModState ? JSON.stringify(this.tapeModState) : 'n',
                 masterBassVal, masterTrebVal, hearingCalStr, gearIdx,
                 this.virtualBands ? this.virtualBands.length : -1,
-                this.eqEnabled ? 1 : 0].join('|');
+                this.eqEnabled ? 1 : 0, gridKey, viewRange].join('|');
 
             if (this._magCacheNumPoints === numPoints
                 && this._magCacheVersion === this._magFiltersVersion
@@ -16074,17 +16096,16 @@ getLiveFiltersState: function() {
                     return;
                 }
 
+                // Evaluate every section through getBiquadMagnitude — the
+                // exact RBJ math the worklet runs (same coefficient formulas,
+                // same freq/Q clamps). The previous native-BiquadFilterNode
+                // path (getFrequencyResponse via 70 offline "mathFilters")
+                // kept a whole OfflineAudioContext alive just for drawing,
+                // and its native shelf implementations disagreed with the
+                // DSP (fixed S=1 slope, Q ignored).
                 for (let k = 0; k < cascadeNodesCount; k++) {
-                    const f = this.mathFilters[i];
-                    f.type = activeType;
-                    f.frequency.value = state.hz;
-
-                    let nodeGain = rawG;
-                    f.gain.value = nodeGain;
-                    f.Q.value = state.q;
-                    f.getFrequencyResponse(freqs, magRes, phaseRes);
                     for (let j = 0; j < numPoints; j++) {
-                        filterMag[j] *= magRes[j];
+                        filterMag[j] *= this.getBiquadMagnitude(activeType, freqs[j], state.hz, state.q, rawG);
                     }
                 }
             });
@@ -16103,25 +16124,18 @@ getLiveFiltersState: function() {
                     return;
                 }
 
-                const f = this.mathFilters[10 + i];
-                f.type = advType;
-                f.frequency.value = state.hz;
-                f.gain.value = state.g;
-                f.Q.value = state.q;
-                f.getFrequencyResponse(freqs, magRes, phaseRes);
-                for(let j = 0; j < numPoints; j++) filterMag[j] *= magRes[j];
+                // Same getBiquadMagnitude parity as the main bands above:
+                // native nodes are gone, everything evaluates through the
+                // worklet's exact RBJ math.
+                for (let j = 0; j < numPoints; j++) {
+                    filterMag[j] *= this.getBiquadMagnitude(advType, freqs[j], state.hz, state.q, state.g);
+                }
             });
 
             if (includeBands && this.virtualBands) {
-                this.virtualBands.forEach((b, i) => {
-                    const f = this.mathFilters[20 + i];
-                    if (f) {
-                        f.type = b.type || 'peaking';
-                        f.frequency.value = b.hz;
-                        f.gain.value = b.g;
-                        f.Q.value = b.q;
-                        f.getFrequencyResponse(freqs, magRes, phaseRes);
-                        for (let j = 0; j < numPoints; j++) filterMag[j] *= magRes[j];
+                this.virtualBands.forEach((b) => {
+                    for (let j = 0; j < numPoints; j++) {
+                        filterMag[j] *= this.getBiquadMagnitude(b.type || 'peaking', freqs[j], b.hz, b.q, b.g);
                     }
                 });
             }
@@ -16256,46 +16270,194 @@ getLiveFiltersState: function() {
 
             if (this.crossoverActive) {
                 const type = this.crossoverType;
-                const lLin = Math.pow(10, this.crossoverLowTrim / 20);
-                const lmLin = Math.pow(10, this.crossoverLowMidTrim / 20);
-                const mLin = Math.pow(10, this.crossoverMidTrim / 20);
-                const hmLin = Math.pow(10, this.crossoverHighMidTrim / 20);
-                const hLin = Math.pow(10, this.crossoverHighTrim / 20);
+                const trimToLin = (v) => Number.isFinite(v) ? Math.pow(10, v / 20) : 1.0;
+                const lLin = trimToLin(this.crossoverLowTrim);
+                const lmLin = trimToLin(this.crossoverLowMidTrim);
+                const mLin = trimToLin(this.crossoverMidTrim);
+                const hmLin = trimToLin(this.crossoverHighMidTrim);
+                const hLin = trimToLin(this.crossoverHighTrim);
 
+                // Phasor sum to match DSP time-domain summation: each LR4 side
+                // is a squared complex biquad (2 cascaded stages), bands are
+                // complex-multiplied then complex-added, magnitude taken last.
+                const cSq = (c) => [c[0] * c[0] - c[1] * c[1], 2 * c[0] * c[1]];
+                const cMul = (a, b) => [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]];
                 for (let j = 0; j < numPoints; j++) {
                     const f = freqs[j];
 
                     const lowCutFreq = type === '5way' ? this.crossoverFreq1 : (type === '2way' ? this.crossoverFreq3 : this.crossoverFreq2);
-                    const magL = Math.pow(this.getBiquadMagnitude('lowpass', f, lowCutFreq, 0.707, 0), 2) * lLin;
+                    const hLP = cSq(this.getBiquadComplex('lowpass', f, lowCutFreq, 0.707, 0));
+                    let sumRe = hLP[0] * lLin, sumIm = hLP[1] * lLin;
 
-                    let magLM = 0;
                     if (type === '5way') {
-                        magLM = Math.pow(this.getBiquadMagnitude('highpass', f, this.crossoverFreq1, 0.707, 0), 2) *
-                                Math.pow(this.getBiquadMagnitude('lowpass', f, this.crossoverFreq2, 0.707, 0), 2) * lmLin;
+                        const h = cMul(cSq(this.getBiquadComplex('highpass', f, this.crossoverFreq1, 0.707, 0)), cSq(this.getBiquadComplex('lowpass', f, this.crossoverFreq2, 0.707, 0)));
+                        sumRe += h[0] * lmLin; sumIm += h[1] * lmLin;
                     }
 
-                    let magM = 0;
                     if (type === '3way' || type === '4way' || type === '5way') {
-                        magM = Math.pow(this.getBiquadMagnitude('highpass', f, this.crossoverFreq2, 0.707, 0), 2) *
-                               Math.pow(this.getBiquadMagnitude('lowpass', f, this.crossoverFreq3, 0.707, 0), 2) * mLin;
+                        const h = cMul(cSq(this.getBiquadComplex('highpass', f, this.crossoverFreq2, 0.707, 0)), cSq(this.getBiquadComplex('lowpass', f, this.crossoverFreq3, 0.707, 0)));
+                        sumRe += h[0] * mLin; sumIm += h[1] * mLin;
                     }
 
-                    let magHM = 0;
                     if (type === '4way' || type === '5way') {
-                        magHM = Math.pow(this.getBiquadMagnitude('highpass', f, this.crossoverFreq3, 0.707, 0), 2) *
-                                Math.pow(this.getBiquadMagnitude('lowpass', f, this.crossoverFreq4, 0.707, 0), 2) * hmLin;
+                        const h = cMul(cSq(this.getBiquadComplex('highpass', f, this.crossoverFreq3, 0.707, 0)), cSq(this.getBiquadComplex('lowpass', f, this.crossoverFreq4, 0.707, 0)));
+                        sumRe += h[0] * hmLin; sumIm += h[1] * hmLin;
                     }
 
                     const highCutFreq = type === '2way' ? this.crossoverFreq3 : (type === '3way' ? this.crossoverFreq3 : this.crossoverFreq4);
-                    const magH = Math.pow(this.getBiquadMagnitude('highpass', f, highCutFreq, 0.707, 0), 2) * hLin;
+                    const hHP = cSq(this.getBiquadComplex('highpass', f, highCutFreq, 0.707, 0));
+                    sumRe += hHP[0] * hLin; sumIm += hHP[1] * hLin;
 
-                    const sumMag = magL + magLM + magM + magHM + magH;
-                    filterMag[j] *= sumMag;
+                    const sumMag = Math.sqrt(sumRe * sumRe + sumIm * sumIm);
+                    filterMag[j] *= Number.isFinite(sumMag) ? sumMag : 1.0;
                 }
             }
 
             return filterMag;
         },
+};
+
+/* ===== app/js/eq-genre-targets.js ===== */
+// Split out of eq-core.js (2026 god-file refactor, Step 5).
+// Genre-target AutoEQ pickers + live genre match badges:
+//   - _genreTargetState + the picker open/close/select handlers that target
+//     a genre profile (FindEngine.genreFamilies classification), and
+//     applyGenreTargetAutoEQ which solves the faders toward that target.
+//   - updateMusicMatch / updateGameMatch + their badge setters, and
+//     calculateTargetMatches (the per-draw badge refresh entry point
+//     called by the squig graph renderer).
+// Fully this-scoped; reads FindEngine + PEQDB_Module at call time; merged
+// into EQ_Module via Object.assign in db-cache.js. Names unchanged.
+const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false, listOpen: false, selectedIdx: -1 }, game: { open: false, listOpen: false, selectedIdx: -1 } },
+
+        toggleGenreTargetPicker: function(side) {
+            const st = this._genreTargetState[side];
+            st.open = !st.open;
+            const panel = document.getElementById(`${side}-genre-target-panel`);
+            if (panel) panel.classList.toggle('hidden', !st.open);
+            if (st.open) {
+                this._renderGenreTargetLabel(side);
+            } else {
+                st.listOpen = false;
+                const list = document.getElementById(`${side}-genre-target-list`);
+                if (list) list.classList.add('hidden');
+            }
+        },
+
+        closeGenreTargetPicker: function(side) {
+            const st = this._genreTargetState[side];
+            st.open = false;
+            st.listOpen = false;
+            const panel = document.getElementById(`${side}-genre-target-panel`);
+            if (panel) panel.classList.add('hidden');
+            const list = document.getElementById(`${side}-genre-target-list`);
+            if (list) list.classList.add('hidden');
+        },
+
+        toggleGenreTargetList: function(side) {
+            const st = this._genreTargetState[side];
+            const list = document.getElementById(`${side}-genre-target-list`);
+            if (!list) return;
+            st.listOpen = !st.listOpen;
+            list.classList.toggle('hidden', !st.listOpen);
+            if (st.listOpen) this._renderGenreTargetList(side);
+        },
+
+        _pickTargetFamilies: function(side) {
+            if (typeof FindEngine === 'undefined') return [];
+            // Game side uses the independent gaming-tuned profiles, not the
+            // deprecated 1:1 music-paired gameVariants table.
+            if (side === 'game' && Array.isArray(FindEngine.gameGenreFamilies)) return FindEngine.gameGenreFamilies;
+            return Array.isArray(FindEngine.genreFamilies) ? FindEngine.genreFamilies : [];
+        },
+
+        _renderGenreTargetList: function(side) {
+            const list = document.getElementById(`${side}-genre-target-list`);
+            if (!list) return;
+            const st = this._genreTargetState[side];
+            const families = this._pickTargetFamilies(side);
+            list.innerHTML = '';
+            families.forEach((fam, i) => {
+                const variant = side === 'music' ? (fam.musicVariants && fam.musicVariants[0]) : (fam.gameVariants && fam.gameVariants[0]);
+                if (!variant) return;
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'genre-target-item' + (st.selectedIdx === i ? ' genre-target-item-active' : '');
+                const numSpan = document.createElement('span');
+                numSpan.className = 'genre-target-item-num';
+                numSpan.textContent = String(i + 1);
+                item.appendChild(numSpan);
+                item.appendChild(document.createTextNode(`${variant.emoji} ${variant.name}`));
+                item.onclick = () => {
+                    st.selectedIdx = i;
+                    st.listOpen = false;
+                    list.classList.add('hidden');
+                    this._renderGenreTargetLabel(side);
+                };
+                list.appendChild(item);
+            });
+            const count = families.length;
+            const countLabel = document.getElementById(`${side}-genre-target-count`);
+            if (countLabel) countLabel.textContent = count + ' genres';
+        },
+
+        _renderGenreTargetLabel: function(side) {
+            const st = this._genreTargetState[side];
+            const label = document.getElementById(`${side}-genre-target-label`);
+            const hint = document.getElementById(`${side}-genre-target-hint`);
+            const families = this._pickTargetFamilies(side);
+            const fam = families[st.selectedIdx];
+            const variant = fam ? (side === 'music' ? fam.musicVariants[0] : fam.gameVariants[0]) : null;
+            if (label) label.textContent = variant ? `${variant.emoji} ${variant.name}` : 'Choose a genre…';
+            if (hint) hint.textContent = variant
+                ? `Apply AutoEQ to push the active curve toward ${variant.name}'s tonal signature.`
+                : 'Pick a genre, then Apply AutoEQ.';
+        },
+
+        applyGenreTargetAutoEQ: function(side) {
+            const st = this._genreTargetState[side];
+            const families = this._pickTargetFamilies(side);
+            const fam = families[st.selectedIdx];
+            if (!fam) { showToast("Pick a genre first.", "⚠️"); return; }
+
+            const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
+            if (!baseCurve) { showToast("Load a curve into Base first.", "⚠️"); return; }
+
+            const variant = side === 'music' ? fam.musicVariants[0] : fam.gameVariants[0];
+            // fam.profile is the same [sub, warmth, vocal, treble, air] delta
+            // shape getEqBandDeltas() derives from a real 10-band FR (see
+            // FindEngine.getEqBandDeltas / nearestGenreFamilyIndex) --
+            // expanding it back out to those same band frequencies, plus
+            // 20Hz/20kHz endpoints so the curve interpolates cleanly across
+            // the full audible range instead of collapsing to 0 past the
+            // outermost defined point.
+            const [sub, warmth, vocal, treble, air] = fam.profile;
+            const data = [
+                [20, sub], [31, sub], [62, sub],
+                [125, warmth], [250, warmth],
+                [1000, vocal],
+                [2000, treble], [4000, treble],
+                [8000, air], [16000, air], [20000, air]
+            ];
+
+            PEQDB_Module.STATE.activeCurves = PEQDB_Module.STATE.activeCurves.filter(c => c.role !== 'target');
+            PEQDB_Module.STATE.activeCurves.push({
+                uid: 'target-genre-' + side + '-' + st.selectedIdx,
+                id: 'genre-' + side + '-' + st.selectedIdx,
+                name: (variant ? variant.name : 'Genre') + ' Target',
+                role: 'target',
+                color: side === 'music' ? '#2563eb' : '#f59e0b',
+                visible: true,
+                data: data
+            });
+
+            this.closeGenreTargetPicker(side);
+            PEQDB_Module.updateAll();
+            PEQDB_Module.generateLeastSquaresAutoEQ();
+        },
+
+        // (live-state readers + getCompositeFilterMagnitude extracted to
+        //  eq-magnitude-engine.js — EQ_MagnitudeEngineMethods, merged via Object.assign in db-cache.js)
 
         loadValues: function(eqData) {
             if (!eqData) return;
@@ -16344,12 +16506,8 @@ getLiveFiltersState: function() {
                             typeBtn.textContent = labelMap[type] || 'PK';
                         }
 
-                        if (this.filters[i]) {
-                            this.filters[i].type = type;
-                            setAudioParamSmooth(this.filters[i].frequency, hz);
-                            setAudioParamSmooth(this.filters[i].gain, this.eqEnabled ? g : 0);
-                            setAudioParamSmooth(this.filters[i].Q, q);
-                        }
+                        // (native this.filters[i] sync removed — the worklet
+                        // owns the filters; updateAudioConnections pushes state)
 
                                                 this.updateSlider(i);
                     }
@@ -16389,117 +16547,6 @@ getLiveFiltersState: function() {
                 PEQDB_Module.debouncedFindSimilarCurves();
             }
         },
-
-        getBiquadMagnitude: function(type, f, f0, Q, G, Fs = null) {
-            if (G === 0 && (type === 'peaking' || type === 'lowshelf' || type === 'highshelf')) return 1.0;
-
-            const activeFs = Fs || (window.SharedAudio && SharedAudio.ctx ? SharedAudio.ctx.sampleRate : 44100);
-
-            const fClamped = Math.max(1.0, f);
-            const w = 2 * Math.PI * fClamped / activeFs;
-            const cosW = Math.cos(w);
-            const sinW = Math.sin(w);
-
-            // Clamp to 0.45xSR with a >=1 kHz margin from Nyquist. MUST stay
-            // identical to BiquadFilter.updateCoefficients (dsp-processor.js):
-            // this function draws/exports the response of the filters the
-            // worklet actually builds, so both sides must clamp f0 the same
-            // way. (At all standard audio rates 0.45xSR binds first; the
-            // matching margins keep them aligned at exotic low rates too.)
-            const maxF0 = Math.min(activeFs * 0.45, activeFs / 2 - 1000);
-            const safeF0 = Math.max(10, Math.min(maxF0, Number.isFinite(f0) ? f0 : 1000));
-            const w0 = 2 * Math.PI * safeF0 / activeFs;
-            const cosW0 = Math.cos(w0);
-            const sinW0 = Math.sin(w0);
-            const A = Math.pow(10, G / 40);
-
-            let b0 = 0, b1 = 0, b2 = 0, a0 = 1, a1 = 0, a2 = 0;
-
-            if (type === 'peaking') {
-                const alpha = sinW0 / (2 * Q);
-                b0 = 1 + alpha * A;
-                b1 = -2 * cosW0;
-                b2 = 1 - alpha * A;
-                a0 = 1 + alpha / A;
-                a1 = -2 * cosW0;
-                a2 = 1 - alpha / A;
-            } else if (type === 'lowshelf') {
-                const alpha = (typeof CurveUtils !== 'undefined' && CurveUtils.computeShelfAlpha)
-                    ? CurveUtils.computeShelfAlpha(sinW0, A, Q)
-                    : (sinW0 / 2) * Math.sqrt(Math.max(0.02, (A + 1 / A) * (1 / Math.max(0.3, Math.min(3.0, Number.isFinite(Q) ? Q : 1.0)) - 1) + 2));
-
-                b0 = A * ((A + 1) - (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha);
-                b1 = 2 * A * ((A - 1) - (A + 1) * cosW0);
-                b2 = A * ((A + 1) - (A - 1) * cosW0 - 2 * Math.sqrt(A) * alpha);
-                a0 = (A + 1) + (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha;
-                a1 = -2 * ((A - 1) + (A + 1) * cosW0);
-                a2 = (A + 1) + (A - 1) * cosW0 - 2 * Math.sqrt(A) * alpha;
-            } else if (type === 'highshelf') {
-                const alpha = (typeof CurveUtils !== 'undefined' && CurveUtils.computeShelfAlpha)
-                    ? CurveUtils.computeShelfAlpha(sinW0, A, Q)
-                    : (sinW0 / 2) * Math.sqrt(Math.max(0.02, (A + 1 / A) * (1 / Math.max(0.3, Math.min(3.0, Number.isFinite(Q) ? Q : 1.0)) - 1) + 2));
-
-                b0 = A * ((A + 1) + (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha);
-                b1 = -2 * A * ((A - 1) + (A + 1) * cosW0);
-                b2 = A * ((A + 1) + (A - 1) * cosW0 - 2 * Math.sqrt(A) * alpha);
-                a0 = (A + 1) - (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha;
-                a1 = 2 * ((A - 1) - (A + 1) * cosW0);
-                a2 = (A + 1) - (A - 1) * cosW0 - 2 * Math.sqrt(A) * alpha;
-            } else if (type === 'lowpass') {
-                const alpha = sinW0 / (2 * Q);
-                b0 = (1 - cosW0) / 2;
-                b1 = 1 - cosW0;
-                b2 = (1 - cosW0) / 2;
-                a0 = 1 + alpha;
-                a1 = -2 * cosW0;
-                a2 = 1 - alpha;
-            } else if (type === 'highpass') {
-                const alpha = sinW0 / (2 * Q);
-                b0 = (1 + cosW0) / 2;
-                b1 = -(1 + cosW0);
-                b2 = (1 + cosW0) / 2;
-                a0 = 1 + alpha;
-                a1 = -2 * cosW0;
-                a2 = 1 - alpha;
-            } else if (type === 'notch') {
-                const alpha = sinW0 / (2 * Q);
-                b0 = 1;
-                b1 = -2 * cosW0;
-                b2 = 1;
-                a0 = 1 + alpha;
-                a1 = -2 * cosW0;
-                a2 = 1 - alpha;
-            } else {
-                return 1.0;
-            }
-
-            const nB0 = b0 / a0, nB1 = b1 / a0, nB2 = b2 / a0;
-            const nA1 = a1 / a0, nA2 = a2 / a0;
-
-            const cos2W = cosW * cosW - sinW * sinW;
-            const sin2W = 2 * sinW * cosW;
-
-            const numReal = nB0 + nB1 * cosW + nB2 * cos2W;
-            const numImag = -(nB1 * sinW + nB2 * sin2W);
-            const numMag2 = numReal * numReal + numImag * numImag;
-
-            const denReal = 1 + nA1 * cosW + nA2 * cos2W;
-            const denImag = -(nA1 * sinW + nA2 * sin2W);
-            const denMag2 = denReal * denReal + denImag * denImag;
-
-            return Math.sqrt(numMag2 / Math.max(1e-12, denMag2));
-        },
-
-        // hzToX/xToHz/dbToY/yToDb/getFilterAtCoords were removed here: they
-        // referenced a canvas ID (#eq-largeResponseViz) that doesn't exist
-        // anywhere in index.html, had zero callers outside this cluster,
-        // and used hardcoded 980x320 canvas dimensions that don't match
-        // the real EQ graph canvas (#eq-squiglinkViz, which is DPR-scaled
-        // and dynamically sized). The live hit-testing path is the
-        // closure-scoped getEQNodeAtCoords used by the graph's own
-        // mouse/touch handlers -- this was an orphaned duplicate, not a
-        // second code path anything depended on.
-
         updateMusicMatch: function() {
             const faders = [];
             for (let i = 0; i < 10; i++) {
@@ -16644,6 +16691,1296 @@ toggleVizFullscreen: function() {
             this.updateGameMatch();
         },
 
+};
+
+/* ===== app/js/eq-dsp-graph.js ===== */
+// Split out of eq-core.js (2026 god-file refactor, Step 6).
+// AudioWorklet graph lifecycle + message bridge:
+//   - ensureDSPGraph / _buildDSPGraph (single-flight worklet boot, media
+//     element wiring, crossfeed/merger topology, pending-DSP-tag flush)
+//   - _pendingDspQueue / _queuePendingDsp (pre-boot coalescing)
+//   - _uacCoalesced (rAF-coalesced filter push) + updateAudioConnections
+//     (the full worklet filter-bank payload builder)
+//   - merger/safety limiter routing (worklet lookahead limiter config,
+//     persisted toggle) + the GR meter bridge
+//   - toggleEQ (master bypass; re-pushes the whole bank on flip)
+// All state (graphBuilt, _dspBuildPromise, _uacScheduled, mergerLimiterEnabled)
+// lives on EQ_Module via 	his; merged into EQ_Module via Object.assign in
+// db-cache.js. Names unchanged. dsp-processor.js (the worklet itself) is
+// untouched.
+const EQ_DspGraphMethods = {        _dspBuildPromise: null,
+        ensureDSPGraph: async function() {
+            if (this.graphBuilt) return;
+            // Re-entrancy guard. Callers fire this concurrently (document click
+            // handler, playback hook, drag flush, queued DSP tags). Each awaited
+            // addModule independently and built a SECOND worklet graph; the media
+            // source stayed wired to the first node while SharedAudio.workletNode
+            // pointed at the orphan, so every updateFilters message reached a
+            // filter bank that was never in the signal path — dragging EQ nodes
+            // changed nothing audibly.
+            if (!this._dspBuildPromise) {
+                this._dspBuildPromise = this._buildDSPGraph().catch((err) => {
+                    console.error("[AudioEngine] DSP graph build failed:", err);
+                });
+            }
+            await this._dspBuildPromise;
+            this._dspBuildPromise = null;
+        },
+
+        _buildDSPGraph: async function() {
+            const ctx = SharedAudio.init();
+            // Do NOT await ctx.resume() here. In browsers, an AudioContext created
+            // before any user gesture stays 'suspended' and resume()'s promise
+            // remains PENDING (never resolves or rejects) until playback is
+            // allowed. Boot-time callers (queued DSP tags, visualizer setup) hit
+            // this before any click, wedging _dspBuildPromise on a forever-pending
+            // promise — after which every later ensureDSPGraph() caller (including
+            // togglePlayState for bundled tracks) queued behind it forever. That is
+            // why imported files (which bypass ensureDSPGraph) played while the
+            // built-in playlist stayed silent in browser testing. Fire-and-forget
+            // instead: each playback path resumes the context inside its own user
+            // gesture (togglePlayState, onplay handler).
+            ctx.resume().catch(() => {});
+
+            try {
+                await ctx.audioWorklet.addModule('app/js/dsp-processor.js');
+                console.log("[AudioEngine] AudioWorklet dsp-processor module loaded successfully.");
+            } catch (err) {
+                console.error("[AudioEngine] Failed to load AudioWorklet module. Falling back to native structures.", err);
+                showDebugError("AudioWorklet failed to load. Check console/network paths.", "dsp-processor.js");
+                return;
+            }
+
+            SharedAudio.workletNode = new AudioWorkletNode(ctx, 'dsp-processor', {
+                numberOfInputs: 1,
+                numberOfOutputs: 1,
+                outputChannelCount: [2]
+            });
+
+            SharedAudio.workletNode.port.postMessage({
+                type: 'init',
+                sampleRate: ctx.sampleRate
+            });
+
+            this.inputGainNode = ctx.createGain();
+            this.inputGainNode.gain.value = 1.0;
+
+            this.musicVolumeNode = ctx.createGain();
+            const volSlider = document.getElementById("eq-musicVolumeSlider");
+            const initialVol = volSlider ? (parseFloat(volSlider.value) / 100) : 0.5;
+            this.musicVolumeNode.gain.value = initialVol;
+
+            this.inputGainNode.connect(SharedAudio.workletNode);
+
+            SharedAudio.workletNode.connect(SharedAudio.compressorFilter);
+            SharedAudio.compressorFilter.connect(SharedAudio.compressor);
+            SharedAudio.compressor.connect(SharedAudio.compressorGain);
+            SharedAudio.compressorGain.connect(SharedAudio.autoGainNode);
+            SharedAudio.autoGainNode.connect(SharedAudio.limiter);
+
+            SharedAudio.limiter.connect(SharedAudio.dryGainNode);
+            SharedAudio.limiter.connect(SharedAudio.reverbNode);
+            SharedAudio.reverbNode.connect(SharedAudio.reverbFilterNode).connect(SharedAudio.wetGainNode);
+
+            SharedAudio.dryGainNode.connect(SharedAudio.crossfeedSplitter);
+            SharedAudio.wetGainNode.connect(SharedAudio.crossfeedSplitter);
+
+            SharedAudio.crossfeedSplitter.connect(SharedAudio.directGainL, 0);
+            SharedAudio.crossfeedSplitter.connect(SharedAudio.crossfeedFilterL, 0);
+            SharedAudio.crossfeedFilterL.connect(SharedAudio.crossfeedDelayL).connect(SharedAudio.crossGainL);
+
+            SharedAudio.crossfeedSplitter.connect(SharedAudio.directGainR, 1);
+            SharedAudio.crossfeedSplitter.connect(SharedAudio.crossfeedFilterR, 1);
+            SharedAudio.crossfeedFilterR.connect(SharedAudio.crossfeedDelayR).connect(SharedAudio.crossGainR);
+
+            SharedAudio.crossfeedSplitter.connect(SharedAudio.expandGainL, 0);
+            SharedAudio.expandGainL.connect(SharedAudio.sumGainR);
+
+            SharedAudio.crossfeedSplitter.connect(SharedAudio.expandGainR, 1);
+            SharedAudio.expandGainR.connect(SharedAudio.sumGainL);
+
+            SharedAudio.directGainL.connect(SharedAudio.sumGainL);
+            SharedAudio.crossGainR.connect(SharedAudio.sumGainL);
+
+            SharedAudio.directGainR.connect(SharedAudio.sumGainR);
+            SharedAudio.crossGainL.connect(SharedAudio.sumGainR);
+
+            SharedAudio.sumGainL.connect(SharedAudio.crossfeedMerger, 0, 0);
+            SharedAudio.sumGainR.connect(SharedAudio.crossfeedMerger, 0, 1);
+
+            // M-4/F-6: the merger feeds the volume node directly — clipping
+            // protection is handled by the worklet's final-stage lookahead
+            // limiter (zero-overshoot), configured right below.
+            SharedAudio.crossfeedMerger.connect(this.musicVolumeNode);
+            this.musicVolumeNode.connect(SharedAudio.masterGain);
+
+            // Push the persisted safety-limiter state + start the GR meter.
+            this.applyMergerLimiterRouting();
+            this.startGrMeter();
+            const safetyBtn = document.getElementById('btn-merger-limiter');
+            if (safetyBtn) {
+                safetyBtn.classList.toggle('active-btn', this.mergerLimiterEnabled);
+                const lbl = document.getElementById('lbl-merger-limiter-state');
+                if (lbl) lbl.textContent = this.mergerLimiterEnabled ? 'Safety: ON' : 'Safety: OFF';
+            }
+            const meterWrap = document.getElementById('gr-meter-wrap');
+            if (meterWrap) meterWrap.classList.toggle('hidden', !this.mergerLimiterEnabled);
+
+            // Route the <audio> element through the DSP graph EXACTLY once, now,
+            // while playback hasn't begun. Creating the MediaElementSource lazily
+            // inside the element's onplay handler was the startup-mute bug: by the
+            // time onplay fired, audio was already playing, and re-routing a playing
+            // element strands the stream (or throws), so 'connected' never took and
+            // the only working volume control became the raw audioEl.volume — which
+            // the boot-path fade had already set to 0. Locking it here guarantees the
+            // graph owns volume from the very first millisecond of playback.
+            if (this.audioEl && !this.source) {
+                this.source = ctx.createMediaElementSource(this.audioEl);
+                // Primary element routes through the sourceGain arm so
+                // per-track loudness matching and crossfade fades have a gain
+                // to ride on (eq-playlist.js _retargetActiveArm /
+                // _crossfadeToStandby read this arm).
+                if (!this.sourceGain) {
+                    this.sourceGain = ctx.createGain();
+                    this.sourceGain.gain.value = Math.max(0.05, Math.min(4, this._activeLoudnessGain || 1));
+                }
+                this.source.connect(this.sourceGain);
+                this.sourceGain.connect(this.inputGainNode);
+                this.audioEl.volume = 1.0;
+                this.connected = true;
+            }
+
+            // Gapless/crossfade standby arm: the B element (eq-audio-gapless)
+            // preloads the next track and is crossfaded in at the seam. Both
+            // arms must share this DSP graph or the standby would be either
+            // silent or always-on top of the active track. Guarded because
+            // createMediaElementSource throws when called twice on one
+            // element, and _buildDSPGraph can re-run after a failed attempt.
+            if (!this._gaplessWired && this.gaplessEl) {
+                try {
+                    this.gaplessSource = ctx.createMediaElementSource(this.gaplessEl);
+                    if (!this.gaplessGain) this.gaplessGain = ctx.createGain();
+                    this.gaplessGain.gain.value = 0;
+                    this.gaplessSource.connect(this.gaplessGain);
+                    this.gaplessGain.connect(this.inputGainNode);
+                    this.gaplessEl.volume = 1.0;
+                    this._gaplessWired = true;
+                } catch (e) {
+                    console.warn("[AudioEngine] Gapless standby wiring failed:", e);
+                }
+            }
+
+            this.graphBuilt = true;
+            // Flush coalesced DSP state that arrived while the graph was building
+            if (this._pendingDspQueue && this._pendingDspQueue.length) {
+                const q = [...new Set(this._pendingDspQueue)];
+                this._pendingDspQueue = [];
+                for (const tag of q) {
+                    try {
+                        if (tag === 'filters') this.updateAudioConnections();
+                        else if (tag === 'crossover') this.updateCrossoverDSP();
+                        else if (tag === 'loudness') this.updateLoudnessDSP();
+                        else if (tag === 'simulation') this.updateSimulation();
+                        else if (tag === 'gear') this.applyGearSimDSP();
+                        else if (tag === 'hearing') this.applyHearingCalibrationGains();
+                        else if (tag === 'tape') this.updateTapeModDSP();
+                        else if (tag === 'masterTone') this.updateMasterTone('bass', document.getElementById('eq-masterBass')?.value || 0);
+                    } catch(_) {}
+                }
+            }
+            this.updateAudioConnections();
+
+            this.updatePreamp();
+            this.bands.forEach((_, i) => this.updateSlider(i, 'main'));
+            this.advancedBands.forEach((_, i) => this.updateSlider(i, 'adv'));
+            this.updateSimulation();
+            if (this.applyGearSimDSP) this.applyGearSimDSP();
+            if (this.updateTapeModDSP) this.updateTapeModDSP();
+            this.updateLoudnessDSP();
+            this.updateCrossoverDSP();
+
+            const ratioSlider = document.getElementById('comp-ratio-slider');
+            if (ratioSlider) {
+                this.updateCompressorParam('ratio', parseFloat(ratioSlider.value) / 10);
+            }
+
+            // With the standby arm live, preload the next track so the first
+            // skip after boot is already seamless (no-op when gapless and
+            // crossfade are both disabled — _standbyReady() gates it).
+            if (this._preloadNextTrack) this._preloadNextTrack();
+        },
+
+        _pendingDspQueue: [],
+        _queuePendingDsp: function(tag) {
+            if (!this._pendingDspQueue.includes(tag)) this._pendingDspQueue.push(tag);
+            if (!this.graphBuilt) this.ensureDSPGraph().catch(()=>{});
+        },
+        // M-4 + F-6: post-DSP safety limiter. The toggle now drives the
+        // worklet's final-stage LOOKAHEAD limiter (zero-overshoot, 5ms
+        // lookahead) instead of a main-thread DynamicsCompressor after the
+        // crossfeed merger — one engine, better transient behavior, and the
+        // GR meter reads its true gain reduction. The merger feeds the
+        // volume node directly.
+        mergerLimiterEnabled: (localStorage.getItem('settings_merger_limiter') !== '0'),
+        applyMergerLimiterRouting: function() {
+            if (!SharedAudio.workletNode) return;
+            SharedAudio.workletNode.port.postMessage({
+                type: 'updateLimiter',
+                enabled: this.mergerLimiterEnabled,
+                thresholdDb: -1.0
+            });
+        },
+        toggleMergerLimiter: function(force) {
+            this.mergerLimiterEnabled = (force !== undefined) ? !!force : !this.mergerLimiterEnabled;
+            try { localStorage.setItem('settings_merger_limiter', this.mergerLimiterEnabled ? '1' : '0'); } catch (e) {}
+            this.applyMergerLimiterRouting();
+            const btn = document.getElementById('btn-merger-limiter');
+            if (btn) {
+                btn.classList.toggle('active-btn', this.mergerLimiterEnabled);
+                // Update the inner label span — do NOT overwrite textContent,
+                // which would destroy the span and break every later sync.
+                const lbl = document.getElementById('lbl-merger-limiter-state');
+                if (lbl) lbl.textContent = this.mergerLimiterEnabled ? 'Safety: ON' : 'Safety: OFF';
+            }
+            const meterWrap = document.getElementById('gr-meter-wrap');
+            if (meterWrap) meterWrap.classList.toggle('hidden', !this.mergerLimiterEnabled);
+            showToast(this.mergerLimiterEnabled
+                ? "Lookahead safety limiter engaged (zero-overshoot ceiling)."
+                : "Safety limiter disabled — watch for clipping with crossfeed/expand on.", this.mergerLimiterEnabled ? "🛡️" : "⚠️");
+        },
+        // F-6: GR meter loop — consumes the worklet's throttled gainReduction
+        // posts and paints the meter bar in the output panel. Runs only while
+        // the limiter is enabled AND audio is flowing; started from the DSP
+        // graph build and stopped on disable.
+        _grMeterRunning: false,
+        startGrMeter: function() {
+            if (this._grMeterRunning || !SharedAudio.workletNode) return;
+            this._grMeterRunning = true;
+            SharedAudio.workletNode.port.addEventListener('message', (e) => {
+                const d = e.data;
+                if (d && d.type === 'gainReduction') {
+                    const bar = document.getElementById('gr-meter-bar');
+                    const lbl = document.getElementById('gr-meter-label');
+                    if (bar || lbl) {
+                        const gr = Math.max(0, Math.min(24, d.grDb || 0));
+                        // Scale: 0..12dB maps to 0..100% width.
+                        const pct = (gr / 12) * 100;
+                        if (bar) bar.style.width = pct + '%';
+                        if (lbl) {
+                            if (gr < 0.1) { lbl.textContent = '0.0 dB'; lbl.style.color = ''; }
+                            else if (gr < 3) { lbl.textContent = '-' + gr.toFixed(1) + ' dB'; lbl.style.color = 'var(--accent-green)'; }
+                            else if (gr < 8) { lbl.textContent = '-' + gr.toFixed(1) + ' dB'; lbl.style.color = 'var(--accent-amber)'; }
+                            else { lbl.textContent = '-' + gr.toFixed(1) + ' dB'; lbl.style.color = 'var(--accent-red, #f87171)'; }
+                        }
+                    }
+                }
+            });
+        },
+        // rAF-coalesced updateAudioConnections: slider drags fire `input`
+        // many times per frame (pointermove rate, up to ~240Hz) and each call
+        // re-reads ~60 DOM inputs and posts a full filter payload to the
+        // worklet. The coalescer keeps ONE scheduled flush per frame; the
+        // final state always lands before the next paint, so drags stay
+        // sonically identical but no longer queue dozens of redundant
+        // message posts between frames.
+        _uacScheduled: false,
+        _uacCoalesced: function() {
+            if (this._uacScheduled) return;
+            this._uacScheduled = true;
+            const flush = () => {
+                this._uacScheduled = false;
+                this.updateAudioConnections();
+            };
+            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(flush);
+            else setTimeout(flush, 16);
+        },
+        updateAudioConnections: function() {
+            if (!this.graphBuilt || !SharedAudio.workletNode) {
+                this._queuePendingDsp('filters');
+                return;
+            }
+
+            const payload = [];
+
+            this.bands.forEach((b, i) => {
+                const isBypassed = window.bypassedBands.has("m" + i);
+                const type = b.type || 'peaking';
+
+                const rawHz = parseFloat(document.getElementById("eq-f" + i)?.value);
+                const hz = Number.isFinite(rawHz) ? rawHz : b.hz;
+
+                const rawG = parseFloat(document.getElementById("eq-s" + i)?.value);
+                const g = isBypassed ? 0.0 : (Number.isFinite(rawG) ? rawG : 0.0);
+
+                const rawQ = parseFloat(document.getElementById("eq-q_m" + i)?.value);
+                const q = Number.isFinite(rawQ) ? rawQ : b.defaultQ;
+
+                // Slope (cascade count) only means anything for Shelf/HP/LP
+                // sections; a stale value on Peaking/Notch would silently
+                // cascade multiple full-gain copies of the same filter.
+                // handleTypeChange() resets b.slope on every type change,
+                // but this is the actual DSP trust boundary, so it is
+                // re-enforced here too (e.g. against a hand-authored preset
+                // that round-trips a mismatched type+slope pair).
+                const slopeCapable = (type === 'lowshelf' || type === 'highshelf' || type === 'lowpass' || type === 'highpass');
+                const activeSlope = slopeCapable ? (b.slope || 12) : 12;
+                const cascadeNodesCount = Math.max(1, Math.round(activeSlope / 12));
+
+                for (let k = 0; k < 4; k++) {
+                    const idx = (i * 4) + k;
+                    let nodeGain = g;
+                    let nodeBypassed = (k >= cascadeNodesCount) || isBypassed || !this.eqEnabled;
+
+                    if (type === 'lowshelf' || type === 'highshelf') {
+                        nodeGain = g / cascadeNodesCount;
+                    }
+
+                    payload.push({
+                        index: idx,
+                        bypassed: nodeBypassed,
+                        filterType: type,
+                        frequency: hz,
+                        gain: nodeGain,
+                        q: q
+                    });
+                }
+            });
+
+            this.advancedBands.forEach((b, i) => {
+                const isBypassed = window.bypassedBands.has("a" + i);
+                const type = b.type || 'peaking';
+                const hz = b.hz;
+
+                const sEl = document.getElementById("eq-a" + i);
+                const qEl = document.getElementById("eq-q_a" + i);
+
+                const rawG = sEl ? parseFloat(sEl.value) : undefined;
+                const g = isBypassed ? 0.0 : (Number.isFinite(rawG) ? rawG : (b.g !== undefined ? b.g : 0.0));
+
+                const rawQ = qEl ? parseFloat(qEl.value) : undefined;
+                const q = Number.isFinite(rawQ) ? rawQ : (b.q !== undefined ? b.q : b.defaultQ);
+
+                payload.push({
+                    index: 40 + i,
+                    bypassed: isBypassed || !this.eqEnabled,
+                    filterType: type,
+                    frequency: hz,
+                    gain: g,
+                    q: q
+                });
+            });
+
+            if (this.virtualBands) {
+                this.virtualBands.forEach((b, i) => {
+                    if (i < 30) {
+                        const rawG = parseFloat(b.g);
+                        const finalG = Number.isFinite(rawG) ? rawG : 0.0;
+                        const rawQ = parseFloat(b.q);
+                        const finalQ = Number.isFinite(rawQ) ? rawQ : 1.0;
+
+                        payload.push({
+                            index: 50 + i,
+                            bypassed: !this.eqEnabled,
+                            filterType: b.type || 'peaking',
+                            frequency: b.hz,
+                            gain: finalG,
+                            q: finalQ
+                        });
+                    }
+                });
+            }
+
+            SharedAudio.workletNode.port.postMessage({
+                type: 'updateFilters',
+                filters: payload
+            });
+        },
+
+                toggleEQ: function() {
+
+            var now = Date.now();
+            if (this.lastEQToggle && now - this.lastEQToggle < 300) return;
+            this.lastEQToggle = now;
+
+            if (window.bypassedBands === undefined) window.bypassedBands = new Set();
+            const btn = document.getElementById("eqToggleBtn");
+            if (this.eqEnabled) {
+                this.eqEnabled = false;
+                if (btn) {
+                    btn.classList.remove('is-on');
+                    btn.textContent = "EQ: OFF";
+                }
+                showToast("Equalizer Disabled (Bypass)", "🚫");
+            } else {
+                this.eqEnabled = true;
+                if (btn) {
+                    btn.classList.add('is-on');
+                    btn.textContent = "EQ: ON";
+                }
+                showToast("Equalizer Enabled (Active)", "✅");
+            }
+
+                        this.updateAudioConnections();
+            Mascot.update();
+
+            // (native filter-gain sync removed — the worklet owns the bank;
+            // updateAudioConnections above already re-pushed every band with
+            // the new eqEnabled state)
+
+            this.drawCurve();
+        },
+};
+
+/* ===== app/js/eq-media-transport.js ===== */
+// Split out of eq-core.js (2026 god-file refactor, Step 7).
+// Media transport wiring: the <audio> element + gapless-standby element
+// listeners (play/pause/ended buttons + Mascot/reverb hooks + safety-net
+// MediaElementSource boot), the local-file input, and the playback scrub
+// machinery (per-frame rAF ticker, per-element seek binding, time displays).
+//
+// Everything ships inside ONE method, attachMediaTransport(), because the
+// block's helper closures (updateScrubDisplay / attachTimeUpdate /
+// startSeek / bindScrubEvents / paintPlaybackScrub + the _scrubStuckWarn
+// counter) close over each other — hoisting them to methods would change
+// the closure topology. The method body IS the original init block, so the
+// closures are preserved exactly. Idempotent: safe to call once at boot
+// (init does exactly that, in the same sequence position as before).
+//
+// this-scoped state used/owned: audioEl, gaplessEl, isSeeking, _scrubRaf,
+// connected, source, sourceGain, inputGainNode, vizLoopRunning (read),
+// plus _activeEl/nextTrack/formatTime/performCleanSeek/handleAudioFileSelection/
+// ensureDSPGraph/startVisualizer — all merged EQ_Module members. Names
+// unchanged; attached via Object.assign in db-cache.js.
+const EQ_MediaTransportMethods = {
+    _mediaTransportAttached: false,
+    attachMediaTransport: function() {
+        if (this._mediaTransportAttached) return;
+        this._mediaTransportAttached = true;
+        this.audioEl = document.getElementById("eq-audio");
+        // Gapless/crossfade standby element ("B" arm). Grabbed here so the
+        // timeupdate/durationchange listeners below bind at boot; its
+        // MediaElementSource + gain arm are created later in _buildDSPGraph.
+        this.gaplessEl = document.getElementById("eq-audio-gapless");
+        if (!this.audioEl) {
+            console.error("[EQ_Module.init] #eq-audio element not found — audio playback wiring skipped.");
+        } else {
+                this.audioEl.volume = 0.5;
+                this.audioEl.preservesPitch = true;
+
+                this.audioEl.addEventListener('volumechange', () => {
+
+                });
+
+                this.audioEl.onplay = async () => {
+                    Mascot.update();
+
+                    const btn = document.getElementById("playlist-play-btn");
+                    const mobBtn = document.getElementById("mobile-play-btn");
+                    if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
+                    if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
+                    const modalBtn = document.getElementById("modal-play-btn");
+                    if(modalBtn) modalBtn.innerHTML = "<span>⏸</span><span>Pause</span>";
+
+                    if (SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
+                        await SharedAudio.ctx.resume();
+                    }
+                    // On the normal path the MediaElementSource is created once in
+                    // ensureDSPGraph() before any playback starts (that's what fixes
+                    // the boot-mute). This branch is only a safety net for the rare
+                    // case where the graph was built without the element present.
+                    if(!this.connected) {
+                        await this.ensureDSPGraph();
+                        if (!this.source && this.audioEl && SharedAudio.ctx && this.inputGainNode) {
+                            this.source = SharedAudio.ctx.createMediaElementSource(this.audioEl);
+                            // Route through the same gain arm _buildDSPGraph uses
+                            // so per-track loudness match applies on this path too.
+                            if (!this.sourceGain) {
+                                this.sourceGain = SharedAudio.ctx.createGain();
+                                this.sourceGain.gain.value = Math.max(0.05, Math.min(4, this._activeLoudnessGain || 1));
+                            }
+                            this.source.connect(this.sourceGain);
+                            this.sourceGain.connect(this.inputGainNode);
+                        }
+                        if (this.audioEl) this.audioEl.volume = 1.0;
+                        this.connected = true;
+                    }
+
+                    if (!this.vizLoopRunning) {
+                        this.startVisualizer();
+                    }
+                };
+                this.audioEl.addEventListener('play', () => {
+                    Mascot.update();
+                    EQ_Module.updateReverbDSP();
+                });
+                this.audioEl.addEventListener('pause', () => {
+                    Mascot.update();
+                    EQ_Module.updateReverbDSP();
+                    // Update play button if both elements are paused (gapless may still be playing)
+                    const active = this._activeEl ? this._activeEl() : this.audioEl;
+                    const gaplessPaused = !this.gaplessEl || this.gaplessEl.paused;
+                    const audioPaused = this.audioEl.paused;
+                    if (active && active.paused && gaplessPaused && audioPaused) {
+                        const btn = document.getElementById("playlist-play-btn");
+                        if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
+                        const mobBtn = document.getElementById("mobile-play-btn");
+                        if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
+                        const modalBtn = document.getElementById("modal-play-btn");
+                        if(modalBtn) modalBtn.innerHTML = "<span>▶</span><span>Play</span>";
+                    }
+                });
+                this.audioEl.addEventListener('ended', () => {
+                    Mascot.update();
+                    EQ_Module.updateReverbDSP();
+                    this.nextTrack();
+                });
+                if (this.gaplessEl) {
+                    this.gaplessEl.onplay = async () => {
+                        Mascot.update();
+                        const btn = document.getElementById("playlist-play-btn");
+                        const mobBtn = document.getElementById("mobile-play-btn");
+                        if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
+                        if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
+                        const modalBtn = document.getElementById("modal-play-btn");
+                        if(modalBtn) modalBtn.innerHTML = "<span>⏸</span><span>Pause</span>";
+                        if (SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
+                            await SharedAudio.ctx.resume();
+                        }
+                        if (!this.vizLoopRunning) {
+                            this.startVisualizer();
+                        }
+                    };
+                    this.gaplessEl.addEventListener('play', () => {
+                        Mascot.update();
+                        EQ_Module.updateReverbDSP();
+                    });
+                    this.gaplessEl.addEventListener('pause', () => {
+                        Mascot.update();
+                        EQ_Module.updateReverbDSP();
+                        const active = this._activeEl ? this._activeEl() : null;
+                        if (!active || active.paused) {
+                            const btn = document.getElementById("playlist-play-btn");
+                            if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
+                            const mobBtn = document.getElementById("mobile-play-btn");
+                            if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
+                            const modalBtn = document.getElementById("modal-play-btn");
+                            if(modalBtn) modalBtn.innerHTML = "<span>▶</span><span>Play</span>";
+                        }
+                    });
+                    this.gaplessEl.addEventListener('ended', () => {
+                        Mascot.update();
+                        EQ_Module.updateReverbDSP();
+                        this.nextTrack();
+                    });
+                }
+            }
+
+            const eqFileInput = document.getElementById("eq-file");
+            if (!eqFileInput) {
+                console.error("[EQ_Module.init] #eq-file element not found — file upload wiring skipped.");
+            } else {
+                eqFileInput.addEventListener("change", e => {
+                    this.handleAudioFileSelection(e.target.files);
+                    e.target.value = '';
+                });
+            }
+
+            const updateScrubDisplay = (activeEl) => {
+                if (!activeEl) return;
+                const dur = activeEl.duration;
+                const cur = activeEl.currentTime;
+                if (!this.isSeeking && dur && Number.isFinite(dur) && dur > 0) {
+                    const pct = Math.max(0, Math.min(100, (cur / dur) * 100));
+                    ['playlist-scrub', 'mobile-scrub', 'modal-scrub'].forEach(id => {
+                        const s = document.getElementById(id);
+                        if (!s) return;
+                        s.value = pct;
+                        if (window.paintSliderTrack) window.paintSliderTrack(s);
+                        else s.style.setProperty('--range-fill', pct + '%');
+                    });
+                }
+                const formatted = this.formatTime(cur || 0);
+                const timeCur = document.getElementById('playlist-time-current');
+                const mobTimeCur = document.getElementById('mobile-time-current');
+                const modalTimeCur = document.getElementById('modal-time-current');
+                if (timeCur) timeCur.textContent = formatted;
+                if (mobTimeCur) mobTimeCur.textContent = formatted;
+                if (modalTimeCur) modalTimeCur.textContent = formatted;
+            };
+
+            const attachTimeUpdate = (el) => {
+                if (!el) return;
+                el.addEventListener('timeupdate', () => updateScrubDisplay(el));
+                el.addEventListener('canplay', () => updateScrubDisplay(el));
+                el.addEventListener('loadeddata', () => updateScrubDisplay(el));
+                el.addEventListener('durationchange', () => {
+                    const dur = el.duration;
+                    if (dur && Number.isFinite(dur) && dur > 0) {
+                        const formatted = this.formatTime(dur);
+                        const timeDur = document.getElementById('playlist-time-duration');
+                        const mobTimeDur = document.getElementById('mobile-time-duration');
+                        const modalTimeDur = document.getElementById('modal-time-duration');
+                        if (timeDur) timeDur.textContent = formatted;
+                        if (mobTimeDur) mobTimeDur.textContent = formatted;
+                        if (modalTimeDur) modalTimeDur.textContent = formatted;
+                    }
+                });
+            };
+
+            attachTimeUpdate(this.audioEl);
+            if (this.gaplessEl) attachTimeUpdate(this.gaplessEl);
+
+            const scrub = document.getElementById('playlist-scrub');
+            const mobScrub = document.getElementById('mobile-scrub');
+            const modalScrub = document.getElementById('modal-scrub');
+
+            const startSeek = () => {
+                this.isSeeking = true;
+            };
+
+            const bindScrubEvents = (el) => {
+                if (!el) return;
+                el.addEventListener('mousedown', startSeek);
+                el.addEventListener('touchstart', startSeek, { passive: true });
+
+                let scrubFlushPending = false;
+                el.addEventListener('input', () => {
+                    this.isSeeking = true;
+                    if (scrubFlushPending) return;
+                    scrubFlushPending = true;
+                    requestAnimationFrame(() => {
+                        scrubFlushPending = false;
+                        const val = parseFloat(el.value) || 0;
+                        if (window.paintSliderTrack) window.paintSliderTrack(el);
+                        else el.style.setProperty('--range-fill', val + '%');
+
+                        const active = (this._activeEl && this._activeEl()) || this.audioEl;
+                        if (active && active.duration) {
+                            const tempTime = (val / 100) * active.duration;
+                            const formatted = this.formatTime(tempTime);
+                            const timeCur = document.getElementById('playlist-time-current');
+                            const mobTimeCur = document.getElementById('mobile-time-current');
+                            const modalTimeCur = document.getElementById('modal-time-current');
+                            if (timeCur) timeCur.textContent = formatted;
+                            if (mobTimeCur) mobTimeCur.textContent = formatted;
+                            if (modalTimeCur) modalTimeCur.textContent = formatted;
+                        }
+                    });
+                });
+
+                el.addEventListener('change', () => {
+                    const val = parseFloat(el.value) || 0;
+                    const active = (this._activeEl && this._activeEl()) || this.audioEl;
+                    if (active && active.duration) {
+                        const targetTime = (val / 100) * active.duration;
+                        // performCleanSeek owns isSeeking until the media
+                        // element actually reports the new position.
+                        this.performCleanSeek(targetTime, val);
+                    } else {
+                        setTimeout(() => { this.isSeeking = false; }, 100);
+                    }
+                });
+            };
+
+            bindScrubEvents(scrub);
+            bindScrubEvents(mobScrub);
+            bindScrubEvents(modalScrub);
+
+            window.addEventListener('mouseup', () => { this.isSeeking = false; });
+            window.addEventListener('touchend', () => { this.isSeeking = false; });
+
+            // rAF scrub ticker: timeupdate only fires ~4x/sec, which made the
+            // thumb crawl in visible 250ms steps. Paint per-frame instead;
+            // skipped entirely while paused, seeking, or dragging.
+            if (this._scrubRaf) cancelAnimationFrame(this._scrubRaf);
+            let _scrubStuckWarn = 0;
+            const paintPlaybackScrub = () => {
+                this._scrubRaf = requestAnimationFrame(paintPlaybackScrub);
+                if (this.isSeeking) return;
+                const active = (this._activeEl && this._activeEl()) || this.audioEl;
+                if (!active || active.paused) return;
+                // Wait until the audio has loaded enough data to report
+                // a non-zero currentTime before overriding the scrub.
+                // updateScrubDisplay (via timeupdate) handles the interim.
+                if (!active.duration || !Number.isFinite(active.duration) || active.readyState < 2) return;
+                _scrubStuckWarn = 0;
+                const pct = Math.max(0, Math.min(100, (active.currentTime / active.duration) * 100));
+                ['playlist-scrub', 'mobile-scrub', 'modal-scrub'].forEach(id => {
+                    const s = document.getElementById(id);
+                    if (!s) return;
+                    if (Math.abs(parseFloat(s.value) - pct) < 0.05) return;
+                    s.value = pct;
+                    if (window.paintSliderTrack) window.paintSliderTrack(s);
+                    else s.style.setProperty('--range-fill', pct + '%');
+                });
+            };
+            paintPlaybackScrub();
+    },
+};
+
+/* ===== app/js/eq-graph-input.js ===== */
+// Split out of eq-core.js (2026 god-file refactor, Step 8).
+// Squig-link graph input: the full interaction surface of the frequency
+// response canvas — node hit-testing (getEQNodeAtCoords), EQ-node dragging
+// (updates faders + pushes the worklet through the rAF coalescer), sculptor
+// node dragging, pan/zoom (wheel + drag), double-click reset, hover readout
+// tracking (squigMouseX/Y), and touch equivalents.
+//
+// The whole block ships inside ONE idempotent method, attachGraphInput(),
+// because its drag-state variables (isPanning / isDraggingSculptNode /
+// isDraggingEQNode / panStartX/Y / lastMinF/MaxF) and the getEQNodeAtCoords
+// arrow function close over each other — hoisting them into separate methods
+// would change the closure topology that the mousemove/mouseup handlers
+// depend on. The body is the original init block verbatim; only a
+// const self = this; line was added at the top (the block previously
+// closed over init's self).
+//
+// this-scoped members used: drawCurve, updateSlider, activeEQNode,
+// hoverEQNode, isTuningLabActive, graphBuilt, squigMouseX/Y, plus
+// PEQDB_Module view state (viewMinF/MaxF, squigYMin/Max, sculpt state) —
+// all read at event time. Names unchanged; merged via Object.assign in
+// db-cache.js.
+const EQ_GraphInputMethods = {
+    _graphInputAttached: false,
+    attachGraphInput: function() {
+        if (this._graphInputAttached) return;
+        this._graphInputAttached = true;
+        const self = this;
+            const squigCanvas = document.getElementById("eq-squiglinkViz");
+            if (squigCanvas) {
+                let isPanning = false;
+                let isDraggingSculptNode = false;
+                let isDraggingEQNode = false;
+                let panStartX = 0;
+                let panStartY = 0;
+                let lastMinF = 20;
+                let lastMaxF = 20000;
+
+            // Band element cache: hit-testing ran getElementById per band
+            // per mousemove. Band rows are static-count; cache elements and
+            // revalidate by reference (rows are never replaced mid-session,
+            // only their .value changes).
+            let eqFEls = null, eqSEls = null;
+            const bandEls = () => {
+                const n = EQ_Module.bands.length;
+                if (!eqFEls || eqFEls.length !== n) {
+                    eqFEls = []; eqSEls = [];
+                    for (let i = 0; i < n; i++) {
+                        eqFEls.push(document.getElementById("eq-f" + i));
+                        eqSEls.push(document.getElementById("eq-s" + i));
+                    }
+                }
+                return true;
+            };
+            const getEQNodeAtCoords = (clickX, clickY, w, h, minF, maxF, min, max) => {
+                const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignDb : 75.0;
+                // Hit-test against the curve the user SEES: the graph draws
+                // with the effective preamp (auto-gain/hearing/loudness/tone
+                // headroom folded in via effectivePreampDb), so using the raw
+                // slider value here made the drag hitbox sit several dB away
+                // from the drawn node whenever those compensations were active.
+                const preVal = (typeof this.computeEffectivePreamp === 'function')
+                    ? this.computeEffectivePreamp()
+                    : (parseFloat(document.getElementById("eq-preampSlider")?.value) || 0);
+                bandEls();
+                for (let i = 0; i < EQ_Module.bands.length; i++) {
+                    const hz = parseFloat(eqFEls[i]?.value || EQ_Module.bands[i].hz);
+                    const g = parseFloat(eqSEls[i]?.value || 0);
+                    const nodeX = w * (Math.log10(hz / minF) / Math.log10(maxF / minF));
+
+                    const nodeY = h - (((alignDb + g + preVal) - min) / (max - min)) * h;
+                    if (Math.hypot(nodeX - clickX, nodeY - clickY) < 18) {
+                        return { type: 'main', i };
+                    }
+                }
+                return null;
+            };
+
+            squigCanvas.addEventListener('mousedown', e => {
+                const rect = squigCanvas.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const clickY = e.clientY - rect.top;
+
+                const minF = PEQDB_Module.viewMinF || 20;
+                const maxF = PEQDB_Module.viewMaxF || 20000;
+                const min = (typeof PEQDB_Module.squigYMin === 'number') ? PEQDB_Module.squigYMin : 50;
+                const max = (typeof PEQDB_Module.squigYMax === 'number') ? PEQDB_Module.squigYMax : 110;
+                const w = rect.width;
+                const h = rect.height;
+
+                if (PEQDB_Module.isDrawingModeActive) {
+                    PEQDB_Module.isUserDrawing = true;
+                    PEQDB_Module.drawnPoints = [[clickX, clickY]];
+                    squigCanvas.style.cursor = 'crosshair';
+                    return;
+                }
+
+                if (EQ_Module.graphFocus === 'eq' && !EQ_Module.isTuningLabActive) {
+                    const eqNode = getEQNodeAtCoords(clickX, clickY, w, h, minF, maxF, min, max);
+                    if (eqNode) {
+                        isDraggingEQNode = true;
+                        EQ_Module.isDragging = true;
+                        EQ_Module.activeEQNode = eqNode;
+                        squigCanvas.style.cursor = 'move';
+                        return;
+                    }
+                }
+
+                    if (PEQDB_Module.targetMode === 'sculptor' && EQ_Module.graphFocus === 'sculpt') {
+
+                        for (let i = 0; i < PEQDB_Module.sculptPoints.length; i++) {
+                            const p = PEQDB_Module.sculptPoints[i];
+                            const nodeX = w * (Math.log10(p.hz / minF) / Math.log10(maxF / minF));
+                            const nodeY = h - ((p.val - min) / (max - min)) * h;
+
+                            if (Math.hypot(nodeX - clickX, nodeY - clickY) < 18) {
+                                isDraggingSculptNode = true;
+                                PEQDB_Module.isDragging = true;
+                                EQ_Module.isDragging = true;
+                                PEQDB_Module.activeSculptIndex = i;
+                                PEQDB_Module.activeRenameUid = i;
+
+                                squigCanvas.style.cursor = PEQDB_Module.sculptMode === 'simple' ? 'ns-resize' : 'move';
+                                return;
+                            }
+                        }
+                    }
+
+                    if (PEQDB_Module.targetMode !== 'sculptor') {
+                        isPanning = true;
+                        EQ_Module.isDragging = true;
+                        panStartX = e.clientX;
+                        panStartY = e.clientY;
+                        lastMinF = PEQDB_Module.viewMinF || 20;
+                        lastMaxF = PEQDB_Module.viewMaxF || 20000;
+                        squigCanvas.style.cursor = 'grabbing';
+                    }
+                });
+
+                const dispatchSyntheticMouse = (type, touch) => {
+                    squigCanvas.dispatchEvent(new MouseEvent(type, {
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: touch.clientX,
+                        clientY: touch.clientY
+                    }));
+                };
+                squigCanvas.addEventListener('touchstart', e => {
+                    if (e.touches.length !== 1) return;
+                    e.preventDefault();
+                    dispatchSyntheticMouse('mousedown', e.touches[0]);
+                }, { passive: false });
+                window.addEventListener('touchmove', e => {
+                    if (!isDraggingEQNode && !isDraggingSculptNode && !isPanning && !PEQDB_Module.isUserDrawing) return;
+                    if (e.touches.length !== 1) return;
+                    e.preventDefault();
+                    dispatchSyntheticMouse('mousemove', e.touches[0]);
+                }, { passive: false });
+                window.addEventListener('touchend', e => {
+                    const lastTouch = e.changedTouches && e.changedTouches[0];
+                    dispatchSyntheticMouse('mouseup', lastTouch || { clientX: 0, clientY: 0 });
+                });
+
+                squigCanvas.addEventListener('dblclick', e => {
+                    if (!EQ_Module.isTuningLabActive) return;
+                    const rect = squigCanvas.getBoundingClientRect();
+                    const clickX = e.clientX - rect.left;
+                    const clickY = e.clientY - rect.top;
+                    const w = rect.width;
+                    const h = rect.height;
+
+                    const minF = PEQDB_Module.viewMinF || 20;
+                    const maxF = PEQDB_Module.viewMaxF || 20000;
+                    const min = PEQDB_Module.squigYMin || 50;
+                    const max = PEQDB_Module.squigYMax || 110;
+
+                    const f = Math.max(20, Math.min(20000, Math.round(Math.pow(10, Math.log10(minF) + (clickX / w) * (Math.log10(maxF) - Math.log10(minF))))));
+                    const db = Math.max(min, Math.min(max, min + (1 - (clickY / h)) * (max - min)));
+
+                    if (PEQDB_Module.sculptPoints.some(p => p.hz === f)) return;
+
+                    PEQDB_Module.sculptPoints.push({ hz: f, val: db });
+                    PEQDB_Module.sculptPoints.sort((a, b) => a.hz - b.hz);
+
+                    PEQDB_Module.activeSculptIndex = PEQDB_Module.sculptPoints.findIndex(p => p.hz === f);
+                    PEQDB_Module.updateSculptTargetData();
+                    showToast("Tuning point added!", "➕");
+                });
+
+                let dragFrameId = null;
+                window.addEventListener('mousemove', e => {
+
+                    if (dragFrameId) return;
+
+                    dragFrameId = requestAnimationFrame(() => {
+                        dragFrameId = null;
+
+                        const rect = squigCanvas.getBoundingClientRect();
+                        const clientX = e.clientX - rect.left;
+                        const clientY = e.clientY - rect.top;
+                        const w = rect.width;
+                        const h = rect.height;
+
+                        const minF = PEQDB_Module.viewMinF || 20;
+                        const maxF = PEQDB_Module.viewMaxF || 20000;
+                        const min = (typeof PEQDB_Module.squigYMin === 'number') ? PEQDB_Module.squigYMin : 50;
+                        const max = (typeof PEQDB_Module.squigYMax === 'number') ? PEQDB_Module.squigYMax : 110;
+
+                        if (PEQDB_Module.isDrawingModeActive && PEQDB_Module.isUserDrawing) {
+                            PEQDB_Module.drawnPoints.push([clientX, clientY]);
+                            EQ_Module.drawCurve();
+                            return;
+                        }
+
+                        if (isDraggingEQNode && EQ_Module.activeEQNode) {
+                            const eqNode = EQ_Module.activeEQNode;
+                            const alignDb = (typeof PEQDB_Module.alignDb === 'number') ? PEQDB_Module.alignDb : 75.0;
+                            // Same effective-preamp math as the hit-test above:
+                            // the rawDb under the cursor is compared against the
+                            // drawn curve, so the inverse mapping must subtract
+                            // the same effective preamp the graph was drawn with.
+                            const preVal = (typeof EQ_Module.computeEffectivePreamp === 'function')
+                                ? EQ_Module.computeEffectivePreamp()
+                                : (parseFloat(document.getElementById("eq-preampSlider")?.value) || 0);
+
+                            let f = Math.pow(10, Math.log10(minF) + (clientX / w) * (Math.log10(maxF) - Math.log10(minF)));
+                            f = Math.max(20, Math.min(20000, Math.round(f)));
+
+                            let rawDb = min + (1 - (clientY / h)) * (max - min);
+                            let relativeGain = rawDb - alignDb - preVal;
+                            relativeGain = Math.max(-20, Math.min(20, relativeGain));
+
+                            let prefix = eqNode.type === 'main' ? 'eq-f' : 'eq-af';
+                            let gainPrefix = eqNode.type === 'main' ? 'eq-s' : 'eq-a';
+
+                            // Indexed lookups, cached per drag (4 lookups/frame
+                            // → 0 after the first frame of the gesture; `self`
+                            // is the module — arrow callbacks share its this).
+                            const dragKey = eqNode.type + eqNode.i;
+                            const dragCache = self._dragEls;
+                            const cacheLive = dragCache && dragCache.key === dragKey &&
+                                (!dragCache.hz || dragCache.hz.isConnected) &&
+                                (!dragCache.fs || dragCache.fs.isConnected) &&
+                                (!dragCache.gain || dragCache.gain.isConnected) &&
+                                (!dragCache.num || dragCache.num.isConnected);
+                            if (!cacheLive) {
+                                self._dragEls = {
+                                    key: dragKey,
+                                    hz: document.getElementById(prefix + eqNode.i),
+                                    fs: document.getElementById(eqNode.type === 'main' ? `eq-fs_m${eqNode.i}` : `eq-fs_a${eqNode.i}`),
+                                    gain: document.getElementById(gainPrefix + eqNode.i),
+                                    num: document.getElementById(eqNode.type === 'main' ? `eq-s${eqNode.i}_num` : `eq-a${eqNode.i}_num`)
+                                };
+                            }
+                            const hzNode = self._dragEls.hz;
+                            if (hzNode) hzNode.value = Math.round(f);
+                            const fsNode = self._dragEls.fs;
+                            if (fsNode) fsNode.value = EQ_Module.logHzToSlider(f);
+                            const gainNode = self._dragEls.gain;
+                            if (gainNode) gainNode.value = relativeGain.toFixed(1);
+                            const gainNumNode = self._dragEls.num;
+                            if (gainNumNode) gainNumNode.value = relativeGain.toFixed(1);
+
+                            EQ_Module.updateSlider(eqNode.i, eqNode.type);
+                            // The graph drag flushes through the rAF coalescer
+                            // (one worklet post per frame at pointermove rate)
+                            // — the drawn curve still tracks every frame, and
+                            // the flush lands before the next paint.
+                            if (EQ_Module.graphBuilt && SharedAudio.workletNode) {
+                                EQ_Module._uacCoalesced();
+                            } else if (!EQ_Module.graphBuilt) {
+                                // Queue for when the worklet finishes booting
+                                EQ_Module._pendingDspQueue = EQ_Module._pendingDspQueue || [];
+                                if (!EQ_Module._pendingDspQueue.includes('filters')) EQ_Module._pendingDspQueue.push('filters');
+                                EQ_Module.ensureDSPGraph().catch(()=>{});
+                            }
+                            EQ_Module.drawCurve();
+                            if (window.syncGlobalSliders) {
+                                if (hzNode) window.syncGlobalSliders(hzNode);
+                                if (gainNode) window.syncGlobalSliders(gainNode);
+                                if (fsNode) window.syncGlobalSliders(fsNode);
+                            }
+                            return;
+                        }
+
+                        if (isDraggingSculptNode && PEQDB_Module.activeSculptIndex > -1) {
+                            const points = PEQDB_Module.sculptPoints;
+                            const idx = PEQDB_Module.activeSculptIndex;
+                            const p = points[idx];
+
+                            let db = min + (1 - (clientY / h)) * (max - min);
+                            p.val = Math.max(min, Math.min(max, db));
+
+                            let f = Math.pow(10, Math.log10(minF) + (clientX / w) * (Math.log10(maxF) - Math.log10(minF)));
+
+                            const minBound = idx > 0 ? points[idx - 1].hz + 5 : 20;
+                            const maxBound = idx < points.length - 1 ? points[idx + 1].hz - 5 : 20000;
+
+                            p.hz = Math.max(minBound, Math.min(maxBound, Math.round(f)));
+
+                            const hzInput = document.getElementById('sculptor-node-hz');
+                            const dbInput = document.getElementById('sculptor-node-db');
+                            if (hzInput) hzInput.value = p.hz;
+                            if (dbInput) dbInput.value = p.val.toFixed(1);
+
+                            PEQDB_Module.updateSculptTargetData();
+
+                            if (PEQDB_Module.searchMode === 'similar') {
+                                PEQDB_Module.findSimilarCurves();
+                            }
+
+                            self.drawCurve();
+                            return;
+                        }
+
+                        if (!isPanning && !isDraggingEQNode && !isDraggingSculptNode) {
+                            let eqHoverNode = null;
+                            if (EQ_Module.graphFocus === 'eq') {
+                                eqHoverNode = getEQNodeAtCoords(clientX, clientY, w, h, minF, maxF, min, max);
+                            }
+
+                            const hoverChanged = (EQ_Module.hoverEQNode?.i !== eqHoverNode?.i) || (EQ_Module.hoverEQNode?.type !== eqHoverNode?.type);
+                            if (hoverChanged) {
+                                EQ_Module.hoverEQNode = eqHoverNode;
+                                EQ_Module.drawCurve();
+                            }
+
+                            let sculptHoverIdx = -1;
+                            if (PEQDB_Module.targetMode === 'sculptor' && EQ_Module.graphFocus === 'sculpt') {
+                                for (let i = 0; i < PEQDB_Module.sculptPoints.length; i++) {
+                                    const p = PEQDB_Module.sculptPoints[i];
+                                    const nodeX = w * (Math.log10(p.hz / minF) / Math.log10(maxF / minF));
+                                    const nodeY = h - ((p.val - min) / (max - min)) * h;
+                                    if (Math.hypot(nodeX - clientX, nodeY - clientY) < 18) {
+                                        sculptHoverIdx = i;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (PEQDB_Module.hoverSculptIndex !== sculptHoverIdx) {
+                                PEQDB_Module.hoverSculptIndex = sculptHoverIdx;
+                                EQ_Module.drawCurve();
+                            }
+
+                            if (eqHoverNode) {
+                                squigCanvas.style.cursor = 'pointer';
+                            } else if (sculptHoverIdx !== -1) {
+                                squigCanvas.style.cursor = PEQDB_Module.sculptMode === 'simple' ? 'ns-resize' : 'pointer';
+                            } else {
+                                squigCanvas.style.cursor = 'default';
+                            }
+                        }
+
+                        if (!isPanning) return;
+                        const deltaX = e.clientX - panStartX;
+                        const deltaY = e.clientY - panStartY;
+
+                        if (Math.abs(deltaX) < 5 && Math.abs(deltaY) < 5) return;
+
+                        const logRange = Math.log10(lastMaxF / lastMinF);
+                        const shiftX = -(deltaX / rect.width) * logRange;
+                        let newMinF = Math.pow(10, Math.log10(lastMinF) + shiftX);
+                        let newMaxF = Math.pow(10, Math.log10(lastMaxF) + shiftX);
+
+                        if (newMinF < 20) {
+                            newMinF = 20;
+                            newMaxF = 20 * Math.pow(10, logRange);
+                        }
+                        if (newMaxF > 20000) {
+                            newMaxF = 20000;
+                            newMinF = 20000 / Math.pow(10, logRange);
+                        }
+
+                        PEQDB_Module.viewMinF = newMinF;
+                        PEQDB_Module.viewMaxF = newMaxF;
+                        // Deliberately frequency-axis (X) only. Dragging the
+                        // graph background must never move the Y-axis / shift
+                        // every band's on-screen level together -- that's
+                        // exactly what it looks like when the whole curve and
+                        // all 10 nodes appear to move up/down at once, and it
+                        // should only ever happen via the Amp (preamp) and
+                        // Align (dB reference) controls, which adjust the
+                        // actual EQ state rather than just panning the view.
+                        // A prior pass here computed and clamped a vertical
+                        // newMinY/newMaxY pan and committed it to
+                        // PEQDB_Module.squigYMin/squigYMax -- since those two
+                        // values are exactly what getEQNodeAtCoords() (above)
+                        // adds into every node's Y position, that vertical
+                        // commit was the bug: it silently shifted every
+                        // node's *displayed* level in lockstep on any
+                        // background drag, with no actual gain change behind
+                        // it. Removed; only horizontal panning is wired up.
+
+                        self.drawCurve();
+                    });
+                });
+
+                window.addEventListener('mouseup', () => {
+                    if (PEQDB_Module.isDrawingModeActive && PEQDB_Module.isUserDrawing) {
+                        PEQDB_Module.isUserDrawing = false;
+                        squigCanvas.style.cursor = 'default';
+
+                        const w = squigCanvas.clientWidth;
+                        const h = squigCanvas.clientHeight;
+
+                        const minF = PEQDB_Module.viewMinF || 20;
+                        const maxF = PEQDB_Module.viewMaxF || 20000;
+                        const min = PEQDB_Module.squigYMin || 50;
+                        const max = PEQDB_Module.squigYMax || 110;
+
+                        const rawCoords = PEQDB_Module.drawnPoints.map(([x, y]) => {
+                            const f = Math.pow(10, Math.log10(minF) + (x / w) * (Math.log10(maxF) - Math.log10(minF)));
+                            const db = min + (1 - (y / h)) * (max - min);
+                            return [f, db];
+                        }).sort((a, b) => a[0] - b[0]);
+
+                        const uniqueCoords = [];
+                        for (let i = 0; i < rawCoords.length; i++) {
+                            if (i === 0 || Math.abs(rawCoords[i][0] - rawCoords[i-1][0]) > 0.5) {
+                                uniqueCoords.push(rawCoords[i]);
+                            }
+                        }
+
+                        if (uniqueCoords.length >= 2) {
+                            const tempSpline = PEQDB_Module.Spline.build(uniqueCoords);
+                            if (tempSpline) {
+                                PEQDB_Module.sculptPoints = PEQDB_Module.sculptPoints.map(p => {
+                                    const newVal = PEQDB_Module.Spline.evaluate(tempSpline, p.hz);
+                                    return { hz: p.hz, val: Math.max(min, Math.min(max, newVal)) };
+                                });
+                                if (window.EQ_Sculptor) {
+                                    EQ_Sculptor.sculptPoints = PEQDB_Module.sculptPoints.map(p=> ({hz:p.hz,val:p.val}));
+                                }
+                                PEQDB_Module.updateSculptTargetData();
+                                if (PEQDB_Module.searchMode === 'similar') {
+                                    PEQDB_Module.findSimilarCurves();
+                                }
+                            }
+                        }
+                        PEQDB_Module.drawnPoints = [];
+                        EQ_Module.drawCurve();
+                    }
+                    if (isDraggingEQNode) {
+                        isDraggingEQNode = false;
+                        EQ_Module.isDragging = false;
+                        EQ_Module.activeEQNode = null;
+                        squigCanvas.style.cursor = 'default';
+                    }
+                    if (isDraggingSculptNode) {
+                        isDraggingSculptNode = false;
+                        PEQDB_Module.isDragging = false;
+                        EQ_Module.isDragging = false;
+                        squigCanvas.style.cursor = 'default';
+                        // Every mid-drag findSimilarCurves call bailed out via the
+                        // isDragging guard, and nothing re-ran the scan after
+                        // release — Similar-mode kept showing pre-drag matches.
+                        // The debounced rescan coalesces rapid re-drags.
+                        if (PEQDB_Module.searchMode === 'similar' && PEQDB_Module.debouncedFindSimilarCurves) {
+                            PEQDB_Module.debouncedFindSimilarCurves();
+                        }
+                    }
+                    if (isPanning) {
+                        isPanning = false;
+                        EQ_Module.isDragging = false;
+                        squigCanvas.style.cursor = 'default';
+                    }
+                });
+
+                squigCanvas.addEventListener('wheel', e => {
+
+                    if (PEQDB_Module.targetMode === 'sculptor') return;
+
+                    e.preventDefault();
+                    const rect = squigCanvas.getBoundingClientRect();
+                    const mouseX = e.clientX - rect.left;
+
+                    const minF = PEQDB_Module.viewMinF || 20;
+                    const maxF = PEQDB_Module.viewMaxF || 20000;
+                    const mouseF = minF * Math.pow(10, (mouseX / rect.width) * Math.log10(maxF / minF));
+
+                    const zoomFactor = e.deltaY > 0 ? 1.15 : 0.85;
+
+                    let newMinF = mouseF / Math.pow(mouseF / minF, zoomFactor);
+                    let newMaxF = mouseF * Math.pow(maxF / mouseF, zoomFactor);
+
+                    if (newMinF < 20) newMinF = 20;
+                    if (newMaxF > 20000) newMaxF = 20000;
+
+                    PEQDB_Module.viewMinF = newMinF;
+                    PEQDB_Module.viewMaxF = newMaxF;
+                    self.drawCurve();
+                }, { passive: false });
+
+                squigCanvas.addEventListener('dblclick', () => {
+
+                    if (PEQDB_Module.targetMode === 'sculptor') return;
+
+                    PEQDB_Module.viewMinF = 20;
+                    PEQDB_Module.viewMaxF = 20000;
+
+                    PEQDB_Module.updateAlignmentCfgActual();
+                });
+
+                squigCanvas.addEventListener('mousemove', e => {
+                    const rect = squigCanvas.getBoundingClientRect();
+
+                    EQ_Module.squigMouseX = (e.clientX - rect.left);
+                    EQ_Module.squigMouseY = (e.clientY - rect.top);
+                    if (!isPanning && !isDraggingSculptNode) {
+                        self.drawCurve();
+                    }
+                });
+                squigCanvas.addEventListener('mouseleave', () => {
+                    EQ_Module.squigMouseX = null;
+                    EQ_Module.squigMouseY = null;
+                    self.drawCurve();
+                });
+            }
+    },
+};
+
+/* ===== app/js/eq-visualizer.js ===== */
+// Split out of eq-core.js (2026 god-file refactor, Step 9).
+// Audio visualizer: the fullscreen/main viz rAF loop (startVisualizer) with
+// its six canvas renderers (oledSpectrum, oscilloscope, acousticTunnel,
+// horizontalSpectrogram, fullScreenWaterfall, audioMesh), the auto-gain
+// (prevent-clipping) watchdog interval, and the mode list/index state.
+//
+// The whole loop ships inside the ORIGINAL single method: every per-frame
+// buffer (cachedBars/Peaks/Clips arrays, vintagePeaks, liquidPhase,
+// particleArray, the AGC Uint8Arrays) is a local allocated ONCE inside the
+// method, exactly as before — extraction does not change any allocation
+// behavior, so the redraw path stays GC-pause-identical (no new allocations
+// were introduced; drawViz's closure topology is untouched).
+//
+// this-scoped members used: vizFrameId, vizLoopRunning, agcIntervalId,
+// preventClipping, vizModeIndex, vizModes, drawCurve (via _liveDragUntil
+// throttling), plus SharedAudio analysers — read at frame time. Names
+// unchanged; merged into EQ_Module via Object.assign in db-cache.js.
+const EQ_VisualizerMethods = {
+        vizModeIndex: 4,
+            vizModes: [
+                'horizontalSpectrogram', 'fullScreenWaterfall', 'acousticTunnel', 'oledSpectrum', 'oscilloscope', 'audioMesh'
+            ],
+stopVisualizer: function() {
+        // The AGC watchdog must survive background tabs (rAF stops when
+        // hidden, so it cannot live in drawViz) — but it must also be
+        // stoppable so the 30ms timer doesn't outlive the feature.
+        if (this.agcIntervalId) {
+            clearInterval(this.agcIntervalId);
+            this.agcIntervalId = null;
+        }
+        if (this.vizFrameId) {
+            cancelAnimationFrame(this.vizFrameId);
+            this.vizFrameId = null;
+        }
+        if (this._vizIdleTimer) {
+            clearTimeout(this._vizIdleTimer);
+            this._vizIdleTimer = null;
+        }
+        this.vizLoopRunning = false;
+    },
 startVisualizer: function() {
         if (this.vizFrameId) {
             cancelAnimationFrame(this.vizFrameId);
@@ -16731,6 +18068,18 @@ startVisualizer: function() {
                 cachedPeaksR = document.getElementsByClassName('meter-bar-r-peak-hold');
                 cachedClips = document.getElementsByClassName('vu-meter-clipping-text');
             };
+            // Live HTMLCollections stay valid across DOM mutations; refresh
+            // only the reference when it is null/empty (tab switches rebuild
+            // the meter DOM). Callers must use these, not fresh queries.
+            const vizBarsL = () => (cachedBarsL && cachedBarsL.length) ? cachedBarsL : (refreshVizDomCache(), cachedBarsL);
+            const vizBarsR = () => (cachedBarsR && cachedBarsR.length) ? cachedBarsR : (refreshVizDomCache(), cachedBarsR);
+            const vizPeaksL = () => (cachedPeaksL && cachedPeaksL.length) ? cachedPeaksL : (refreshVizDomCache(), cachedPeaksL);
+            const vizPeaksR = () => (cachedPeaksR && cachedPeaksR.length) ? cachedPeaksR : (refreshVizDomCache(), cachedPeaksR);
+            const vizClips = () => (cachedClips && cachedClips.length) ? cachedClips : (refreshVizDomCache(), cachedClips);
+            // Per-frame text/scrub nodes: lazy-cached, revalidated when null.
+            // (IDs are static for the app lifetime; null-check suffices.)
+            const vizNodes = {};
+            const vizNode = (id) => vizNodes[id] || (vizNodes[id] = document.getElementById(id));
 
             const drawViz = () => {
                 if (!cachedBarsL || cachedBarsL.length === 0) {
@@ -16747,18 +18096,18 @@ startVisualizer: function() {
                 // Keep loop alive at low polling rate instead of killing it — killing required a
                 // future play event to restart, but a gap between tracks or a brief pause during
                 // crossfade could strand the visualizer blank until manual pause/unpause.
-                const barsL = document.getElementsByClassName('meter-bar-l-vu-vu');
-                const barsR = document.getElementsByClassName('meter-bar-r-vu-vu');
+                const barsL = vizBarsL();
+                const barsR = vizBarsR();
                 for (let i = 0; i < barsL.length; i++) barsL[i].style.width = "0%";
                 for (let i = 0; i < barsR.length; i++) barsR[i].style.width = "0%";
-                const peaksL = document.getElementsByClassName('meter-bar-l-peak-hold');
-                const peaksR = document.getElementsByClassName('meter-bar-r-peak-hold');
+                const peaksL = vizPeaksL();
+                const peaksR = vizPeaksR();
                 for (let i = 0; i < peaksL.length; i++) peaksL[i].style.left = "0%";
                 for (let i = 0; i < peaksR.length; i++) peaksR[i].style.left = "0%";
                 this.peakL = 0;
                 this.peakR = 0;
-                const imbalanceL = document.getElementById('imbalance-meter-l');
-                const imbalanceR = document.getElementById('imbalance-meter-r');
+                const imbalanceL = vizNode('imbalance-meter-l');
+                const imbalanceR = vizNode('imbalance-meter-r');
                 if (imbalanceL) imbalanceL.style.width = "0%";
                 if (imbalanceR) imbalanceR.style.width = "0%";
                 this.meterCurrentL = 0;
@@ -16883,7 +18232,7 @@ startVisualizer: function() {
 
                 if (diffL > 0.4) {
                     this.lastMeterL = this.meterCurrentL;
-                    const barsL = document.getElementsByClassName('meter-bar-l-vu-vu');
+                    const barsL = vizBarsL();
                     const targetWidth = this.meterCurrentL.toFixed(1) + "%";
                     for (let i = 0; i < barsL.length; i++) {
                         barsL[i].style.width = targetWidth;
@@ -16891,7 +18240,7 @@ startVisualizer: function() {
                 }
 if (diffR > 0.4) {
                     this.lastMeterR = this.meterCurrentR;
-                    const barsR = document.getElementsByClassName('meter-bar-r-vu-vu');
+                    const barsR = vizBarsR();
                     const targetWidth = this.meterCurrentR.toFixed(1) + "%";
                     for (let i = 0; i < barsR.length; i++) {
                         barsR[i].style.width = targetWidth;
@@ -16920,13 +18269,13 @@ if (diffR > 0.4) {
                     }
                 }
 
-                const peaksHoldL = document.getElementsByClassName('meter-bar-l-peak-hold');
+                const peaksHoldL = vizPeaksL();
                 const targetPeakLeft = this.peakL.toFixed(1) + "%";
                 for (let i = 0; i < peaksHoldL.length; i++) {
                     peaksHoldL[i].style.left = targetPeakLeft;
                 }
 
-                const peaksHoldR = document.getElementsByClassName('meter-bar-r-peak-hold');
+                const peaksHoldR = vizPeaksR();
                 const targetPeakRight = this.peakR.toFixed(1) + "%";
                 for (let i = 0; i < peaksHoldR.length; i++) {
                     peaksHoldR[i].style.left = targetPeakRight;
@@ -16936,7 +18285,7 @@ if (diffR > 0.4) {
                 const reductionDb = 20 * Math.log10(currentAutoGain);
                 const isAttenuationActive = (reductionDb < -0.15);
 
-                const clippingTexts = document.getElementsByClassName('vu-meter-clipping-text');
+                const clippingTexts = vizClips();
                 for (let i = 0; i < clippingTexts.length; i++) {
                     const el = clippingTexts[i];
 
@@ -17090,15 +18439,15 @@ if (diffR > 0.4) {
                     }
                 }
 
-                const modalTimeCur = document.getElementById('modal-time-current');
-                const timeCur = document.getElementById('playlist-time-current');
-                const scrub = document.getElementById('playlist-scrub');
-                const modalScrub = document.getElementById('modal-scrub');
-                const timeDur = document.getElementById('playlist-time-duration');
-                const modalTimeDur = document.getElementById('modal-time-duration');
+                const modalTimeCur = vizNode('modal-time-current');
+                const timeCur = vizNode('playlist-time-current');
+                const scrub = vizNode('playlist-scrub');
+                const modalScrub = vizNode('modal-scrub');
+                const timeDur = vizNode('playlist-time-duration');
+                const modalTimeDur = vizNode('modal-time-duration');
 
-                const mainTrackName = document.getElementById("playlist-track-info");
-                const modalTrackName = document.getElementById("modal-track-name");
+                const mainTrackName = vizNode("playlist-track-info");
+                const modalTrackName = vizNode("modal-track-name");
                 if (mainTrackName && modalTrackName && modalTrackName.textContent !== mainTrackName.textContent) {
                     modalTrackName.textContent = mainTrackName.textContent;
                 }
@@ -17106,9 +18455,9 @@ if (diffR > 0.4) {
                 const vizActiveEl = (typeof this._activeEl === 'function' ? this._activeEl() : null) || this.audioEl;
                 if (vizActiveEl && !this.isSeeking) {
                     const formattedCur = this.formatTime(vizActiveEl.currentTime);
-                    const mobTimeCur = document.getElementById('mobile-time-current');
-                    const mobScrub = document.getElementById('mobile-scrub');
-                    const mobTimeDur = document.getElementById('mobile-time-duration');
+                    const mobTimeCur = vizNode('mobile-time-current');
+                    const mobScrub = vizNode('mobile-scrub');
+                    const mobTimeDur = vizNode('mobile-time-duration');
 
                     if (timeCur) timeCur.textContent = formattedCur;
                     if (mobTimeCur) mobTimeCur.textContent = formattedCur;
@@ -17157,7 +18506,8 @@ if (diffR > 0.4) {
 
                 const fcv = EQ_Module.fullscreenVizCanvas;
                 const fctx = EQ_Module.fullscreenVizCtx;
-                const isVizTabActive = !document.getElementById('pane-visualizer').classList.contains('hidden');
+                const paneViz = vizNode('pane-visualizer');
+                const isVizTabActive = !paneViz || !paneViz.classList.contains('hidden');
 
                 if ((EQ_Module.vizModalActive || isVizTabActive) && fcv && fctx) {
                     const clientW = fcv.clientWidth || 800;
@@ -17178,29 +18528,28 @@ if (diffR > 0.4) {
                     const w = fcv.width;
                     const h = fcv.height;
 
-                    let subBass = 0;
-                    for (let i = 1; i <= 4; i++) subBass += dataArray[i] || 0;
-                    subBass = (subBass / 4) / 255;
-
-                    let midrange = 0;
-                    let midCount = 0;
-                    for (let i = 5; i <= 186; i++) {
-                        midrange += dataArray[i] || 0;
-                        midCount++;
+                    // Single folded pass: fixed ranges mirror the old loops
+                    // exactly (sub 1-4 /4, mid 5-186 /182, treb 187-N,
+                    // total 0-N — including out-of-range reads as 0 via
+                    // `|| 0` on degenerate tiny buffers), so results match
+                    // bit-for-bit with 4x fewer iterations.
+                    let subBassSum = 0, midSum = 0, trebSum = 0, trebN = 0, totSum = 0;
+                    const foldEnd = Math.max(bufferLength, 187);
+                    for (let i = 0; i < foldEnd; i++) {
+                        const v = dataArray[i] || 0;
+                        if (i < bufferLength) totSum += v;
+                        if (i >= 1 && i <= 4) subBassSum += v;
+                        else if (i >= 5 && i <= 186) midSum += v;
+                        else if (i >= 187 && i < bufferLength) { trebSum += v; trebN++; }
                     }
-                    midrange = (midrange / midCount) / 255;
-
-                    let treble = 0;
-                    let trebCount = 0;
-                    for (let i = 187; i < bufferLength; i++) {
-                        treble += dataArray[i] || 0;
-                        trebCount++;
-                    }
-                    treble = (trebCount > 0 ? (treble / trebCount) : 0) / 255;
-
-                    let totalEnergy = 0;
-                    for (let i = 0; i < bufferLength; i++) totalEnergy += dataArray[i];
-                    totalEnergy = (totalEnergy / bufferLength) / 255;
+                    let subBass = (subBassSum / 4) / 255;
+                    let midrange = (midSum / 182) / 255;
+                    let treble = trebN > 0 ? (trebSum / trebN) / 255 : 0;
+                    let totalEnergy = (totSum / bufferLength) / 255;
+                    if (!Number.isFinite(subBass)) subBass = 0;
+                    if (!Number.isFinite(midrange)) midrange = 0;
+                    if (!Number.isFinite(treble)) treble = 0;
+                    if (!Number.isFinite(totalEnergy)) totalEnergy = 0;
 
                     // Theme lookup + hex→rgb conversion are loop-invariant per
                     // theme. Resolve once and cache; App.setGlobalTheme bumps
@@ -17540,7 +18889,14 @@ if (diffR > 0.4) {
                             }
                         }
 
+                        // Hoisted canvas state: shadowBlur is one of the most
+                        // expensive states — set once per frame, not per particle.
                         fctx.save();
+                        const themeColor = themeAccent || "#3b82f6";
+                        fctx.fillStyle = themeColor;
+                        fctx.shadowBlur = 6;
+                        fctx.shadowColor = themeColor;
+                        fctx.globalAlpha = 0.25 + (treble * 0.5);
                         this.sporeParticles.forEach(spore => {
                             spore.y += spore.speedY;
                             spore.wobble += 0.02;
@@ -17552,12 +18908,6 @@ if (diffR > 0.4) {
                                 spore.x = Math.random() * w;
                             }
 
-                            const themeColor = themeAccent || "#3b82f6";
-                            fctx.fillStyle = themeColor;
-                            fctx.shadowBlur = 6;
-                            fctx.shadowColor = themeColor;
-
-                            fctx.globalAlpha = 0.25 + (treble * 0.5);
                             fctx.beginPath();
                             fctx.arc(dx, spore.y, spore.size, 0, Math.PI * 2);
                             fctx.fill();
@@ -17568,646 +18918,7 @@ if (diffR > 0.4) {
             };
             drawViz();
         },
-
-        _dspBuildPromise: null,
-        ensureDSPGraph: async function() {
-            if (this.graphBuilt) return;
-            // Re-entrancy guard. Callers fire this concurrently (document click
-            // handler, playback hook, drag flush, queued DSP tags). Each awaited
-            // addModule independently and built a SECOND worklet graph; the media
-            // source stayed wired to the first node while SharedAudio.workletNode
-            // pointed at the orphan, so every updateFilters message reached a
-            // filter bank that was never in the signal path — dragging EQ nodes
-            // changed nothing audibly.
-            if (!this._dspBuildPromise) {
-                this._dspBuildPromise = this._buildDSPGraph().catch((err) => {
-                    console.error("[AudioEngine] DSP graph build failed:", err);
-                });
-            }
-            await this._dspBuildPromise;
-            this._dspBuildPromise = null;
-        },
-
-        _buildDSPGraph: async function() {
-            const ctx = SharedAudio.init();
-            // Do NOT await ctx.resume() here. In browsers, an AudioContext created
-            // before any user gesture stays 'suspended' and resume()'s promise
-            // remains PENDING (never resolves or rejects) until playback is
-            // allowed. Boot-time callers (queued DSP tags, visualizer setup) hit
-            // this before any click, wedging _dspBuildPromise on a forever-pending
-            // promise — after which every later ensureDSPGraph() caller (including
-            // togglePlayState for bundled tracks) queued behind it forever. That is
-            // why imported files (which bypass ensureDSPGraph) played while the
-            // built-in playlist stayed silent in browser testing. Fire-and-forget
-            // instead: each playback path resumes the context inside its own user
-            // gesture (togglePlayState, onplay handler).
-            ctx.resume().catch(() => {});
-
-            try {
-                await ctx.audioWorklet.addModule('app/js/dsp-processor.js');
-                console.log("[AudioEngine] AudioWorklet dsp-processor module loaded successfully.");
-            } catch (err) {
-                console.error("[AudioEngine] Failed to load AudioWorklet module. Falling back to native structures.", err);
-                showDebugError("AudioWorklet failed to load. Check console/network paths.", "dsp-processor.js");
-                return;
-            }
-
-            SharedAudio.workletNode = new AudioWorkletNode(ctx, 'dsp-processor', {
-                numberOfInputs: 1,
-                numberOfOutputs: 1,
-                outputChannelCount: [2]
-            });
-
-            SharedAudio.workletNode.port.postMessage({
-                type: 'init',
-                sampleRate: ctx.sampleRate
-            });
-
-            this.inputGainNode = ctx.createGain();
-            this.inputGainNode.gain.value = 1.0;
-
-            this.musicVolumeNode = ctx.createGain();
-            const volSlider = document.getElementById("eq-musicVolumeSlider");
-            const initialVol = volSlider ? (parseFloat(volSlider.value) / 100) : 0.5;
-            this.musicVolumeNode.gain.value = initialVol;
-
-            this.inputGainNode.connect(SharedAudio.workletNode);
-
-            SharedAudio.workletNode.connect(SharedAudio.compressorFilter);
-            SharedAudio.compressorFilter.connect(SharedAudio.compressor);
-            SharedAudio.compressor.connect(SharedAudio.compressorGain);
-            SharedAudio.compressorGain.connect(SharedAudio.autoGainNode);
-            SharedAudio.autoGainNode.connect(SharedAudio.limiter);
-
-            SharedAudio.limiter.connect(SharedAudio.dryGainNode);
-            SharedAudio.limiter.connect(SharedAudio.reverbNode);
-            SharedAudio.reverbNode.connect(SharedAudio.reverbFilterNode).connect(SharedAudio.wetGainNode);
-
-            SharedAudio.dryGainNode.connect(SharedAudio.crossfeedSplitter);
-            SharedAudio.wetGainNode.connect(SharedAudio.crossfeedSplitter);
-
-            SharedAudio.crossfeedSplitter.connect(SharedAudio.directGainL, 0);
-            SharedAudio.crossfeedSplitter.connect(SharedAudio.crossfeedFilterL, 0);
-            SharedAudio.crossfeedFilterL.connect(SharedAudio.crossfeedDelayL).connect(SharedAudio.crossGainL);
-
-            SharedAudio.crossfeedSplitter.connect(SharedAudio.directGainR, 1);
-            SharedAudio.crossfeedSplitter.connect(SharedAudio.crossfeedFilterR, 1);
-            SharedAudio.crossfeedFilterR.connect(SharedAudio.crossfeedDelayR).connect(SharedAudio.crossGainR);
-
-            SharedAudio.crossfeedSplitter.connect(SharedAudio.expandGainL, 0);
-            SharedAudio.expandGainL.connect(SharedAudio.sumGainR);
-
-            SharedAudio.crossfeedSplitter.connect(SharedAudio.expandGainR, 1);
-            SharedAudio.expandGainR.connect(SharedAudio.sumGainL);
-
-            SharedAudio.directGainL.connect(SharedAudio.sumGainL);
-            SharedAudio.crossGainR.connect(SharedAudio.sumGainL);
-
-            SharedAudio.directGainR.connect(SharedAudio.sumGainR);
-            SharedAudio.crossGainL.connect(SharedAudio.sumGainR);
-
-            SharedAudio.sumGainL.connect(SharedAudio.crossfeedMerger, 0, 0);
-            SharedAudio.sumGainR.connect(SharedAudio.crossfeedMerger, 0, 1);
-
-            SharedAudio.crossfeedMerger.connect(this.musicVolumeNode);
-            this.musicVolumeNode.connect(SharedAudio.masterGain);
-
-            // Route the <audio> element through the DSP graph EXACTLY once, now,
-            // while playback hasn't begun. Creating the MediaElementSource lazily
-            // inside the element's onplay handler was the startup-mute bug: by the
-            // time onplay fired, audio was already playing, and re-routing a playing
-            // element strands the stream (or throws), so 'connected' never took and
-            // the only working volume control became the raw audioEl.volume — which
-            // the boot-path fade had already set to 0. Locking it here guarantees the
-            // graph owns volume from the very first millisecond of playback.
-            if (this.audioEl && !this.source) {
-                this.source = ctx.createMediaElementSource(this.audioEl);
-                // Primary element routes through the sourceGain arm so
-                // per-track loudness matching and crossfade fades have a gain
-                // to ride on (eq-playlist.js _retargetActiveArm /
-                // _crossfadeToStandby read this arm).
-                if (!this.sourceGain) {
-                    this.sourceGain = ctx.createGain();
-                    this.sourceGain.gain.value = Math.max(0.05, Math.min(4, this._activeLoudnessGain || 1));
-                }
-                this.source.connect(this.sourceGain);
-                this.sourceGain.connect(this.inputGainNode);
-                this.audioEl.volume = 1.0;
-                this.connected = true;
-            }
-
-            // Gapless/crossfade standby arm: the B element (eq-audio-gapless)
-            // preloads the next track and is crossfaded in at the seam. Both
-            // arms must share this DSP graph or the standby would be either
-            // silent or always-on top of the active track. Guarded because
-            // createMediaElementSource throws when called twice on one
-            // element, and _buildDSPGraph can re-run after a failed attempt.
-            if (!this._gaplessWired && this.gaplessEl) {
-                try {
-                    this.gaplessSource = ctx.createMediaElementSource(this.gaplessEl);
-                    if (!this.gaplessGain) this.gaplessGain = ctx.createGain();
-                    this.gaplessGain.gain.value = 0;
-                    this.gaplessSource.connect(this.gaplessGain);
-                    this.gaplessGain.connect(this.inputGainNode);
-                    this.gaplessEl.volume = 1.0;
-                    this._gaplessWired = true;
-                } catch (e) {
-                    console.warn("[AudioEngine] Gapless standby wiring failed:", e);
-                }
-            }
-
-            this.graphBuilt = true;
-            // Flush coalesced DSP state that arrived while the graph was building
-            if (this._pendingDspQueue && this._pendingDspQueue.length) {
-                const q = [...new Set(this._pendingDspQueue)];
-                this._pendingDspQueue = [];
-                for (const tag of q) {
-                    try {
-                        if (tag === 'filters') this.updateAudioConnections();
-                        else if (tag === 'crossover') this.updateCrossoverDSP();
-                        else if (tag === 'loudness') this.updateLoudnessDSP();
-                        else if (tag === 'simulation') this.updateSimulation();
-                        else if (tag === 'gear') this.applyGearSimDSP();
-                        else if (tag === 'hearing') this.applyHearingCalibrationGains();
-                        else if (tag === 'tape') this.updateTapeModDSP();
-                        else if (tag === 'masterTone') this.updateMasterTone('bass', document.getElementById('eq-masterBass')?.value || 0);
-                    } catch(_) {}
-                }
-            }
-            this.updateAudioConnections();
-
-            this.updatePreamp();
-            this.bands.forEach((_, i) => this.updateSlider(i, 'main'));
-            this.advancedBands.forEach((_, i) => this.updateSlider(i, 'adv'));
-            this.updateSimulation();
-            if (this.applyGearSimDSP) this.applyGearSimDSP();
-            if (this.updateTapeModDSP) this.updateTapeModDSP();
-            this.updateLoudnessDSP();
-            this.updateCrossoverDSP();
-
-            const ratioSlider = document.getElementById('comp-ratio-slider');
-            if (ratioSlider) {
-                this.updateCompressorParam('ratio', parseFloat(ratioSlider.value) / 10);
-            }
-
-            // With the standby arm live, preload the next track so the first
-            // skip after boot is already seamless (no-op when gapless and
-            // crossfade are both disabled — _standbyReady() gates it).
-            if (this._preloadNextTrack) this._preloadNextTrack();
-        },
-
-        _pendingDspQueue: [],
-        _queuePendingDsp: function(tag) {
-            if (!this._pendingDspQueue.includes(tag)) this._pendingDspQueue.push(tag);
-            if (!this.graphBuilt) this.ensureDSPGraph().catch(()=>{});
-        },
-        updateAudioConnections: function() {
-            if (!this.graphBuilt || !SharedAudio.workletNode) {
-                this._queuePendingDsp('filters');
-                return;
-            }
-
-            const payload = [];
-
-            this.bands.forEach((b, i) => {
-                const isBypassed = window.bypassedBands.has("m" + i);
-                const type = b.type || 'peaking';
-
-                const rawHz = parseFloat(document.getElementById("eq-f" + i)?.value);
-                const hz = Number.isFinite(rawHz) ? rawHz : b.hz;
-
-                const rawG = parseFloat(document.getElementById("eq-s" + i)?.value);
-                const g = isBypassed ? 0.0 : (Number.isFinite(rawG) ? rawG : 0.0);
-
-                const rawQ = parseFloat(document.getElementById("eq-q_m" + i)?.value);
-                const q = Number.isFinite(rawQ) ? rawQ : b.defaultQ;
-
-                // Slope (cascade count) only means anything for Shelf/HP/LP
-                // sections; a stale value on Peaking/Notch would silently
-                // cascade multiple full-gain copies of the same filter.
-                // handleTypeChange() resets b.slope on every type change,
-                // but this is the actual DSP trust boundary, so it is
-                // re-enforced here too (e.g. against a hand-authored preset
-                // that round-trips a mismatched type+slope pair).
-                const slopeCapable = (type === 'lowshelf' || type === 'highshelf' || type === 'lowpass' || type === 'highpass');
-                const activeSlope = slopeCapable ? (b.slope || 12) : 12;
-                const cascadeNodesCount = Math.max(1, Math.round(activeSlope / 12));
-
-                for (let k = 0; k < 4; k++) {
-                    const idx = (i * 4) + k;
-                    let nodeGain = g;
-                    let nodeBypassed = (k >= cascadeNodesCount) || isBypassed || !this.eqEnabled;
-
-                    if (type === 'lowshelf' || type === 'highshelf') {
-                        nodeGain = g / cascadeNodesCount;
-                    }
-
-                    payload.push({
-                        index: idx,
-                        bypassed: nodeBypassed,
-                        filterType: type,
-                        frequency: hz,
-                        gain: nodeGain,
-                        q: q
-                    });
-                }
-            });
-
-            this.advancedBands.forEach((b, i) => {
-                const isBypassed = window.bypassedBands.has("a" + i);
-                const type = b.type || 'peaking';
-                const hz = b.hz;
-
-                const sEl = document.getElementById("eq-a" + i);
-                const qEl = document.getElementById("eq-q_a" + i);
-
-                const rawG = sEl ? parseFloat(sEl.value) : undefined;
-                const g = isBypassed ? 0.0 : (Number.isFinite(rawG) ? rawG : (b.g !== undefined ? b.g : 0.0));
-
-                const rawQ = qEl ? parseFloat(qEl.value) : undefined;
-                const q = Number.isFinite(rawQ) ? rawQ : (b.q !== undefined ? b.q : b.defaultQ);
-
-                payload.push({
-                    index: 40 + i,
-                    bypassed: isBypassed || !this.eqEnabled,
-                    filterType: type,
-                    frequency: hz,
-                    gain: g,
-                    q: q
-                });
-            });
-
-            if (this.virtualBands) {
-                this.virtualBands.forEach((b, i) => {
-                    if (i < 30) {
-                        const rawG = parseFloat(b.g);
-                        const finalG = Number.isFinite(rawG) ? rawG : 0.0;
-                        const rawQ = parseFloat(b.q);
-                        const finalQ = Number.isFinite(rawQ) ? rawQ : 1.0;
-
-                        payload.push({
-                            index: 50 + i,
-                            bypassed: !this.eqEnabled,
-                            filterType: b.type || 'peaking',
-                            frequency: b.hz,
-                            gain: finalG,
-                            q: finalQ
-                        });
-                    }
-                });
-            }
-
-            SharedAudio.workletNode.port.postMessage({
-                type: 'updateFilters',
-                filters: payload
-            });
-        },
-
-                toggleEQ: function() {
-
-            var now = Date.now();
-            if (this.lastEQToggle && now - this.lastEQToggle < 300) return;
-            this.lastEQToggle = now;
-
-            if (window.bypassedBands === undefined) window.bypassedBands = new Set();
-            const btn = document.getElementById("eqToggleBtn");
-            if (this.eqEnabled) {
-                this.eqEnabled = false;
-                if (btn) {
-                    btn.classList.remove('is-on');
-                    btn.textContent = "EQ: OFF";
-                }
-                showToast("Equalizer Disabled (Bypass)", "🚫");
-            } else {
-                this.eqEnabled = true;
-                if (btn) {
-                    btn.classList.add('is-on');
-                    btn.textContent = "EQ: ON";
-                }
-                showToast("Equalizer Enabled (Active)", "✅");
-            }
-
-                        this.updateAudioConnections();
-            Mascot.update();
-
-            this.bands.forEach((_, i) => {
-                const slider = document.getElementById("eq-s" + i);
-                if (slider && this.filters[i]) {
-                    const isBypassed = window.bypassedBands.has("m" + i);
-                    setAudioParamSmooth(this.filters[i].gain, (this.eqEnabled && !isBypassed) ? parseFloat(slider.value) : 0, 0.01);
-                }
-            });
-
-            this.advancedBands.forEach((b, i) => {
-                if (this.advFilters && this.advFilters[i]) {
-                    const isBypassed = window.bypassedBands.has("a" + i);
-                    const targetGain = (this.eqEnabled && !isBypassed) ? (b.g || 0) : 0;
-                    setAudioParamSmooth(this.advFilters[i].gain, targetGain, 0.01);
-                }
-            });
-
-            if (this.virtualFilters && this.virtualBands) {
-                this.virtualFilters.forEach((f, i) => {
-                    const b = this.virtualBands[i];
-                    const targetGain = (this.eqEnabled && b) ? (b.g || 0) : 0;
-                    setAudioParamSmooth(f.gain, targetGain, 0.01);
-                });
-            }
-
-            this.drawCurve();
-        },
-
-switchCategory: function(catId) {
-            try {
-                this.activePresetCategory = catId;
-
-                const stepperLabel = document.getElementById('preset-category-stepper-label');
-                if (stepperLabel && this.presetCategories) {
-                    const info = this.presetCategories.find(m => m.id === catId) || this.presetCategories[0];
-                    stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
-                }
-
-                const categoryContainers = document.querySelectorAll('#rc-panel-presets button');
-                categoryContainers.forEach(pill => {
-                    if (pill && (pill.id.startsWith('cat-') || pill.id === 'cat-custom')) {
-                        pill.classList.remove('active');
-                    }
-                });
-                const activePill = document.getElementById('cat-' + catId);
-                if (activePill) activePill.classList.add('active');
-
-                const grid = document.getElementById('preset-grid-content');
-                if (!grid) return;
-                grid.innerHTML = '';
-
-                if (catId === 'custom') {
-                    this.renderCustomPresets();
-                    return;
-                }
-
-                const list = this.presetsByCategory[catId] || [];
-                list.forEach(p => {
-                    const btn = document.createElement('button');
-                    btn.id = 'preset-btn-' + p.id;
-
-                    btn.className = 'w-full text-center text-[10px] h-8 px-1 py-1 rounded bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate flex items-center justify-center gap-1 cursor-pointer';
-                    btn.innerHTML = `<span>${p.name}</span>`;
-                    btn.onclick = () => { this.applyPreset(p.id); };
-                    grid.appendChild(btn);
-
-                    if (p.id === this.activePreset) {
-                        btn.classList.remove('bg-[var(--bg-card)]', 'text-[var(--text-main)]');
-                        btn.classList.add('bg-[var(--accent-blue)]', 'text-white', 'border-[var(--accent-blue)]');
-                    }
-                });
-            } catch (err) {
-                console.warn("Preset generation catch block active:", err);
-            }
-        },
-
-        lastDrawTime: 0,
-
-        applyGeneratedPEQ: function(bands) {
-            EQ_Module.isProgrammaticSliderUpdate = true;
-
-            this.bands.forEach((b, i) => {
-                const sSlider = document.getElementById("eq-s" + i);
-                const fInput = document.getElementById("eq-f" + i);
-                const qSlider = document.getElementById("eq-q_m" + i);
-
-                if (sSlider) sSlider.value = 0;
-                if (fInput) fInput.value = b.hz;
-                if (qSlider) qSlider.value = b.defaultQ;
-
-                const freqSlider = document.getElementById(`eq-fs_m${i}`);
-                if (freqSlider) freqSlider.value = this.logHzToSlider(b.hz);
-
-                const gainNum = document.getElementById(`eq-s${i}_num`);
-                if (gainNum) gainNum.value = "0.0";
-                const qNum = document.getElementById(`eq-q_m${i}_num`);
-                if (qNum) qNum.value = b.defaultQ.toFixed(2);
-
-                if (this.filters[i]) {
-                    this.filters[i].type = b.type;
-                    setAudioParamSmooth(this.filters[i].frequency, b.hz);
-                    setAudioParamSmooth(this.filters[i].gain, 0);
-                    setAudioParamSmooth(this.filters[i].Q, b.defaultQ);
-                }
-            });
-
-            this.advancedBands.forEach((b, i) => {
-                const aSlider = document.getElementById("eq-a" + i);
-                const afInput = document.getElementById("eq-af" + i);
-                const qSlider = document.getElementById("eq-q_a" + i);
-                const typeBtn = document.getElementById(`eq-t_a${i}`);
-
-                if (aSlider) aSlider.value = 0;
-                if (afInput) afInput.value = b.hz;
-                if (qSlider) qSlider.value = b.defaultQ;
-                if (typeBtn) typeBtn.textContent = 'PK';
-                b.type = 'peaking';
-
-                const freqSlider = document.getElementById(`eq-fs_a${i}`);
-                if (freqSlider) freqSlider.value = this.logHzToSlider(b.hz);
-
-                const gainNum = document.getElementById(`eq-a${i}_num`);
-                if (gainNum) gainNum.value = "0.0";
-                const qNum = document.getElementById(`eq-q_a${i}_num`);
-                if (qNum) qNum.value = b.defaultQ.toFixed(2);
-
-                const gainRow = document.getElementById(`row-gain_a${i}`);
-                if (gainRow) {
-                    gainRow.style.opacity = '1';
-                    gainRow.style.pointerEvents = 'auto';
-                }
-
-                if (this.advFilters[i]) {
-                    this.advFilters[i].type = 'peaking';
-                    setAudioParamSmooth(this.advFilters[i].frequency, b.hz);
-                    setAudioParamSmooth(this.advFilters[i].gain, 0);
-                    setAudioParamSmooth(this.advFilters[i].Q, b.defaultQ);
-                }
-            });
-
-            if (!bands || bands.length === 0) {
-                document.getElementById("eq-preampSlider").value = 0;
-                if (this.preampNode) setAudioParamSmooth(this.preampNode.gain, 1);
-                EQ_Module.isProgrammaticSliderUpdate = false;
-                this.drawCurve();
-                if (window.syncGlobalSliders) window.syncGlobalSliders();
-                return;
-            }
-
-            const maxGain = Math.max(...bands.map(b => b.gain));
-            const preamp = maxGain > 0 ? -maxGain : 0;
-            const preampSlider = document.getElementById("eq-preampSlider");
-            if (preampSlider) preampSlider.value = preamp.toFixed(1);
-            this.updatePreamp();
-
-            bands.forEach((b, i) => {
-                if (i < this.bands.length) {
-                    const sSlider = document.getElementById("eq-s" + i);
-                    const fInput = document.getElementById("eq-f" + i);
-                    const qSlider = document.getElementById("eq-q_m" + i);
-
-                    if (fInput) fInput.value = Math.round(b.freq);
-                    if (sSlider) sSlider.value = b.gain.toFixed(1);
-                    if (qSlider) qSlider.value = b.q.toFixed(1);
-
-                    const freqSlider = document.getElementById(`eq-fs_m${i}`);
-                    if (freqSlider) freqSlider.value = EQ_Module.logHzToSlider(b.freq);
-
-                    const gainNum = document.getElementById(`eq-s${i}_num`);
-                    if (gainNum) gainNum.value = b.gain.toFixed(1);
-                    const qNum = document.getElementById(`eq-q_m${i}_num`);
-                    if (qNum) qNum.value = b.q.toFixed(2);
-
-                    EQ_Module.updateSlider(i, 'main');
-                }
-            });
-
-            EQ_Module.isProgrammaticSliderUpdate = false;
-
-            if (EQ_Module.graphBuilt) {
-                EQ_Module.updateAudioConnections();
-            }
-
-            this.drawCurve();
-
-            this.bands.forEach((_, i) => this.updateSlider(i, 'main'));
-            this.advancedBands.forEach((_, i) => this.updateSlider(i, 'adv'));
-
-            if (window.syncGlobalSliders) window.syncGlobalSliders();
-
-            // Generated PEQ reshaped the DSP curve programmatically — unlock
-            // live Similar-mode matching.
-            PEQDB_Module._similarTargetEverModified = true;
-        },
-
-        clearAudio: function() { this.audioEl.pause(); this.audioEl.removeAttribute("src"); this.audioEl.load(); document.getElementById("eq-file").value = ""; this.audioEl.volume = 0.5; },
-        resetEQ: function(skipDraw) {
-            this.activePreset = null;
-            EQ_Module.isProgrammaticSliderUpdate = true;
-            const _prevSuppress = this._suppressDraw;
-            if (skipDraw) this._suppressDraw = true;
-
-            this.bands.forEach((b, i) => {
-                const fInput = document.getElementById("eq-f" + i);
-                if (fInput) fInput.value = b.hz;
-                const fsSlider = document.getElementById(`eq-fs_m${i}`);
-                if (fsSlider) fsSlider.value = this.logHzToSlider(b.hz);
-
-                const sSlider = document.getElementById("eq-s" + i);
-                if (sSlider) sSlider.value = 0;
-                const sNum = document.getElementById(`eq-s${i}_num`);
-                if (sNum) sNum.value = "0.0";
-
-                const qSlider = document.getElementById("eq-q_m" + i);
-                if (qSlider) qSlider.value = b.defaultQ;
-                const qNum = document.getElementById(`eq-q_m${i}_num`);
-                if (qNum) qNum.value = b.defaultQ.toFixed(2);
-
-                if (this.filters[i]) {
-                    this.filters[i].type = b.type;
-                    setAudioParamSmooth(this.filters[i].frequency, b.hz);
-                    setAudioParamSmooth(this.filters[i].gain, 0);
-                    setAudioParamSmooth(this.filters[i].Q, b.defaultQ);
-                }
-
-                this.updateSlider(i, 'main');
-            });
-
-            this.advancedBands.forEach((b, i) => {
-                const fInput = document.getElementById("eq-af" + i);
-                if (fInput) fInput.value = b.hz;
-                const fsSlider = document.getElementById(`eq-fs_a${i}`);
-                if (fsSlider) fsSlider.value = this.logHzToSlider(b.hz);
-
-                const aSlider = document.getElementById("eq-a" + i);
-                if (aSlider) aSlider.value = 0;
-                const aNum = document.getElementById(`eq-a${i}_num`);
-                if (aNum) aNum.value = "0.0";
-
-                const qSlider = document.getElementById("eq-q_a" + i);
-                if (qSlider) qSlider.value = b.defaultQ;
-                const qNum = document.getElementById(`eq-q_a${i}_num`);
-                if (qNum) qNum.value = b.defaultQ.toFixed(2);
-
-                const typeBtn = document.getElementById(`eq-t_a${i}`);
-                if (typeBtn) typeBtn.textContent = 'PK';
-                b.type = 'peaking';
-                b.g = 0;
-
-                const gainRow = document.getElementById(`row-gain_a${i}`);
-                if (gainRow) {
-                    gainRow.style.opacity = '1';
-                    gainRow.style.pointerEvents = 'auto';
-                }
-
-                if (this.advFilters[i]) {
-                    this.advFilters[i].type = 'peaking';
-                    setAudioParamSmooth(this.advFilters[i].frequency, b.hz);
-                    setAudioParamSmooth(this.advFilters[i].gain, 0);
-                    setAudioParamSmooth(this.advFilters[i].Q, b.defaultQ);
-                }
-
-                this.updateSlider(i, 'adv');
-            });
-
-            this.virtualBands = [];
-            if (this.virtualFilters) {
-                this.virtualFilters.forEach(f => {
-                    setAudioParamSmooth(f.gain, 0);
-                });
-            }
-
-            const preSlider = document.getElementById("eq-preampSlider");
-            if (preSlider) preSlider.value = "0.0";
-            const preVal = document.getElementById("eq-preampVal");
-            if (preVal) preVal.value = "0.0";
-            if (this.preampNode) setAudioParamSmooth(this.preampNode.gain, 1.0);
-
-            this.updatePreamp();
-
-            EQ_Module.isProgrammaticSliderUpdate = false;
-
-            const sliderDefaults = {
-                'comp-attack-slider': { val: 15, param: 'attack', text: '15.0 ms' },
-                'comp-release-slider': { val: 100, param: 'release', text: '100.0 ms' },
-                'comp-ratio-slider': { val: 40, param: 'ratio', text: '4.0 : 1' },
-                'comp-frequency-slider': { val: 1000, param: 'frequency', text: '1.0k Hz' },
-                'comp-threshold-slider': { val: -150, param: 'threshold', text: '-15.0 dB' },
-                'comp-gain-slider': { val: 0, param: 'gain', text: '0.0 dB' }
-            };
-
-            Object.entries(sliderDefaults).forEach(([id, config]) => {
-                const el = document.getElementById(id);
-                if (el) el.value = config.val;
-
-                const disp = document.getElementById(`comp-${config.param}-val`);
-                if (disp) disp.textContent = config.text;
-
-                if (SharedAudio.compressor) {
-                    const value = config.val;
-                    if (config.param === 'attack') setAudioParamSmooth(SharedAudio.compressor.attack, value / 1000, 0.015);
-                    else if (config.param === 'release') setAudioParamSmooth(SharedAudio.compressor.release, value / 1000, 0.015);
-                    else if (config.param === 'ratio') setAudioParamSmooth(SharedAudio.compressor.ratio, value / 10, 0.015);
-                    else if (config.param === 'frequency' && SharedAudio.compressorFilter) setAudioParamSmooth(SharedAudio.compressorFilter.frequency, value, 0.015);
-                    else if (config.param === 'threshold') setAudioParamSmooth(SharedAudio.compressor.threshold, value / 10, 0.015);
-                    else if (config.param === 'gain' && SharedAudio.compressorGain) setAudioParamSmooth(SharedAudio.compressorGain.gain, Math.pow(10, (value / 10) / 20), 0.015);
-                }
-            });
-
-            if (this.compressorActive) {
-                this.toggleCompressor();
-            }
-
-            this._suppressDraw = _prevSuppress;
-            if (!skipDraw) this.drawCurve();
-            if (window.syncGlobalSliders) window.syncGlobalSliders();
-        },
-
-    };
+};
 
 /* ===== app/js/db-cache.js ===== */
 // Split out of the former monolithic app-core.js (2026 refactor).
@@ -18248,24 +18959,24 @@ switchCategory: function(catId) {
     Object.assign(EQ_Module, EQ_PresetMethods);
     Object.assign(EQ_Module, EQ_BandHandlerMethods);
     Object.assign(EQ_Module, EQ_DrawCurveMethods);
-    // Coalesce redundant redraws onto a single requestAnimationFrame. The offline
-    // magnitude path below is dirty-flagged per slider `input`, so during a drag a
-    // full DSP+redraw can fire more often than the screen can show; batching to one
-    // draw per frame removes per-event jank while keeping updates latency-free.
-    {
-        const _drawCurve = EQ_Module.drawCurve || function () {};
-        let _pending = false;
-        EQ_Module.drawCurve = function () {
-            const self = this;
-            if (!_pending) {
-                _pending = true;
-                requestAnimationFrame(() => {
-                    _pending = false;
-                    _drawCurve.apply(self, arguments);
-                });
-            }
-        };
-    }
+    Object.assign(EQ_Module, EQ_TapeModMethods);
+    Object.assign(EQ_Module, EQ_BiquadMathMethods);
+    // Preset catalog (eq-presets-data.js): the id/name lists are shared by
+    // reference (read-only consumers); the GAIN banks are NOT assigned here —
+    // EQ_Module.init deep-copies them via JSON.parse + Object.assign so
+    // runtime preset edits never poison the catalog.
+    EQ_Module.presetsByCategory = EQ_PresetsData.presetsByCategory;
+    EQ_Module.presetCategories = EQ_PresetsData.presetCategories;
+    Object.assign(EQ_Module, EQ_MagnitudeEngineMethods);
+    Object.assign(EQ_Module, EQ_GenreTargetMethods);
+    Object.assign(EQ_Module, EQ_DspGraphMethods);
+    Object.assign(EQ_Module, EQ_MediaTransportMethods);
+    Object.assign(EQ_Module, EQ_GraphInputMethods);
+    Object.assign(EQ_Module, EQ_VisualizerMethods);
+    // NOTE: no outer rAF wrapper here on purpose. drawCurve() itself
+    // (eq-draw-curve.js) already coalesces via drawPending, so wrapping it
+    // in a second rAF only added a frame of latency (every draw hopped two
+    // frames). One coalescer, next-frame paint, latest state.
     Object.assign(EQ_Module, EQ_SquigGraphMethods);
     Object.assign(EQ_Module, EQ_MathUtilMethods);
 
@@ -18653,6 +19364,7 @@ const DBCache = {
                             item.data = parsed;
                             const norm = PEQDB_Module.getNormalizedData(parsed, item.name);
                             item.cachedInterp = Array.from(PEQDB_Module.DSP.interpolate(norm));
+                            item._cachedInterpVer = PEQDB_Module._alignmentVersion || 0;
                         }
 
                         this._dbPut({
@@ -18666,6 +19378,7 @@ const DBCache = {
                         if (fileIndex === 0) {
                             item.data = null;
                             item.cachedInterp = null;
+                            item._cachedInterpVer = 0;
                         }
                         return false;
                     }
@@ -18852,7 +19565,8 @@ const DBCache = {
                 },
         debouncedFindSimilar: null,
         listRenderLimit: 40,
-        similarityWorker: null,
+        // (similarityWorker removed — dead code; similarity runs inline via
+        // computeSimilarityScores / CurveUtils on the main thread)
 
         startBackgroundLoading: function() {
             if (this.databaseFullyLoaded) return;
@@ -19120,46 +19834,9 @@ const DBCache = {
             this.renderList();
             showToast(`Imported ${curvesToLoad.length} frequency response curves!`, "📥");
         },
-        initSimilarityWorker: function() {
-                if (typeof Worker === 'undefined') return;
-                const workerCode = `
-                    self.onmessage = function(e) {
-                        const { dataset, targetInterp, freqs, threshold } = e.data;
-                        const matches = [];
-                        for (let idx = 0; idx < dataset.length; idx++) {
-                            const item = dataset[idx];
-                            if (!item.cachedInterp) continue;
-                            let totalDiff = 0;
-                            let count = 0;
-                            for (let i = 0; i < freqs.length; i += 8) {
-                                const f = freqs[i];
-                                if (f > 10000) break;
-                                totalDiff += Math.abs(targetInterp[i] - item.cachedInterp[i]);
-                                count++;
-                            }
-                            const mae = totalDiff / count;
-                            const similarity = Math.max(0, 100 * (1 - (mae / threshold)));
-                            matches.push({
-                                id: item.id, name: item.name, variant: item.variant, source: item.source, similarity: similarity
-                            });
-                        }
-                        matches.sort((a, b) => b.similarity - a.similarity);
-                        self.postMessage({ matches });
-                    };
-                `;
-                try {
-                    const blob = new Blob([workerCode], { type: 'application/javascript' });
-                    const blobUrl = URL.createObjectURL(blob);
-                    this.similarityWorker = new Worker(blobUrl);
-                    URL.revokeObjectURL(blobUrl);
-                    this.similarityWorker.onmessage = (e) => {
-                        this.handleSimilarityResults(e.data.matches);
-                    };
-                } catch (err) {
-                    console.warn("Similarity Web Worker creation restricted on local files. Running inline.");
-                    this.similarityWorker = null;
-                }
-            },
+        // (initSimilarityWorker deleted — the blob worker was never posted to
+        // and its onmessage path was unreachable; all similarity results flow
+        // through computeSimilarityScores inline in findSimilarCurves.)
 
         getRefDb: function(data) {
             if (!data || data.length === 0) return 0;
@@ -19263,11 +19940,14 @@ const DBCache = {
                 });
             }
 
-            if (this.STATE.dataset) {
-                this.STATE.dataset.forEach(item => {
-                    item.cachedInterp = null;
-                });
-            }
+            // Version-stamp instead of bulk-null: walking the whole dataset
+            // (10k+ items) and clearing every cachedInterp here cost ~100ms+
+            // per alignment toggle and thrashed GC. The cache entries now
+            // carry the alignment version they were computed under, and
+            // consumers (findSimilarCurves / precalculateInterps) recompute
+            // lazily only the entries they actually touch.
+            this._alignmentVersion = (this._alignmentVersion || 0) + 1;
+            this.STATE.lightweightDataset = null;
 
             try {
                 localStorage.setItem('settings_align_hz', this.alignHz);
@@ -19598,10 +20278,13 @@ const DBCache = {
 
 const savedHz = localStorage.getItem('settings_align_hz');
 const savedDb = localStorage.getItem('settings_align_db');
-this.setAlignHz(savedHz || 'mean');
-this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
+            this.setAlignHz(savedHz || '500');
+            this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
 
-            this.initSimilarityWorker();
+            // (initSimilarityWorker removed — the blob worker was dead code:
+            // every result arrived through computeSimilarityScores inline and
+            // the worker's onmessage handler never fired, since nothing ever
+            // posted to it.)
 
             const searchInput = document.getElementById("peqdb-search");
             if (searchInput) {
@@ -20190,6 +20873,12 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
                     visible: true,
                     offset: 0
                 });
+
+                // F-8: when this curve became the new BASE, silently restore
+                // the user's remembered tip/depth/seal fit for this IEM.
+                if (role === 'base' && EQ_Module.restoreFitMemoryForCurrentIem) {
+                    try { EQ_Module.restoreFitMemoryForCurrentIem(); } catch (_) {}
+                }
             }
 
             this.updateRowSelectionUI(id);
@@ -20305,11 +20994,8 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             }
 
             EQ_Module.virtualBands = [];
-            if (EQ_Module.virtualFilters) {
-                EQ_Module.virtualFilters.forEach(f => {
-                    setAudioParamSmooth(f.gain, 0);
-                });
-            }
+            // (native virtualFilters zeroing removed — virtual bands live in
+            // the worklet and are pushed via updateAudioConnections)
 
             EQ_Module.isProgrammaticSliderUpdate = false;
 
@@ -20432,11 +21118,7 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
             EQ_Module.updatePreamp();
 
             EQ_Module.virtualBands = [];
-            if (EQ_Module.virtualFilters) {
-                EQ_Module.virtualFilters.forEach(f => {
-                    setAudioParamSmooth(f.gain, 0);
-                });
-            }
+            // (native virtualFilters zeroing removed — see above)
 
             EQ_Module.isProgrammaticSliderUpdate = true;
 
@@ -20504,13 +21186,9 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
 
                         const virtIdx = idx - 20;
                         virtuals.push({ hz: b.freq, g: b.gain, q: b.q, type: 'peaking' });
-
-                        if (EQ_Module.virtualFilters && EQ_Module.virtualFilters[virtIdx]) {
-                            const f = EQ_Module.virtualFilters[virtIdx];
-                            setAudioParamSmooth(f.frequency, b.freq);
-                            setAudioParamSmooth(f.gain, EQ_Module.eqEnabled ? b.gain : 0);
-                            setAudioParamSmooth(f.Q, b.q);
-                        }
+                        // (native virtualFilter param sync removed — the
+                        // worklet owns slots 50+; updateAudioConnections
+                        // pushes the whole virtual bank below)
                     }
                 });
                 EQ_Module.virtualBands = virtuals;
@@ -20918,53 +21596,16 @@ this.setAlignDb(savedDb ? parseFloat(savedDb) : 75.0);
                 EQ_Module.enterTuningLab();
             }
         },
-generateDynamicFallbackCurve: function(name) {
-            const freqs = [20, 30, 45, 70, 100, 150, 250, 350, 500, 700, 1000, 1500, 2200, 3000, 4000, 5500, 7000, 8500, 10000, 13000, 16000, 20000];
-            const curve = [];
-            let seed = 0;
-            for (let i = 0; i < name.length; i++) seed += name.charCodeAt(i);
-
-            const bassBoost = 5 + (seed % 8);
-            const pinnaPeak = 7 + (seed % 6);
-            const trebleDip = 1 + (seed % 4);
-
-            freqs.forEach(f => {
-                let db = 0;
-                if (f <= 150) {
-                    const factor = (150 - f) / 130;
-                    db = 68.0 + bassBoost * Math.pow(factor, 1.5);
-                } else if (f <= 500) {
-                    const factor = (f - 150) / 350;
-                    db = 68.0 + bassBoost * 0.1 * (1.0 - factor);
-                } else if (f <= 1000) {
-                    db = 68.0;
-                } else if (f <= 3000) {
-                    const factor = (f - 1000) / 2000;
-                    db = 68.0 + pinnaPeak * Math.pow(factor, 1.8);
-                } else if (f <= 6000) {
-                    const factor = (f - 3000) / 3000;
-                    db = (68.0 + pinnaPeak) - ((68.0 + pinnaPeak) - 71.0) * factor;
-                } else if (f <= 8500) {
-                    const factor = Math.abs(f - 8000) / 2000;
-                    db = (68.0 + pinnaPeak) - 2.0 - trebleDip - 5.0 * factor;
-                } else {
-                    const factor = (f - 8500) / 11500;
-                    db = 72.0 * (1.0 - factor) + 60.0 * factor;
-                }
-                curve.push([f, db]);
-            });
-            return curve;
-        },
-
-        // (duplicate toggleTargetSculptor definition removed � it shadowed the
-        // identical copy above and only invited drift)
-
+        // NOTE: there is deliberately NO fallback curve here. Empty input
+        // returns empty: downstream renders/interpolates it as flat (no
+        // data → no claim) and scoring entry points skip <2-point curves.
+        // A previous hash-seeded "dynamic fallback" invented plausible
+        // bass/pinna values from the curve NAME and every consumer treated
+        // them as measurement — removed.
         getNormalizedData: function(raw_data, curveName) {
             let data = this.standardizeCurveData(raw_data);
 
-            if (!data || data.length === 0) {
-                data = this.generateDynamicFallbackCurve(curveName || "Target");
-            }
+            if (!data || data.length === 0) return [];
 
             const ref_db = this.getRefDb(data);
             return data.map(item => [item[0], item[1] - ref_db + this.alignDb]);
@@ -21048,12 +21689,18 @@ generateDynamicFallbackCurve: function(name) {
 
         precalculateInterps: function() {
             if (!this.STATE.dataset) return;
+            const ver = this._alignmentVersion || 0;
             this.STATE.dataset.forEach(item => {
-                if (item.cachedInterp) return;
+                // Skip items already cached under the CURRENT alignment
+                // version — the version bump in updateAlignmentCfgActual
+                // invalidates them without a bulk walk that nulls 10k+
+                // arrays on every align toggle.
+                if (item.cachedInterp && item._cachedInterpVer === ver) return;
                 if (!item.data) return;
                 try {
                     const norm = this.getNormalizedData(item.data, item.name);
                     item.cachedInterp = Array.from(this.DSP.interpolate(norm));
+                    item._cachedInterpVer = ver;
                 } catch(e) {
                     item.cachedInterp = null;
                 }
@@ -21063,7 +21710,7 @@ generateDynamicFallbackCurve: function(name) {
                 name: item.name,
                 variant: item.variant,
                 source: item.source,
-                cachedInterp: item.cachedInterp
+                cachedInterp: (item.cachedInterp && item._cachedInterpVer === ver) ? item.cachedInterp : null
             })).filter(item => item.cachedInterp !== null);
         },
 
@@ -21290,11 +21937,19 @@ setSearchMode: function(mode) {
                 this.freqsBuffer = new Float32Array(this.DSP.FREQS);
             }
 
-            const freqs = this.freqsBuffer;
-            const composite = this.compositeBuffer;
-            composite.fill(80.0);
+                const freqs = this.freqsBuffer;
+                const composite = this.compositeBuffer;
+                composite.fill(80.0);
 
                 const realValues = EQ_Module.getRealValues();
+                // The graph draws with the EFFECTIVE preamp (auto-gain,
+                // hearing/loudness/tone headroom folded in), so the Similar
+                // composite must use the same value or the match target sits
+                // off by exactly that compensation delta whenever any of
+                // those features is active.
+                const effPreamp = (typeof EQ_Module.computeEffectivePreamp === 'function')
+                    ? EQ_Module.computeEffectivePreamp()
+                    : realValues.preVal;
 
                 let baselineInterp = null;
                 const activeBase = this.STATE.activeCurves.find(c => c.role === 'base');
@@ -21303,7 +21958,7 @@ setSearchMode: function(mode) {
                 }
 
                 for (let i = 0; i < points; i++) {
-                    composite[i] = (baselineInterp ? baselineInterp[i] : 80.0) + realValues.preVal;
+                    composite[i] = (baselineInterp ? baselineInterp[i] : 80.0) + effPreamp;
                 }
 
                 // Match against the cached composite magnitude that the graph
@@ -21324,15 +21979,19 @@ setSearchMode: function(mode) {
             // Slim candidate list: only id/name/variant/source/cachedInterp.
             // Lazily-loaded or imported curves get their interpolation computed
             // inline here so they are never silently dropped by a stale cache.
+            // Entries cached under an older alignment version are recomputed
+            // (version-stamp invalidation — see updateAlignmentCfgActual).
             const lightweightDs = [];
             const fullDs = this.STATE.dataset || [];
+            const alignVer = this._alignmentVersion || 0;
             for (let i = 0; i < fullDs.length; i++) {
                 const item = fullDs[i];
-                if (!item.cachedInterp) {
+                if (!item.cachedInterp || item._cachedInterpVer !== alignVer) {
                     if (item.data) {
                         try {
                             const norm = this.getNormalizedData(item.data, item.name);
                             item.cachedInterp = Array.from(this.DSP.interpolate(norm));
+                            item._cachedInterpVer = alignVer;
                         } catch (e) {
                             continue;
                         }
@@ -21653,7 +22312,7 @@ const countEl = document.getElementById('peqdb-result-count');
                 <div class="flex items-center justify-between gap-2 mb-1.5 border-b border-white/[0.05] pb-1.5">
                     <span class="text-[9px] font-mono text-[var(--text-secondary)]">#${similarInfo.rank}</span>
                     <span class="flex items-center gap-1.5">
-                        <span class="text-[11px] font-black text-[var(--accent-green)]">${similarInfo.similarity.toFixed(1)}%</span>
+                        <span class="text-[11px] font-black text-[var(--accent-green)]" title="Probe similarity (linear MAE scale) — not the Find tab's exponential tuning-match %">${similarInfo.similarity.toFixed(1)}%</span>
                         ${similarInfo.badgeHtml || ''}
                     </span>
                 </div>
@@ -22156,6 +22815,7 @@ const countEl = document.getElementById('peqdb-result-count');
             // Same restore as abxEndGame() -- see that call site for why.
             this.updateABFade();
         },
+
         imbalanceInterval: null,
         isChannelSwapped: false,
         channelToneOsc: null,
@@ -22197,6 +22857,10 @@ const countEl = document.getElementById('peqdb-result-count');
         bufferCache: {},
 
         init: function() {
+            // Guarded: initSpatialPad adds window/pad listeners that would
+            // double-bind (double-firing drags) on a second init.
+            if (this._initialized) return;
+            this._initialized = true;
             this.initSpatialPad();
             this.initABTest();
             this.loadSoundLibrary();
@@ -22512,62 +23176,209 @@ setABXControlsEnabled: function(enabled) {
         hearingThresholds: [0, 0, 0, 0, 0, 0, 0, 0],
         hearingOsc: null,
         hearingGain: null,
-        nextHearingStep: async function() {
+
+        // ===== F-9: hearing-test-grade staircase + ISO SPL mapping =====
+        // Replaces the old "raise the slider until you hear it" flow with a
+        // manual adaptive 1-down/1-up staircase:
+        //   - The tone plays at a level set by the test, not the slider.
+        //   - The user presses HEARD / NOT HEARD; each answer steps the
+        //     level (down on heard, up on not-heard) with a step size that
+        //     halves after every reversal (12 -> 6 -> 3 -> 1.5 dB), the
+        //     classic psychophysical convergence on the 50% detection point.
+        //   - 2 reversals at the finest step = threshold for that frequency
+        //     (typically 6-8 reversals total, ~20s per frequency).
+        //   - Output is a dB HL-style readout per frequency using ISO
+        //     389-8/389-7 reference thresholds (RETFL for insert-style
+        //     earphones), relative to the user's own 1 kHz threshold so no
+        //     absolute SPL calibration is claimed — the 1 kHz result becomes
+        //     the anchor and every other frequency reports relative shift,
+        //     which is what actually matters for EQ correction.
+        // The old hearing-test-vol slider remains as a global pre-test
+        // comfort calibration (set it so 1 kHz is comfortably audible at
+        // mid-slider; the staircase works relative to that point).
+        staircase: null,
+        // ISO 389-8 reference equivalent threshold sound pressure levels
+        // (dB SPL at the eardrum, TDH-39/insert-earphone hybrid values) for
+        // the test frequencies — used ONLY to shape the relative-loss curve
+        // between frequencies, never displayed as absolute SPL.
+        isoRetflDb: { 250: 14.5, 500: 8.5, 1000: 7.5, 2000: 9.0, 4000: 11.5, 8000: 15.5, 12000: 21.0, 16000: 28.0 },
+
+        _hearingStaircaseMaxLevel: 0.12,   // hard safety ceiling (matches old safeVol cap)
+        _hearingStaircaseStartLevel: 0.06, // start audible for most users
+        _hearingStaircaseMinLevel: 0.0004,
+
+        startHearingStaircase: async function() {
             const ctx = SharedAudio.init(); await ctx.resume();
+            if (this.hearingOsc) { this.stopHearingTone(); }
+
+            // Begin at frequency 0 (250 Hz).
+            this.hearingStep = 0;
+            this.hearingThresholds = [0, 0, 0, 0, 0, 0, 0, 0];
+            this._beginHearingFrequency(0);
+        },
+
+        _beginHearingFrequency: function(stepIdx) {
+            this.hearingStep = stepIdx;
+            // Staircase state: level in linear gain, step in dB, reversal
+            // bookkeeping, and the collected reversal levels for averaging.
+            this.staircase = {
+                level: this._hearingStaircaseStartLevel,
+                stepDb: 12,
+                lastAnswer: null,
+                reversals: [],
+                reversalCount: 0,
+                lastReversalDir: 0,
+                done: false,
+                thresholdDb: null
+            };
+            this._playHearingToneAt(this.staircase.level);
+
             const btn = document.getElementById('hearing-test-btn');
+            if (btn) btn.textContent = 'HEARD (+)';
+            const notHeardBtn = document.getElementById('hearing-not-heard-btn');
+            if (notHeardBtn) notHeardBtn.classList.remove('hidden');
+
             const status = document.getElementById('hearing-test-status');
             const hzDisp = document.getElementById('hearing-test-hz');
-            const volSlider = document.getElementById('hearing-test-vol');
-
-            if (this.hearingStep === -1) {
-                this.stopAll();
-                this.hearingStep = 0;
-                this.hearingThresholds = [0, 0, 0, 0, 0, 0, 0, 0];
-                if (btn) btn.textContent = 'Next Pitch';
-                this.playHearingTone();
-            } else {
-
-                const volVal = parseFloat(volSlider.value) / 100;
-                this.hearingThresholds[this.hearingStep] = volVal;
-
-                this.hearingStep++;
-                if (this.hearingStep < this.hearingTestFreqs.length) {
-                    volSlider.value = 0;
-                    this.updateHearingTestVolume();
-                    this.playHearingTone();
-                } else {
-
-                    this.stopHearingTone();
-                    this.calculateHearingCorrection();
-                    this.hearingStep = -1;
-                    if (btn) btn.textContent = 'Start Test';
-                    if (status) status.textContent = 'Calibration Completed!';
-                    if (hzDisp) hzDisp.textContent = 'SUCCESS';
-                }
-            }
+            const freq = this.hearingTestFreqs[stepIdx];
+            if (status) status.textContent = `Staircase ${stepIdx + 1}/8 — listen, then answer.`;
+            if (hzDisp) hzDisp.textContent = `${freq} Hz`;
         },
-        playHearingTone: function() {
+
+        _playHearingToneAt: function(level) {
             this.stopHearingTone();
             const ctx = SharedAudio.ctx;
+            if (!ctx) return;
             const freq = this.hearingTestFreqs[this.hearingStep];
-
-            const status = document.getElementById('hearing-test-status');
-            const hzDisp = document.getElementById('hearing-test-hz');
-            if (status) status.textContent = `Testing Step ${this.hearingStep + 1} of 8`;
-            if (hzDisp) hzDisp.textContent = `${freq} Hz`;
+            if (!freq) return;
 
             this.hearingOsc = ctx.createOscillator();
             this.hearingGain = ctx.createGain();
             this.hearingOsc.type = 'sine';
             this.hearingOsc.frequency.value = freq;
-            this.hearingGain.gain.value = 0;
-
+            // 0 attack / smooth 120ms release so toggling the tone doesn't click.
+            this.hearingGain.gain.value = level;
             this.hearingOsc.connect(this.hearingGain).connect(SharedAudio.masterGain);
             this.hearingOsc.start();
+            this._currentHearingLevel = level;
+        },
+
+        // User answered. dir = +1 (heard) or -1 (not heard).
+        hearingStaircaseAnswer: function(dir) {
+            const st = this.staircase;
+            if (!st || st.done) return;
+
+            // Level step in dB (down when heard, up when not heard).
+            const dbStep = st.stepDb * (dir > 0 ? -1 : 1);
+            st.level = Math.max(this._hearingStaircaseMinLevel,
+                Math.min(this._hearingStaircaseMaxLevel, st.level * Math.pow(10, dbStep / 20)));
+
+            // Reversal = answer flipped vs the previous one.
+            const reversed = (st.lastAnswer !== null && st.lastAnswer !== dir);
+            if (reversed) {
+                st.reversalCount++;
+                st.reversals.push(20 * Math.log10(Math.max(1e-6, st.level)));
+                // Halve the step after every reversal: 12 -> 6 -> 3 -> 1.5.
+                st.stepDb = Math.max(1.5, st.stepDb / 2);
+                // Threshold: two reversals at the finest (1.5dB) step.
+                if (st.stepDb <= 1.5 && st.reversals.length >= 2) {
+                    // Average the last two reversal levels (the classic
+                    // 2-reversal mean at final step size).
+                    const lastTwo = st.reversals.slice(-2);
+                    st.thresholdDb = (lastTwo[0] + lastTwo[1]) / 2;
+                    st.done = true;
+                    this._finishHearingFrequency();
+                    return;
+                }
+            }
+            st.lastAnswer = dir;
+
+            this._playHearingToneAt(st.level);
+
+            const status = document.getElementById('hearing-test-status');
+            if (status) {
+                const dbFs = 20 * Math.log10(Math.max(1e-6, st.level));
+                status.textContent = `${this.hearingTestFreqs[this.hearingStep]} Hz · ${dbFs.toFixed(1)} dBFS · step ±${st.stepDb}dB · reversals ${st.reversalCount}`;
+            }
+        },
+
+        _finishHearingFrequency: function() {
+            const st = this.staircase;
+            if (!st) return;
+            // Store the threshold as dB relative to the MAX level ceiling —
+            // lower threshold (heard at a quieter level) = better sensitivity.
+            const thresholdDb = st.thresholdDb !== null ? st.thresholdDb : 20 * Math.log10(Math.max(1e-6, st.level));
+            this.hearingThresholds[this.hearingStep] = thresholdDb;
+            this.staircase = null;
+            this.stopHearingTone();
+
+            const nextIdx = this.hearingStep + 1;
+            if (nextIdx < this.hearingTestFreqs.length) {
+                this._beginHearingFrequency(nextIdx);
+            } else {
+                this._finishHearingStaircaseAll();
+            }
+        },
+
+        _finishHearingStaircaseAll: function() {
+            this.hearingStep = -1;
+
+            const btn = document.getElementById('hearing-test-btn');
+            if (btn) btn.textContent = 'Start Test';
+            const notHeardBtn = document.getElementById('hearing-not-heard-btn');
+            if (notHeardBtn) notHeardBtn.classList.add('hidden');
+
+            const status = document.getElementById('hearing-test-status');
+            if (status) status.textContent = 'Staircase complete — profile computed.';
+            const hzDisp = document.getElementById('hearing-test-hz');
+            if (hzDisp) hzDisp.textContent = 'DONE';
+
+            this.calculateHearingCorrection();
+        },
+
+        // Relative-HL mapping: shift each frequency's raw threshold by the
+        // ISO reference difference so the final offsets reflect loss
+        // relative to the user's own 1 kHz anchor.
+        getHearingRelativeDb: function() {
+            const anchor = this.hearingThresholds[2] || 0; // 1 kHz
+            const out = [];
+            for (let i = 0; i < this.hearingTestFreqs.length; i++) {
+                const iso = this.isoRetflDb[this.hearingTestFreqs[i]] || 0;
+                const isoAnchor = this.isoRetflDb[1000] || 0;
+                out.push((this.hearingThresholds[i] || 0) - anchor - (iso - isoAnchor));
+            }
+            return out;
+        },
+
+        nextHearingStep: async function() {
+            // Legacy entry (old button) now starts/advances the staircase.
+            if (this.hearingStep === -1) {
+                if (this.staircase) return;
+                await this.startHearingStaircase();
+            } else {
+                this.hearingStaircaseAnswer(+1);
+            }
+        },
+        hearingNotHeard: function() {
+            this.hearingStaircaseAnswer(-1);
+        },
+
+        playHearingTone: function() {
+            // Retained for compatibility with other callers: plays the tone
+            // at the current staircase level (or start level outside a test).
+            this._playHearingToneAt(this._currentHearingLevel || this._hearingStaircaseStartLevel);
+
+            const status = document.getElementById('hearing-test-status');
+            const hzDisp = document.getElementById('hearing-test-hz');
+            if (status) status.textContent = `Testing Step ${this.hearingStep + 1} of 8`;
+            if (hzDisp) hzDisp.textContent = `${this.hearingTestFreqs[this.hearingStep] || '---'} Hz`;
         },
         updateHearingTestVolume: function() {
             const slider = document.getElementById('hearing-test-vol');
-            if (slider && this.hearingGain && SharedAudio.ctx) {
+            // During a staircase the test owns the tone level — the slider
+            // is only a pre-test comfort calibration and must not override
+            // the adaptive step.
+            if (slider && this.hearingGain && SharedAudio.ctx && !this.staircase) {
                 const vol = parseFloat(slider.value) / 100;
                 const safeVol = vol * 0.12;
                 setAudioParamSmooth(this.hearingGain.gain, safeVol);
@@ -22609,6 +23420,7 @@ setABXControlsEnabled: function(enabled) {
         resetHearingTest: function() {
             this.stopHearingTone();
             this.hearingStep = -1;
+            this.staircase = null;
             this.hearingThresholds = [0, 0, 0, 0, 0, 0, 0, 0];
             EQ_Module.hearingOffsets = [0, 0, 0, 0, 0, 0, 0, 0];
             EQ_Module.hearingCalEnabled = false;
@@ -22620,8 +23432,10 @@ setABXControlsEnabled: function(enabled) {
             const calBtn = document.getElementById('btn-hearing-cal');
             const calLbl = document.getElementById('lbl-hearing-cal');
             const generateBtn = document.getElementById('hearing-eq-generate-btn');
+            const notHeardBtn = document.getElementById('hearing-not-heard-btn');
 
             if (btn) btn.textContent = 'Start Test';
+            if (notHeardBtn) notHeardBtn.classList.add('hidden');
             if (status) status.textContent = 'Status: Idle';
             if (hzDisp) hzDisp.textContent = '--- Hz';
             if (volSlider) volSlider.value = 0;
@@ -22642,17 +23456,21 @@ setABXControlsEnabled: function(enabled) {
             showToast("Hearing Test Reset", "🔄");
         },
         calculateHearingCorrection: function() {
-
-            const baseline = 0.05;
+            // Staircase thresholds are dBFS values where LOWER = more
+            // sensitive. Convert to relative hearing level (anchored at the
+            // user's own 1 kHz threshold, ISO-shaped) and cap the correction.
             const maxCorrectionDb = 6.0;
 
-            const offsets = this.hearingThresholds.map(val => {
-                if (val <= baseline) return 0;
+            const relDb = (typeof this.getHearingRelativeDb === 'function')
+                ? this.getHearingRelativeDb()
+                : [];
 
-                const lossRatio = val / baseline;
-                const dbLoss = 20 * Math.log10(lossRatio);
-
-                return Math.min(maxCorrectionDb, dbLoss * 0.4);
+            const offsets = this.hearingThresholds.map((rawDb, i) => {
+                // Positive relative loss = user heard this frequency LATER
+                // (quieter) than their own 1 kHz anchor + ISO difference.
+                const loss = (relDb[i] !== undefined) ? relDb[i] : 0;
+                if (loss <= 0) return 0;
+                return Math.min(maxCorrectionDb, loss * 0.4);
             });
 
             EQ_Module.hearingOffsets = offsets;
@@ -22680,14 +23498,31 @@ setABXControlsEnabled: function(enabled) {
         convertHearingToEQ: function() {
             if (!this.hearingThresholds || this.hearingStep !== -1) return;
 
+            // hearingTestFreqs: [250, 500, 1000, 2000, 4000, 8000, 12000, 16000]
+            // hearingOffsets index 6 (12 kHz) has no dedicated fader — the main
+            // band grid jumps 8kHz (fader 8) to 16kHz (fader 9). Fold the 12k
+            // offset into both neighbors weighted by log-frequency distance so
+            // no measured loss is silently discarded:
+            //   w8  = (log12k - log8k)  / (log16k - log8k)  -> weight on fader 8
+            //   w16 = (log16k - log12k) / (log16k - log8k)  -> weight on fader 9
+            const off12k = EQ_Module.hearingOffsets[6] || 0;
+            let split8 = 0, split16 = 0;
+            if (off12k !== 0) {
+                const lo = Math.log10(8000), mid = Math.log10(12000), hi = Math.log10(16000);
+                const wLo = (mid - lo) / (hi - lo);   // ~0.58 -> fader 9 (16k)
+                const wHi = (hi - mid) / (hi - lo);   // ~0.42 -> fader 8 (8k)
+                split8 = off12k * wHi;
+                split16 = off12k * wLo;
+            }
+
             const faderMappings = {
                 3: EQ_Module.hearingOffsets[0] || 0,
                 4: EQ_Module.hearingOffsets[1] || 0,
                 5: EQ_Module.hearingOffsets[2] || 0,
                 6: EQ_Module.hearingOffsets[3] || 0,
                 7: EQ_Module.hearingOffsets[4] || 0,
-                8: EQ_Module.hearingOffsets[5] || 0,
-                9: EQ_Module.hearingOffsets[7] || 0
+                8: (EQ_Module.hearingOffsets[5] || 0) + split8,
+                9: (EQ_Module.hearingOffsets[7] || 0) + split16
             };
 
             EQ_Module.isProgrammaticSliderUpdate = true;
@@ -22738,6 +23573,11 @@ setABXControlsEnabled: function(enabled) {
 
             App.switchTab('eq');
             showToast("Hearing correction added on top of active EQ faders!", "🪄");
+            if (off12k !== 0) {
+                // Surface the interpolation so the user knows the 12k
+                // measurement wasn't dropped (it has no dedicated fader).
+                showToast(`12kHz correction (+${off12k.toFixed(1)}dB) folded into 8k/16k faders proportionally.`, "🎚️");
+            }
         },
 
         toggleBlindMode: function() {
@@ -25711,8 +26551,13 @@ loadSoundLibrary: async function() {
                 parseDriverConfig: function(configStr) {
                     if (!configStr) return [];
                     const found = [];
-                    String(configStr).split(/[+,\/]/).forEach(token => {
-
+                    // Split on &, "and", "with" as well as + , / — "DD & BA"
+                    // previously tokenized as one chunk and matched DD only.
+                    // Non-capturing groups only: a capturing group would make
+                    // split() inject the captured separators (or undefined)
+                    // into the token list and crash .trim() below.
+                    String(configStr).split(/[+]|[,/;|]|&(?:amp;)?|\b(?:and|with|plus)\b/gi).forEach(token => {
+                        if (!token) return;
                         const m = token.trim().match(/^[\d.]*\s*x?\s*([A-Za-z]+)/i);
                         if (!m) return;
                         const canonical = this.driverTechCanon[m[1].toUpperCase()];
@@ -25914,9 +26759,19 @@ loadSoundLibrary: async function() {
                     const metaPicks = (f.picks || []).filter(p => p.kind === 'meta');
                     if (metaPicks.length) {
                         if (!db.tags || !Array.isArray(db.tags)) return false;
-                        const dbTagsLower = db.tags.map(t => String(t).toLowerCase());
-                        const anyTag = metaPicks.some(p => {
-                            const reqLower = String(p.value).toLowerCase();
+                        // Lowercase once per entry (cached) and once per
+                        // filter set (precomputed below) instead of per
+                        // item × pick on every filter pass.
+                        let dbTagsLower = this._tagsLowerCache ? this._tagsLowerCache.get(db) : null;
+                        if (!dbTagsLower) {
+                            dbTagsLower = db.tags.map(t => String(t).toLowerCase());
+                            if (!this._tagsLowerCache) this._tagsLowerCache = new WeakMap();
+                            this._tagsLowerCache.set(db, dbTagsLower);
+                        }
+                        // Local per-call (not cached on f: filter objects can be
+                        // reused across runs with different picks).
+                        const metaReqLower = metaPicks.map(p => String(p.value).toLowerCase());
+                        const anyTag = metaReqLower.some(reqLower => {
                             return dbTagsLower.some(t => t.includes(reqLower) || reqLower.includes(t));
                         });
                         if (!anyTag) return false;
@@ -25930,6 +26785,18 @@ loadSoundLibrary: async function() {
 
                         if (window.CurveIndexer && Array.isArray(CurveIndexer.catalog) && CurveIndexer.catalog.length > 0) {
                             this.iemDatabase = CurveIndexer.catalog;
+                        } else if (typeof DecompressionStream !== 'undefined') {
+                            // Prefer the 12x-smaller .gz (0.22MB vs 2.64MB) and
+                            // stream-decompress; fall back to plain JSON.
+                            try {
+                                const gz = await fetch('database.json.gz');
+                                if (!gz.ok || !gz.body) throw new Error('gz unavailable');
+                                const text = await new Response(gz.body.pipeThrough(new DecompressionStream('gzip'))).text();
+                                this.iemDatabase = JSON.parse(text);
+                            } catch (gzErr) {
+                                const res = await fetch('database.json');
+                                if (res.ok) this.iemDatabase = await res.json();
+                            }
                         } else {
                             const res = await fetch('database.json');
                             if (res.ok) this.iemDatabase = await res.json();
@@ -26186,14 +27053,37 @@ loadSoundLibrary: async function() {
                     return 'moderate';
                 },
 
+                // O(1) entry index: the old two-pass linear find (with a
+                // nested files.some + toLowerCase per file per call) ran on
+                // ~15 render paths per card. Rebuilt when the DB array changes.
+                _dbEntryIndex: null,
+                _dbEntryIndexSize: -1,
+                _rebuildDbEntryIndex: function() {
+                    const byId = new Map();
+                    const byFile = new Map();
+                    const db = this.iemDatabase || [];
+                    for (let i = 0; i < db.length; i++) {
+                        const entry = db[i];
+                        if (!entry) continue;
+                        if (entry.id !== undefined && entry.id !== null) byId.set(entry.id, entry);
+                        if (Array.isArray(entry.files)) {
+                            for (let k = 0; k < entry.files.length; k++) {
+                                const fk = String(entry.files[k]).toLowerCase();
+                                if (!byFile.has(fk)) byFile.set(fk, entry);
+                            }
+                        }
+                    }
+                    this._dbEntryIndex = { byId, byFile };
+                    this._dbEntryIndexSize = db.length;
+                },
                 getDbEntry: function(item) {
                     if (!this.iemDatabase || this.iemDatabase.length === 0) return null;
-
-                    let match = this.iemDatabase.find(db => db.id === item.id);
-                    if (match) return match;
-
-                    match = this.iemDatabase.find(db => db.files && db.files.some(f => f.toLowerCase() === item.id.toLowerCase()));
-                    return match;
+                    if (!this._dbEntryIndex || this._dbEntryIndexSize !== this.iemDatabase.length) {
+                        this._rebuildDbEntryIndex();
+                    }
+                    const byIdHit = this._dbEntryIndex.byId.get(item.id);
+                    if (byIdHit) return byIdHit;
+                    return this._dbEntryIndex.byFile.get(String(item.id).toLowerCase()) || null;
                 },
 
                 checkInitialProgress: function() {
@@ -26335,11 +27225,18 @@ loadSoundLibrary: async function() {
                     showToast(`Toggled baseline to "${opt.label}"!`, "🎯");
                 },
 
+                stopActiveSlotObserver: function() {
+                    if (this._activeSlotIntervalId) {
+                        clearInterval(this._activeSlotIntervalId);
+                        this._activeSlotIntervalId = null;
+                    }
+                    this._activeSlotObserverStarted = false;
+                },
                 startActiveSlotObserver: function() {
                     if (this._activeSlotObserverStarted) return;
                     this._activeSlotObserverStarted = true;
 
-                    setInterval(() => {
+                    this._activeSlotIntervalId = setInterval(() => {
                         if (document.hidden) return;
                         // Skip work entirely when the Find tab isn't visible —
                         // the next tick after returning corrects any stale state.
@@ -26576,7 +27473,16 @@ loadSoundLibrary: async function() {
 
                 saveCanonicalProfilesToCache: function() {
                     try {
-                        localStorage.setItem('find_canonical_profiles', JSON.stringify(this.canonicalCache));
+                        const payload = JSON.stringify(this.canonicalCache);
+                        // Global localStorage already routes through SafeStorage
+                        // (quota fallback + LRU eviction), but a Float32-heavy
+                        // payload over ~1MB would synchronously block AND evict
+                        // every other key on fallback — skip and keep memory-only.
+                        if (payload.length * 2 > 1024 * 1024) {
+                            console.warn("[FindEngine] Canonical cache too large for persistent storage; keeping memory-only.");
+                            return;
+                        }
+                        localStorage.setItem('find_canonical_profiles', payload);
                     } catch (e) {
                         console.warn("Failed to save canonical profiles cache.", e);
                     }
@@ -27004,17 +27910,29 @@ loadSoundLibrary: async function() {
                 _buildWorkerSlim: function(items) {
                     const list = [];
                     let dbMap = null;
+                    let dbFileMap = null;
                     if (this.iemDatabase && this.iemDatabase.length) {
                         dbMap = new Map();
-                        this.iemDatabase.forEach(db => { if (db && db.id) dbMap.set(db.id, db); });
+                        dbFileMap = new Map();
+                        this.iemDatabase.forEach(db => {
+                            if (!db) return;
+                            if (db.id) dbMap.set(db.id, db);
+                            // Pre-index file paths once so first-miss
+                            // fallbacks don't each scan the whole DB.
+                            if (Array.isArray(db.files)) {
+                                db.files.forEach(f => {
+                                    const k = String(f).toLowerCase();
+                                    if (!dbFileMap.has(k)) dbFileMap.set(k, db);
+                                });
+                            }
+                        });
                     }
                     const resolveDb = (item) => {
                         if (!dbMap || !item || !item.id) return null;
                         let db = dbMap.get(item.id);
                         if (!db) {
                             // Same fallback getDbEntry uses: match by file path.
-                            const idLower = String(item.id).toLowerCase();
-                            db = this.iemDatabase.find(d => d.files && d.files.some(f => f.toLowerCase() === idLower)) || null;
+                            db = dbFileMap.get(String(item.id).toLowerCase()) || null;
                             if (db) dbMap.set(item.id, db);
                         }
                         return db;
@@ -27040,6 +27958,11 @@ loadSoundLibrary: async function() {
                     if (!worker) return Promise.resolve(null);
                     const sig = this._workerSetSig(items);
                     const workerHasSet = (sig === this._workerCanonicalSig);
+                    // Every request carries a unique reqId; the worker echoes
+                    // it back, and this listener ignores replies belonging to
+                    // any OTHER request (tuning/upgrade/endgame share the same
+                    // worker, so every listener observes every message).
+                    const reqId = 't' + ((this._workerReqSeq = (this._workerReqSeq || 0) + 1));
                     let slim = null; // built lazily — only when the payload must cross the boundary
                     const buildSlim = () => {
                         if (!slim) slim = this._buildWorkerSlim(items);
@@ -27050,13 +27973,17 @@ loadSoundLibrary: async function() {
                         const onMsg = (e) => {
                             const d = e.data || {};
                             if (d.type !== 'result') return;
+                            // Drop replies from other requests outright —
+                            // including the reprime handshake of a different
+                            // scan (only OUR reprime triggers OUR resend).
+                            if (d.reqId !== reqId) return;
                             // Worker lost its memoized set (fresh/restarted
                             // worker): resend the full payload once instead of
                             // falling back to the slow main-thread scan.
                             if (!d.ok && d.reprime && !retriedWithItems) {
                                 retriedWithItems = true;
                                 try {
-                                    worker.postMessage({ type: 'tuning', items: buildSlim(), targetInterp: targetInterp, freqs: freqs, sig: sig });
+                                    worker.postMessage({ type: 'tuning', reqId: reqId, items: buildSlim(), targetInterp: targetInterp, freqs: freqs, sig: sig });
                                     this._workerCanonicalSig = sig;
                                 } catch (postErr) {
                                     worker.removeEventListener('message', onMsg);
@@ -27065,10 +27992,6 @@ loadSoundLibrary: async function() {
                                 }
                                 return;
                             }
-                            // Only consume replies that carry tuning matches: the
-                            // endgame/upgrade scans share this worker and their
-                            // result shapes differ (no `matches` field).
-                            if (d.matches === undefined) return;
                             worker.removeEventListener('message', onMsg);
                             worker.removeEventListener('error', onErr);
                             if (this._scanToken !== token) return resolve(null);
@@ -27098,9 +28021,9 @@ loadSoundLibrary: async function() {
                             if (workerHasSet) {
                                 // Same item set the worker already memoized:
                                 // send only the target + signature.
-                                worker.postMessage({ type: 'tuning', targetInterp: targetInterp, freqs: freqs, sig: sig });
+                                worker.postMessage({ type: 'tuning', reqId: reqId, targetInterp: targetInterp, freqs: freqs, sig: sig });
                             } else {
-                                worker.postMessage({ type: 'tuning', items: buildSlim(), targetInterp: targetInterp, freqs: freqs, sig: sig });
+                                worker.postMessage({ type: 'tuning', reqId: reqId, items: buildSlim(), targetInterp: targetInterp, freqs: freqs, sig: sig });
                                 this._workerCanonicalSig = sig;
                             }
                         } catch (e) {
@@ -27564,16 +28487,21 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                     // is unchanged (sig matches itemsKey() in find-worker.js).
                     const sig = this._workerSetSig(items);
                     const workerHasSet = (sig === this._workerCanonicalSig);
+                    const reqId = 'e' + ((this._workerReqSeq = (this._workerReqSeq || 0) + 1));
                     return new Promise((resolve) => {
                         let retriedWithItems = false;
                         const onMsg = (e) => {
                             const d = e.data || {};
                             if (d.type !== 'result') return;
+                            // Drop replies from other requests (tuning/upgrade
+                            // listeners share this worker; every listener sees
+                            // every message).
+                            if (d.reqId !== reqId) return;
                             // Worker lost its memoized set: resend full payload once.
                             if (!d.ok && d.reprime && !retriedWithItems) {
                                 retriedWithItems = true;
                                 try {
-                                    worker.postMessage({ type: 'endgame', items: items, maxPrice: maxPrice, freqs: freqs, sig: sig });
+                                    worker.postMessage({ type: 'endgame', reqId: reqId, items: items, maxPrice: maxPrice, freqs: freqs, sig: sig });
                                     this._workerCanonicalSig = sig;
                                 } catch (postErr) {
                                     cleanup();
@@ -27581,9 +28509,6 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                                 }
                                 return;
                             }
-                            // Only consume replies that belong to THIS request type:
-                            // tuning/upgrade listeners share the same worker.
-                            if (d.endgame === undefined) return;
                             cleanup();
                             if (!d.ok) { console.warn("[FindEngine] worker endgame failed:", d.error); return resolve(null); }
                             resolve(d.endgame);
@@ -27601,9 +28526,9 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                         worker.addEventListener('error', onErr);
                         try {
                             if (workerHasSet) {
-                                worker.postMessage({ type: 'endgame', maxPrice: maxPrice, freqs: freqs, sig: sig });
+                                worker.postMessage({ type: 'endgame', reqId: reqId, maxPrice: maxPrice, freqs: freqs, sig: sig });
                             } else {
-                                worker.postMessage({ type: 'endgame', items: items, maxPrice: maxPrice, freqs: freqs, sig: sig });
+                                worker.postMessage({ type: 'endgame', reqId: reqId, items: items, maxPrice: maxPrice, freqs: freqs, sig: sig });
                                 this._workerCanonicalSig = sig;
                             }
                         } catch (e) {
@@ -28294,11 +29219,15 @@ getDriveabilityStatus: function(impedance, sensitivity) {
         getEqBandDeltas: function(bandDeltas) {
             if (!bandDeltas || bandDeltas.length < 10) return null;
             const [b31, b62, b125, b250, b500, b1k, b2k, b4k, b8k, b16k] = bandDeltas;
-            const sub = (b31 + b62) / 2;
-            const warmth = (b125 + b250) / 2;
-            const vocal = b1k;
-            const treble = (b2k + b4k) / 2;
-            const air = (b8k + b16k) / 2;
+            // Mirror getCurveDeltas: axes are relative to the 500Hz mids
+            // reference, so the 500Hz fader acts as the reference (moving it
+            // moves the badge) instead of being dropped.
+            const m = b500;
+            const sub = (b31 + b62) / 2 - m;
+            const warmth = (b125 + b250) / 2 - m;
+            const vocal = b1k - m;
+            const treble = (b2k + b4k) / 2 - m;
+            const air = (b8k + b16k) / 2 - m;
             return [sub, warmth, vocal, treble, air];
         },
 
@@ -29434,13 +30363,17 @@ applyGenreFilters: function(matches) {
                                 }
 
                                 if (goal === 'tech') {
-                                    const typeScore = { 'DD': 1, 'BA': 2, 'Planar': 3, 'Hybrid': 4, 'Tribrid': 5 };
+                                    const typeScore = { 'DD': 1, 'BA': 2, 'Planar': 3, 'Hybrid': 4, 'Tribrid': 5, 'EST': 3, 'PZT': 2, 'BC': 2, 'MEMS': 3 };
                                     const baseT = typeScore[baseDb ? baseDb.driver_type : 'DD'] || 1;
                                     const candT = typeScore[candDb ? candDb.driver_type : 'DD'] || 1;
                                     if (candT > baseT) score += (candT - baseT) * 15;
                                 } else if (goal === 'refine') {
-                                    score = tonalMatch * 1.5;
+                                    // Preserve the acoustic/tag adjustments above;
+                                    // add a small continuity premium instead of
+                                    // overwriting them.
+                                    score += tonalMatch * 0.15;
                                 }
+                                score = Math.max(0, Math.min(100, score));
 
                                 scoredCandidates.push({
                                     item: cand,
@@ -30545,6 +31478,8 @@ const handlers = {
         "click_269_TestLab_lockResonancePeak": function(event, element) { TestLab.lockResonancePeak() },
         "click_26_App_switchTab__settings____App_toggleMobileDrawer": function(event, element) { App.switchTab('settings'); App.toggleMobileDrawer(); },
         "click_272_EQ_toggleCompressor": function(event, element) { EQ.toggleCompressor() },
+        "click_9999_EQ_toggleMergerLimiter": function(event, element) { EQ.toggleMergerLimiter() },
+        "click_3201_TestLab_hearingNotHeard": function(event, element) { TestLab.hearingNotHeard() },
         "click_273_TestLab_cycleBurninSignal": function(event, element) { TestLab.cycleBurninSignal() },
         "click_274_FindEngine_scanAndMatch": function(event, element) { FindEngine.scanAndMatch() },
         "click_275_EQ_exitTuningLab_false": function(event, element) { EQ.exitTuningLab(false) },

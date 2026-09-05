@@ -368,6 +368,7 @@
             // Same restore as abxEndGame() -- see that call site for why.
             this.updateABFade();
         },
+
         imbalanceInterval: null,
         isChannelSwapped: false,
         channelToneOsc: null,
@@ -409,6 +410,10 @@
         bufferCache: {},
 
         init: function() {
+            // Guarded: initSpatialPad adds window/pad listeners that would
+            // double-bind (double-firing drags) on a second init.
+            if (this._initialized) return;
+            this._initialized = true;
             this.initSpatialPad();
             this.initABTest();
             this.loadSoundLibrary();
@@ -724,62 +729,209 @@ setABXControlsEnabled: function(enabled) {
         hearingThresholds: [0, 0, 0, 0, 0, 0, 0, 0],
         hearingOsc: null,
         hearingGain: null,
-        nextHearingStep: async function() {
+
+        // ===== F-9: hearing-test-grade staircase + ISO SPL mapping =====
+        // Replaces the old "raise the slider until you hear it" flow with a
+        // manual adaptive 1-down/1-up staircase:
+        //   - The tone plays at a level set by the test, not the slider.
+        //   - The user presses HEARD / NOT HEARD; each answer steps the
+        //     level (down on heard, up on not-heard) with a step size that
+        //     halves after every reversal (12 -> 6 -> 3 -> 1.5 dB), the
+        //     classic psychophysical convergence on the 50% detection point.
+        //   - 2 reversals at the finest step = threshold for that frequency
+        //     (typically 6-8 reversals total, ~20s per frequency).
+        //   - Output is a dB HL-style readout per frequency using ISO
+        //     389-8/389-7 reference thresholds (RETFL for insert-style
+        //     earphones), relative to the user's own 1 kHz threshold so no
+        //     absolute SPL calibration is claimed — the 1 kHz result becomes
+        //     the anchor and every other frequency reports relative shift,
+        //     which is what actually matters for EQ correction.
+        // The old hearing-test-vol slider remains as a global pre-test
+        // comfort calibration (set it so 1 kHz is comfortably audible at
+        // mid-slider; the staircase works relative to that point).
+        staircase: null,
+        // ISO 389-8 reference equivalent threshold sound pressure levels
+        // (dB SPL at the eardrum, TDH-39/insert-earphone hybrid values) for
+        // the test frequencies — used ONLY to shape the relative-loss curve
+        // between frequencies, never displayed as absolute SPL.
+        isoRetflDb: { 250: 14.5, 500: 8.5, 1000: 7.5, 2000: 9.0, 4000: 11.5, 8000: 15.5, 12000: 21.0, 16000: 28.0 },
+
+        _hearingStaircaseMaxLevel: 0.12,   // hard safety ceiling (matches old safeVol cap)
+        _hearingStaircaseStartLevel: 0.06, // start audible for most users
+        _hearingStaircaseMinLevel: 0.0004,
+
+        startHearingStaircase: async function() {
             const ctx = SharedAudio.init(); await ctx.resume();
+            if (this.hearingOsc) { this.stopHearingTone(); }
+
+            // Begin at frequency 0 (250 Hz).
+            this.hearingStep = 0;
+            this.hearingThresholds = [0, 0, 0, 0, 0, 0, 0, 0];
+            this._beginHearingFrequency(0);
+        },
+
+        _beginHearingFrequency: function(stepIdx) {
+            this.hearingStep = stepIdx;
+            // Staircase state: level in linear gain, step in dB, reversal
+            // bookkeeping, and the collected reversal levels for averaging.
+            this.staircase = {
+                level: this._hearingStaircaseStartLevel,
+                stepDb: 12,
+                lastAnswer: null,
+                reversals: [],
+                reversalCount: 0,
+                lastReversalDir: 0,
+                done: false,
+                thresholdDb: null
+            };
+            this._playHearingToneAt(this.staircase.level);
+
             const btn = document.getElementById('hearing-test-btn');
+            if (btn) btn.textContent = 'HEARD (+)';
+            const notHeardBtn = document.getElementById('hearing-not-heard-btn');
+            if (notHeardBtn) notHeardBtn.classList.remove('hidden');
+
             const status = document.getElementById('hearing-test-status');
             const hzDisp = document.getElementById('hearing-test-hz');
-            const volSlider = document.getElementById('hearing-test-vol');
-
-            if (this.hearingStep === -1) {
-                this.stopAll();
-                this.hearingStep = 0;
-                this.hearingThresholds = [0, 0, 0, 0, 0, 0, 0, 0];
-                if (btn) btn.textContent = 'Next Pitch';
-                this.playHearingTone();
-            } else {
-
-                const volVal = parseFloat(volSlider.value) / 100;
-                this.hearingThresholds[this.hearingStep] = volVal;
-
-                this.hearingStep++;
-                if (this.hearingStep < this.hearingTestFreqs.length) {
-                    volSlider.value = 0;
-                    this.updateHearingTestVolume();
-                    this.playHearingTone();
-                } else {
-
-                    this.stopHearingTone();
-                    this.calculateHearingCorrection();
-                    this.hearingStep = -1;
-                    if (btn) btn.textContent = 'Start Test';
-                    if (status) status.textContent = 'Calibration Completed!';
-                    if (hzDisp) hzDisp.textContent = 'SUCCESS';
-                }
-            }
+            const freq = this.hearingTestFreqs[stepIdx];
+            if (status) status.textContent = `Staircase ${stepIdx + 1}/8 — listen, then answer.`;
+            if (hzDisp) hzDisp.textContent = `${freq} Hz`;
         },
-        playHearingTone: function() {
+
+        _playHearingToneAt: function(level) {
             this.stopHearingTone();
             const ctx = SharedAudio.ctx;
+            if (!ctx) return;
             const freq = this.hearingTestFreqs[this.hearingStep];
-
-            const status = document.getElementById('hearing-test-status');
-            const hzDisp = document.getElementById('hearing-test-hz');
-            if (status) status.textContent = `Testing Step ${this.hearingStep + 1} of 8`;
-            if (hzDisp) hzDisp.textContent = `${freq} Hz`;
+            if (!freq) return;
 
             this.hearingOsc = ctx.createOscillator();
             this.hearingGain = ctx.createGain();
             this.hearingOsc.type = 'sine';
             this.hearingOsc.frequency.value = freq;
-            this.hearingGain.gain.value = 0;
-
+            // 0 attack / smooth 120ms release so toggling the tone doesn't click.
+            this.hearingGain.gain.value = level;
             this.hearingOsc.connect(this.hearingGain).connect(SharedAudio.masterGain);
             this.hearingOsc.start();
+            this._currentHearingLevel = level;
+        },
+
+        // User answered. dir = +1 (heard) or -1 (not heard).
+        hearingStaircaseAnswer: function(dir) {
+            const st = this.staircase;
+            if (!st || st.done) return;
+
+            // Level step in dB (down when heard, up when not heard).
+            const dbStep = st.stepDb * (dir > 0 ? -1 : 1);
+            st.level = Math.max(this._hearingStaircaseMinLevel,
+                Math.min(this._hearingStaircaseMaxLevel, st.level * Math.pow(10, dbStep / 20)));
+
+            // Reversal = answer flipped vs the previous one.
+            const reversed = (st.lastAnswer !== null && st.lastAnswer !== dir);
+            if (reversed) {
+                st.reversalCount++;
+                st.reversals.push(20 * Math.log10(Math.max(1e-6, st.level)));
+                // Halve the step after every reversal: 12 -> 6 -> 3 -> 1.5.
+                st.stepDb = Math.max(1.5, st.stepDb / 2);
+                // Threshold: two reversals at the finest (1.5dB) step.
+                if (st.stepDb <= 1.5 && st.reversals.length >= 2) {
+                    // Average the last two reversal levels (the classic
+                    // 2-reversal mean at final step size).
+                    const lastTwo = st.reversals.slice(-2);
+                    st.thresholdDb = (lastTwo[0] + lastTwo[1]) / 2;
+                    st.done = true;
+                    this._finishHearingFrequency();
+                    return;
+                }
+            }
+            st.lastAnswer = dir;
+
+            this._playHearingToneAt(st.level);
+
+            const status = document.getElementById('hearing-test-status');
+            if (status) {
+                const dbFs = 20 * Math.log10(Math.max(1e-6, st.level));
+                status.textContent = `${this.hearingTestFreqs[this.hearingStep]} Hz · ${dbFs.toFixed(1)} dBFS · step ±${st.stepDb}dB · reversals ${st.reversalCount}`;
+            }
+        },
+
+        _finishHearingFrequency: function() {
+            const st = this.staircase;
+            if (!st) return;
+            // Store the threshold as dB relative to the MAX level ceiling —
+            // lower threshold (heard at a quieter level) = better sensitivity.
+            const thresholdDb = st.thresholdDb !== null ? st.thresholdDb : 20 * Math.log10(Math.max(1e-6, st.level));
+            this.hearingThresholds[this.hearingStep] = thresholdDb;
+            this.staircase = null;
+            this.stopHearingTone();
+
+            const nextIdx = this.hearingStep + 1;
+            if (nextIdx < this.hearingTestFreqs.length) {
+                this._beginHearingFrequency(nextIdx);
+            } else {
+                this._finishHearingStaircaseAll();
+            }
+        },
+
+        _finishHearingStaircaseAll: function() {
+            this.hearingStep = -1;
+
+            const btn = document.getElementById('hearing-test-btn');
+            if (btn) btn.textContent = 'Start Test';
+            const notHeardBtn = document.getElementById('hearing-not-heard-btn');
+            if (notHeardBtn) notHeardBtn.classList.add('hidden');
+
+            const status = document.getElementById('hearing-test-status');
+            if (status) status.textContent = 'Staircase complete — profile computed.';
+            const hzDisp = document.getElementById('hearing-test-hz');
+            if (hzDisp) hzDisp.textContent = 'DONE';
+
+            this.calculateHearingCorrection();
+        },
+
+        // Relative-HL mapping: shift each frequency's raw threshold by the
+        // ISO reference difference so the final offsets reflect loss
+        // relative to the user's own 1 kHz anchor.
+        getHearingRelativeDb: function() {
+            const anchor = this.hearingThresholds[2] || 0; // 1 kHz
+            const out = [];
+            for (let i = 0; i < this.hearingTestFreqs.length; i++) {
+                const iso = this.isoRetflDb[this.hearingTestFreqs[i]] || 0;
+                const isoAnchor = this.isoRetflDb[1000] || 0;
+                out.push((this.hearingThresholds[i] || 0) - anchor - (iso - isoAnchor));
+            }
+            return out;
+        },
+
+        nextHearingStep: async function() {
+            // Legacy entry (old button) now starts/advances the staircase.
+            if (this.hearingStep === -1) {
+                if (this.staircase) return;
+                await this.startHearingStaircase();
+            } else {
+                this.hearingStaircaseAnswer(+1);
+            }
+        },
+        hearingNotHeard: function() {
+            this.hearingStaircaseAnswer(-1);
+        },
+
+        playHearingTone: function() {
+            // Retained for compatibility with other callers: plays the tone
+            // at the current staircase level (or start level outside a test).
+            this._playHearingToneAt(this._currentHearingLevel || this._hearingStaircaseStartLevel);
+
+            const status = document.getElementById('hearing-test-status');
+            const hzDisp = document.getElementById('hearing-test-hz');
+            if (status) status.textContent = `Testing Step ${this.hearingStep + 1} of 8`;
+            if (hzDisp) hzDisp.textContent = `${this.hearingTestFreqs[this.hearingStep] || '---'} Hz`;
         },
         updateHearingTestVolume: function() {
             const slider = document.getElementById('hearing-test-vol');
-            if (slider && this.hearingGain && SharedAudio.ctx) {
+            // During a staircase the test owns the tone level — the slider
+            // is only a pre-test comfort calibration and must not override
+            // the adaptive step.
+            if (slider && this.hearingGain && SharedAudio.ctx && !this.staircase) {
                 const vol = parseFloat(slider.value) / 100;
                 const safeVol = vol * 0.12;
                 setAudioParamSmooth(this.hearingGain.gain, safeVol);
@@ -821,6 +973,7 @@ setABXControlsEnabled: function(enabled) {
         resetHearingTest: function() {
             this.stopHearingTone();
             this.hearingStep = -1;
+            this.staircase = null;
             this.hearingThresholds = [0, 0, 0, 0, 0, 0, 0, 0];
             EQ_Module.hearingOffsets = [0, 0, 0, 0, 0, 0, 0, 0];
             EQ_Module.hearingCalEnabled = false;
@@ -832,8 +985,10 @@ setABXControlsEnabled: function(enabled) {
             const calBtn = document.getElementById('btn-hearing-cal');
             const calLbl = document.getElementById('lbl-hearing-cal');
             const generateBtn = document.getElementById('hearing-eq-generate-btn');
+            const notHeardBtn = document.getElementById('hearing-not-heard-btn');
 
             if (btn) btn.textContent = 'Start Test';
+            if (notHeardBtn) notHeardBtn.classList.add('hidden');
             if (status) status.textContent = 'Status: Idle';
             if (hzDisp) hzDisp.textContent = '--- Hz';
             if (volSlider) volSlider.value = 0;
@@ -854,17 +1009,21 @@ setABXControlsEnabled: function(enabled) {
             showToast("Hearing Test Reset", "🔄");
         },
         calculateHearingCorrection: function() {
-
-            const baseline = 0.05;
+            // Staircase thresholds are dBFS values where LOWER = more
+            // sensitive. Convert to relative hearing level (anchored at the
+            // user's own 1 kHz threshold, ISO-shaped) and cap the correction.
             const maxCorrectionDb = 6.0;
 
-            const offsets = this.hearingThresholds.map(val => {
-                if (val <= baseline) return 0;
+            const relDb = (typeof this.getHearingRelativeDb === 'function')
+                ? this.getHearingRelativeDb()
+                : [];
 
-                const lossRatio = val / baseline;
-                const dbLoss = 20 * Math.log10(lossRatio);
-
-                return Math.min(maxCorrectionDb, dbLoss * 0.4);
+            const offsets = this.hearingThresholds.map((rawDb, i) => {
+                // Positive relative loss = user heard this frequency LATER
+                // (quieter) than their own 1 kHz anchor + ISO difference.
+                const loss = (relDb[i] !== undefined) ? relDb[i] : 0;
+                if (loss <= 0) return 0;
+                return Math.min(maxCorrectionDb, loss * 0.4);
             });
 
             EQ_Module.hearingOffsets = offsets;
@@ -892,14 +1051,31 @@ setABXControlsEnabled: function(enabled) {
         convertHearingToEQ: function() {
             if (!this.hearingThresholds || this.hearingStep !== -1) return;
 
+            // hearingTestFreqs: [250, 500, 1000, 2000, 4000, 8000, 12000, 16000]
+            // hearingOffsets index 6 (12 kHz) has no dedicated fader — the main
+            // band grid jumps 8kHz (fader 8) to 16kHz (fader 9). Fold the 12k
+            // offset into both neighbors weighted by log-frequency distance so
+            // no measured loss is silently discarded:
+            //   w8  = (log12k - log8k)  / (log16k - log8k)  -> weight on fader 8
+            //   w16 = (log16k - log12k) / (log16k - log8k)  -> weight on fader 9
+            const off12k = EQ_Module.hearingOffsets[6] || 0;
+            let split8 = 0, split16 = 0;
+            if (off12k !== 0) {
+                const lo = Math.log10(8000), mid = Math.log10(12000), hi = Math.log10(16000);
+                const wLo = (mid - lo) / (hi - lo);   // ~0.58 -> fader 9 (16k)
+                const wHi = (hi - mid) / (hi - lo);   // ~0.42 -> fader 8 (8k)
+                split8 = off12k * wHi;
+                split16 = off12k * wLo;
+            }
+
             const faderMappings = {
                 3: EQ_Module.hearingOffsets[0] || 0,
                 4: EQ_Module.hearingOffsets[1] || 0,
                 5: EQ_Module.hearingOffsets[2] || 0,
                 6: EQ_Module.hearingOffsets[3] || 0,
                 7: EQ_Module.hearingOffsets[4] || 0,
-                8: EQ_Module.hearingOffsets[5] || 0,
-                9: EQ_Module.hearingOffsets[7] || 0
+                8: (EQ_Module.hearingOffsets[5] || 0) + split8,
+                9: (EQ_Module.hearingOffsets[7] || 0) + split16
             };
 
             EQ_Module.isProgrammaticSliderUpdate = true;
@@ -950,6 +1126,11 @@ setABXControlsEnabled: function(enabled) {
 
             App.switchTab('eq');
             showToast("Hearing correction added on top of active EQ faders!", "🪄");
+            if (off12k !== 0) {
+                // Surface the interpolation so the user knows the 12k
+                // measurement wasn't dropped (it has no dedicated fader).
+                showToast(`12kHz correction (+${off12k.toFixed(1)}dB) folded into 8k/16k faders proportionally.`, "🎚️");
+            }
         },
 
         toggleBlindMode: function() {

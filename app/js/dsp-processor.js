@@ -1,13 +1,9 @@
 // Smoothing time constant in seconds (independent of sample rate).
 // At 44.1 kHz this equals the old hardcoded value 200/44100 ≈ 4.5 ms.
 const SMOOTHING_TIME_CONSTANT_SECONDS = 0.0045;
-const COEFF_SMOOTHING_TAU = 0.00017; // ~0.125 at 44.1k, derived from 1-exp(-1/(tau*SR))
 
 function computeSmoothingFactor(sampleRate) {
     return 1 - Math.exp(-1 / (SMOOTHING_TIME_CONSTANT_SECONDS * sampleRate));
-}
-function computeCoeffSmoothingFactor(sampleRate) {
-    return 1 - Math.exp(-1 / (COEFF_SMOOTHING_TAU * sampleRate));
 }
 
 // Shared RBJ shelf alpha — must stay identical to CurveUtils.computeShelfAlpha in utils.js
@@ -64,7 +60,7 @@ class BiquadFilter {
 
     updateCoefficients(type, freq, gain, q, sampleRate, wasBypassed) {
         this.type = type;
-        
+        if (!Number.isFinite(sampleRate) || sampleRate < 2000) sampleRate = 44100;
         // Clamp to 0.45×SR with at least 1 kHz margin from Nyquist to prevent
         // instability of high-Q filters near fs/2. At 44.1 kHz: maxFreq = 19.845 kHz.
         // MUST stay identical to getBiquadMagnitude (app-core.js), which draws
@@ -214,13 +210,15 @@ class BiquadFilter {
     }
 
     _updateCoeffsIfNeeded(smoothingFactor, sampleRate) {
-        if (smoothingFactor === undefined || !Number.isFinite(smoothingFactor)) smoothingFactor = 0.0045;
         if (sampleRate === undefined || !Number.isFinite(sampleRate)) sampleRate = 44100;
+        if (smoothingFactor === undefined || !Number.isFinite(smoothingFactor)) smoothingFactor = computeSmoothingFactor(sampleRate);
         this.stepSmoothing(smoothingFactor, sampleRate);
     }
 
     processSampleL(x, smoothingFactor, sampleRate) {
-        this.stepSmoothing(smoothingFactor !== undefined ? smoothingFactor : 0.0045, sampleRate !== undefined ? sampleRate : 44100);
+        if (sampleRate === undefined || !Number.isFinite(sampleRate)) sampleRate = 44100;
+        if (smoothingFactor === undefined || !Number.isFinite(smoothingFactor)) smoothingFactor = computeSmoothingFactor(sampleRate);
+        this.stepSmoothing(smoothingFactor, sampleRate);
 
         const y = x * this.b0 + this.s1_L;
         this.s1_L = x * this.b1 - this.a1 * y + this.s2_L;
@@ -245,7 +243,9 @@ class BiquadFilter {
     }
 
     processSampleL_4th(x, smoothingFactor, sampleRate) {
-        this.stepSmoothing(smoothingFactor !== undefined ? smoothingFactor : 0.0045, sampleRate !== undefined ? sampleRate : 44100);
+        if (sampleRate === undefined || !Number.isFinite(sampleRate)) sampleRate = 44100;
+        if (smoothingFactor === undefined || !Number.isFinite(smoothingFactor)) smoothingFactor = computeSmoothingFactor(sampleRate);
+        this.stepSmoothing(smoothingFactor, sampleRate);
         // stage 1
         let y1 = x * this.b0 + this.s1_L;
         this.s1_L = x * this.b1 - this.a1 * y1 + this.s2_L;
@@ -278,13 +278,95 @@ class BiquadFilter {
     }
 }
 
-// Central slot maps (must stay in sync with renderer eq-* modules).
-// Used for asserts to catch last-write clobbers when a new sim reuses a slot.
-const SIM_SLOT_MAP = Object.freeze({
-    eartip: [0,1,2,3,4], deEsser: 5, tape: [6,7], loudness: [8,9],
-    dac: [10,11], hearing: [12,13,14,15,16,17,18,19], gear: [20,21], masterTone: [22,23]
-});
+// (SIM_SLOT_MAP removed — the frozen slot-map constant was never referenced;
+// the authoritative slot assignment lives in the comment block below and in
+// the renderer's updateSimulations payload.)
 const XO_GAIN_SLOTS = Object.freeze({ low: 0, lowMid: 1, mid: 2, highMid: 3, high: 4 });
+
+// ===== F-6: Lookahead brickwall limiter (final stage) =====
+// A true zero-overshoot peak limiter running at the END of the worklet chain:
+//   - 5ms lookahead delay on the signal path while the gain computation runs
+//     on the future envelope, so the gain is already fully reduced BEFORE the
+//     peak arrives (a plain DynamicsCompressor can only react after the fact
+//     — that's the overshoot M-5 attacked).
+//   - Envelope: instantaneous peak attack (peak > envelope ? peak) with
+//     80ms exponential release (no per-sample branching).
+//   - Gain smoothing: near-instant attack at 0.35/sample (~10 samples to
+//     converge, ~0.2ms at 48kHz) since the envelope already leads by the
+//     lookahead; 80ms release on the way back up.
+//   - Stereo-coupled: both channels share one gain (no image shift).
+// GR (dB) is posted to the main thread throttled (~every 64 samples max once
+// per process() block) for the meter.
+class LookaheadLimiter {
+    constructor(sampleRate) {
+        this.fs = sampleRate;
+        this.lookaheadSamples = Math.max(8, Math.round(sampleRate * 0.005)); // 5ms
+        // Circular delay buffers for L/R
+        this.delayL = new Float32Array(this.lookaheadSamples);
+        this.delayR = new Float32Array(this.lookaheadSamples);
+        this.delayIdx = 0;
+
+        this.thresholdLin = Math.pow(10, -1.0 / 20); // -1 dBFS ceiling
+        this.thresholdDb = -1.0;
+
+        this.envelope = 0;          // smoothed peak envelope (linear)
+        this.gain = 1;              // current applied gain (linear)
+        this.releaseCoef = Math.exp(-1 / (0.08 * sampleRate)); // 80ms release
+        this.grDb = 0;              // last gain reduction, for the meter
+        this._grPostCounter = 0;
+    }
+
+    setThreshold(db) {
+        const clamped = Math.max(-12, Math.min(0, db));
+        this.thresholdDb = clamped;
+        this.thresholdLin = Math.pow(10, clamped / 20);
+    }
+
+    // Processes one stereo sample pair. `inL/inR` are the NEWEST samples; the
+    // returned samples are the N-delayed ones with the smoothed gain applied.
+    // The envelope tracks the NEWEST input so the computed gain leads the
+    // delayed signal path by the full lookahead window (zero overshoot).
+    processSample(inL, inR, out, outIdx) {
+        const ls = this.lookaheadSamples;
+
+        // 1. Envelope on the future (undelayed) input.
+        const aL = inL < 0 ? -inL : inL;
+        const aR = inR < 0 ? -inR : inR;
+        const peak = aL > aR ? aL : aR;
+        this.envelope = peak > this.envelope ? peak : this.envelope * this.releaseCoef;
+
+        // 2. Target gain for that envelope (hard ceiling).
+        let targetGain = 1;
+        if (this.envelope > this.thresholdLin) {
+            targetGain = this.thresholdLin / this.envelope;
+        }
+
+        // 3. Gain smoothing: near-instant attack (the envelope already
+        //    leads by the lookahead, so this ramp lands on pre-peak material),
+        //    80ms release on the way back up.
+        if (targetGain < this.gain) {
+            this.gain += (targetGain - this.gain) * 0.35;
+            if (this.gain < targetGain) this.gain = targetGain;
+        } else {
+            this.gain = targetGain + (this.gain - targetGain) * this.releaseCoef;
+        }
+
+        // 4. Delay the signal and apply the gain to the emerging sample.
+        const dL = this.delayL[this.delayIdx];
+        const dR = this.delayR[this.delayIdx];
+        this.delayL[this.delayIdx] = inL;
+        this.delayR[this.delayIdx] = inR;
+        this.delayIdx = (this.delayIdx + 1) % ls;
+
+        out[outIdx] = dL * this.gain;
+        if (out.length > outIdx + 1) out[outIdx + 1] = dR * this.gain;
+    }
+
+    // Gain reduction in dB for metering (positive number = reduction).
+    getGainReductionDb() {
+        return -20 * Math.log10(Math.max(1e-9, this.gain));
+    }
+}
 
 class DspProcessor extends AudioWorkletProcessor {
     constructor() {
@@ -307,6 +389,11 @@ class DspProcessor extends AudioWorkletProcessor {
 
         this.activeFilters = [];
         this.activeSimFilters = [];
+
+        // F-6: final-stage lookahead limiter + its bypass state (default ON,
+        // mirroring the renderer's mergerLimiterEnabled default).
+        this.lookaheadLimiter = new LookaheadLimiter(this.sampleRate);
+        this.lookaheadEnabled = true;
 
         this.xoEnabled = false;
         this.xoType = '3way';
@@ -418,6 +505,23 @@ class DspProcessor extends AudioWorkletProcessor {
                 });
             }
         }
+        else if (data.type === 'updateLimiter') {
+            // F-6: renderer-controlled threshold + on/off for the lookahead
+            // limiter. The GR meter polls via 'getGainReduction' messages.
+            if (data.enabled !== undefined) this.lookaheadEnabled = !!data.enabled;
+            if (Number.isFinite(data.thresholdDb)) this.lookaheadLimiter.setThreshold(data.thresholdDb);
+        }
+        else if (data.type === 'getGainReduction') {
+            // Meter poll: reply with the current GR (dB). The renderer polls
+            // this from a rAF loop only while the output panel is visible.
+            try {
+                this.port.postMessage({
+                    type: 'gainReduction',
+                    grDb: this.lookaheadLimiter.getGainReductionDb(),
+                    timestamp: data.timestamp
+                });
+            } catch (_) {}
+        }
         else if (data.type === 'reset') {
             this.filters.forEach(f => f.reset());
             this.simFilters.forEach(f => f.reset());
@@ -459,6 +563,11 @@ class DspProcessor extends AudioWorkletProcessor {
         const xoG4 = this.getGainSafe(4);
         const smFactor = this.smoothingFactor;
         const sRate = this.sampleRate;
+        // F-6: hoisted limiter locals for the per-sample loop.
+        const useLimiter = this.lookaheadEnabled;
+        const limiter = this.lookaheadLimiter;
+        // Reused stereo out pair for the limiter call (no per-sample alloc).
+        if (useLimiter && (!this._limOut || this._limOut.length < 2)) this._limOut = new Float32Array(2);
 
         for (let i = 0; i < bufferSize; i++) {
             this.preampGain += (this.targetPreampGain - this.preampGain) * this.smoothingFactor;
@@ -507,10 +616,10 @@ class DspProcessor extends AudioWorkletProcessor {
                     let b2_L = sampleL, b2_R = sampleR;
                     if (xoF[1] && !xoF[1].bypassed) {
                         b2_L = xoF[1].processSampleL_4th(sampleL, smFactor, sRate);
-                        if (xoF[2]) b2_L = xoF[2].processSampleL_4th(b2_L, smFactor, sRate);
+                        if (xoF[2] && !xoF[2].bypassed) b2_L = xoF[2].processSampleL_4th(b2_L, smFactor, sRate);
                         if (isStereo) {
                             b2_R = xoF[1].processSampleR_4th(sampleR);
-                            if (xoF[2]) b2_R = xoF[2].processSampleR_4th(b2_R);
+                            if (xoF[2] && !xoF[2].bypassed) b2_R = xoF[2].processSampleR_4th(b2_R);
                         }
                     }
                     const g1 = xoG1;
@@ -523,10 +632,10 @@ class DspProcessor extends AudioWorkletProcessor {
                     let b3_L = sampleL, b3_R = sampleR;
                     if (xoF[3] && !xoF[3].bypassed) {
                         b3_L = xoF[3].processSampleL_4th(sampleL, smFactor, sRate);
-                        if (xoF[4]) b3_L = xoF[4].processSampleL_4th(b3_L, smFactor, sRate);
+                        if (xoF[4] && !xoF[4].bypassed) b3_L = xoF[4].processSampleL_4th(b3_L, smFactor, sRate);
                         if (isStereo) {
                             b3_R = xoF[3].processSampleR_4th(sampleR);
-                            if (xoF[4]) b3_R = xoF[4].processSampleR_4th(b3_R);
+                            if (xoF[4] && !xoF[4].bypassed) b3_R = xoF[4].processSampleR_4th(b3_R);
                         }
                     }
                     const g2 = xoG2;
@@ -539,10 +648,10 @@ class DspProcessor extends AudioWorkletProcessor {
                     let b4_L = sampleL, b4_R = sampleR;
                     if (xoF[5] && !xoF[5].bypassed) {
                         b4_L = xoF[5].processSampleL_4th(sampleL, smFactor, sRate);
-                        if (xoF[6]) b4_L = xoF[6].processSampleL_4th(b4_L, smFactor, sRate);
+                        if (xoF[6] && !xoF[6].bypassed) b4_L = xoF[6].processSampleL_4th(b4_L, smFactor, sRate);
                         if (isStereo) {
                             b4_R = xoF[5].processSampleR_4th(sampleR);
-                            if (xoF[6]) b4_R = xoF[6].processSampleR_4th(b4_R);
+                            if (xoF[6] && !xoF[6].bypassed) b4_R = xoF[6].processSampleR_4th(b4_R);
                         }
                     }
                     const g3 = xoG3;
@@ -567,6 +676,36 @@ class DspProcessor extends AudioWorkletProcessor {
             outputChannelL[i] = sampleL;
             if (isStereo) {
                 outputChannelR[i] = sampleR;
+            }
+
+            // F-6: final-stage lookahead limiter — runs INSIDE the same
+            // per-sample loop, writing back the limited (delayed) samples.
+            // When enabled it replaces the direct write above with the
+            // delayed+gain-reduced version. (The 5ms latency is inaudible
+            // for music playback and gives zero-overshoot ceiling tracking.)
+            if (useLimiter) {
+                const limOut = this._limOut;
+                limOut[0] = outputChannelL[i];
+                limOut[1] = isStereo ? outputChannelR[i] : outputChannelL[i];
+                limiter.processSample(limOut[0], limOut[1], limOut, 0);
+                outputChannelL[i] = limOut[0];
+                if (isStereo) outputChannelR[i] = limOut[1];
+            }
+        }
+
+        // Throttled GR post: at most one meter message per ~512 samples so
+        // idle sessions don't spam the port; the renderer's meter loop
+        // consumes these at its own pace (latest value wins).
+        if (useLimiter) {
+            this._grPostCounter += bufferSize;
+            if (this._grPostCounter >= 512) {
+                this._grPostCounter = 0;
+                try {
+                    this.port.postMessage({
+                        type: 'gainReduction',
+                        grDb: limiter.getGainReductionDb()
+                    });
+                } catch (_) {}
             }
         }
 

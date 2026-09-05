@@ -209,7 +209,7 @@
                 const pinna = getBandAvg(interp, freqs, 1500, 3500);
                 const airLift = air - mid;
                 const pinnaLift = pinna - mid;
-                const airScore = dbAtLeastScore(airLift, -1.0, 3.0);
+                const airScore = dbAtLeastScore(airLift, 2.0, 3.0);
                 const pinnaScore = dbAtLeastScore(pinnaLift, 2.5, 3.0);
                 const score = (airScore * 0.5) + (pinnaScore * 0.5);
                 return {
@@ -224,20 +224,22 @@
             label: 'Technical',
             emoji: '⚙️',
             tagRegex: /technical|analytical|resolving/i,
-            tagWeight: 0.60,
-            curveWeight: 0.40,
+            tagWeight: 0.35,
+            curveWeight: 0.65,
             // Weakest curve signal of the 8 — "technicalities" (speed,
             // layering, resolution) isn't really present in a single FR
-            // trace at all. Tag-heavy on purpose; the curve check is a
-            // loose treble-extension tiebreaker, not a real measurement
-            // of technical performance.
+            // trace at all. Tag still matters, but capped at 0.35 so a tag
+            // alone cannot outrank a clearly better measurement (a 40-curve
+            // with tag must not beat a 100-curve without one).
             curveCheck: function (interp, freqs) {
                 const mid = midRef(interp, freqs);
                 const upperMid = getBandAvg(interp, freqs, 2000, 5000);
                 const treble = getBandAvg(interp, freqs, 10000, 16000);
                 const upperMidLift = upperMid - mid;
                 const trebleLift = treble - mid;
-                const score = dbAtLeastScore((upperMidLift + trebleLift) / 2, 1.5, 4.0);
+                // Score each band then average (consistent with Detail/Fun)
+                // so a deficiency in one band cannot hide behind the other.
+                const score = (dbAtLeastScore(upperMidLift, 1.5, 4.0) + dbAtLeastScore(trebleLift, 1.5, 4.0)) / 2;
                 return {
                     score: score,
                     reason: `Upper-mid/treble clarity lift +${((upperMidLift + trebleLift) / 2).toFixed(1)}dB (weak proxy — tag-weighted)`
@@ -250,19 +252,18 @@
             label: 'Gaming',
             emoji: '🎮',
             tagRegex: /gaming|competitive-gaming/i,
-            tagWeight: 0.60,
-            curveWeight: 0.40,
+            tagWeight: 0.35,
+            curveWeight: 0.65,
             // Weak curve signal, same caveat as Technical — imaging speed
-            // and transient response aren't captured by FR. Tag-heavy;
-            // curve check just rewards an imaging-friendly wide-treble
-            // shape similar to Soundstage's proxy.
+            // and transient response aren't captured by FR. Tag capped at
+            // 0.35 for the same measurement-first reason as Technical.
             curveCheck: function (interp, freqs) {
                 const mid = midRef(interp, freqs);
                 const pinna = getBandAvg(interp, freqs, 1500, 3500);
                 const air = getBandAvg(interp, freqs, 8000, 14000);
                 const pinnaLift = pinna - mid;
                 const airLift = air - mid;
-                const score = dbAtLeastScore((pinnaLift + airLift) / 2, 2.0, 4.0);
+                const score = (dbAtLeastScore(pinnaLift, 2.0, 4.0) + dbAtLeastScore(airLift, 2.0, 4.0)) / 2;
                 return {
                     score: score,
                     reason: `Imaging-band lift +${((pinnaLift + airLift) / 2).toFixed(1)}dB (weak proxy — tag-weighted)`

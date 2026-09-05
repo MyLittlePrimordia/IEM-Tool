@@ -106,14 +106,21 @@ const EQ_SquigGraphMethods = {
             cc.restore();
         },
         drawSquiglinkGraphInternal: function() {
-            const cv = document.getElementById("eq-squiglinkViz");
+            // Cache canvas element + 2d context: getElementById/getContext
+            // ran on every draw (every slider tick + up to 60Hz overlay).
+            // Revalidate via isConnected in case the DOM was rebuilt.
+            if (!this._squigCv || !this._squigCv.isConnected) {
+                this._squigCv = document.getElementById("eq-squiglinkViz");
+                this._squigCc = this._squigCv ? this._squigCv.getContext("2d") : null;
+            }
+            const cv = this._squigCv;
             if (!cv || cv.clientWidth === 0 || cv.clientHeight === 0) {
                 // Canvas is hidden/zero-size (e.g. tab not visible) - do not keep
                 // scheduling frames; drawCurve() will be called again once the
                 // graph becomes visible/sized (tab switch, resize, etc).
                 return;
             }
-            const cc = cv.getContext("2d"); 
+            const cc = this._squigCc;
             const { w, h } = this.setupDPRCanvas(cv);
 
             // Read cached theme color variables directly without triggering a browser layout recalculation
@@ -124,9 +131,27 @@ const EQ_SquigGraphMethods = {
             const targetW = Math.floor(w * dpr);
             const targetH = Math.floor(h * dpr);
 
-            // Initialize or resize the off-screen cache canvas
+            // Initialize or resize the off-screen cache canvas.
+            // F-7: prefer OffscreenCanvas when available — the static layer
+            // (background, grid, band tints, reference curves) rasterizes
+            // identically through the same 2D API but composites without a
+            // DOM canvas backing, and the resulting ImageBitmap path avoids
+            // main-thread texture upload on every drawImage. Falls back to
+            // the original DOM canvas where OffscreenCanvas is unsupported
+            // (older Safari; the bundle runs through both paths).
             if (!this.staticCacheCanvas) {
-                this.staticCacheCanvas = document.createElement('canvas');
+                if (typeof OffscreenCanvas !== 'undefined') {
+                    try {
+                        this.staticCacheCanvas = new OffscreenCanvas(1, 1);
+                        this._staticLayerOffscreen = true;
+                    } catch (e) {
+                        this.staticCacheCanvas = document.createElement('canvas');
+                        this._staticLayerOffscreen = false;
+                    }
+                } else {
+                    this.staticCacheCanvas = document.createElement('canvas');
+                    this._staticLayerOffscreen = false;
+                }
                 this.staticCacheCtx = this.staticCacheCanvas.getContext('2d');
                 this.staticDirty = true;
             }
@@ -596,7 +621,22 @@ const EQ_SquigGraphMethods = {
         _renderModeLayer: function(cc, w, h, dpr, targetW, targetH, minF, maxF, min, max,
                 eqDb, steps, freqs, baseSpline, targetSpline, accentGreen, modeState) {
             if (!this.modeCacheCanvas) {
-                this.modeCacheCanvas = document.createElement('canvas');
+                // F-7: same OffscreenCanvas preference as the static layer —
+                // the mode layer (curves/heatmap/DSP line) is the busiest
+                // surface (rebuilt on every EQ change), so keeping its
+                // rasterization off the DOM canvas path pays off most.
+                if (typeof OffscreenCanvas !== 'undefined') {
+                    try {
+                        this.modeCacheCanvas = new OffscreenCanvas(1, 1);
+                        this._modeLayerOffscreen = true;
+                    } catch (e) {
+                        this.modeCacheCanvas = document.createElement('canvas');
+                        this._modeLayerOffscreen = false;
+                    }
+                } else {
+                    this.modeCacheCanvas = document.createElement('canvas');
+                    this._modeLayerOffscreen = false;
+                }
                 this.modeCacheCtx = this.modeCacheCanvas.getContext('2d');
                 this.modeDirty = true;
             }
@@ -627,6 +667,9 @@ const EQ_SquigGraphMethods = {
                         this._heatmapGradCount = 0;
                     }
                     const y0 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb, h);
+                    // Group verticals by gradient key: identical strokes
+                    // share one path/stroke instead of one stroke per sample.
+                    const heatBuckets = new Map();
                     for (let i = 0; i < steps; i++) {
                         const curX = (i / (steps - 1)) * w;
                         const dbVal = eqDb[i];
@@ -652,13 +695,24 @@ const EQ_SquigGraphMethods = {
                                 this._heatmapGradCount = 0;
                             }
                         }
-                        mcc.strokeStyle = grad;
-                        mcc.lineWidth = w / steps + 1;
-                        mcc.beginPath();
-                        mcc.moveTo(curX, y0);
-                        mcc.lineTo(curX, y1);
-                        mcc.stroke();
+                        let bucket = heatBuckets.get(key);
+                        if (!bucket) {
+                            bucket = { grad, y1, xs: [] };
+                            heatBuckets.set(key, bucket);
+                        }
+                        bucket.xs.push(curX);
                     }
+                    mcc.lineWidth = w / steps + 1;
+                    heatBuckets.forEach(bucket => {
+                        mcc.strokeStyle = bucket.grad;
+                        mcc.beginPath();
+                        const xs = bucket.xs;
+                        for (let k = 0; k < xs.length; k++) {
+                            mcc.moveTo(xs[k], y0);
+                            mcc.lineTo(xs[k], bucket.y1);
+                        }
+                        mcc.stroke();
+                    });
                     mcc.restore();
 
                     mcc.beginPath();
@@ -746,6 +800,7 @@ const EQ_SquigGraphMethods = {
                         let lastX = 0;
                         let lastY = 0;
                         let started = false;
+                        const errBuckets = [];
                         for (let i = 0; i < steps; i++) {
                             const curX = (i / (steps - 1)) * w;
                             const f = freqs[i];
@@ -761,23 +816,27 @@ const EQ_SquigGraphMethods = {
                                 continue;
                             }
 
-                            mcc.beginPath();
-                            mcc.moveTo(lastX, lastY);
-                            mcc.lineTo(curX, y);
-
+                            // Batch by color: ~1000 strokes (with a style
+                            // switch each) become 3 paths / 3 strokes.
                             const absErr = Math.abs(err);
-                            if (absErr <= 1.5) {
-                                mcc.strokeStyle = '#10b981';
-                            } else if (absErr <= 3.0) {
-                                mcc.strokeStyle = '#f59e0b';
-                            } else {
-                                mcc.strokeStyle = '#ef4444';
-                            }
-                            mcc.lineWidth = 2.5;
-                            mcc.stroke();
+                            const bucket = absErr <= 1.5 ? 0 : (absErr <= 3.0 ? 1 : 2);
+                            (errBuckets[bucket] = errBuckets[bucket] || []).push(lastX, lastY, curX, y);
 
                             lastX = curX;
                             lastY = y;
+                        }
+                        mcc.lineWidth = 2.5;
+                        const errColors = ['#10b981', '#f59e0b', '#ef4444'];
+                        for (let b = 0; b < 3; b++) {
+                            const segs = errBuckets[b];
+                            if (!segs || !segs.length) continue;
+                            mcc.strokeStyle = errColors[b];
+                            mcc.beginPath();
+                            for (let s = 0; s < segs.length; s += 4) {
+                                mcc.moveTo(segs[s], segs[s + 1]);
+                                mcc.lineTo(segs[s + 2], segs[s + 3]);
+                            }
+                            mcc.stroke();
                         }
                     } else {
                         mcc.fillStyle = "rgba(255, 255, 255, 0.35)";
@@ -818,6 +877,83 @@ const EQ_SquigGraphMethods = {
             }
 
             cc.drawImage(this.modeCacheCanvas, 0, 0, w, h);
+
+            // F-10: curve-difference overlay. In normal mode, when a base and
+            // at least one other visible curve are loaded, draw the signed
+            // base-vs-reference delta as a subtle dashed trace hugging the
+            // alignment line — the "how far apart are these two?" readout at
+            // a glance, without switching to the dedicated Difference mode.
+            // Auto-shows (no new UI): it only appears with 2+ visible curves
+            // and never in tuning lab / heatmap / difference modes.
+            this.drawCurveDiffOverlay(cc, w, h, minF, maxF, steps, freqs);
+        },
+
+        drawCurveDiffOverlay: function(cc, w, h, minF, maxF, steps, freqs) {
+            if (EQ_Module.graphMode !== 'normal') return;
+            if (EQ_Module.isTuningLabActive) return;
+
+            const active = PEQDB_Module.STATE.activeCurves || [];
+            const base = active.find(c => c.role === 'base' && c.visible && c.cachedSpline);
+            if (!base) return;
+            const refs = active.filter(c => c !== base && c.visible && c.cachedSpline && c.role !== 'base');
+            if (!refs.length) return;
+
+            // Memoize the evaluated polylines: steps×refs spline evals ran on
+            // EVERY draw (up to 60Hz overlay) even when nothing changed.
+            // Recompute only when curves/view fingerprint changes; replay the
+            // cached points otherwise (vers bump on spline rebuilds above).
+            const fp = [base.id || base.uid, base._splineVersion || 0,
+                refs.map(r => (r.id || r.uid) + ':' + (r._splineVersion || 0)).join(','),
+                minF, maxF, steps, w, h, PEQDB_Module.alignDb].join('|');
+            let paths = this._diffOverlayPaths;
+            if (!paths || paths.fp !== fp) {
+                paths = {
+                    fp,
+                    refs: refs.map(ref => {
+                        const pts = [];
+                        for (let i = 0; i < steps; i++) {
+                            const f = freqs[i];
+                            if (f < minF || f > maxF) continue;
+                            const x = w * (Math.log10(f / minF) / Math.log10(maxF / minF));
+                            const evalF = PEQDB_Module.getShiftedFrequency(f, 'target');
+                            const baseDb = PEQDB_Module.Spline.evaluate(base.cachedSpline, evalF);
+                            const refDb = PEQDB_Module.Spline.evaluate(ref.cachedSpline, evalF);
+                            pts.push([x, EQ_Module.dbToY_squig(PEQDB_Module.alignDb + (refDb - baseDb), h)]);
+                        }
+                        return { color: ref.color, pts };
+                    })
+                };
+                this._diffOverlayPaths = paths;
+            }
+
+            cc.save();
+            cc.setLineDash([5, 5]);
+            cc.lineWidth = 1.2;
+
+            for (let r = 0; r < refs.length; r++) {
+                const ref = refs[r];
+                const cached = paths.refs[r];
+                const rgb = PEQDB_Module.hexToRgb ? PEQDB_Module.hexToRgb(ref.color) : '160, 174, 192';
+                cc.strokeStyle = `rgba(${rgb}, 0.45)`;
+                cc.beginPath();
+                const pts = cached ? cached.pts : [];
+                for (let i = 0; i < pts.length; i++) {
+                    if (i === 0) cc.moveTo(pts[i][0], pts[i][1]);
+                    else cc.lineTo(pts[i][0], pts[i][1]);
+                }
+                cc.stroke();
+            }
+
+            cc.setLineDash([]);
+            // Legend chip: small "±diff" tag above the alignment line so the
+            // dashed trace is self-explanatory on first sight.
+            cc.fillStyle = "rgba(148, 163, 184, 0.85)";
+            cc.font = this.getActiveCanvasFont(9, 'bold');
+            cc.textAlign = 'left';
+            cc.fillText(refs.length === 1
+                ? `vs ${refs[0].name.split(' (')[0]} (dashed = dB difference)`
+                : `vs ${refs.length} curves (dashed = dB difference)`, 22, h - 32);
+            cc.restore();
         },
 
         drawNormalCurves: function(cc, w, h, minF, maxF, eqDb) {
@@ -907,12 +1043,16 @@ const EQ_SquigGraphMethods = {
                 
                 let started = false;
                 const renderStep = w > 800 ? 3 : 2;
+                // Reused by the EQ-corrected base pass below so the spline
+                // is evaluated once per pixel, not twice.
+                let baseDbs = (c.role === 'base') ? [] : null;
                 for (let i = 0; i < w; i += renderStep) {
                     const f = minF * Math.pow(maxF / minF, i / (w - 1));
                     const evalF = PEQDB_Module.getShiftedFrequency(f, c.role);
                     const db = PEQDB_Module.Spline.evaluate(spline, evalF);
+                    if (baseDbs) baseDbs.push(db);
                     const y = this.dbToY_squig(db + (c.offset || 0), h);
-                    
+
                     if (!started) {
                         cc.moveTo(i, y);
                         started = true;
@@ -939,11 +1079,12 @@ const EQ_SquigGraphMethods = {
                     cc.shadowColor = "transparent";
                     
                     let startedCorrected = false;
+                    let bi = 0;
                     for (let i = 0; i < w; i += renderStep) {
-                        const f = minF * Math.pow(maxF / minF, i / (w - 1));
-                        const evalF = PEQDB_Module.getShiftedFrequency(f, c.role);
-                        const db = PEQDB_Module.Spline.evaluate(spline, evalF);
-                        
+                        // Spline value reused from the faint-base pass above
+                        // (same pixel grid, same spline) — no re-evaluate.
+                        const db = baseDbs ? baseDbs[bi++] : PEQDB_Module.Spline.evaluate(spline, PEQDB_Module.getShiftedFrequency(minF * Math.pow(maxF / minF, i / (w - 1)), c.role));
+
                         const eqIdx = Math.round((i / (w - 1)) * (steps - 1));
                         const eqVal = eqDb ? (eqDb[Math.max(0, Math.min(steps - 1, eqIdx))] || 0) : 0;
                         const y = this.dbToY_squig(db + (c.offset || 0) + eqVal, h);

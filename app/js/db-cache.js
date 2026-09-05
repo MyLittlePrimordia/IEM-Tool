@@ -36,24 +36,24 @@
     Object.assign(EQ_Module, EQ_PresetMethods);
     Object.assign(EQ_Module, EQ_BandHandlerMethods);
     Object.assign(EQ_Module, EQ_DrawCurveMethods);
-    // Coalesce redundant redraws onto a single requestAnimationFrame. The offline
-    // magnitude path below is dirty-flagged per slider `input`, so during a drag a
-    // full DSP+redraw can fire more often than the screen can show; batching to one
-    // draw per frame removes per-event jank while keeping updates latency-free.
-    {
-        const _drawCurve = EQ_Module.drawCurve || function () {};
-        let _pending = false;
-        EQ_Module.drawCurve = function () {
-            const self = this;
-            if (!_pending) {
-                _pending = true;
-                requestAnimationFrame(() => {
-                    _pending = false;
-                    _drawCurve.apply(self, arguments);
-                });
-            }
-        };
-    }
+    Object.assign(EQ_Module, EQ_TapeModMethods);
+    Object.assign(EQ_Module, EQ_BiquadMathMethods);
+    // Preset catalog (eq-presets-data.js): the id/name lists are shared by
+    // reference (read-only consumers); the GAIN banks are NOT assigned here —
+    // EQ_Module.init deep-copies them via JSON.parse + Object.assign so
+    // runtime preset edits never poison the catalog.
+    EQ_Module.presetsByCategory = EQ_PresetsData.presetsByCategory;
+    EQ_Module.presetCategories = EQ_PresetsData.presetCategories;
+    Object.assign(EQ_Module, EQ_MagnitudeEngineMethods);
+    Object.assign(EQ_Module, EQ_GenreTargetMethods);
+    Object.assign(EQ_Module, EQ_DspGraphMethods);
+    Object.assign(EQ_Module, EQ_MediaTransportMethods);
+    Object.assign(EQ_Module, EQ_GraphInputMethods);
+    Object.assign(EQ_Module, EQ_VisualizerMethods);
+    // NOTE: no outer rAF wrapper here on purpose. drawCurve() itself
+    // (eq-draw-curve.js) already coalesces via drawPending, so wrapping it
+    // in a second rAF only added a frame of latency (every draw hopped two
+    // frames). One coalescer, next-frame paint, latest state.
     Object.assign(EQ_Module, EQ_SquigGraphMethods);
     Object.assign(EQ_Module, EQ_MathUtilMethods);
 

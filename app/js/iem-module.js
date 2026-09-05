@@ -1709,7 +1709,24 @@ setGlobalFont: function(fontId) {
         },
 
         toggleSensUnit: function() {
-            this.sensUnit = this.sensUnit === 'mW' ? 'V' : 'mW';
+            // Convert the numeric value so the PHYSICAL sensitivity is
+            // preserved: dB/V = dB/mW + 10*log10(1000/R). Without this the
+            // same number under a new reference silently shifts power ~30x.
+            const sensEl = document.getElementById('sensitivity');
+            const impEl = document.getElementById('impedance');
+            const rawSens = sensEl ? parseFloat(sensEl.value) : NaN;
+            const rawImp = impEl ? parseFloat(impEl.value) : NaN;
+            const imp = Number.isFinite(rawImp) && rawImp > 0 ? rawImp : 32;
+            const toV = this.sensUnit === 'mW';
+            this.sensUnit = toV ? 'V' : 'mW';
+            if (sensEl && Number.isFinite(rawSens)) {
+                const delta = 10 * Math.log10(1000 / imp);
+                const converted = toV ? rawSens + delta : rawSens - delta;
+                const clamped = Math.max(80, Math.min(125, converted));
+                sensEl.value = clamped.toFixed(0);
+                const slider = document.getElementById('sensitivity-slider');
+                if (slider) slider.value = clamped;
+            }
             this.updateSensUnitUI();
             this.updateAll();
         },
@@ -2207,6 +2224,17 @@ onDbSearchInput: function(value) {
                     const canonical = FindEngine.driverTechCanon[m[2].toUpperCase()];
                     if (canonical) counts[canonical] = (counts[canonical] || 0) + parseInt(m[1], 10);
                 }
+                // Bare mentions without a digit ("2x BA + EST", "DD & BA"):
+                // count 1 for each mentioned tech the digit pass missed.
+                techs.forEach(t => {
+                    if (!counts[t]) {
+                        const aliasHit = Object.keys(FindEngine.driverTechCanon).some(alias => {
+                            if (FindEngine.driverTechCanon[alias] !== t) return false;
+                            return new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(String(item.driver_config));
+                        });
+                        if (aliasHit) counts[t] = 1;
+                    }
+                });
                 if (Object.keys(counts).length === 0) {
                     techs.forEach(t => { counts[t] = (counts[t] || 0) + 1; });
                 }
@@ -3041,19 +3069,19 @@ onDbSearchInput: function(value) {
                 this.wayOverride = false;
             }
 
+            // Single-type arrays share one circuit (no crossover) — Planar,
+            // DD, EST/PZT/BC/MEMS alike. BA arrays are the exception: multi-BA
+            // sets standardly use crossovers. Multi-type mixes use PASS.
+            const singleTypeNoXo = solvedActiveTypesCount === 1 && !containsBA;
             if (!this.crossoverOverride) {
                 if (totalDrivers === 0) {
                     this.currentCrossover = 'UNK';
                 } else if (totalDrivers === 1) {
                     this.currentCrossover = 'NONE';
-                } else if (totalDrivers === 2) {
+                } else if (singleTypeNoXo) {
+                    this.currentCrossover = 'NONE';
+                } else {
                     this.currentCrossover = 'PASS';
-                } else if (totalDrivers >= 3) {
-                    if (containsPlanar && solvedActiveTypesCount === 1) {
-                        this.currentCrossover = 'NONE';
-                    } else {
-                        this.currentCrossover = 'PASS';
-                    }
                 }
                 this.updateCrossoverButtonsUI();
             }
@@ -3064,14 +3092,14 @@ onDbSearchInput: function(value) {
                 } else if (totalDrivers === 1) {
                     this.currentWay = '1W';
                 } else {
-                    if (containsPlanar && solvedActiveTypesCount === 1) {
-                        this.currentWay = '1W';
-                    } else if (containsBA && solvedActiveTypesCount === 1) {
+                    if (singleTypeNoXo || (containsBA && solvedActiveTypesCount === 1)) {
                         this.currentWay = '1W';
                     } else {
                         if (totalDrivers === 2) this.currentWay = '2W';
                         else if (totalDrivers === 3) this.currentWay = '3W';
-                        else if (totalDrivers >= 4) this.currentWay = '4W';
+                        else if (totalDrivers === 4) this.currentWay = '4W';
+                        else if (totalDrivers === 5) this.currentWay = '5W';
+                        else if (totalDrivers >= 6) this.currentWay = '6W+';
                     }
                 }
                 this.updateWayButtonsUI();
@@ -3631,6 +3659,12 @@ onDbSearchInput: function(value) {
                 'soundstage-width', 'soundstage-depth', 'resolution-detail', 'macro-dynamics',
                 'imaging-precision', 'instrument-separation', 'timbre-coherence'
             ];
+            // Sibilance is a defect: higher harshness must score LOWER, so its
+            // contribution is inverted. upper-mids/vocals are the same
+            // measurement (fillToneSliders assigns identical values); count
+            // the pair once (0.5 weight each) instead of twice.
+            const scoreWeight = (id) => (id === 'upper-mids' || id === 'vocals') ? 0.5 : 1.0;
+            const scoredVal = (id, norm) => (id === 'sibilance' ? 10 - norm : norm);
             this.sliderNodes.forEach(node => {
                 let val = parseFloat(node.element.value);
 
@@ -3644,8 +3678,8 @@ onDbSearchInput: function(value) {
                 if (node.displayValueNode) {
                     node.displayValueNode.textContent = (val >= 0 ? "+" : "") + val.toFixed(1);
                     if (acousticSliders.includes(node.element.id)) {
-                        totalScore += normVal;
-                        count++;
+                        totalScore += scoredVal(node.element.id, normVal) * scoreWeight(node.element.id);
+                        count += scoreWeight(node.element.id);
                     }
                 }
                 // Repaint the bipolar fill here: DB profile fills, library loads
@@ -3657,6 +3691,13 @@ onDbSearchInput: function(value) {
                 else if (window.syncGlobalSliders) window.syncGlobalSliders(node.element);
             });
             const avg = (...ids) => ids.reduce((sum, id) => sum + (valMap[id] !== undefined ? valMap[id] : 5.0), 0) / ids.length;
+            // Scoring view: sibilance inverted (defect), upper-mids/vocals
+            // de-duplicated (same measurement counted once).
+            const scoreOf = (id) => {
+                const v = valMap[id] !== undefined ? valMap[id] : 5.0;
+                return id === 'sibilance' ? 10 - v : v;
+            };
+            const avgScore = (...ids) => ids.reduce((sum, id) => sum + scoreOf(id), 0) / ids.length;
 
             let impVal = parseFloat(document.getElementById('impedance').value);
             if (isNaN(impVal) || impVal <= 0) impVal = 5;
@@ -3748,8 +3789,8 @@ onDbSearchInput: function(value) {
             const compatBarNode = document.getElementById('compatibility-bar');
             const statusNode = document.getElementById('compatibility-status');
 
-            if (vValNode) vValNode.textContent = vReqSource.toFixed(2) + " V";
-            if (pValNode) pReqIem === Infinity ? pValNode.textContent = "0.0 mW" : pValNode.textContent = pReqIem.toFixed(1) + " mW";
+            if (vValNode) vValNode.textContent = Number.isFinite(vReqSource) ? vReqSource.toFixed(2) + " V" : "— V";
+            if (pValNode) pValNode.textContent = Number.isFinite(pReqIem) ? pReqIem.toFixed(1) + " mW" : "— mW (over-range)";
 
             if (statusNode) {
                 statusNode.innerHTML = `<span class="${matchClass} text-sm sm:text-base">${matchText}</span>`;
@@ -3825,7 +3866,7 @@ onDbSearchInput: function(value) {
             const techScore = avg('resolution-detail', 'imaging-precision', 'macro-dynamics', 'instrument-separation');
             const toneScore = avg('timbre-coherence', 'mid-naturalness', 'vocals', 'treble-smooth');
             const bassScore = avg('bass', 'sub-bass-extension', 'mid-bass-punch');
-            const trebleScore = avg('treble-energy', 'treble-detail', 'sibilance');
+            const trebleScore = avgScore('treble-energy', 'treble-detail', 'sibilance');
 
             const badge = document.getElementById('bias-badge');
             let biasStr, biasClass;
@@ -3861,8 +3902,8 @@ if(this.radarChart) {
                     }
                 }
                 this.radarChart.data.datasets[0].data = [
-                    avg('bass', 'sub-bass-extension', 'bass-texture', 'bass-speed', 'mid-bass-punch'), avg('vocals', 'vocal-fullness', 'lower-mids', 'upper-mids', 'mid-naturalness'),
-                    avg('treble-energy', 'treble-smooth', 'treble-extension', 'sibilance', 'treble-detail'), valMap['resolution-detail'], avg('soundstage-width', 'soundstage-depth'),
+                    avg('bass', 'sub-bass-extension', 'bass-texture', 'bass-speed', 'mid-bass-punch'), avg('vocal-fullness', 'lower-mids', 'upper-mids', 'mid-naturalness'),
+                    avgScore('treble-energy', 'treble-smooth', 'treble-extension', 'sibilance', 'treble-detail'), valMap['resolution-detail'], avg('soundstage-width', 'soundstage-depth'),
                     valMap['imaging-precision'], valMap['macro-dynamics'], avg('vocals', 'mid-naturalness', 'treble-smooth', 'timbre-coherence'), avg('instrument-separation', 'timbre-coherence', 'ease-of-drive', 'driver-flex')
                 ];
                 this.radarChart.update('none');
@@ -5027,7 +5068,7 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
                 { id: 'Phone', emoji: '📱' },
                 { id: 'Laptop', emoji: '💻' },
                 { id: 'Dongle', emoji: '🔌' },
-                { id: 'Amp', emoji: '🖥️' }
+                { id: 'Desktop', emoji: '🖥️' }
             ];
 
             let guideY = 485;
@@ -5038,13 +5079,18 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
                 const vReqSource = vReq / vDivider;
                 // Keep total-draw for reference but classification uses load power pReqIemExport
                 const pDrawnSource = (vReqSource * vReqSource) / (impVal + Rs) * 1000;
+                // Bar must reflect the WORST of power/voltage like the live
+                // view (maxRatio); power-only showed full-green on V-failures.
+                const pRatio = pReqIemExport > 0 ? dac.p / pReqIemExport : 0;
+                const vRatio = vReqSource > 0 ? dac.v / vReqSource : 0;
+                const worstRatio = Math.min(pRatio, vRatio);
 
-                let text = "POOR", col = "#ef4444", ratio = Math.min(1.0, dac.p / pReqIemExport);
+                let text = "POOR", col = "#ef4444", ratio = Math.min(1.0, worstRatio);
 
                 if (pReqIemExport > dac.p * 1.5 || vReqSource > dac.v * 1.5) {
-                    text = "WEAK"; col = "#ef4444"; ratio = Math.max(0.12, Math.min(1.0, dac.p / pReqIemExport));
+                    text = "WEAK"; col = "#ef4444"; ratio = Math.max(0.12, Math.min(1.0, worstRatio));
                 } else if (pReqIemExport > dac.p || vReqSource > dac.v) {
-                    text = "RISKY"; col = "#f59e0b"; ratio = Math.min(1.0, dac.p / pReqIemExport);
+                    text = "RISKY"; col = "#f59e0b"; ratio = Math.min(1.0, worstRatio);
                 } else if (pReqIemExport > dac.p * 0.4 || vReqSource > dac.v * 0.4) {
                     text = "OK"; col = "#22c55e"; ratio = 0.88;
                 } else {

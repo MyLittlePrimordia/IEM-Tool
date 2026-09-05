@@ -70,14 +70,19 @@ const EQ_HearingCalMethods = {
             },
             applyHearingCalibrationGains: function() {
                 const hearingFreqs = [250, 500, 1000, 2000, 4000, 8000, 12000, 16000];
-                let maxBoost = 0;
+                let maxBoost = 0, secondBoost = 0;
                 if (this.hearingCalEnabled && Array.isArray(this.hearingOffsets)) {
                     for (let i = 0; i < this.hearingOffsets.length; i++) {
                         const g = this.hearingOffsets[i] || 0;
-                        if (g > maxBoost) maxBoost = g;
+                        if (g > maxBoost) { secondBoost = maxBoost; maxBoost = g; }
+                        else if (g > secondBoost) secondBoost = g;
                     }
                 }
-                this._hearingMaxBoost = this.hearingCalEnabled ? maxBoost : 0;
+                // Q=1.0 peaks 1 octave apart overlap (~1.4 oct BW); adjacent
+                // boosts stack at midpoints, so max() alone under-compensates
+                // by ~2-3 dB. Add half the second-largest boost, capped at +3 dB.
+                const overlapped = maxBoost + Math.min(3, secondBoost * 0.5);
+                this._hearingMaxBoost = this.hearingCalEnabled ? overlapped : 0;
                 if (!this.graphBuilt || !SharedAudio.workletNode) {
                     if (this._queuePendingDsp) this._queuePendingDsp('hearing');
                     else { this._pendingDspQueue = this._pendingDspQueue || []; if (!this._pendingDspQueue.includes('hearing')) this._pendingDspQueue.push('hearing'); if (!this.graphBuilt) this.ensureDSPGraph && this.ensureDSPGraph().catch(()=>{}); }
@@ -123,6 +128,7 @@ const EQ_HearingCalMethods = {
                     }
                     // Initialize frequency tracker if not set
                     if (!this.deEsserCurrentFreq) this.deEsserCurrentFreq = 6000;
+                    if (!Number.isFinite(this.deEsserSensitivity)) this.deEsserSensitivity = 100;
                     showToast("De-Esser active. Monitoring vocal sibilance peaks (4k-8kHz)", "🛡️");
                 } else {
                     if (btn) {
@@ -157,14 +163,21 @@ const EQ_HearingCalMethods = {
                 this.drawCurve();
             },
 updateDeEsserSens: function(val) {
-                this.deEsserSensitivity = parseFloat(val);
+                const parsed = parseFloat(val);
+                this.deEsserSensitivity = Number.isFinite(parsed) ? parsed : 100;
+                // The per-frame viz tracker owns deEsserReductionDb (dynamic
+                // sibilance gain, up to -15 dB) and posts it to both the
+                // worklet and the drawn curve — do NOT write a static value
+                // here or it fights the tracker for a frame and spams the
+                // worklet with an immediately-superseded gain.
                 const sensVal = document.getElementById('deesser-sens-val');
                 if (sensVal) sensVal.textContent = val + "%";
                 this.drawCurve();
             },
             updateDeEsserFreq: function(freq) {
                 this.deEsserCurrentFreq = Math.round(freq);
-                // Push to worklet if active
+                if (!Number.isFinite(this.deEsserSensitivity)) this.deEsserSensitivity = 100;
+                // Seed post only; the tracker takes over on the next frame.
                 if (this.deEsserEnabled && SharedAudio.workletNode) {
                     SharedAudio.workletNode.port.postMessage({
                         type: 'updateSimulations',

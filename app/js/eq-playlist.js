@@ -536,7 +536,15 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
             if (newGain) newGain.gain.setTargetAtTime(Math.max(0.05, Math.min(4, loudG)), now, tc);
 
             standby.play().then(() => {
-                if (seq !== this._playSeq) return;
+                // A newer switch took over while play() was pending: this
+                // standby element is retired — kill playback and zero its
+                // arm so the stale track can't keep bleeding into the graph
+                // (the seam fade already moved on to a different arm).
+                if (seq !== this._playSeq) {
+                    try { standby.pause(); } catch (e) {}
+                    if (newGain) newGain.gain.setTargetAtTime(0, SharedAudio.ctx.currentTime, 0.005);
+                    return;
+                }
                 const slider = document.getElementById("eq-musicVolumeSlider");
                 const vol = slider ? parseFloat(slider.value) / 100 : 0.5;
                 this.fadeMusicVolume(vol, 0.05);

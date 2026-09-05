@@ -68328,6 +68328,32 @@
     ]
   },
   {
+    "id": "linsoul_avant",
+    "brand": "Linsoul",
+    "model": "Avant",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 370,
+    "driver_type": "Tribrid",
+    "driver_config": "2DD+3BA+1MEMS",
+    "impedance": 12,
+    "sensitivity": 104,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Punchy Bass",
+      "Resolving",
+      "Smooth",
+      "Sub-Bass",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/LINSOUL AVANT.txt"
+    ]
+  },
+  {
     "id": "linsoul_bld",
     "brand": "Linsoul",
     "model": "BLD",
@@ -110372,9 +110398,9 @@
     ]
   },
   {
-    "id": "tangzu_tian_peng",
+    "id": "tangzu_tianpeng",
     "brand": "Tangzu",
-    "model": "Tian Peng",
+    "model": "TianPeng",
     "variant": "",
     "year": 2024,
     "price_usd": 450,
@@ -110386,10 +110412,10 @@
     "form_factor": "IEM",
     "tags": [
       "Balanced",
-      "Mid-Tier",
+      "Detailed",
       "Good-Imaging",
       "Wide-Stage",
-      "Detailed"
+      "Mid-Tier"
     ],
     "files": [
       "data/AUDIOAMIGO/TANGZU TIAN PENG.txt",
@@ -119367,8 +119393,34 @@
     ]
   },
   {
-    "id": "txn_audio_dest_ti",
-    "brand": "Txn Audio",
+    "id": "txn_sound_ceramic",
+    "brand": "TXN Sound",
+    "model": "Ceramic",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 590,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 105,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Good-Imaging",
+      "Punchy Bass",
+      "Resolving",
+      "Smooth",
+      "V-Shaped",
+      "Premium"
+    ],
+    "files": [
+      "data/DUNG LE/TXN CERAMIC.txt"
+    ]
+  },
+  {
+    "id": "txn_sound_dest_ti",
+    "brand": "TXN Sound",
     "model": "Dest",
     "variant": "Ti",
     "year": 2024,
@@ -119380,13 +119432,40 @@
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Flagship",
       "Balanced",
       "Detailed",
-      "Smooth"
+      "Smooth",
+      "Flagship"
     ],
     "files": [
       "data/KAZI/TXN AUDIO DEST TI.txt"
+    ]
+  },
+  {
+    "id": "txn_sound_diamond",
+    "brand": "TXN Sound",
+    "model": "Diamond",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 1990,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 15,
+    "sensitivity": 106,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Good-Imaging",
+      "Resolving",
+      "Smooth",
+      "Technical",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DUNG LE/TXN DIAMOND.txt"
     ]
   },
   {
