@@ -9505,6 +9505,31 @@
     ]
   },
   {
+    "id": "astrotec_am850_mkii",
+    "brand": "Astrotec",
+    "model": "AM850",
+    "variant": "MKII",
+    "year": 2022,
+    "price_usd": 170,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 106,
+    "connector": "MMCX",
+    "form_factor": "IEM",
+    "tags": [
+      "Bright",
+      "Detailed",
+      "Neutral",
+      "Resolving",
+      "Technical",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/EARPHONES ARCHIVE/ASTROTEC AM850 MK2 (NEUTRAL (BLACK) NOZZLE).txt"
+    ]
+  },
+  {
     "id": "astrotec_am90",
     "brand": "Astrotec",
     "model": "AM90",
@@ -17738,6 +17763,31 @@
     ],
     "files": [
       "data/HANGOUT.AUDIO/BGVP DS1 PRO.txt"
+    ]
+  },
+  {
+    "id": "bgvp_dx6",
+    "brand": "BGVP",
+    "model": "DX6",
+    "variant": "",
+    "year": 2022,
+    "price_usd": 90,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 122,
+    "connector": "MMCX",
+    "form_factor": "Earbuds (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Budget"
+    ],
+    "files": [
+      "data/IANFANN/BGVP DX6.txt"
     ]
   },
   {
@@ -27243,6 +27293,31 @@
     ]
   },
   {
+    "id": "cvj_bidong",
+    "brand": "CVJ",
+    "model": "Bidong",
+    "variant": "",
+    "year": 2024,
+    "price_usd": 190,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+6BA",
+    "impedance": 28,
+    "sensitivity": 112,
+    "connector": "QDC",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Fun",
+      "Limited-Edition",
+      "Punchy Bass",
+      "V-Shaped",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/SOUNDCHECK39/CVJ BIDONG.txt"
+    ]
+  },
+  {
     "id": "cvj_cs8",
     "brand": "CVJ",
     "model": "CS8",
@@ -36244,6 +36319,32 @@
     ]
   },
   {
+    "id": "faith_audio_labs_e1000",
+    "brand": "Faith Audio Labs",
+    "model": "E1000",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 3800,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 45,
+    "sensitivity": 115,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Reference",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/ELISE AUDIO/FAITH AUDIO LABS E1000.txt"
+    ]
+  },
+  {
     "id": "fat_freq_20_6",
     "brand": "Fat Freq",
     "model": "20.6",
@@ -39475,6 +39576,30 @@
     ],
     "files": [
       "data/HU-FI/FINAL A10000.txt"
+    ]
+  },
+  {
+    "id": "final_audio_a2000",
+    "brand": "Final Audio",
+    "model": "A2000",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 100,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 19,
+    "sensitivity": 99,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Smooth",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/HU-FI/FINAL A2000.txt"
     ]
   },
   {
@@ -77932,6 +78057,30 @@
     ]
   },
   {
+    "id": "noble_audio_savant_ii",
+    "brand": "Noble Audio",
+    "model": "Savant",
+    "variant": "II",
+    "year": 2019,
+    "price_usd": 500,
+    "driver_type": "BA",
+    "driver_config": "2BA",
+    "impedance": 30,
+    "sensitivity": 108,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Smooth",
+      "Warm",
+      "Wide-Stage",
+      "Premium"
+    ],
+    "files": [
+      "data/HANGOUT.AUDIO/NOBLE SAVANT 2.txt"
+    ]
+  },
+  {
     "id": "noble_audio_shogun",
     "brand": "Noble Audio",
     "model": "Shogun",
@@ -80227,10 +80376,33 @@
     ]
   },
   {
+    "id": "open_audio_witch",
+    "brand": "Open Audio",
+    "model": "Witch",
+    "variant": "",
+    "year": 2020,
+    "price_usd": 90,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+1BA",
+    "impedance": 20,
+    "sensitivity": 110,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Punchy Bass",
+      "V-Shaped",
+      "Budget"
+    ],
+    "files": [
+      "data/BUKANAUDIOPHILE/OPEN AUDIO WITCH.txt"
+    ]
+  },
+  {
     "id": "open_audio_witch_pro",
     "brand": "Open Audio",
-    "model": "Witch Pro",
-    "variant": "",
+    "model": "Witch",
+    "variant": "Pro",
     "year": 2023,
     "price_usd": 90,
     "driver_type": "Hybrid",
@@ -80242,8 +80414,8 @@
     "tags": [
       "Balanced",
       "Detailed",
-      "Budget",
-      "Smooth"
+      "Smooth",
+      "Budget"
     ],
     "files": [
       "data/DUCBLOKE/OPENAUDIO WITCH PRO.txt"
@@ -112621,6 +112793,30 @@
     ]
   },
   {
+    "id": "tgxear_tantalus",
+    "brand": "TGXEAR",
+    "model": "Tantalus",
+    "variant": "",
+    "year": 2023,
+    "price_usd": 200,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 500,
+    "sensitivity": 86,
+    "connector": "Fixed Cable",
+    "form_factor": "Earbuds (Wired)",
+    "tags": [
+      "Balanced",
+      "Smooth",
+      "Vocal-Focused",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/DEN-FI/TGXEAR TANTALUS.txt"
+    ]
+  },
+  {
     "id": "tgxear_totem",
     "brand": "TGXEAR",
     "model": "Totem",
@@ -114113,6 +114309,31 @@
     ]
   },
   {
+    "id": "timeear_blossoms",
+    "brand": "TimeEar",
+    "model": "Blossoms",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 35,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 110,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Punchy Bass",
+      "Smooth",
+      "Vocal-Focused",
+      "Budget"
+    ],
+    "files": [
+      "data/SOUNDCHECK39/TIMEEAR BLOSSOMS.txt",
+      "data/SOUNDCHECK39/TIMEEAR BLOSSOMS VER2.txt"
+    ]
+  },
+  {
     "id": "timsok_ts_316",
     "brand": "Timsok",
     "model": "TS-316",
@@ -115407,6 +115628,31 @@
     ],
     "files": [
       "data/PAUL WASABII/TKZK WAVE.txt"
+    ]
+  },
+  {
+    "id": "toneking_dendroaspis_viridis",
+    "brand": "Toneking",
+    "model": "Dendroaspis Viridis",
+    "variant": "",
+    "year": 2020,
+    "price_usd": 120,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 113,
+    "connector": "MMCX",
+    "form_factor": "Earbuds (Wired)",
+    "tags": [
+      "Bright",
+      "Detailed",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/LOWN-FI/TONEKING DENDROASPIS VIRIDIS.txt"
     ]
   },
   {
@@ -122925,6 +123171,32 @@
     ]
   },
   {
+    "id": "vortex_reference",
+    "brand": "Vortex",
+    "model": "Reference",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 3300,
+    "driver_type": "Hybrid",
+    "driver_config": "2DD+2MEMS",
+    "impedance": 23,
+    "sensitivity": 102,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Good-Imaging",
+      "Resolving",
+      "Technical",
+      "V-Shaped",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/JOYCES REVIEW/VORTEX REFERENCE.txt"
+    ]
+  },
+  {
     "id": "vsonic_ares",
     "brand": "Vsonic",
     "model": "Ares",
@@ -125981,6 +126253,31 @@
     ]
   },
   {
+    "id": "yincrow_rw_4000",
+    "brand": "Yincrow",
+    "model": "RW-4000",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 350,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 115,
+    "connector": "MMCX",
+    "form_factor": "Earbuds (Wired)",
+    "tags": [
+      "Detailed",
+      "Smooth",
+      "Sub-Bass",
+      "Warm",
+      "Wide-Stage",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/EARPHONES ARCHIVE/YINCROW RW-4000.txt"
+    ]
+  },
+  {
     "id": "yincrow_rw_9",
     "brand": "Yincrow",
     "model": "RW-9",
@@ -127209,8 +127506,31 @@
     ]
   },
   {
+    "id": "zisin_336",
+    "brand": "ZiSin",
+    "model": "336",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 260,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+2BA",
+    "impedance": 11,
+    "sensitivity": 127,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Smooth",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/JAYTISS/ZISIN 336.txt"
+    ]
+  },
+  {
     "id": "zisin_340",
-    "brand": "Zisin",
+    "brand": "ZiSin",
     "model": "340",
     "variant": "",
     "year": 2024,
@@ -127257,33 +127577,6 @@
     ]
   },
   {
-    "id": "zmf_atrium",
-    "brand": "ZMF",
-    "model": "Atrium",
-    "variant": "",
-    "year": 2022,
-    "price_usd": 2500,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 300,
-    "sensitivity": 96,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Warm",
-      "Smooth",
-      "Wide-Stage",
-      "Flagship",
-      "Detailed",
-      "Resolving",
-      "U-Shaped"
-    ],
-    "files": [
-      "data/KUULOKENURKKA/ZMF ATRIUM.txt",
-      "data/SUPER REVIEW/ZMF ATRIUM.txt"
-    ]
-  },
-  {
     "id": "zmf_atrium_closed",
     "brand": "ZMF",
     "model": "Atrium",
@@ -127297,16 +127590,45 @@
     "connector": "Detachable Cable",
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
-      "Warm",
-      "Smooth",
-      "Wide-Stage",
-      "Flagship",
       "Detailed",
       "Resolving",
-      "U-Shaped"
+      "Smooth",
+      "U-Shaped",
+      "Warm",
+      "Wide-Stage",
+      "Flagship"
     ],
     "files": [
-      "data/KR0MKA/ZMF ATRIUM CLOSED.txt"
+      "data/KR0MKA/ZMF ATRIUM CLOSED.txt",
+      "data/HU-FI/ZMF ATRIUM CLOSED.txt"
+    ]
+  },
+  {
+    "id": "zmf_atrium_open",
+    "brand": "ZMF",
+    "model": "Atrium",
+    "variant": "Open",
+    "year": 2022,
+    "price_usd": 2500,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 300,
+    "sensitivity": 96,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Resolving",
+      "Smooth",
+      "U-Shaped",
+      "Warm",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/KUULOKENURKKA/ZMF ATRIUM.txt",
+      "data/SUPER REVIEW/ZMF ATRIUM.txt",
+      "data/HU-FI/ZMF ATRIUM.txt"
     ]
   },
   {
@@ -127388,10 +127710,10 @@
     ]
   },
   {
-    "id": "zmf_bokeh",
+    "id": "zmf_bokeh_closed",
     "brand": "ZMF",
     "model": "Bokeh",
-    "variant": "",
+    "variant": "Closed",
     "year": 2023,
     "price_usd": 1100,
     "driver_type": "DD",
@@ -127401,44 +127723,47 @@
     "connector": "Detachable Cable",
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
-      "Premium",
-      "Warm",
-      "Smooth",
-      "Relaxed",
+      "Fun",
+      "Good-Imaging",
       "Punchy Bass",
-      "Detailed"
+      "Relaxed",
+      "Smooth",
+      "Sub-Bass",
+      "Warm",
+      "Premium"
     ],
     "files": [
-      "data/KR0MKA/ZMF BOKEH.txt",
-      "data/KUULOKENURKKA/ZMF BOKEH.txt",
-      "data/KR0MKA/ZMF BOKEH S2.txt",
       "data/SUPER REVIEW/ZMF BOKEH CLOSED.txt"
     ]
   },
   {
-    "id": "zmf_caldera",
+    "id": "zmf_bokeh_open",
     "brand": "ZMF",
-    "model": "Caldera",
-    "variant": "",
-    "year": 2022,
-    "price_usd": 3500,
-    "driver_type": "Planar",
-    "driver_config": "1Planar",
-    "impedance": 60,
-    "sensitivity": 95,
+    "model": "Bokeh",
+    "variant": "Open",
+    "year": 2024,
+    "price_usd": 1000,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 80,
+    "sensitivity": 103,
     "connector": "Detachable Cable",
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
       "Balanced",
       "Detailed",
+      "Good-Imaging",
       "Punchy Bass",
-      "Resolving",
-      "Technical",
+      "Smooth",
+      "Warm",
       "Wide-Stage",
-      "Flagship"
+      "Premium"
     ],
     "files": [
-      "data/DEN-FI/ZMF CALDERA OPEN.txt"
+      "data/KUULOKENURKKA/ZMF BOKEH OPEN.txt",
+      "data/KR0MKA/ZMF BOKEH S2.txt",
+      "data/KR0MKA/ZMF BOKEH.txt",
+      "data/KUULOKENURKKA/ZMF BOKEH.txt"
     ]
   },
   {
@@ -127468,6 +127793,32 @@
     ]
   },
   {
+    "id": "zmf_caldera_open",
+    "brand": "ZMF",
+    "model": "Caldera",
+    "variant": "Open",
+    "year": 2022,
+    "price_usd": 3500,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 60,
+    "sensitivity": 95,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Punchy Bass",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DEN-FI/ZMF CALDERA OPEN.txt"
+    ]
+  },
+  {
     "id": "zmf_eikon",
     "brand": "ZMF",
     "model": "Eikon",
@@ -127491,6 +127842,34 @@
       "data/INNERFIDELITY/ZMF EIKON.txt",
       "data/KUULOKENURKKA/ZMF EIKON.txt",
       "data/ORATORY1990/ZMF EIKON.txt"
+    ]
+  },
+  {
+    "id": "zmf_ori_3_0",
+    "brand": "ZMF",
+    "model": "Ori",
+    "variant": "3.0",
+    "year": 2025,
+    "price_usd": 2200,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 60,
+    "sensitivity": 95,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Fun",
+      "Good-Imaging",
+      "Punchy Bass",
+      "Resolving",
+      "Sub-Bass",
+      "Technical",
+      "Warm",
+      "Flagship"
+    ],
+    "files": [
+      "data/GADGETRY TECH/ZMF ORI 3.txt"
     ]
   },
   {
@@ -127520,32 +127899,6 @@
     ]
   },
   {
-    "id": "zmf_verite",
-    "brand": "ZMF",
-    "model": "Verite",
-    "variant": "",
-    "year": 2019,
-    "price_usd": 2500,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 300,
-    "sensitivity": 99,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Wide-Stage",
-      "Good-Imaging",
-      "Flagship",
-      "Detailed",
-      "Resolving",
-      "Technical"
-    ],
-    "files": [
-      "data/KUULOKENURKKA/ZMF VERITE.txt",
-      "data/ORATORY1990/ZMF VERITE.txt"
-    ]
-  },
-  {
     "id": "zmf_verite_closed",
     "brand": "ZMF",
     "model": "Verite",
@@ -127559,15 +127912,43 @@
     "connector": "Detachable Cable",
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
-      "Wide-Stage",
-      "Good-Imaging",
-      "Flagship",
       "Detailed",
+      "Good-Imaging",
       "Resolving",
-      "Technical"
+      "Technical",
+      "Wide-Stage",
+      "Flagship"
     ],
     "files": [
-      "data/KUULOKENURKKA/ZMF VERITE CLOSED.txt"
+      "data/KUULOKENURKKA/ZMF VERITE CLOSED.txt",
+      "data/DEN-FI/ZMF VERITE CLOSED.txt"
+    ]
+  },
+  {
+    "id": "zmf_verite_open",
+    "brand": "ZMF",
+    "model": "Verite",
+    "variant": "Open",
+    "year": 2019,
+    "price_usd": 2500,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 300,
+    "sensitivity": 99,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Good-Imaging",
+      "Resolving",
+      "Technical",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/KUULOKENURKKA/ZMF VERITE.txt",
+      "data/ORATORY1990/ZMF VERITE.txt",
+      "data/DEN-FI/ZMF VERITE OPEN.txt"
     ]
   },
   {
