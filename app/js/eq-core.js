@@ -412,12 +412,13 @@ const EQ_Module = {
             echo: { damp: 0.36, filter: 0.91, fade: 0.27, predelay: 0.54, predelaymix: 0.58, size: 0.73, wet: 0.37, label: '🗣️ Echo' }
         },
 
-    updateStereoExpand: function(val) {
-        this.stereoExpandLevel = parseFloat(val);
-        const valEl = document.getElementById('stereo-expand-val');
-        if (valEl) valEl.textContent = val + "%";
-        this.updateCrossfeedDSP();
-    },
+        updateStereoExpand: function(val) {
+            const parsed = parseFloat(val);
+            this.stereoExpandLevel = Number.isFinite(parsed) ? parsed : 0;
+            const valEl = document.getElementById('stereo-expand-val');
+            if (valEl) valEl.textContent = this.stereoExpandLevel + "%";
+            this.updateCrossfeedDSP();
+        },
 
     graphModes: [
         { id: 'normal', label: '🎯 Exact' },
@@ -636,6 +637,11 @@ vizModalActive: false,
             }
 
             PEQDB_Module.targetMode = 'sculptor';
+            // Remember the pre-lab target mode: exitTuningLab previously left
+            // 'sculptor' set forever, which permanently disabled wheel zoom,
+            // background panning and dblclick-reset on the graph (all three
+            // gate on targetMode !== 'sculptor' in eq-graph-input.js).
+            PEQDB_Module._preLabTargetMode = (PEQDB_Module.targetMode && PEQDB_Module.targetMode !== 'sculptor') ? PEQDB_Module.targetMode : '';
             this.graphFocus = 'sculpt';
 
             const overlay = document.getElementById('graph-focus-selector');
@@ -657,6 +663,14 @@ vizModalActive: false,
             Mascot.isGeniusActive = false;
             this.isTuningLabActive = false;
             this.graphFocus = 'eq';
+            // Restore the pre-lab target mode (see enterTuningLab) so graph
+            // zoom/pan/dblclick-reset resume working after leaving the lab.
+            if (PEQDB_Module._preLabTargetMode !== undefined) {
+                PEQDB_Module.targetMode = PEQDB_Module._preLabTargetMode;
+                PEQDB_Module._preLabTargetMode = undefined;
+            } else {
+                PEQDB_Module.targetMode = '';
+            }
             setTimeout(() => Mascot.update(), 10);
 
             if (PEQDB_Module.isDrawingModeActive) {
@@ -940,8 +954,10 @@ vizModalActive: false,
                 const slider = document.getElementById("eq-a" + i);
                 const qSlider = document.getElementById("eq-q_a" + i);
 
+                // Advanced-band slider fills: the Q call previously passed
+                // (val, 10, undefined) -> ((q-10)/undefined)*100 = NaN%.
                 if (slider) setSliderFill(slider, b.g !== undefined ? b.g : 0, -20, 20);
-                if (qSlider) setSliderFill(qSlider, b.q !== undefined ? b.q : 0.1, 10);
+                if (qSlider) setSliderFill(qSlider, Number.isFinite(b.q) ? b.q : 0.1, 0.1, 10);
 
                 this.recalculateAutoGainMatch();
                 this.updatePreamp();
@@ -1045,7 +1061,7 @@ vizModalActive: false,
         computeEffectivePreamp: function() {
             const preampSlider = document.getElementById("eq-preampSlider");
             let val = preampSlider ? (parseFloat(preampSlider.value) || 0) : 0;
-            
+
             if (this.autoGainMatchActive && this.eqEnabled) {
                 val += this.autoGainCompensationDb || 0;
             }
@@ -1058,7 +1074,12 @@ vizModalActive: false,
             if (this._masterToneMaxBoost) {
                 val -= this._masterToneMaxBoost;
             }
-            return val;
+            // Clamp to the worklet's own ±60 dB range (dsp-processor.js
+            // updatePreamp): the extreme stack (slider -20 + auto-gain -20 -
+            // hearing ~18 - loudness 14 - tone 8) can reach -80, which the
+            // worklet clamps but the graph/exports previously drew at full
+            // value — the curve lied about the audible level at the extremes.
+            return Math.max(-60, Math.min(60, val));
         },
         enablePreampEdit: function() {
             const disp = document.getElementById("eq-preampDisplay");
@@ -1118,7 +1139,15 @@ vizModalActive: false,
             this._masterToneMaxBoost = Math.max(0, bassGain, trebGain);
             this.updatePreamp();
 
-            if (!this.graphBuilt || !SharedAudio.workletNode) return;
+            if (!this.graphBuilt || !SharedAudio.workletNode) {
+                // Pre-boot: queue the tone so _buildDSPGraph's flush applies it
+                // once the worklet exists. Without this, dragging Bass/Treble
+                // before the first click updated the drawn curve and cut the
+                // preamp (via _masterToneMaxBoost) while the shelves themselves
+                // were never posted — audible level loss with no tone change.
+                if (this._queuePendingDsp) this._queuePendingDsp('masterTone');
+                return;
+            }
 
             SharedAudio.workletNode.port.postMessage({
                 type: 'updateSimulations',
@@ -1405,7 +1434,11 @@ switchCategory: function(catId) {
                     const value = config.val;
                     if (config.param === 'attack') setAudioParamSmooth(SharedAudio.compressor.attack, value / 1000, 0.015);
                     else if (config.param === 'release') setAudioParamSmooth(SharedAudio.compressor.release, value / 1000, 0.015);
-                    else if (config.param === 'ratio') setAudioParamSmooth(SharedAudio.compressor.ratio, value / 10, 0.015);
+                    // Same OFF-gate as the boot push (eq-dsp-graph.js): the
+                    // compressor node is permanently wired into the chain, so
+                    // resetting its sliders while compressorActive is false must
+                    // leave ratio at the neutral 1.0, not the 4.0 slider default.
+                    else if (config.param === 'ratio') setAudioParamSmooth(SharedAudio.compressor.ratio, this.compressorActive ? value / 10 : 1.0, 0.015);
                     else if (config.param === 'frequency' && SharedAudio.compressorFilter) setAudioParamSmooth(SharedAudio.compressorFilter.frequency, value, 0.015);
                     else if (config.param === 'threshold') setAudioParamSmooth(SharedAudio.compressor.threshold, value / 10, 0.015);
                     else if (config.param === 'gain' && SharedAudio.compressorGain) setAudioParamSmooth(SharedAudio.compressorGain.gain, Math.pow(10, (value / 10) / 20), 0.015);
@@ -1417,6 +1450,13 @@ switchCategory: function(catId) {
             }
 
             this._suppressDraw = _prevSuppress;
+            // The per-band updateSlider calls above all ran under
+            // isProgrammaticSliderUpdate=true, which suppresses their worklet
+            // push (eq-core.js:917). Send the filter bank now so the worklet
+            // actually resets — same pattern as applyPreset/applyCustomPreset/
+            // generateLeastSquaresAutoEQ. Without this the old coefficients
+            // keep playing until the next manual slider nudge.
+            if (this.graphBuilt) this.updateAudioConnections();
             if (!skipDraw) this.drawCurve();
             if (window.syncGlobalSliders) window.syncGlobalSliders();
         },

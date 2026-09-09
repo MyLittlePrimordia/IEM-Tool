@@ -126,7 +126,15 @@ getLiveFiltersState: function() {
                 ? (PEQDB_Module.viewMinF + '-' + PEQDB_Module.viewMaxF) : 'x';
 
             const cheapKey = [simStrength, loudnessVol, Number.isFinite(deEsserFreq) ? +deEsserFreq.toFixed(2) : 0,
-                this.deEsserEnabled ? 1 : 0, this.deEsserReductionDb || 0,
+                this.deEsserEnabled ? 1 : 0,
+                // Quantize the tracked de-esser gain: the viz tracker smooths
+                // deEsserReductionDb toward a moving target every frame at
+                // full float precision (eq-visualizer.js), so keying the
+                // magnitude cache on the raw value defeated the cache and
+                // forced a full ~30-biquad x 1000-pt recompute every frame
+                // while the de-esser was active. 0.05 dB steps are far below
+                // audibility/visual resolution.
+                Number.isFinite(this.deEsserReductionDb) ? +this.deEsserReductionDb.toFixed(2) : 0,
                 this.loudnessActive ? 1 : 0, this.loudnessCalibrationVol, this.loudnessStrength,
                 this.crossoverActive ? 1 : 0, this.crossoverType,
                 this.crossoverLowTrim, this.crossoverLowMidTrim, this.crossoverMidTrim,

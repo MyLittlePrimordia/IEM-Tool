@@ -214,7 +214,20 @@ window.bootstrapAlphabetIndex = function () {
             // must invalidate the cache the same way a raw slider move does.
             const effPreamp = (typeof EQ_Module.computeEffectivePreamp === 'function')
                 ? EQ_Module.computeEffectivePreamp() : realValues.preVal;
-            let contentHash = this.hashString(JSON.stringify([effPreamp, realValues.mainVals, realValues.advVals]));
+            // Master EQ bypass: getCompositeFilterMagnitude gates the whole
+            // band bank on eqEnabled, but getRealValues does not include it —
+            // toggling EQ off/on changed the scored composite while this
+            // fingerprint (and therefore the match-list cache) stayed identical.
+            const eqOn = EQ_Module.eqEnabled !== false ? '1' : '0';
+            // Virtual band CONTENT: worklet slots 50+ contribute to the
+            // composite (AutoEQ 30/40/50-band solves) but are absent from
+            // mainVals/advVals — hash their gains so a virtual-only change
+            // can't serve stale matches. (Length alone missed same-count re-solves.)
+            let virtHash = 'nv';
+            if (Array.isArray(EQ_Module.virtualBands) && EQ_Module.virtualBands.length) {
+                virtHash = this.hashCurvePoints(EQ_Module.virtualBands.map(b => [b.hz || 0, b.g || 0]));
+            }
+            let contentHash = this.hashString(JSON.stringify([effPreamp, realValues.mainVals, realValues.advVals, eqOn, virtHash]));
             if (baseCurve) {
                 contentHash += '-' + this.hashCurvePoints(baseCurve.data);
             }
@@ -245,7 +258,21 @@ function showDebugError(message, source) {
         errDiv.style = 'position:fixed; bottom:20px; left:20px; right:20px; background:rgba(220,38,38,0.95); color:white; font-family:monospace; font-size:11px; padding:12px; border-radius:6px; z-index:9999; border:1px solid #ef4444; box-shadow:0 10px 30px rgba(0,0,0,0.55); overflow-y:auto; max-height:180px;';
         document.body.appendChild(errDiv);
     }
-    errDiv.innerHTML = `<strong>⚠️ JS Runtime Exception:</strong> ${message} <br> <span style="opacity:0.85; font-size:10px; margin-top:4px; display:block;">${source}</span>`;
+    // Build via DOM text nodes, not innerHTML: message/source derive from
+    // error events (e.message can carry attacker-influenced strings from
+    // parsed imports; e.filename is URL-controlled) and must never hit an
+    // HTML sink. esc() exists in this file but innerHTML with template
+    // interpolation of both fields was an injection sink.
+    errDiv.textContent = '';
+    const strong = document.createElement('strong');
+    strong.textContent = '⚠️ JS Runtime Exception: ' + message;
+    const br = document.createElement('br');
+    const sourceSpan = document.createElement('span');
+    sourceSpan.style.cssText = 'opacity:0.85; font-size:10px; margin-top:4px; display:block;';
+    sourceSpan.textContent = String(source);
+    errDiv.appendChild(strong);
+    errDiv.appendChild(br);
+    errDiv.appendChild(sourceSpan);
 }
 
 window.addEventListener('error', function(e) {

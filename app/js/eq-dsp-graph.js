@@ -15,6 +15,13 @@
 const EQ_DspGraphMethods = {        _dspBuildPromise: null,
         ensureDSPGraph: async function() {
             if (this.graphBuilt) return;
+            // Failure cooldown: a failed addModule marks _dspBuildFailedAt; the
+            // per-click boot handler retries the whole build, so without a
+            // cooldown every click re-fired the error toast (and a partial
+            // first build could strand the media source on an orphaned
+            // worklet — see the source-rewire guard below).
+            if (this._dspBuildFailedAt && (Date.now() - this._dspBuildFailedAt) < 5000) return;
+            this._dspBuildFailedAt = null;
             // Re-entrancy guard. Callers fire this concurrently (document click
             // handler, playback hook, drag flush, queued DSP tags). Each awaited
             // addModule independently and built a SECOND worklet graph; the media
@@ -50,6 +57,13 @@ const EQ_DspGraphMethods = {        _dspBuildPromise: null,
                 await ctx.audioWorklet.addModule('app/js/dsp-processor.js');
                 console.log("[AudioEngine] AudioWorklet dsp-processor module loaded successfully.");
             } catch (err) {
+                // Terminal-failure marking: without it, every subsequent click
+                // re-ran the FULL build (error-toast spam) and, if a first
+                // attempt died partway, a second run created a NEW worklet
+                // node while this.source/sourceGain still fed the old orphan —
+                // silence with a live-looking UI. Allow a retried build only
+                // after a cooldown; graphBuilt stays false either way.
+                this._dspBuildFailedAt = Date.now();
                 console.error("[AudioEngine] Failed to load AudioWorklet module. Falling back to native structures.", err);
                 showDebugError("AudioWorklet failed to load. Check console/network paths.", "dsp-processor.js");
                 return;
@@ -71,8 +85,10 @@ const EQ_DspGraphMethods = {        _dspBuildPromise: null,
 
             this.musicVolumeNode = ctx.createGain();
             const volSlider = document.getElementById("eq-musicVolumeSlider");
-            const initialVol = volSlider ? (parseFloat(volSlider.value) / 100) : 0.5;
-            this.musicVolumeNode.gain.value = initialVol;
+            const rawVol = volSlider ? parseFloat(volSlider.value) : NaN;
+            // NaN guard: an unparsed slider value set gain.value = NaN —
+            // permanent silence from the whole output chain.
+            this.musicVolumeNode.gain.value = Number.isFinite(rawVol) ? (rawVol / 100) : 0.5;
 
             this.inputGainNode.connect(SharedAudio.workletNode);
 
@@ -152,6 +168,19 @@ const EQ_DspGraphMethods = {        _dspBuildPromise: null,
                 this.sourceGain.connect(this.inputGainNode);
                 this.audioEl.volume = 1.0;
                 this.connected = true;
+            } else if (this.source && this.sourceGain) {
+                // Rebuild after a failed/partial first attempt: the existing
+                // MediaElementSource is one-per-element for the context's
+                // lifetime and may still be wired to an ORPHANED worklet from
+                // the previous run — re-point the gain arm at THIS build's
+                // inputGainNode so updateFilters messages reach the bank the
+                // source is actually feeding.
+                try {
+                    this.sourceGain.disconnect();
+                    this.sourceGain.connect(this.inputGainNode);
+                } catch (e) {
+                    console.warn("[AudioEngine] Source arm rewire on rebuild failed:", e);
+                }
             }
 
             // Gapless/crossfade standby arm: the B element (eq-audio-gapless)
@@ -188,6 +217,14 @@ const EQ_DspGraphMethods = {        _dspBuildPromise: null,
                         else if (tag === 'gear') this.applyGearSimDSP();
                         else if (tag === 'hearing') this.applyHearingCalibrationGains();
                         else if (tag === 'tape') this.updateTapeModDSP();
+                        // DAC source sim (slots 10/11 + inputGainNode headroom).
+                        // The old 'simulation' queue tag collided with the
+                        // eartip updater above — this producer now queues
+                        // 'sourceSim' (see eq-source-sim.js).
+                        else if (tag === 'sourceSim') this.applySourceSimulation();
+                        // Full re-apply (both shelves), not a single-slider
+                        // call: updateMasterTone reads Bass AND Treble and
+                        // pushes slots 22+23 together.
                         else if (tag === 'masterTone') this.updateMasterTone('bass', document.getElementById('eq-masterBass')?.value || 0);
                     } catch(_) {}
                 }
@@ -203,9 +240,27 @@ const EQ_DspGraphMethods = {        _dspBuildPromise: null,
             this.updateLoudnessDSP();
             this.updateCrossoverDSP();
 
+            // DAC source sim (slots 10/11 + inputGainNode headroom):
+            // applySourceSimulation runs pre-boot from IEM.updateAll() and
+            // queues 'sourceSim' — flushed above; this explicit call covers
+            // the boot path with no queued tags too.
+            this.applySourceSimulation();
+
+            // Master Bass/Treble shelves (worklet sim slots 22/23): pre-boot
+            // drags queue the 'masterTone' tag (flushed above), but the boot
+            // re-apply list previously omitted it — a session that set tone
+            // pre-boot got the preamp cut without the shelves.
+            this.updateMasterTone('bass', document.getElementById('eq-masterBass')?.value || 0);
+
             const ratioSlider = document.getElementById('comp-ratio-slider');
             if (ratioSlider) {
-                this.updateCompressorParam('ratio', parseFloat(ratioSlider.value) / 10);
+                // Only push the live ratio when the compressor is actually
+                // ON. Pushing the slider default unconditionally meant every
+                // fresh session booted with 4:1 compression while the UI
+                // read "Comp: OFF" (OFF is represented solely by ratio=1 —
+                // the node is permanently wired into the chain).
+                this.updateCompressorParam('ratio',
+                    this.compressorActive ? parseFloat(ratioSlider.value) / 10 : 1.0);
             }
 
             // With the standby arm live, preload the next track so the first

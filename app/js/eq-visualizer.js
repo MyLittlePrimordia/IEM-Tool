@@ -231,18 +231,11 @@ startVisualizer: function() {
                     this.drawCurve();
                 }
 
-                if (!hasData) {
-                    const time = Date.now() * 0.0025;
-                    for (let i = 0; i < bufferLength; i++) {
-                        timeDomain[i] = 128 + Math.sin(i * 0.035 + time) * 30 * Math.sin(time * 0.2);
-
-                        const weight = Math.pow((i / bufferLength), 1.5);
-                        const baseValue = 45 + Math.sin(i * 0.06 - time) * 20;
-                        const freqResponse = Math.sin(i * 0.035 + time) * 30 * Math.sin(time * 0.2);
-
-                        dataArray[i] = Math.max(0, baseValue * (1 - weight) + freqResponse * weight);
-                    }
-                }
+                // NOTE: the old !hasData branch synthesized a fake animated
+                // waveform/spectrum (~3x sin per FFT bin per frame) purely for
+                // motion while nothing was audible. Removed: the analyser
+                // reads above already refreshed the buffers with true silence
+                // (zeros / 128s), so the visualizer renders a real flat line.
 
             if (SharedAudio.analyserL && SharedAudio.analyserR) {
                 const binCountL = SharedAudio.analyserL.frequencyBinCount;
@@ -326,16 +319,26 @@ if (diffR > 0.4) {
                     }
                 }
 
-                const peaksHoldL = vizPeaksL();
-                const targetPeakLeft = this.peakL.toFixed(1) + "%";
-                for (let i = 0; i < peaksHoldL.length; i++) {
-                    peaksHoldL[i].style.left = targetPeakLeft;
+                // Change-gated peak writes: these are layout-invalidating
+                // style.left writes that previously ran unconditionally at
+                // 60fps (unlike the bars above, which gate on diff). Cache
+                // the last written value and touch the DOM only when the
+                // rounded percentage actually moved.
+                if (this._lastPeakLeftL !== this.peakL.toFixed(1)) {
+                    this._lastPeakLeftL = this.peakL.toFixed(1);
+                    const peaksHoldL = vizPeaksL();
+                    const targetPeakLeft = this._lastPeakLeftL + "%";
+                    for (let i = 0; i < peaksHoldL.length; i++) {
+                        peaksHoldL[i].style.left = targetPeakLeft;
+                    }
                 }
-
-                const peaksHoldR = vizPeaksR();
-                const targetPeakRight = this.peakR.toFixed(1) + "%";
-                for (let i = 0; i < peaksHoldR.length; i++) {
-                    peaksHoldR[i].style.left = targetPeakRight;
+                if (this._lastPeakLeftR !== this.peakR.toFixed(1)) {
+                    this._lastPeakLeftR = this.peakR.toFixed(1);
+                    const peaksHoldR = vizPeaksR();
+                    const targetPeakRight = this._lastPeakLeftR + "%";
+                    for (let i = 0; i < peaksHoldR.length; i++) {
+                        peaksHoldR[i].style.left = targetPeakRight;
+                    }
                 }
 
                 const currentAutoGain = (SharedAudio.autoGainNode) ? SharedAudio.autoGainNode.gain.value : 1.0;
@@ -343,30 +346,39 @@ if (diffR > 0.4) {
                 const isAttenuationActive = (reductionDb < -0.15);
 
                 const clippingTexts = vizClips();
-                for (let i = 0; i < clippingTexts.length; i++) {
-                    const el = clippingTexts[i];
-
-                    // Only swap the state classes — never replace className, or the
-                    // fixed width (w-16 / min-w-[64px]) gets stripped and the footer
-                    // right group reflows (scrub + peak meter jump right).
-                    el.classList.remove('text-emerald-400', 'text-amber-500', 'text-rose-500', 'animate-pulse', 'cursor-pointer');
-
-                    if (isAttenuationActive) {
-                        el.textContent = `${reductionDb.toFixed(1)} dB`;
-                        el.classList.add('text-amber-500', 'animate-pulse', 'cursor-pointer');
-                        el.title = "Anti-Clip AGC active. Automatically maintaining headroom.";
-                    } else {
-                        el.title = "";
-                        if (this.meterCurrentL > 94 || this.meterCurrentR > 94) {
-                            el.textContent = "⚡ Clipping";
-                            el.classList.add('text-rose-500', 'animate-pulse');
-                        } else if (this.meterCurrentL > 75 || this.meterCurrentR > 75) {
-                            el.textContent = "⚠️ Warning";
-                            el.classList.add('text-amber-500');
-                        } else {
-                            el.textContent = "Stable";
-                            el.classList.add('text-emerald-400');
-                        }
+                // Compute the label ONCE, then touch the DOM only when the
+                // state actually changed — the old block ran 5 classList ops
+                // + textContent + title writes per element per frame, even
+                // while the label sat unchanged at "Stable".
+                let clipLabel, clipClasses, clipTitle;
+                if (isAttenuationActive) {
+                    clipLabel = `${reductionDb.toFixed(1)} dB`;
+                    clipClasses = 'text-amber-500 animate-pulse cursor-pointer';
+                    clipTitle = "Anti-Clip AGC active. Automatically maintaining headroom.";
+                } else if (this.meterCurrentL > 94 || this.meterCurrentR > 94) {
+                    clipLabel = "⚡ Clipping";
+                    clipClasses = 'text-rose-500 animate-pulse';
+                    clipTitle = "";
+                } else if (this.meterCurrentL > 75 || this.meterCurrentR > 75) {
+                    clipLabel = "⚠️ Warning";
+                    clipClasses = 'text-amber-500';
+                    clipTitle = "";
+                } else {
+                    clipLabel = "Stable";
+                    clipClasses = 'text-emerald-400';
+                    clipTitle = "";
+                }
+                if (this._lastClipLabel !== clipLabel) {
+                    this._lastClipLabel = clipLabel;
+                    for (let i = 0; i < clippingTexts.length; i++) {
+                        const el = clippingTexts[i];
+                        // Only swap the state classes — never replace className, or the
+                        // fixed width (w-16 / min-w-[64px]) gets stripped and the footer
+                        // right group reflows (scrub + peak meter jump right).
+                        el.classList.remove('text-emerald-400', 'text-amber-500', 'text-rose-500', 'animate-pulse', 'cursor-pointer');
+                        clipClasses.split(' ').forEach(c => { if (c) el.classList.add(c); });
+                        el.textContent = clipLabel;
+                        el.title = clipTitle;
                     }
                 }
             }
@@ -515,10 +527,16 @@ if (diffR > 0.4) {
                     const mobTimeCur = vizNode('mobile-time-current');
                     const mobScrub = vizNode('mobile-scrub');
                     const mobTimeDur = vizNode('mobile-time-duration');
-
-                    if (timeCur) timeCur.textContent = formattedCur;
-                    if (mobTimeCur) mobTimeCur.textContent = formattedCur;
-                    if (modalTimeCur) modalTimeCur.textContent = formattedCur;
+                    // textContent writes are style/paint-invalidation even
+                    // when identical — write only when the second-resolution
+                    // display string actually changed (formatTime's output
+                    // changes at most a few times a second).
+                    if (this._lastTimeText !== formattedCur) {
+                        this._lastTimeText = formattedCur;
+                        if (timeCur) timeCur.textContent = formattedCur;
+                        if (mobTimeCur) mobTimeCur.textContent = formattedCur;
+                        if (modalTimeCur) modalTimeCur.textContent = formattedCur;
+                    }
 
                     if (vizActiveEl.duration) {
                         const pct = (vizActiveEl.currentTime / vizActiveEl.duration) * 100;
@@ -527,9 +545,12 @@ if (diffR > 0.4) {
                         if (modalScrub) modalScrub.value = pct;
 
                         const formattedDur = this.formatTime(vizActiveEl.duration);
-                        if (timeDur) timeDur.textContent = formattedDur;
-                        if (mobTimeDur) mobTimeDur.textContent = formattedDur;
-                        if (modalTimeDur) modalTimeDur.textContent = formattedDur;
+                        if (this._lastDurText !== formattedDur) {
+                            this._lastDurText = formattedDur;
+                            if (timeDur) timeDur.textContent = formattedDur;
+                            if (mobTimeDur) mobTimeDur.textContent = formattedDur;
+                            if (modalTimeDur) modalTimeDur.textContent = formattedDur;
+                        }
                     }
                 }
 

@@ -135,14 +135,42 @@ return;
                 }
             }
         },
-        getState: function() { return { freq: this.current, volume: document.getElementById('tone-volume').value }; },
+        // #tone-volume / #tone-vol-display do not exist in index.html (the
+        // tone panel has no volume control). Every dereference must be
+        // guarded or getState() throws and kills its callers: Save-to-Library
+        // (iem-module.js saveToLibrary), workspace Export/Backup (saveConfig),
+        // Clear-all-workspace (resetAll — after localStorage.clear, leaving a
+        // half-wiped workspace), and profile import (loadProfileData).
+        _readToneVolume: function() {
+            const el = document.getElementById('tone-volume');
+            const raw = el ? parseFloat(el.value) : NaN;
+            return Number.isFinite(raw) ? raw : 50;
+        },
+        getState: function() { return { freq: this.current, volume: this._readToneVolume() }; },
         loadState: function(state) {
-            if (state) { this.current = state.freq || 0; document.getElementById('tone-slider').value = this.current; document.getElementById('tone-volume').value = (state.volume || 50); document.getElementById('tone-vol-display').innerText = (state.volume || 50) + '%'; if(this.gain) setAudioParamSmooth(this.gain.gain, (state.volume || 50) / 100 * 0.2); } else { this.reset(); }
+            if (state) {
+                this.current = state.freq || 0;
+                const slider = document.getElementById('tone-slider');
+                if (slider) slider.value = this.current;
+                const volEl = document.getElementById('tone-volume');
+                const vol = (state.volume !== undefined && Number.isFinite(parseFloat(state.volume))) ? parseFloat(state.volume) : 50;
+                if (volEl) volEl.value = vol;
+                const dispEl = document.getElementById('tone-vol-display');
+                if (dispEl) dispEl.innerText = vol + '%';
+                if (this.gain) setAudioParamSmooth(this.gain.gain, vol / 100 * 0.2);
+            } else { this.reset(); }
             this.updateUI();
         },
         reset: function() {
-            this.current = 0; document.getElementById('tone-slider').value = 0; document.getElementById('tone-volume').value = 50; document.getElementById('tone-vol-display').innerText = '50%';
-            if(this.gain) setAudioParamSmooth(this.gain.gain, 50 / 100 * 0.2); this.updateUI();
+            this.current = 0;
+            const slider = document.getElementById('tone-slider');
+            if (slider) slider.value = 0;
+            const volEl = document.getElementById('tone-volume');
+            if (volEl) volEl.value = 50;
+            const dispEl = document.getElementById('tone-vol-display');
+            if (dispEl) dispEl.innerText = '50%';
+            if (this.gain) setAudioParamSmooth(this.gain.gain, 50 / 100 * 0.2);
+            this.updateUI();
         }
     };
 

@@ -144,14 +144,16 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
 
             EQ_Module.isProgrammaticSliderUpdate = true;
 
+            try {
             const { preVal, mainVals } = eqData;
 
             if (preVal !== undefined) {
+                const numPreVal = parseFloat(preVal);
                 const preValEl = document.getElementById("eq-preampVal");
                 const preSlider = document.getElementById("eq-preampSlider");
-                if (preValEl) preValEl.value = preVal.toFixed(1);
-                if (preSlider) preSlider.value = Math.max(-20, Math.min(20, preVal));
-                if (this.preampNode) setAudioParamSmooth(this.preampNode.gain, Math.pow(10, preVal / 20));
+                if (preValEl && Number.isFinite(numPreVal)) preValEl.value = numPreVal.toFixed(1);
+                if (preSlider && Number.isFinite(numPreVal)) preSlider.value = Math.max(-20, Math.min(20, numPreVal));
+                if (this.preampNode && Number.isFinite(numPreVal)) setAudioParamSmooth(this.preampNode.gain, Math.pow(10, numPreVal / 20));
                 this.updatePreamp();
             }
 
@@ -159,10 +161,18 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
                 mainVals.forEach((v, i) => {
                     if (i < this.bands.length) {
                         const b = this.bands[i];
-                        const hz = v.hz !== undefined ? v.hz : b.hz;
-                        const g = v.g !== undefined ? v.g : 0.0;
-                        const q = v.q !== undefined ? v.q : b.defaultQ;
-                        const type = v.type || 'peaking';
+                        // Imported profiles are untrusted: coerce every field
+                        // so a string/null member can never reach .toFixed and
+                        // throw (which, before the try/finally, permanently
+                        // wedged isProgrammaticSliderUpdate=true and killed
+                        // all audio updates for the session).
+                        const rawHz = (v && v.hz !== undefined) ? parseFloat(v.hz) : NaN;
+                        const rawG = (v && v.g !== undefined) ? parseFloat(v.g) : NaN;
+                        const rawQ = (v && v.q !== undefined) ? parseFloat(v.q) : NaN;
+                        const hz = Number.isFinite(rawHz) ? rawHz : b.hz;
+                        const g = Number.isFinite(rawG) ? rawG : 0.0;
+                        const q = Number.isFinite(rawQ) ? rawQ : b.defaultQ;
+                        const type = (v && typeof v.type === 'string' && ['peaking','lowshelf','highshelf','highpass','lowpass','notch'].includes(v.type)) ? v.type : 'peaking';
 
                         b.type = type;
 
@@ -198,10 +208,13 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
                 eqData.advVals.forEach((v, i) => {
                     if (i < this.advancedBands.length) {
                         const b = this.advancedBands[i];
-                        b.hz = v.hz !== undefined ? v.hz : b.hz;
-                        b.g = v.g !== undefined ? v.g : 0.0;
-                        b.q = v.q !== undefined ? v.q : b.defaultQ;
-                        b.type = v.type || 'peaking';
+                        const rawAdvHz = (v && v.hz !== undefined) ? parseFloat(v.hz) : NaN;
+                        const rawAdvG = (v && v.g !== undefined) ? parseFloat(v.g) : NaN;
+                        const rawAdvQ = (v && v.q !== undefined) ? parseFloat(v.q) : NaN;
+                        b.hz = Number.isFinite(rawAdvHz) ? rawAdvHz : b.hz;
+                        b.g = Number.isFinite(rawAdvG) ? rawAdvG : 0.0;
+                        b.q = Number.isFinite(rawAdvQ) ? rawAdvQ : b.defaultQ;
+                        b.type = (v && typeof v.type === 'string' && ['peaking','lowshelf','highshelf','highpass','lowpass','notch'].includes(v.type)) ? v.type : 'peaking';
 
                         const fInput = document.getElementById("eq-af" + i);
                         const sSlider = document.getElementById("eq-a" + i);
@@ -216,8 +229,18 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
                 });
             }
             this.drawCurve();
+            } finally {
+                // ALWAYS release the programmatic flag, even when a malformed
+                // member threw mid-loop — a stuck true flag silently disabled
+                // every subsequent manual audio update for the whole session.
+                EQ_Module.isProgrammaticSliderUpdate = false;
+            }
 
-            EQ_Module.isProgrammaticSliderUpdate = false;
+            // Same as applyPreset/applyCustomPreset/resetEQ: the per-band
+            // updateSlider calls ran under the programmatic flag, so push the
+            // solved filter bank to the worklet now — imported EQ profiles
+            // previously stayed inaudible until the next manual slider nudge.
+            if (this.graphBuilt) this.updateAudioConnections();
 
             // An imported/loaded profile reshaped the DSP curve even though it
             // was applied programmatically — unlock Similar-mode matching.

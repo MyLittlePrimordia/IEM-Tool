@@ -75,7 +75,13 @@ const Shortcuts = {
 
         const wrap = document.createElement('div');
         wrap.id = 'shortcuts-help-modal';
-        wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden flex items-center justify-center p-4';
+        // NOTE: 'hidden' only — the modal's visible state is 'flex' (added by
+        // toggleHelp). Shipping BOTH classes here meant the first toggleHelp
+        // pass left 'hidden flex' coexisting (.hidden wins the cascade, but
+        // the X-close path then re-added 'hidden' without removing 'flex',
+        // desyncing the two toggles so the first open rendered display:block
+        // instead of flex and lost its centering until the second open).
+        wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden items-center justify-center p-4';
         wrap.innerHTML = `
             <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none max-h-[85vh] overflow-y-auto">
                 <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
@@ -87,11 +93,14 @@ const Shortcuts = {
             </div>`;
         document.body.appendChild(wrap);
 
-        const close = () => wrap.classList.add('hidden');
+        // Keep the hidden/flex pair in lockstep on every close path: the
+        // toggleHelp toggles assume a closed modal carries 'hidden' and NOT
+        // 'flex'. If close() leaves 'flex' behind, the next toggle REMOVES
+        // it (instead of adding), the one after ADDS 'hidden', and the modal
+        // opens as display:block — an uncentered full-width panel.
+        const close = () => { wrap.classList.add('hidden'); wrap.classList.remove('flex'); };
         wrap.querySelector('#shortcuts-help-close').onclick = close;
-        wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
-
-        this._modalEl = wrap;
+        wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });        this._modalEl = wrap;
         return wrap;
     },
 

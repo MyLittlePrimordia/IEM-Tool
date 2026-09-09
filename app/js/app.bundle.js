@@ -1477,7 +1477,13 @@ const Shortcuts = {
 
         const wrap = document.createElement('div');
         wrap.id = 'shortcuts-help-modal';
-        wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden flex items-center justify-center p-4';
+        // NOTE: 'hidden' only — the modal's visible state is 'flex' (added by
+        // toggleHelp). Shipping BOTH classes here meant the first toggleHelp
+        // pass left 'hidden flex' coexisting (.hidden wins the cascade, but
+        // the X-close path then re-added 'hidden' without removing 'flex',
+        // desyncing the two toggles so the first open rendered display:block
+        // instead of flex and lost its centering until the second open).
+        wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden items-center justify-center p-4';
         wrap.innerHTML = `
             <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none max-h-[85vh] overflow-y-auto">
                 <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
@@ -1489,11 +1495,14 @@ const Shortcuts = {
             </div>`;
         document.body.appendChild(wrap);
 
-        const close = () => wrap.classList.add('hidden');
+        // Keep the hidden/flex pair in lockstep on every close path: the
+        // toggleHelp toggles assume a closed modal carries 'hidden' and NOT
+        // 'flex'. If close() leaves 'flex' behind, the next toggle REMOVES
+        // it (instead of adding), the one after ADDS 'hidden', and the modal
+        // opens as display:block — an uncentered full-width panel.
+        const close = () => { wrap.classList.add('hidden'); wrap.classList.remove('flex'); };
         wrap.querySelector('#shortcuts-help-close').onclick = close;
-        wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
-
-        this._modalEl = wrap;
+        wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });        this._modalEl = wrap;
         return wrap;
     },
 
@@ -1594,8 +1603,42 @@ const EQ_ExportMethods = {
                 }, 50);
             });
         },
+        // Export preamp parity: the live audio path applies
+        // computeEffectivePreamp() = slider + autoGain - hearing - loudness -
+        // masterTone headroom (eq-core.js), but exporters read the raw
+        // #eq-preampVal (slider-only) while ALSO emitting the hearing-cal
+        // peaks and master bass/treble shelves — the very boosts that
+        // triggered the live headroom pull-back. The exported preset then
+        // played up to ~14 dB hotter than the tool (clip-prone on target
+        // hardware). Loudness compensation and auto-gain are intentionally
+        // omitted from every export (they cancel out), so the correct export
+        // preamp is: slider - hearingHeadroom - masterToneHeadroom.
+        getExportPreamp: function() {
+            var preValEl = document.getElementById("eq-preampVal");
+            var slider = preValEl ? parseFloat(preValEl.value) : 0;
+            if (!Number.isFinite(slider)) slider = 0;
+            var hearing = (this.hearingCalEnabled && Number.isFinite(this._hearingMaxBoost)) ? this._hearingMaxBoost : 0;
+            var tone = Number.isFinite(this._masterToneMaxBoost) ? this._masterToneMaxBoost : 0;
+            return Math.max(-60, Math.min(60, slider - hearing - tone));
+        },
+        // Export-snapshot of the band state: identical to getRealValues EXCEPT
+        // it honors the master EQ toggle. The live DSP ORs !eqEnabled into
+        // every band's bypass (eq-dsp-graph.js updateAudioConnections) and the
+        // drawn curve gates on it too (getCompositeFilterMagnitude) — the five
+        // exporters previously read full nonzero band state, so exporting with
+        // EQ: OFF produced a preset that sounded nothing like the flat output.
+        // (getRealValues stays untouched: state SAVE must preserve the config
+        // regardless of the bypass.)
+        getExportValues: function() {
+            const vals = this.getRealValues() || {};
+            if (this.eqEnabled === false) {
+                vals.mainVals = (vals.mainVals || []).map(v => v ? Object.assign({}, v, { g: 0 }) : v);
+                vals.advVals = (vals.advVals || []).map(v => v ? Object.assign({}, v, { g: 0 }) : v);
+            }
+            return vals;
+        },
         exportPeace: function() {
-            var _a = this.getRealValues() || {}, preVal = _a.preVal || 0, mainVals = _a.mainVals || [], advVals = _a.advVals || [];
+            var _a = this.getExportValues() || {}, preVal = this.getExportPreamp(), mainVals = _a.mainVals || [], advVals = _a.advVals || [];
             var out = 'Preamp: ' + preVal.toFixed(1) + ' dB\n';
             var fIdx = 1;
 
@@ -1615,16 +1658,15 @@ const EQ_ExportMethods = {
                 
                 out += 'Filter ' + (fIdx++) + ': ON ' + apoType + ' Fc ' + v.hz + ' Hz Gain ' + gVal.toFixed(1) + ' dB Q ' + v.q.toFixed(2) + '\n';
             };
-            
-            const bandCount = PEQDB_Module.autoeqResolution || 10;
-            
-            // 1. Export Standard Bands (Up to 10)
+
+            // 1. Export Standard Bands (all 10)
             // The DSP always applies all 10 standard + all 10 advanced bands
             // regardless of autoeqResolution, so every non-flat band must be
             // exported — a smaller bandCount only affects how many get a slot
-            // in the auto-EQ resolution, not what the user hears.
-            const standardCountToExport = Math.min(10, bandCount);
-            for (let i = 0; i < standardCountToExport; i++) {
+            // in the auto-EQ resolution, not what the user hears. (The old
+            // Math.min(10, bandCount) silently dropped audible standard
+            // bands whenever autoeqResolution was set below 10.)
+            for (let i = 0; i < 10; i++) {
                 exportBand(mainVals[i]);
             }
             
@@ -1684,7 +1726,7 @@ const EQ_ExportMethods = {
             showToast("Exported Peace GUI EQ Preset!", "📜");
         },
         exportWavelet: function() {
-            var _a = this.getRealValues() || {}, preVal = _a.preVal || 0, mainVals = _a.mainVals || [], advVals = _a.advVals || [];
+            var _a = this.getExportValues() || {}, preVal = this.getExportPreamp(), mainVals = _a.mainVals || [], advVals = _a.advVals || [];
             var waveletFreqs = [20, 21, 22, 23, 24, 26, 27, 29, 30, 32, 34, 36, 38, 40, 43, 45, 48, 50, 53, 56, 59, 63, 66, 70, 74, 78, 83, 87, 92, 97, 103, 109, 115, 121, 128, 136, 143, 151, 160, 169, 178, 188, 199, 210, 222, 235, 248, 262, 277, 292, 309, 326, 345, 364, 385, 406, 429, 453, 479, 506, 534, 565, 596, 630, 665, 703, 743, 784, 829, 875, 924, 977, 1032, 1090, 1151, 1216, 1284, 1357, 1433, 1514, 1599, 1689, 1784, 1885, 1991, 2103, 2221, 2347, 2479, 2618, 2766, 2921, 3086, 3260, 3443, 3637, 3842, 4058, 4287, 4528, 4783, 5052, 5337, 5637, 5955, 6290, 6644, 7018, 7414, 7831, 8272, 8738, 9230, 9749, 10298, 10878, 11490, 12137, 12821, 13543, 14305, 15110, 15961, 16860, 17809, 18812, 19871];
             var outEntries = [];
             var self = this;
@@ -1843,6 +1885,12 @@ const EQ_ExportMethods = {
             };
 
             Object.entries(standardTemplates).forEach(([id, cfg]) => {
+                // Curated presets (eq-presets-data.js, layered on top of the
+                // base bank in eq-core init) win for overlapping ids: this
+                // dynamic injection used to run LAST and silently stomp 13
+                // curated entries (vocal_music, tactical, field, ...) with the
+                // older template values.
+                if (EQ_PresetsData.curatedPresets && Object.prototype.hasOwnProperty.call(EQ_PresetsData.curatedPresets, id)) return;
                 this.eqPresets[id] = {
                     p: cfg.p,
                     m: cfg.m,
@@ -1851,7 +1899,7 @@ const EQ_ExportMethods = {
             });
         },
         exportPoweramp: function() {
-            var _a = this.getRealValues() || {}, preVal = _a.preVal || 0, mainVals = _a.mainVals || [], advVals = _a.advVals || [];
+            var _a = this.getExportValues() || {}, preVal = this.getExportPreamp(), mainVals = _a.mainVals || [], advVals = _a.advVals || [];
             
             let targetName = "Custom EQ";
             if (typeof PEQDB_Module !== 'undefined' && PEQDB_Module.STATE && PEQDB_Module.STATE.activeCurves) {
@@ -1986,83 +2034,108 @@ const EQ_ExportMethods = {
             }
         },
         exportQudelix: function() {
-            var _a = this.getRealValues() || {}, preVal = _a.preVal || 0, mainVals = _a.mainVals || [], advVals = _a.advVals || [];
+            var _a = this.getExportValues() || {}, preVal = this.getExportPreamp(), mainVals = _a.mainVals || [], advVals = _a.advVals || [];
             var out = 'Preamp,' + preVal.toFixed(1) + ',dB\n';
-            var fIdx = 1;
 
             var typeMap = {
                 peaking: 'PEAK', lowshelf: 'LSHELF', highshelf: 'HSHELF',
                 highpass: 'HPASS', lowpass: 'LPASS', notch: 'NOTCH'
             };
 
-            var exportBand = function(v) {
+            // The Qudelix-5K's single onboard PEQ chain accepts 10 filters.
+            // Collect every non-flat candidate (standard, advanced, virtual,
+            // hearing-cal, de-esser, tone shelves), rank by |gain| so the
+            // most audible bands survive, and truncate to exactly 10 — the
+            // old exporter wrote main bands only and could still emit >10
+            // lines (hearing/de-esser/tone) that the device silently ignored.
+            var candidates = [];
+
+            var collectBand = function(v, sourceLabel) {
+                if (!v) return;
                 var qType = typeMap[v.type] || 'PEAK';
                 var hasNoGain = ['highpass', 'lowpass', 'notch'].includes(v.type);
                 var gVal = hasNoGain ? 0.0 : v.g;
-                
                 if (v.type === 'peaking' && v.g === 0) return;
-                
-                out += 'Filter ' + (fIdx++) + ',ON,' + qType + ',' + v.hz + ',' + gVal.toFixed(1) + ',' + v.q.toFixed(2) + '\n';
+                candidates.push({
+                    line: qType + ',' + v.hz + ',' + gVal.toFixed(1) + ',' + v.q.toFixed(2),
+                    weight: Math.abs(gVal),
+                    label: sourceLabel + ' ' + v.hz + 'Hz ' + gVal.toFixed(1) + 'dB Q' + v.q.toFixed(2)
+                });
             };
 
-            mainVals.forEach(exportBand);
-            // Advanced bands ignored for hardware compatibility — the Qudelix-5K's onboard PEQ only
-            // supports 10 bands, so bands 11+ can't be written to this format at all.
-
-            // The old drop-detection here compared the number of *written*
-            // filter lines against 10 -- which is the wrong signal in both
-            // directions: hearing-cal/de-esser/tone-shelf lines can push
-            // that count past 10 with zero advanced/virtual bands ever
-            // touched (false "bands were dropped" warning on a lossless
-            // export), while a real advanced/virtual band is silently
-            // skipped above regardless of how few main bands are active
-            // (no warning at all, real EQ data missing from a "success"
-            // toast). Count what's actually omitted instead.
-            const activeAdvBands = advVals.filter(function(v) {
-                return v && !(v.type === 'peaking' && v.g === 0);
-            }).length;
-            const activeVirtualBands = (this.virtualBands || []).filter(function(v) {
-                return v && v.g !== 0;
-            }).length;
-            const droppedBands = activeAdvBands + activeVirtualBands;
+            mainVals.forEach(function(v) { collectBand(v, 'std'); });
+            advVals.forEach(function(v) { collectBand(v, 'adv'); });
+            (this.virtualBands || []).forEach(function(v) {
+                if (v && v.g !== 0) collectBand({ hz: v.hz, g: v.g, q: v.q, type: v.type || 'peaking' }, 'virtual');
+            });
 
             if (this.hearingCalEnabled) {
                 [250, 500, 1000, 2000, 4000, 8000, 12000, 16000].forEach(function(freq, idx) {
                     var gain = EQ_Module.hearingOffsets[idx] || 0;
-                    if (gain !== 0) out += 'Filter ' + (fIdx++) + ',ON,PEAK,' + freq + ',' + gain.toFixed(1) + ',1.00\n';
+                    if (gain !== 0) {
+                        candidates.push({
+                            line: 'PEAK,' + freq + ',' + gain.toFixed(1) + ',1.00',
+                            weight: Math.abs(gain),
+                            label: 'hearing ' + freq + 'Hz ' + gain.toFixed(1) + 'dB'
+                        });
+                    }
                 });
             }
 
             // Resonance notch lives in main band 8 (see exportPeace note) —
-            // already exported via mainVals; no extra filter here.
+            // already collected via mainVals; no extra entry here.
 
             if (this.deEsserEnabled) {
                 var deFreqQ = (typeof this.deEsserCurrentFreq === 'number' && isFinite(this.deEsserCurrentFreq)) ? Math.round(this.deEsserCurrentFreq) : 6000;
-                out += 'Filter ' + (fIdx++) + ',ON,PEAK,' + deFreqQ + ',' + (-3.0 * (this.deEsserSensitivity / 100)).toFixed(1) + ',2.50\n';
+                var deGain = -3.0 * (this.deEsserSensitivity / 100);
+                if (deGain !== 0) {
+                    candidates.push({
+                        line: 'PEAK,' + deFreqQ + ',' + deGain.toFixed(1) + ',2.50',
+                        weight: Math.abs(deGain),
+                        label: 'de-esser ' + deFreqQ + 'Hz ' + deGain.toFixed(1) + 'dB'
+                    });
+                }
             }
 
             var bassSlider = document.getElementById("eq-masterBass");
             var trebSlider = document.getElementById("eq-masterTreble");
             if (bassSlider && parseFloat(bassSlider.value) !== 0) {
-                out += 'Filter ' + (fIdx++) + ',ON,LSHELF,105,' + parseFloat(bassSlider.value).toFixed(1) + ',0.70\n';
+                var bg = parseFloat(bassSlider.value);
+                candidates.push({ line: 'LSHELF,105,' + bg.toFixed(1) + ',0.70', weight: Math.abs(bg), label: 'bass shelf ' + bg.toFixed(1) + 'dB' });
             }
             if (trebSlider && parseFloat(trebSlider.value) !== 0) {
-                out += 'Filter ' + (fIdx++) + ',ON,HSHELF,8000,' + parseFloat(trebSlider.value).toFixed(1) + ',0.70\n';
+                var tg = parseFloat(trebSlider.value);
+                candidates.push({ line: 'HSHELF,8000,' + tg.toFixed(1) + ',0.70', weight: Math.abs(tg), label: 'treble shelf ' + tg.toFixed(1) + 'dB' });
             }
 
-            const qudelixLineOverflow = (fIdx - 1) > 10;
+            // Rank by |gain| (desc); keep insertion order on ties so standard
+            // bands win over the auxiliary banks at equal weight.
+            var order = candidates.map(function(c, i) { return { c: c, i: i }; });
+            order.sort(function(a, b) { return (b.c.weight - a.c.weight) || (a.i - b.i); });
+
+            const MAX_FILTERS = 10;
+            var kept = order.slice(0, MAX_FILTERS);
+            var dropped = order.slice(MAX_FILTERS);
+            // Restore original insertion order among the kept set so the
+            // band ordering in the file matches the EQ's band order.
+            kept.sort(function(a, b) { return a.i - b.i; });
+
+            for (var k = 0; k < kept.length; k++) {
+                out += 'Filter ' + (k + 1) + ',ON,' + kept[k].c.line + '\n';
+            }
+            if (dropped.length > 0) {
+                out += '# Dropped for 10-band limit: ' + dropped.map(function(d) { return d.c.label; }).join('; ') + '\n';
+            }
 
             this.triggerDownload(this.getSanitizedExportFilename("Qudelix5K", "csv"), out);
-            if (droppedBands > 0) {
-                showToast(`Exported — ${droppedBands} advanced/virtual band(s) exceed the Qudelix-5K's 10-band PEQ and were omitted.`, "⚠️");
-            } else if (qudelixLineOverflow) {
-                showToast("Exported — note: total filters exceed the Qudelix-5K's 10-band PEQ; the device may ignore the extras.", "⚠️");
+            if (dropped.length > 0) {
+                showToast(`Exported — kept the 10 highest-impact filters; dropped ${dropped.length} band(s), listed in the file's '# Dropped' comment.`, "⚠️");
             } else {
                 showToast("Exported Qudelix-5K CSV Preset!", "🎛️");
             }
         },
         exportFxSound: function() {
-            var _a = this.getRealValues() || {}, preVal = _a.preVal || 0, mainVals = _a.mainVals || [], advVals = _a.advVals || [];
+            var _a = this.getExportValues() || {}, preVal = this.getExportPreamp(), mainVals = _a.mainVals || [], advVals = _a.advVals || [];
             
             let targetName = "Custom EQ";
             if (typeof PEQDB_Module !== 'undefined' && PEQDB_Module.STATE && PEQDB_Module.STATE.activeCurves) {
@@ -2611,15 +2684,28 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             }
         },
 
-fadeMusicVolume: function(targetVal, duration = 0.015) {
+        fadeMusicVolume: function(targetVal, duration = 0.015) {
             if (this.connected && this.graphBuilt && this.musicVolumeNode && SharedAudio.ctx) {
                 const now = SharedAudio.ctx.currentTime;
                 // User volume only — per-track loudness match lives on the
                 // element gain arms (sourceGain/gaplessGain), so applying it
                 // here would boost BOTH tracks mid-crossfade.
+                // _volFadeActive marks the fade's ownership window so a
+                // concurrent slider move can't stomp the ramp (see
+                // updateMusicVolume).
+                this._volFadeActive = true;
                 this.musicVolumeNode.gain.setTargetAtTime(Math.max(0, Math.min(1, targetVal)), now, duration);
+                const ms = Math.max(60, Math.ceil((duration * 6) * 1000));
+                setTimeout(() => {
+                    this._volFadeActive = false;
+                    // If the user moved the slider during the fade, their
+                    // value wins once it completes.
+                    if (this._pendingVolPct !== undefined && this.connected && this.graphBuilt && this.musicVolumeNode && SharedAudio.ctx) {
+                        setAudioParamSmooth(this.musicVolumeNode.gain, this._pendingVolPct, 0.05);
+                    }
+                }, ms);
             } else {
-                // Graph absent �?" mirror the fade on the active element attribute directly.
+                // Graph absent — mirror the fade on the active element attribute directly.
                 const active = this._activeEl();
                 if (active) active.volume = Math.max(0, Math.min(1, targetVal));
             }
@@ -2666,18 +2752,24 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
             return this._activeIsA ? this.gaplessEl : this.audioEl;
         },
 
-        // Mirrors nextTrack()'s decision tree WITHOUT swapping sources, so the
-        // shuffle bag advances exactly once per track (preloading IS the advance).
+        // Mirrors nextTrack()'s decision tree WITHOUT swapping sources, so
+        // the shuffle bag advances exactly once per track (preloading IS the
+        // advance).
         _computeNextPlaylistIndex: function() {
             if (this.repeatActive) return this.playlistIndex;
             if (this.shuffleActive) return this._nextShuffledIndex();
             return (this.playlistIndex + 1) % this.playlist.length;
         },
 
-        // Load the next track into the idle element so it can be crossfaded in
-        // at the seam. Called after every track start (and at boot when gapless
-        // or crossfade is enabled). Never touches the active element.
-        _preloadNextTrack: function() {
+        // Idempotent preload: _preloadNextTrack is invoked from several sites
+        // per track (boot, first user gesture via _buildDSPGraph, gapless/
+        // crossfade toggles, track starts, crossfade retirement). Every call
+        // that REACHED _computeNextPlaylistIndex burned another shuffle-bag
+        // position, silently skipping a track per call. Skip instead when the
+        // idle element already holds the correct next track for the CURRENT
+        // playlist position — the preload only advances when the position (or
+        // the required next track) actually changed.
+        _preloadNextTrack: function(force) {
             if (!this._standbyReady() || !this.playlist || this.playlist.length === 0) return;
             if (this.repeatActive && this.playlist.length === 1) {
                 // Single-track repeat: preloading is wasteful.
@@ -2687,7 +2779,38 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
             }
             const idle = this._idleEl();
             if (!idle) return;
-            const nextIndex = this._computeNextPlaylistIndex();
+
+            // Sequential / repeat: the next index is pure math on the
+            // current position — safe to compute without side effects.
+            if (!this.shuffleActive) {
+                const seqNext = this.repeatActive
+                    ? this.playlistIndex
+                    : (this.playlistIndex + 1) % this.playlist.length;
+                if (!force && this._preloadedIndex === seqNext && this._standbyTrackIndex === seqNext) {
+                    const preTrack = this.playlist[seqNext];
+                    const preUrl = preTrack ? this._ensureTrackUrl(preTrack) : null;
+                    if (preUrl && idle.src === preUrl) return; // already staged
+                }
+                this._stageStandby(idle, seqNext);
+                return;
+            }
+
+            // Shuffle: the bag may only advance when the position moved or a
+            // caller explicitly re-stages (force). If a valid preload for the
+            // current position already exists, keep it.
+            if (!force && this._preloadedIndex !== null && this._preloadedIndex !== undefined
+                && this._standbyTrackIndex === this._preloadedIndex
+                && this._preloadedFromPosition === this.playlistIndex) {
+                const stagedTrack = this.playlist[this._preloadedIndex];
+                const stagedUrl = stagedTrack ? this._ensureTrackUrl(stagedTrack) : null;
+                if (stagedUrl && idle.src === stagedUrl) return; // already staged
+            }
+            const nextIndex = this._computeNextPlaylistIndex(); // advances the bag ONCE
+            this._stageStandby(idle, nextIndex);
+        },
+
+        // Point the idle element at playlist[nextIndex] and record the staging.
+        _stageStandby: function(idle, nextIndex) {
             const track = this.playlist[nextIndex];
             if (!track) { this._standbyTrackIndex = null; this._preloadedIndex = null; return; }
             const url = this._ensureTrackUrl(track);
@@ -2696,6 +2819,7 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
             if (idle.src !== url) { idle.src = url; idle.load(); }
             this._standbyTrackIndex = nextIndex;
             this._preloadedIndex = nextIndex;
+            this._preloadedFromPosition = this.playlistIndex;
         },
 
         // Crossfade the idle element (which holds track `index`) into the active
@@ -2732,9 +2856,14 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
                 // standby element is retired — kill playback and zero its
                 // arm so the stale track can't keep bleeding into the graph
                 // (the seam fade already moved on to a different arm).
+                // GUARD: same reactivation case as the retirement timeout —
+                // a newer crossfade may have made THIS element the active
+                // player; never pause the live arm.
                 if (seq !== this._playSeq) {
-                    try { standby.pause(); } catch (e) {}
-                    if (newGain) newGain.gain.setTargetAtTime(0, SharedAudio.ctx.currentTime, 0.005);
+                    if (standby !== this._activeEl()) {
+                        try { standby.pause(); } catch (e) {}
+                        if (newGain) newGain.gain.setTargetAtTime(0, SharedAudio.ctx.currentTime, 0.005);
+                    }
                     return;
                 }
                 const slider = document.getElementById("eq-musicVolumeSlider");
@@ -2765,16 +2894,26 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
                 // Always retire the old element and drop its arm — even if a
                 // newer playPlaylistIndex took over (seq mismatch), the old
                 // element must not keep bleeding audio into the graph.
-                try { oldActive.pause(); } catch (e) {}
-                if (oldGain) oldGain.gain.setTargetAtTime(0, ctx.currentTime, 0.01);
+                // GUARD: if a newer crossfade has since made this element the
+                // ACTIVE player again (e.g. two skips inside one overlap
+                // window: A->B, then B->A before this timeout fires), pausing
+                // it here would stop the live track mid-playback. Only pause
+                // and mute it while it is still the idle arm.
+                if (oldActive && oldActive !== this._activeEl()) {
+                    try { oldActive.pause(); } catch (e) {}
+                    if (oldGain) oldGain.gain.setTargetAtTime(0, ctx.currentTime, 0.01);
+                }
                 this._transitioning = false;
                 if (seq !== this._playSeq) return; // a newer switch owns the preload
                 const nextTrack = this.playlist[this.playlistIndex];
                 const prevTrack = this.playlist[oldIndex];
                 // Preload the following track into the retired element before
                 // revoking the old URL so the reference is never dangling.
+                // Same reactivation guard: a newer crossfade already owns the
+                // preload slot for the element — don't swap its source under
+                // the newer transition.
                 const idle = this._idleEl();
-                if (idle) {
+                if (idle && idle === oldActive) {
                     const nextNext = this._computeNextPlaylistIndex();
                     const t2 = this.playlist[nextNext];
                     if (t2) {
@@ -2782,9 +2921,17 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
                         if (u2 && idle.src !== u2) { idle.src = u2; idle.load(); }
                         this._standbyTrackIndex = nextNext;
                         this._preloadedIndex = nextNext;
+                        this._preloadedFromPosition = this.playlistIndex;
                     }
                 }
-                if (prevTrack && nextTrack && prevTrack !== nextTrack) {
+                // Revoke the retired track's blob URL — but never when the
+                // standby was just pointed at that SAME track (2-track lists
+                // and shuffle wrap-backs): the preload above hands idle the
+                // previous track's url, and revoking it mid-load aborts the
+                // fetch, stalls readyState < 2 and silently degrades the next
+                // seam to the gapped hard-swap path.
+                if (prevTrack && nextTrack && prevTrack !== nextTrack
+                    && this.playlist[this._standbyTrackIndex] !== prevTrack) {
                     this._revokeTrackUrl(prevTrack);
                 }
             }, overlap * 1000 + 250);
@@ -3017,6 +3164,7 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
             this._activeIsA = true;
             this._standbyTrackIndex = null;
             this._preloadedIndex = null;
+            this._preloadedFromPosition = null;
             this._transitioning = false;
             if (this.sourceGain) this.sourceGain.gain.value = 1;
             if (this.gaplessGain) this.gaplessGain.gain.value = 0;
@@ -3092,6 +3240,7 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
             if (this._standbyReady()) {
                 this._standbyTrackIndex = null;
                 this._preloadedIndex = null;
+                this._preloadedFromPosition = null;
             }
 
             if (this.shuffleActive) {
@@ -3189,6 +3338,7 @@ await ctx.resume();
                     if (this.audioEl) this.audioEl.volume = 1.0;
                     if (this.gaplessEl) this.gaplessEl.volume = 1.0;
                     this.fadeMusicVolume(0, 0.005); // Start silent
+                    const playPauseSeq = this._pauseSeq;
                     active.play().then(() => {
                         const slider = document.getElementById("eq-musicVolumeSlider");
                         const vol = slider ? parseFloat(slider.value) / 100 : 0.5;
@@ -3196,7 +3346,17 @@ await ctx.resume();
                         // Lazy loudness measurement: only decode when playback
                         // actually starts, never at boot or on pause.
                         this._analyzeCurrentLoudness();
-                    }).catch(e => console.log("Playback blocked or interrupted."));
+                    }).catch(e => {
+                        // Rejected play() (autoplay policy, interruption):
+                        // the buttons above already flipped to the "playing"
+                        // state — revert them so the UI isn't claiming
+                        // playback that never started.
+                        console.log("Playback blocked or interrupted.");
+                        if (playPauseSeq !== this._pauseSeq) return;
+                        if (btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
+                        if (mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
+                        if (modalPlayBtn) modalPlayBtn.innerHTML = "<span>▶</span><span>Play</span>";
+                    });
                 }
                 if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
                 if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
@@ -3286,7 +3446,15 @@ this.fadeMusicVolume(vol, 0.015);
             if (this.connected && this.graphBuilt && this.musicVolumeNode) {
                 if (this.audioEl) this.audioEl.volume = 1.0; // Lock browser streams at maximum to prevent unsynced thread-stepping clicks
                 if (this.gaplessEl) this.gaplessEl.volume = 1.0;
-                setAudioParamSmooth(this.musicVolumeNode.gain, Math.max(0, Math.min(1, vol)), 0.05);
+                // Volume-ownership handoff: while a play/pause/crossfade fade
+                // is in flight, fadeMusicVolume owns this param — a slider
+                // move mid-fade stomped the fade target (audible pop, exactly
+                // what the fade exists to prevent). The pending fade's
+                // .then() re-asserts the user's value right after.
+                if (!this._volFadeActive) {
+                    setAudioParamSmooth(this.musicVolumeNode.gain, Math.max(0, Math.min(1, vol)), 0.05);
+                }
+                this._pendingVolPct = Math.max(0, Math.min(1, vol));
             } else {
                 // DSP graph not built yet — fall back to the element volume so the
                 // slider always affects what you hear.
@@ -3349,6 +3517,7 @@ this.fadeMusicVolume(vol, 0.015);
 /* ===== app/js/eq-reverb.js ===== */
 const EQ_ReverbMethods = {
     toggleReverb: function() {
+        const wasActive = this.reverbActive;
         this.reverbActive = !this.reverbActive;
         const btn = document.getElementById('btn-reverb-toggle');
         const lbl = document.getElementById('lbl-reverb-state');
@@ -3360,6 +3529,25 @@ const EQ_ReverbMethods = {
             if (lbl) lbl.textContent = 'Reverb: ON';
             if (presetBtn) presetBtn.classList.remove('opacity-40', 'pointer-events-none');
             if (container) container.classList.remove('opacity-40', 'pointer-events-none');
+            // First enable with the default mix=0 params made ON silent: the
+            // ConvolverNode still holds the 2-sample silent boot buffer and
+            // dryGain=1/wetGain=0. Apply the selected preset's wet level and
+            // rebuild the impulse so the effect is actually audible the
+            // moment it's switched on.
+            if (!wasActive) {
+                const preset = this.reverbPresets[this.reverbPresetSelected] || this.reverbPresets.small_room;
+                if (preset && (this.reverbParams.mix || 0) === 0) {
+                    this.reverbParams.mix = preset.wet !== undefined ? preset.wet : 0.32;
+                    const mixVal = document.getElementById('rev-mix-val');
+                    const mixSliderEl = document.getElementById('rev-mix-slider');
+                    if (mixVal) mixVal.textContent = this.reverbParams.mix.toFixed(2);
+                    if (mixSliderEl) {
+                        mixSliderEl.value = Math.round(this.reverbParams.mix * 100);
+                        if (window.syncGlobalSliders) window.syncGlobalSliders(mixSliderEl);
+                    }
+                }
+                this.scheduleImpulseRebuild();
+            }
             showToast("Reverb Engine active. Simulating natural room reflections.", "📣");
         } else {
             if (btn) btn.classList.remove('is-on');
@@ -3626,7 +3814,10 @@ const EQ_ReverbMethods = {
             setAudioParamSmooth(SharedAudio.wetGainNode.gain, wetGain, 0.015);
             
             if (SharedAudio.reverbFilterNode) {
-                setAudioParamSmooth(SharedAudio.reverbFilterNode.frequency, this.reverbParams.filter * 20000, 0.015);
+                // Floor at 100 Hz: filter*20000 with filter=0 would set the
+                // wet-path lowpass to 0 Hz and silently kill all reverb.
+                const filterHz = Math.max(100, (Number.isFinite(this.reverbParams.filter) ? this.reverbParams.filter : 1) * 20000);
+                setAudioParamSmooth(SharedAudio.reverbFilterNode.frequency, filterHz, 0.015);
             }
         },
 };
@@ -3671,7 +3862,10 @@ const EQ_CrossfeedMethods = {
             }
 
             const slider = document.getElementById('crossfeed-level');
-            const levelVal = slider ? parseFloat(slider.value) : 0;
+            const rawLevel = slider ? parseFloat(slider.value) : 0;
+            // NaN guard: an unparsed slider value would flow straight into
+            // the cross/direct/expand gains as NaN (silence).
+            const levelVal = Number.isFinite(rawLevel) ? rawLevel : 0;
 
             // Per-mode presets: each speaker position varies the arrival
             // (delay), the high-frequency rolloff (lowpass) and the bleed
@@ -3715,7 +3909,10 @@ const EQ_CrossfeedMethods = {
             setAudioParamSmooth(SharedAudio.directGainR.gain, directVal, 0.02);
 
             // Calculate and apply phase-inverted coefficients for Stereo Expansion
-            const expandVal = isOff ? 0 : -(this.stereoExpandLevel / 100) * 0.65; // High-precision negative gain
+            // NaN guard: stereoExpandLevel is assigned from a slider in
+            // updateStereoExpand (eq-core.js) with a bare parseFloat.
+            const rawExpand = parseFloat(this.stereoExpandLevel);
+            const expandVal = isOff ? 0 : -((Number.isFinite(rawExpand) ? rawExpand : 0) / 100) * 0.65; // High-precision negative gain
             if (SharedAudio.expandGainL && SharedAudio.expandGainR) {
                 setAudioParamSmooth(SharedAudio.expandGainL.gain, expandVal, 0.02);
                 setAudioParamSmooth(SharedAudio.expandGainR.gain, expandVal, 0.02);
@@ -3876,7 +4073,13 @@ const order = ['crossoverFreq1', 'crossoverFreq2', 'crossoverFreq3', 'crossoverF
             }
 
             order.forEach((key, i) => {
-                if (!Number.isFinite(this[key])) this[key] = key === changedKey ? sliderMin[key] : this[key];
+                // NaN guard: a corrupt value used to self-assign here
+                // (this[key] = this[key]) which left NaN in place, and the
+                // Math.min/max clamps below then propagated NaN into the
+                // worklet payload — a NaN frequency poisons the biquad
+                // coefficients into permanent silence. Reset to the
+                // slider's default zone instead.
+                if (!Number.isFinite(this[key])) this[key] = sliderMin[key];
                 this[key] = Math.max(sliderMin[key], Math.min(sliderMax[key], this[key]));
                 const paramName = paramNames[i];
                 const slider = document.getElementById(`xo-${paramName}-slider`);
@@ -3938,11 +4141,16 @@ const order = ['crossoverFreq1', 'crossoverFreq2', 'crossoverFreq3', 'crossoverF
             }
 
             const type = this.crossoverType;
-            const lG = Math.pow(10, this.crossoverLowTrim / 20);
-            const lmG = Math.pow(10, type === '5way' ? this.crossoverLowMidTrim / 20 : -150 / 20);
-            const mG = Math.pow(10, (type === '3way' || type === '4way' || type === '5way') ? this.crossoverMidTrim / 20 : -150 / 20);
-            const hmG = Math.pow(10, (type === '4way' || type === '5way') ? this.crossoverHighMidTrim / 20 : -150 / 20);
-            const hG = Math.pow(10, this.crossoverHighTrim / 20);
+            // Trim guards: a corrupt profile can write NaN directly onto the
+            // trim fields (the setter path is guarded, direct assignment
+            // isn't); Math.pow(10, NaN/20) = NaN gain would poison the
+            // worklet into silence. Treat non-finite as unity (0 dB).
+            const safeTrim = (v) => Number.isFinite(v) ? v : 0;
+            const lG = Math.pow(10, safeTrim(this.crossoverLowTrim) / 20);
+            const lmG = Math.pow(10, type === '5way' ? safeTrim(this.crossoverLowMidTrim) / 20 : -150 / 20);
+            const mG = Math.pow(10, (type === '3way' || type === '4way' || type === '5way') ? safeTrim(this.crossoverMidTrim) / 20 : -150 / 20);
+            const hmG = Math.pow(10, (type === '4way' || type === '5way') ? safeTrim(this.crossoverHighMidTrim) / 20 : -150 / 20);
+            const hG = Math.pow(10, safeTrim(this.crossoverHighTrim) / 20);
 
             const payload = [
                 // Driver 1 Lowpass
@@ -4253,16 +4461,23 @@ const EQ_TempoMethods = {
         }
         this.updateTempoDSP();
     },
-
     updateTempoDSP: function() {
-        if (this.audioEl) {
-            this.audioEl.playbackRate = this.tempoActive ? (this.tempoSpeed || 1.0) : 1.0;
-        }
+        // Apply to BOTH playback arms — with gapless/crossfade active the
+        // standby element takes over at the seam and previously stayed at
+        // 1.0x, pitch-jumping mid-track.
+        const rate = this.tempoActive ? (this.tempoSpeed || 1.0) : 1.0;
+        if (this.audioEl) this.audioEl.playbackRate = rate;
+        if (this.gaplessEl) this.gaplessEl.playbackRate = rate;
     },
-
     updateTempoSpeed: function(val) {
-        this.tempoSpeed = Math.max(0.1, Math.min(5, (parseFloat(val) || 100) / 100));
+        // Guard the parse: parseFloat('') || 100 mapped a programmatic 0 to
+        // 100 (1.0x) instead of the floor.
+        const parsed = parseFloat(val);
+        this.tempoSpeed = Math.max(0.1, Math.min(5, Number.isFinite(parsed) ? parsed / 100 : 100 / 100));
         this.updateTempoDSP();
+        // The readout had no writer — it showed 1.00x forever.
+        const disp = document.getElementById('tempo-speed-val');
+        if (disp) disp.textContent = this.tempoSpeed.toFixed(2) + 'x';
     },
 };
 
@@ -4322,13 +4537,23 @@ const EQ_SmartImportMethods = {
                     try {
                         var data = JSON.parse(text, function(k, v) { if (k === '__proto__' || k === 'constructor' || k === 'prototype') return undefined; return v; });
                         if (data.mainVals || data.advVals || data.preVal !== undefined) {
-                            // Validate EQ payload before applying — prevents prototype pollution side-effects and TypeErrors from malformed arrays
-                            var validMain = !data.mainVals || Array.isArray(data.mainVals);
-                            var validAdv = !data.advVals || Array.isArray(data.advVals);
+                            // Validate EQ payload before applying — prevents prototype pollution side-effects and TypeErrors from malformed arrays.
+                            // Members must be OBJECTS with the expected fields: a bare
+                            // numeric array ([4,3,2,...]) is the app's internal
+                            // gain-array preset style, NOT a loadValues payload —
+                            // applying it used to "succeed" while silently
+                            // flattening every band to defaults.
+                            var validMain = !data.mainVals || (Array.isArray(data.mainVals) && data.mainVals.every(function(m) { return m && typeof m === 'object'; }));
+                            var validAdv = !data.advVals || (Array.isArray(data.advVals) && data.advVals.every(function(m) { return m && typeof m === 'object'; }));
                             if (validMain && validAdv) { EQ.loadValues(data); showToast("EQ profile loaded!", "📊"); EQ.closeSmartImportModal(); return; }
+                            showToast("JSON looks like an EQ profile but band arrays are malformed (each band must be an object like {\"g\":2,\"hz\":105,\"q\":1.4}).", "⚠️");
+                            return;
                         }
                         if (typeof data.brand === 'string' && typeof data.model === 'string') { IEM.loadConfigDirect(data); showToast("IEM Profile loaded!", "📝"); EQ.closeSmartImportModal(); return; }
-                    } catch(e) {}
+                    } catch(e) {
+                        showToast("Invalid JSON: " + (e && e.message ? e.message : 'parse error'), "⚠️");
+                        return;
+                    }
                 }
                 
                 if (text.includes("GraphicEQ:")) {
@@ -4398,7 +4623,7 @@ const EQ_SmartImportMethods = {
                     if (!clean || clean.startsWith('#') || clean.startsWith('*') || clean.startsWith('//')) return;
                     
                     // 1. Detect Preamp gain values across multiple syntaxes
-                    var preampMatch = clean.match(/preamp\s*[:=,\s]\s*([-\d.]+)/i);
+                    var preampMatch = clean.match(/preamp\s*[:=,\s]\s*([+-\d.]+)/i);
                     if (preampMatch) {
                         preamp = parseFloat(preampMatch[1]) || 0;
                         return;
@@ -4409,12 +4634,14 @@ const EQ_SmartImportMethods = {
                     var filterType = self.detectFilterType(clean);
                     
                     // Check for standard Peace format: "Filter X: ON PK Fc 105 Hz Gain -3.0 dB Q 1.4"
-                    var peaceMatch = clean.match(/Fc\s*([\d.]+)\s*Hz\s*Gain\s*([-\d.]+)\s*dB\s*Q\s*([\d.]+)/i);
+                    // [+-\d.]+ — some exporters sign positive gains ("Gain +3.0 dB");
+                    // [-\d.]+ silently dropped those lines (half-imported EQ).
+                    var peaceMatch = clean.match(/Fc\s*([\d.]+)\s*Hz\s*Gain\s*([+-\d.]+)\s*dB\s*Q\s*([\d.]+)/i);
                     if (peaceMatch) {
                         fc = Math.round(parseFloat(peaceMatch[1]));
                         gain = parseFloat(peaceMatch[2]);
                         q = parseFloat(peaceMatch[3]);
-                    } 
+                    }
                     // Check for Qudelix-5K CSV format: "Filter 1,ON,PEAK,20,-3.5,1.2"
                     // (also NOTCH / LSC / HSC / LPQ / HPQ types)
                     else if (filterType) {
@@ -4423,7 +4650,12 @@ const EQ_SmartImportMethods = {
                             var fVal = parseFloat(csvParts[csvParts.length - 3]);
                             var gVal = parseFloat(csvParts[csvParts.length - 2]);
                             var qVal = parseFloat(csvParts[csvParts.length - 1]);
-                            if (!isNaN(fVal) && !isNaN(gVal) && !isNaN(qVal)) {
+                            // Same range validation as the raw-numbers branch:
+                            // NaN-only filtering previously accepted 1e9 Hz /
+                            // -1e9 dB / Q 1e-9, polluting the band model and
+                            // re-exporting garbage filter lines.
+                            if (!isNaN(fVal) && !isNaN(gVal) && !isNaN(qVal)
+                                && fVal >= 10 && fVal <= 24000 && gVal >= -40 && gVal <= 40 && qVal >= 0.01 && qVal <= 40) {
                                 fc = Math.round(fVal);
                                 gain = gVal;
                                 q = qVal;
@@ -4552,7 +4784,7 @@ const EQ_SmartImportMethods = {
 };
 
 /* ===== app/js/eq-hearing-cal.js ===== */
-const EQ_HearingCalMethods = {
+﻿const EQ_HearingCalMethods = {
             hearingCalEnabled: false,
             hearingOffsets: [0, 0, 0, 0, 0, 0, 0, 0], // Map to 250, 500, 1k, 2k, 4k, 8k, 12k, 16k
             // MUST stay in sync with applyHearingCalibrationGains() below and the
@@ -4577,11 +4809,11 @@ const EQ_HearingCalMethods = {
                     if (this.resonanceCalEnabled) {
                         btn.classList.add('active-btn');
                         lbl.textContent = 'Resonance: ON';
-                        showToast("Ear Resonance Peak (" + PEQDB_Module.resonanceHz + "Hz) Applied!", "🎯");
+                        showToast("Ear Resonance Peak (" + PEQDB_Module.resonanceHz + "Hz) Applied!", "ðŸŽ¯");
                     } else {
                         btn.classList.remove('active-btn');
                         lbl.textContent = 'Resonance: Off';
-                        showToast("Ear Resonance Peak Disabled", "🎯");
+                        showToast("Ear Resonance Peak Disabled", "ðŸŽ¯");
                     }
                 }
                 this.drawCurve();
@@ -4595,11 +4827,11 @@ const EQ_HearingCalMethods = {
                         btn.classList.add('active-btn');
                         lbl.textContent = 'Hearing: ON';
                         Mascot.triggerTemporaryExpression('cool', 2000);
-                    showToast("Hearing Calibration Profile Applied!", "👂");
+                    showToast("Hearing Calibration Profile Applied!", "ðŸ‘‚");
                     } else {
                         btn.classList.remove('active-btn');
                         lbl.textContent = 'Hearing: Off';
-                        showToast("Hearing Calibration Profile Disabled", "👂");
+                        showToast("Hearing Calibration Profile Disabled", "ðŸ‘‚");
                     }
                 }
                 this.applyHearingCalibrationGains();
@@ -4613,11 +4845,11 @@ const EQ_HearingCalMethods = {
                     if (this.volumeCompEnabled) {
                         btn.classList.add('active-btn');
                         lbl.textContent = 'Compensator: ON';
-                        showToast("Auto Headroom & Volume Compensation Active", "🔊");
+                        showToast("Auto Headroom & Volume Compensation Active", "ðŸ”Š");
                     } else {
                         btn.classList.remove('active-btn');
                         lbl.textContent = 'Compensator: Off';
-                        showToast("Volume Compensation Disabled", "🔊");
+                        showToast("Volume Compensation Disabled", "ðŸ”Š");
                     }
                 }
                 this.updatePreamp();
@@ -4682,8 +4914,8 @@ const EQ_HearingCalMethods = {
                     }
                     // Initialize frequency tracker if not set
                     if (!this.deEsserCurrentFreq) this.deEsserCurrentFreq = 6000;
-                    if (!Number.isFinite(this.deEsserSensitivity)) this.deEsserSensitivity = 100;
-                    showToast("De-Esser active. Monitoring vocal sibilance peaks (4k-8kHz)", "🛡️");
+                    if (!Number.isFinite(this.deEsserSensitivity)) this.deEsserSensitivity = 50;
+                    showToast("De-Esser active. Monitoring vocal sibilance peaks (4k-8kHz)", "ðŸ›¡ï¸");
                 } else {
                     if (btn) {
                         btn.className = 'btn-clear text-stone-200 font-bold rounded text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center';
@@ -4712,7 +4944,7 @@ const EQ_HearingCalMethods = {
                             }]
                         });
                     }
-                    showToast("De-Esser deactivated", "🛡️");
+                    showToast("De-Esser deactivated", "ðŸ›¡ï¸");
                 }
                 this.drawCurve();
             },
@@ -4721,7 +4953,7 @@ updateDeEsserSens: function(val) {
                 this.deEsserSensitivity = Number.isFinite(parsed) ? parsed : 100;
                 // The per-frame viz tracker owns deEsserReductionDb (dynamic
                 // sibilance gain, up to -15 dB) and posts it to both the
-                // worklet and the drawn curve — do NOT write a static value
+                // worklet and the drawn curve â€” do NOT write a static value
                 // here or it fights the tracker for a frame and spams the
                 // worklet with an immediately-superseded gain.
                 const sensVal = document.getElementById('deesser-sens-val');
@@ -4730,7 +4962,7 @@ updateDeEsserSens: function(val) {
             },
             updateDeEsserFreq: function(freq) {
                 this.deEsserCurrentFreq = Math.round(freq);
-                if (!Number.isFinite(this.deEsserSensitivity)) this.deEsserSensitivity = 100;
+                if (!Number.isFinite(this.deEsserSensitivity)) this.deEsserSensitivity = 50;
                 // Seed post only; the tracker takes over on the next frame.
                 if (this.deEsserEnabled && SharedAudio.workletNode) {
                     SharedAudio.workletNode.port.postMessage({
@@ -4933,8 +5165,12 @@ const EQ_VizFullscreenMethods = {
 const EQ_SourceSimMethods = {
         applySourceSimulation: function() {
             if (!this.graphBuilt) {
-                if (this._queuePendingDsp) this._queuePendingDsp('simulation');
-                else { this._pendingDspQueue = this._pendingDspQueue || []; if (!this._pendingDspQueue.includes('simulation')) this._pendingDspQueue.push('simulation'); if (!this.graphBuilt) this.ensureDSPGraph && this.ensureDSPGraph().catch(()=>{}); }
+                // NOTE: 'sourceSim', NOT 'simulation' — the flush map binds
+                // 'simulation' to the eartip/fit updater (slots 0-4). Queuing
+                // 'simulation' here meant the DAC shelves (slots 10/11) and
+                // the inputGainNode headroom were silently never applied.
+                if (this._queuePendingDsp) this._queuePendingDsp('sourceSim');
+                else { this._pendingDspQueue = this._pendingDspQueue || []; if (!this._pendingDspQueue.includes('sourceSim')) this._pendingDspQueue.push('sourceSim'); if (!this.graphBuilt) this.ensureDSPGraph && this.ensureDSPGraph().catch(()=>{}); }
                 this.drawCurve && this.drawCurve();
                 return;
             }
@@ -5594,20 +5830,43 @@ const EQ_PresetMethods = {
                     preSlider.value = p.p;
                     this.updatePreamp();
                 }
-                // Built-in presets store only gains; stale band types (e.g. shelf)
-                // from a prior custom preset would otherwise persist and produce a
-                // different audible response than the preset intended. Reset to PK.
+                // Built-in presets store only gains; stale band state (types,
+                // frequencies, Q — settable via Smart Import, number inputs and
+                // custom presets) would otherwise persist and produce a
+                // different audible response than the preset intended.
+                // Reset type AND Hz/Q to the band defaults, and clear bypass.
+                window.bypassedBands = window.bypassedBands || new Set();
+                window.bypassedBands.clear();
                 if (p.m) {
                     p.m.forEach((val, i) => {
                         const b = this.bands[i];
-                        if (b && b.type && b.type !== 'peaking') {
-                            b.type = 'peaking';
-                            b.slope = 12;
-                            this.handleTypeChange(i, 'peaking');
-                            const typeBtn = document.getElementById(`eq-t_m${i}`);
-                            if (typeBtn) typeBtn.textContent = 'PK';
-                            const slopeBtn = document.getElementById(`eq-sl_m${i}`);
-                            if (slopeBtn) slopeBtn.classList.add('hidden');
+                        if (b) {
+                            if (b.type && b.type !== 'peaking') {
+                                b.type = 'peaking';
+                                b.slope = 12;
+                                this.handleTypeChange(i, 'peaking');
+                                const typeBtn = document.getElementById(`eq-t_m${i}`);
+                                if (typeBtn) typeBtn.textContent = 'PK';
+                                const slopeBtn = document.getElementById(`eq-sl_m${i}`);
+                                if (slopeBtn) slopeBtn.classList.add('hidden');
+                            }
+                            // Reset Hz/Q to the band defaults — a preset's
+                            // curated gains land at the curated frequencies,
+                            // not whatever a previous import left behind.
+                            const fInput = document.getElementById("eq-f" + i);
+                            if (fInput) fInput.value = b.hz;
+                            const fsSlider = document.getElementById(`eq-fs_m${i}`);
+                            if (fsSlider) fsSlider.value = this.logHzToSlider(b.hz);
+                            const qSlider = document.getElementById("eq-q_m" + i);
+                            if (qSlider) qSlider.value = b.defaultQ;
+                            const qNum = document.getElementById(`eq-q_m${i}_num`);
+                            if (qNum) qNum.value = b.defaultQ.toFixed(2);
+                            // Un-bypass the band and restore its indicator
+                            // (bypass state is honored by updateAudioConnections).
+                            const bypassBtn = document.getElementById(`eq-bp_m${i}`);
+                            if (bypassBtn) { bypassBtn.textContent = "🟢"; bypassBtn.style.color = "var(--accent-green)"; }
+                            const bypassCard = bypassBtn ? bypassBtn.closest('.eq-band-card') : null;
+                            if (bypassCard) { bypassCard.style.opacity = "1"; bypassCard.classList.remove('bypassed'); }
                         }
                         const slider = document.getElementById("eq-s" + i);
                         if (slider) {
@@ -5624,6 +5883,8 @@ const EQ_PresetMethods = {
                         const b = this.advancedBands[i];
                         if (b) {
                             b.g = val;
+                            // Same completeness as the main loop: reset the
+                            // advanced band's type, Hz and Q to defaults.
                             if (b.type && b.type !== 'peaking') {
                                 b.type = 'peaking';
                                 const typeBtn = document.getElementById(`eq-t_a${i}`);
@@ -5631,6 +5892,14 @@ const EQ_PresetMethods = {
                                 const gainRow = document.getElementById(`row-gain_a${i}`);
                                 if (gainRow) { gainRow.style.opacity = '1'; gainRow.style.pointerEvents = 'auto'; }
                             }
+                            b.hz = b.defaultHz || b.hz;
+                            b.q = b.defaultQ;
+                            const afInput = document.getElementById("eq-af" + i);
+                            if (afInput) afInput.value = b.hz;
+                            const aqSlider = document.getElementById("eq-q_a" + i);
+                            if (aqSlider) aqSlider.value = b.defaultQ;
+                            const bypassBtnA = document.getElementById(`eq-bp_a${i}`);
+                            if (bypassBtnA) { bypassBtnA.textContent = "🟢"; bypassBtnA.style.color = "var(--accent-green)"; }
                         }
                         // The live DSP reads the fader value (getLiveAdvancedFiltersState),
                         // so mirror the gain onto the slider element, not just the model.
@@ -6200,7 +6469,11 @@ const EQ_SquigGraphMethods = {
             // Only inputs that actually affect the static layer belong here:
             // zoom, alignment, and the drawn curves. EQ model / sim state changes
             // are handled by the mode layer's own signature.
-            const currentStaticState = `${minF}-${maxF}-${min}-${max}-${PEQDB_Module.alignHz}-${PEQDB_Module.alignDb}-${activeCurvesState}`;
+            // Resonance cal shifts target-curve frequencies inside
+            // drawNormalCurves (getShiftedFrequency) — it belongs in BOTH
+            // signatures or the toggle serves a stale cached raster.
+            const resState = (EQ_Module.resonanceCalEnabled ? 'r1' : 'r0') + '-' + (PEQDB_Module.resonanceHz || '8000');
+            const currentStaticState = `${minF}-${maxF}-${min}-${max}-${PEQDB_Module.alignHz}-${PEQDB_Module.alignDb}-${resState}-${activeCurvesState}`;
 
             if (this.lastStaticState !== currentStaticState) {
                 this.staticDirty = true;
@@ -6442,6 +6715,9 @@ const EQ_SquigGraphMethods = {
                 this._magCacheFreqKey, this._magCacheNumPoints,
                 preVal, w, h, minF, maxF, min, max,
                 PEQDB_Module.alignHz, PEQDB_Module.alignDb,
+                // Resonance shifts the target curve's evaluated frequencies
+                // inside this layer (getShiftedFrequency in drawNormalCurves).
+                EQ_Module.resonanceCalEnabled ? 'r1' : 'r0', PEQDB_Module.resonanceHz || '8000',
                 splineState, virtualState
             ].join('|');
             this._renderModeLayer(cc, w, h, dpr, targetW, targetH, minF, maxF, min, max,
@@ -6762,16 +7038,25 @@ const EQ_SquigGraphMethods = {
                     mcc.setLineDash([]);
 
                     if (baseSpline && targetSpline) {
+                        // Evaluate both splines ONCE per pixel and reuse —
+                        // the old dashed + solid passes each re-evaluated the
+                        // same two splines at the same frequencies (~2000
+                        // wasted evals per rebuild).
+                        const baseVals = new Float32Array(steps);
+                        const targetVals = new Float32Array(steps);
+                        for (let i = 0; i < steps; i++) {
+                            const f = freqs[i];
+                            baseVals[i] = PEQDB_Module.Spline.evaluate(baseSpline, f);
+                            targetVals[i] = PEQDB_Module.Spline.evaluate(targetSpline, f);
+                        }
+
                         mcc.beginPath();
                         mcc.strokeStyle = "rgba(239, 68, 68, 0.4)";
                         mcc.lineWidth = 1.5;
                         mcc.setLineDash([5, 5]);
                         for (let i = 0; i < steps; i++) {
                             const curX = (i / (steps - 1)) * w;
-                            const f = freqs[i];
-                            const baseDbVal = PEQDB_Module.Spline.evaluate(baseSpline, f);
-                            const targetDbVal = PEQDB_Module.Spline.evaluate(targetSpline, f);
-                            const y = EQ_Module.dbToY_squig((baseDbVal - targetDbVal) + PEQDB_Module.alignDb, h);
+                            const y = EQ_Module.dbToY_squig((baseVals[i] - targetVals[i]) + PEQDB_Module.alignDb, h);
                             if (i === 0) mcc.moveTo(curX, y); else mcc.lineTo(curX, y);
                         }
                         mcc.stroke();
@@ -6782,10 +7067,7 @@ const EQ_SquigGraphMethods = {
                         mcc.lineWidth = 2.5;
                         for (let i = 0; i < steps; i++) {
                             const curX = (i / (steps - 1)) * w;
-                            const f = freqs[i];
-                            const baseDbVal = PEQDB_Module.Spline.evaluate(baseSpline, f);
-                            const targetDbVal = PEQDB_Module.Spline.evaluate(targetSpline, f);
-                            const y = EQ_Module.dbToY_squig((baseDbVal + eqDb[i] - targetDbVal) + PEQDB_Module.alignDb, h);
+                            const y = EQ_Module.dbToY_squig((baseVals[i] + eqDb[i] - targetVals[i]) + PEQDB_Module.alignDb, h);
                             if (i === 0) mcc.moveTo(curX, y); else mcc.lineTo(curX, y);
                         }
                         mcc.stroke();
@@ -6925,8 +7207,12 @@ const EQ_SquigGraphMethods = {
             // EVERY draw (up to 60Hz overlay) even when nothing changed.
             // Recompute only when curves/view fingerprint changes; replay the
             // cached points otherwise (vers bump on spline rebuilds above).
-            const fp = [base.id || base.uid, base._splineVersion || 0,
-                refs.map(r => (r.id || r.uid) + ':' + (r._splineVersion || 0)).join(','),
+            // Offsets are included in BOTH the fingerprint and the evaluation:
+            // the main curve renderer draws curves shifted by c.offset, so a
+            // nudge-adjusted reference previously made the dashed diff trace
+            // contradict the visibly offset curves by exactly that amount.
+            const fp = [base.id || base.uid, base._splineVersion || 0, base.offset || 0,
+                refs.map(r => (r.id || r.uid) + ':' + (r._splineVersion || 0) + ':' + (r.offset || 0)).join(','),
                 minF, maxF, steps, w, h, PEQDB_Module.alignDb].join('|');
             let paths = this._diffOverlayPaths;
             if (!paths || paths.fp !== fp) {
@@ -6939,8 +7225,8 @@ const EQ_SquigGraphMethods = {
                             if (f < minF || f > maxF) continue;
                             const x = w * (Math.log10(f / minF) / Math.log10(maxF / minF));
                             const evalF = PEQDB_Module.getShiftedFrequency(f, 'target');
-                            const baseDb = PEQDB_Module.Spline.evaluate(base.cachedSpline, evalF);
-                            const refDb = PEQDB_Module.Spline.evaluate(ref.cachedSpline, evalF);
+                            const baseDb = PEQDB_Module.Spline.evaluate(base.cachedSpline, evalF) + (base.offset || 0);
+                            const refDb = PEQDB_Module.Spline.evaluate(ref.cachedSpline, evalF) + (ref.offset || 0);
                             pts.push([x, EQ_Module.dbToY_squig(PEQDB_Module.alignDb + (refDb - baseDb), h)]);
                         }
                         return { color: ref.color, pts };
@@ -7600,7 +7886,10 @@ const App_Theme = {
 
             const fontBtn = document.getElementById('font-cycle-btn');
             if (fontBtn) {
-                fontBtn.innerHTML = `<span>${meta.emoji} ${fontId}</span>`;
+                // textContent, not innerHTML: fontId originates from
+                // localStorage (settings_font_id) which a compromised or
+                // hand-edited store could turn into markup.
+                fontBtn.textContent = (meta.emoji || '🔤') + ' ' + fontId;
             }
 
             if (typeof IEM_Module !== 'undefined' && IEM_Module.selectExportFont) {
@@ -7679,19 +7968,35 @@ const App_Theme = {
             this.fontMeta = [];
 
             const loadedEntries = [];
+            // Load all font faces CONCURRENTLY: the serial await chain
+            // waited for each file in turn, multiplying boot font-ready time
+            // by the number of faces. Each face resolves/fails
+            // independently; per-face catch preserves the old fallback.
+            const fileFonts = [];
             for (var i = 0; i < fontList.length; i++) {
                 var f = fontList[i];
                 if (!f.file || f.file.includes(',')) {
                     loadedEntries.push({ meta: f, isSystemStack: true });
-                    continue;
+                } else {
+                    fileFonts.push(f);
                 }
+            }
+            const loadResults = await Promise.all(fileFonts.map((f) => {
                 try {
-                    var fontFace = new FontFace(f.name, 'url(./app/fonts/' + f.file + ')');
-                    await fontFace.load();
-                    document.fonts.add(fontFace);
-                    loadedEntries.push({ meta: f, isSystemStack: false });
-                } catch (fontErr) {
-                    console.warn(`[Offline Font Notice] Local font "${f.name}" (${f.file}) not found in ./app/fonts/. Falling back.`);
+                    const fontFace = new FontFace(f.name, 'url(./app/fonts/' + f.file + ')');
+                    return fontFace.load().then(() => {
+                        document.fonts.add(fontFace);
+                        return { meta: f, ok: true };
+                    }).catch(() => ({ meta: f, ok: false }));
+                } catch (e) {
+                    return Promise.resolve({ meta: f, ok: false });
+                }
+            }));
+            for (const r of loadResults) {
+                if (r.ok) {
+                    loadedEntries.push({ meta: r.meta, isSystemStack: false });
+                } else {
+                    console.warn(`[Offline Font Notice] Local font "${r.meta.name}" (${r.meta.file}) not found in ./app/fonts/. Falling back.`);
                 }
             }
 
@@ -8144,7 +8449,20 @@ window.bootstrapAlphabetIndex = function () {
             // must invalidate the cache the same way a raw slider move does.
             const effPreamp = (typeof EQ_Module.computeEffectivePreamp === 'function')
                 ? EQ_Module.computeEffectivePreamp() : realValues.preVal;
-            let contentHash = this.hashString(JSON.stringify([effPreamp, realValues.mainVals, realValues.advVals]));
+            // Master EQ bypass: getCompositeFilterMagnitude gates the whole
+            // band bank on eqEnabled, but getRealValues does not include it —
+            // toggling EQ off/on changed the scored composite while this
+            // fingerprint (and therefore the match-list cache) stayed identical.
+            const eqOn = EQ_Module.eqEnabled !== false ? '1' : '0';
+            // Virtual band CONTENT: worklet slots 50+ contribute to the
+            // composite (AutoEQ 30/40/50-band solves) but are absent from
+            // mainVals/advVals — hash their gains so a virtual-only change
+            // can't serve stale matches. (Length alone missed same-count re-solves.)
+            let virtHash = 'nv';
+            if (Array.isArray(EQ_Module.virtualBands) && EQ_Module.virtualBands.length) {
+                virtHash = this.hashCurvePoints(EQ_Module.virtualBands.map(b => [b.hz || 0, b.g || 0]));
+            }
+            let contentHash = this.hashString(JSON.stringify([effPreamp, realValues.mainVals, realValues.advVals, eqOn, virtHash]));
             if (baseCurve) {
                 contentHash += '-' + this.hashCurvePoints(baseCurve.data);
             }
@@ -8175,7 +8493,21 @@ function showDebugError(message, source) {
         errDiv.style = 'position:fixed; bottom:20px; left:20px; right:20px; background:rgba(220,38,38,0.95); color:white; font-family:monospace; font-size:11px; padding:12px; border-radius:6px; z-index:9999; border:1px solid #ef4444; box-shadow:0 10px 30px rgba(0,0,0,0.55); overflow-y:auto; max-height:180px;';
         document.body.appendChild(errDiv);
     }
-    errDiv.innerHTML = `<strong>⚠️ JS Runtime Exception:</strong> ${message} <br> <span style="opacity:0.85; font-size:10px; margin-top:4px; display:block;">${source}</span>`;
+    // Build via DOM text nodes, not innerHTML: message/source derive from
+    // error events (e.message can carry attacker-influenced strings from
+    // parsed imports; e.filename is URL-controlled) and must never hit an
+    // HTML sink. esc() exists in this file but innerHTML with template
+    // interpolation of both fields was an injection sink.
+    errDiv.textContent = '';
+    const strong = document.createElement('strong');
+    strong.textContent = '⚠️ JS Runtime Exception: ' + message;
+    const br = document.createElement('br');
+    const sourceSpan = document.createElement('span');
+    sourceSpan.style.cssText = 'opacity:0.85; font-size:10px; margin-top:4px; display:block;';
+    sourceSpan.textContent = String(source);
+    errDiv.appendChild(strong);
+    errDiv.appendChild(br);
+    errDiv.appendChild(sourceSpan);
 }
 
 window.addEventListener('error', function(e) {
@@ -8428,7 +8760,30 @@ var Mascot = window.Mascot || {
             (intensity - this.currentIntensity) * Math.min(1, dt * speed);
 
         var i = Math.max(0, Math.min(1, this.currentIntensity));
+
+        // Round the inputs that feed the style strings: when the smoothed
+        // intensity hasn't moved a visible step (paused tab, idle silence,
+        // settled level), the composed strings are identical and the three
+        // style writes below are skipped entirely — this runs at up to 60Hz
+        // from the visualizer loop, and every write forces a style recalc on
+        // the header element.
+        var iq = Math.round(i * 100) / 100;
+        var iu = Math.round(i * 20) / 20; // coarser step for blur/glow sizes
+        var key = expr + '|' + iq + '|' + iu + '|' + Math.round(now / 80);
+        if (this._lastReactiveKey === key) return;
+        this._lastReactiveKey = key;
+
         var shake, scaleX, scaleY, rot, blur, glowColor, glowSize;
+
+        // 'vibing' is the visualizer's default playing expression and its
+        // transform is owned by the CSS keyframe class (anim-mascot-vibing —
+        // the inline transform loses the cascade anyway, so that write was
+        // pure wasted style recalc). Only the glow state matters for it.
+        if (expr === 'vibing') {
+            el.style.filter = 'none';
+            el.style.textShadow = iu > 0.5 ? '0 0 4px rgba(var(--accent-blue-rgb), 0.3)' : 'none';
+            return;
+        }
 
         switch(expr) {
             case 'bassface':
@@ -8492,15 +8847,6 @@ var Mascot = window.Mascot || {
                 el.style.transform = 'translateX(' + shake.toFixed(1) + 'px) translateY(' + (Math.cos(now * 0.14) * i * 2).toFixed(1) + 'px) scaleX(' + scaleX.toFixed(2) + ') scaleY(' + scaleY.toFixed(2) + ') rotate(' + rot.toFixed(1) + 'deg)';
                 el.style.filter = 'blur(' + blur.toFixed(1) + 'px)';
                 el.style.textShadow = '0 0 ' + glowSize + 'px ' + glowColor;
-                break;
-
-            case 'vibing':
-                var bobY = Math.sin(now * 0.004) * i * 4;
-                rot = Math.sin(now * 0.003) * i * 3;
-                blur = 0;
-                el.style.transform = 'translateY(' + bobY.toFixed(1) + 'px) rotate(' + rot.toFixed(1) + 'deg)';
-                el.style.filter = 'none';
-                el.style.textShadow = i > 0.5 ? '0 0 4px rgba(var(--accent-blue-rgb), 0.3)' : 'none';
                 break;
 
             case 'imbalance':
@@ -8948,7 +9294,76 @@ window.updateExpandedAutoHide = function() {
         return this.domCache.get(id);
     },
     saveWorkspaceState: function() {
+        // Persist the hearing-test correction so it survives reloads. The
+        // hearing layer is a separate EQ layer (worklet sim slots 12-19,
+        // included in exports), so restoring it re-applies the exact profile
+        // the user measured without touching their faders.
+        try {
+            if (window.EQ && EQ_Module.hearingCalEnabled && Array.isArray(EQ_Module.hearingOffsets)) {
+                const anyNonZero = EQ_Module.hearingOffsets.some(v => v !== 0);
+                if (anyNonZero) {
+                    localStorage.setItem('settings_hearing_offsets', JSON.stringify(EQ_Module.hearingOffsets));
+                } else {
+                    localStorage.removeItem('settings_hearing_offsets');
+                }
+            } else {
+                localStorage.removeItem('settings_hearing_offsets');
+            }
+        } catch (e) { /* storage full — non-fatal */ }
+    },
+    restoreHearingCorrection: function() {
+        // Boot-time counterpart of saveWorkspaceState. Re-applies the saved
+        // hearing layer (and lights the UI badges) without re-running the test.
+        try {
+            const saved = localStorage.getItem('settings_hearing_offsets');
+            if (!saved) return false;
+            const offsets = JSON.parse(saved);
+            if (!Array.isArray(offsets) || offsets.length !== 8 || !offsets.some(v => Number.isFinite(v) && v !== 0)) return false;
 
+            EQ_Module.hearingOffsets = offsets.map(v => (Number.isFinite(v) ? Math.max(0, Math.min(6, v)) : 0));
+            EQ_Module.hearingCalEnabled = true;
+
+            const btn = document.getElementById('btn-hearing-cal');
+            const lbl = document.getElementById('lbl-hearing-cal');
+            if (btn && lbl) {
+                btn.classList.add('active-btn');
+                lbl.textContent = 'Hearing: ON';
+            }
+
+            // Reflect the restored profile in the Test Lab panel state.
+            const genBtn = document.getElementById('hearing-eq-generate-btn');
+            if (genBtn) {
+                genBtn.classList.remove('hidden', 'bg-zinc-800', 'text-zinc-500', 'cursor-not-allowed');
+                genBtn.classList.add('bg-emerald-500', 'text-white', 'hover:brightness-110', 'cursor-pointer');
+                genBtn.disabled = false;
+            }
+            const status = document.getElementById('hearing-test-status');
+            if (status) status.textContent = 'Saved hearing profile active.';
+            const hzDisp = document.getElementById('hearing-test-hz');
+            if (hzDisp) hzDisp.textContent = 'SAVED';
+            const pctDisp = document.getElementById('hearing-progress-pct');
+            if (pctDisp) pctDisp.textContent = '100%';
+            const segs = document.querySelectorAll('.hearing-seg');
+            segs.forEach(seg => { seg.style.background = '#34d399'; });
+            const instr = document.getElementById('hearing-test-instruction');
+            if (instr) {
+                instr.innerHTML = 'Saved correction active. <span class="text-white font-bold">Start Test</span> re-measures · <span class="text-white font-bold">Reset</span> clears.';
+            }
+
+            // Mirror raw thresholds into TestLab so a re-run of
+            // convertHearingToEQ has sane source data (offsets are the
+            // capped/shaped version of thresholds; re-deriving thresholds
+            // from them is not exact — but bake-to-faders uses offsets).
+            if (window.TestLab && TestLab_Module) {
+                TestLab_Module.hearingThresholds = offsets.map(v => v * 2.5); // loss*0.4 inverse, approx
+            }
+
+            EQ_Module.applyHearingCalibrationGains();
+            return true;
+        } catch (e) {
+            console.warn('[Hearing] Restore failed:', e);
+            return false;
+        }
     },
     mobileDrawerOpen: false,
     toggleMobileDrawer: function() {
@@ -9156,7 +9571,11 @@ window.updateExpandedAutoHide = function() {
                 if (tabId === 'iem' && window.IEM) {
                     IEM.ensureChartReady();
                 }
-                if (tabId === 'find' && window.FindEngine) {
+                // typeof guard: FindEngine is a top-level const in the
+                // bundle, never assigned to window — the old window.FindEngine
+                // check was always false, so returning to the Find tab never
+                // re-drew the target viz or re-applied the mobile section.
+                if (tabId === 'find' && typeof FindEngine !== 'undefined' && FindEngine.drawTargetVisualization) {
                 setTimeout(() => {
                     FindEngine.drawTargetVisualization();
                     App.setFindSection(App.activeFindSection);
@@ -9772,6 +10191,16 @@ setGlobalFont: function(fontId) {
         rippleEffect: function(event, button) {
             try {
                 if (!button) return;
+                // Never reposition fixed/absolute elements: forcing
+                // position:relative here once DEMOTED every fixed-position
+                // button (e.g. the ? shortcuts FAB, fixed bottom-right) to
+                // relative, teleporting it into body flow, clipped off the
+                // left-bottom edge — visually "the FAB moved to the left
+                // corner after clicking it". Overlay buttons get no ripple
+                // (their positioning IS the layout; a decorative span inside
+                // a 32px round FAB added nothing anyway).
+                const pos = window.getComputedStyle(button).position;
+                if (pos === 'fixed' || pos === 'absolute' || pos === 'sticky') return;
                 button.style.position = 'relative';
 
                 const circle = document.createElement('span');
@@ -9911,6 +10340,12 @@ setGlobalFont: function(fontId) {
                 if (!window.mushroomSporesActive) {
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                     canvas.style.display = 'none';
+                    // The loop is dead but the started flag stays true, so a
+                    // second activation hit the guard above and never
+                    // re-scheduled draw() — the spores stayed off forever
+                    // after the first deactivate. Reset the flag here so
+                    // runGlobalSporesLoop can restart cleanly.
+                    this._sporesLoopStarted = false;
                     return;
                 }
 
@@ -10235,6 +10670,17 @@ setGlobalFont: function(fontId) {
             } catch (error) {
                 console.error("Settings alignment load failed:", error);
             }
+
+            // Restore the saved hearing correction layer (if any) — after the
+            // DSP graph paths exist so applyHearingCalibrationGains reaches
+            // the worklet (it also self-queues via the pending-DSP path).
+            try {
+                if (typeof this.restoreHearingCorrection === 'function') {
+                    this.restoreHearingCorrection();
+                }
+            } catch (err) {
+                console.error("Hearing correction restore failed:", err);
+            }
         },
         init: function() {
             try {
@@ -10332,9 +10778,13 @@ setGlobalFont: function(fontId) {
 
                                 const data = JSON.parse(rawText);
                                 if (data && typeof data === 'object') {
-                                    IEM_Module.loadProfileData(data);
-                                    const label = (data.brand || data.model) ? `${data.brand || ''} ${data.model || ''}` : "Blank Profile";
-                                    showToast(`Loaded ${label.trim()} successfully!`, "📥");
+                                    // Route through the shared importer so a
+                                    // dropped full_workstation_backup actually
+                                    // restores its workspace+library — the old
+                                    // direct loadProfileData call blanked the
+                                    // workspace (all backup fields undefined)
+                                    // while reporting success.
+                                    IEM_Module._importParsedConfig(data);
                                 } else {
                                     showToast("Invalid JSON profile structure.", "⚠️");
                                 }
@@ -10475,7 +10925,10 @@ setGlobalFont: function(fontId) {
             if (sensEl && Number.isFinite(rawSens)) {
                 const delta = 10 * Math.log10(1000 / imp);
                 const converted = toV ? rawSens + delta : rawSens - delta;
-                const clamped = Math.max(80, Math.min(125, converted));
+                // Clamp to the UI range [55,150] (see handleGaugeSlider) —
+                // wide enough that the dB/V <-> dB/mW round trip is lossless
+                // for every representable impedance/sensitivity pair.
+                const clamped = Math.max(55, Math.min(150, converted));
                 sensEl.value = clamped.toFixed(0);
                 const slider = document.getElementById('sensitivity-slider');
                 if (slider) slider.value = clamped;
@@ -10586,6 +11039,18 @@ setGlobalFont: function(fontId) {
                 btn.textContent = labelMap[val] || 'Normal';
             }
             this.updateAll();
+        },
+        // SPL target (dB) used by every power requirement calculation. The
+        // listening-volume selector previously changed NOTHING — all three
+        // power-math sites hardcoded 115 dB. 'variable' keeps 115 (the
+        // historical default) since the user hasn't declared a level.
+        // Single source of truth: iem-module live math, the Review card
+        // export, and FindEngine's driveability badge all read this.
+        LISTENING_SPL_TARGETS: { low: 105, moderate: 115, high: 120, variable: 115 },
+        getListeningSplTarget: function() {
+            const input = document.getElementById('listening-volume');
+            const v = input ? input.value : 'moderate';
+            return this.LISTENING_SPL_TARGETS[v] !== undefined ? this.LISTENING_SPL_TARGETS[v] : 115;
         },
         formFactorOptions: ['IEM', 'Earbuds (Wired)', 'Wireless Earbuds (TWS)', 'Over-Ear Headphones (Wired)', 'Wireless Over-Ear Headphones'],
         connectorOptions: ['2-pin', 'MMCX', 'QDC', 'A2DC', 'Fixed Cable', 'Detachable Cable', 'Bluetooth', 'Electrostatic'],
@@ -10959,8 +11424,8 @@ onDbSearchInput: function(value) {
 
             if (document.getElementById('impedance')) document.getElementById('impedance').value = Math.max(5, Math.min(300, Math.round(item.impedance || 5)));
             if (document.getElementById('impedance-slider')) document.getElementById('impedance-slider').value = Math.min(300, Math.max(5, Math.round(item.impedance || 5)));
-            if (document.getElementById('sensitivity')) document.getElementById('sensitivity').value = Math.max(80, Math.min(125, Math.round(item.sensitivity || 80)));
-            if (document.getElementById('sensitivity-slider')) document.getElementById('sensitivity-slider').value = Math.min(125, Math.max(80, Math.round(item.sensitivity || 80)));
+            if (document.getElementById('sensitivity')) document.getElementById('sensitivity').value = Math.max(55, Math.min(150, Math.round(item.sensitivity || 80)));
+            if (document.getElementById('sensitivity-slider')) document.getElementById('sensitivity-slider').value = Math.min(150, Math.max(55, Math.round(item.sensitivity || 80)));
             let impEl = document.getElementById('impedance');
             if (impEl) document.getElementById('impedance').dispatchEvent(new Event('input', { bubbles: true }));
 
@@ -11408,7 +11873,11 @@ onDbSearchInput: function(value) {
             const needle = document.getElementById(`${id}-needle`);
             const light = document.getElementById(`${id}-light`);
             const input = document.getElementById(id);
-            const config = { impedance: { min: 5, max: 300 }, sensitivity: { min: 80, max: 125 } };
+            // Sensitivity range widened from [80,125] to [55,150]: dB/V values
+            // (dB/mW + 10*log10(1000/Z)) legitimately reach ~148 dB/V at low
+            // impedance, and 615 DB entries fall outside the old window — the
+            // old clamp corrupted unit-toggle round-trips by up to 8 dB.
+            const config = { impedance: { min: 5, max: 300 }, sensitivity: { min: 55, max: 150 } };
             const constraint = config[id];
 
             if (!constraint || !needle) return;
@@ -11642,13 +12111,35 @@ onDbSearchInput: function(value) {
                     const div = document.createElement('div');
                     div.className = 'bg-[var(--bg-card)] border-2 border-[var(--border-color)] px-2 py-1 flex items-center justify-between gap-1 select-none w-full h-full relative';
                     div.style.cssText = 'box-shadow: 2px 2px 0px 0px var(--border-color) !important;';
-                    div.innerHTML = `
-                        <div class="flex items-center gap-2 min-w-0 flex-1 overflow-visible">
-                            <span class="emoji-font vibrant-emoji ${animClass} text-2xl flex-shrink-0 leading-none" style="display: inline-block; transform-origin: center;">${emoji}</span>
-                            <span class="text-[9.5px] font-black text-[var(--text-main)] truncate leading-tight">${text}</span>
-                        </div>
-                        <button type="button" onclick="event.stopPropagation(); IEM.removeReviewTag('${tag}')" class="w-4 h-4 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[9px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${text}">✕</button>
-                    `;
+                    // DOM-built, no innerHTML: tags come from profiles that can
+                    // be imported from JSON files (selectedTags is attacker-
+                    // controllable text), and both the chip body and the
+                    // inline onclick string literal were raw-interpolated.
+                    const inner = document.createElement('div');
+                    inner.className = 'flex items-center gap-2 min-w-0 flex-1 overflow-visible';
+                    const emojiSpan = document.createElement('span');
+                    emojiSpan.className = `emoji-font vibrant-emoji ${animClass} text-2xl flex-shrink-0 leading-none`;
+                    emojiSpan.style.cssText = 'display: inline-block; transform-origin: center;';
+                    emojiSpan.textContent = emoji;
+                    const textSpan = document.createElement('span');
+                    textSpan.className = 'text-[9.5px] font-black text-[var(--text-main)] truncate leading-tight';
+                    textSpan.textContent = text;
+                    inner.appendChild(emojiSpan);
+                    inner.appendChild(textSpan);
+
+                    const rmBtn = document.createElement('button');
+                    rmBtn.type = 'button';
+                    rmBtn.className = 'w-4 h-4 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[9px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black';
+                    rmBtn.title = 'Remove ' + text;
+                    rmBtn.textContent = '✕';
+                    const tagToRemove = tag;
+                    rmBtn.addEventListener('click', (ev) => {
+                        ev.stopPropagation();
+                        IEM_Module.removeReviewTag(tagToRemove);
+                    });
+
+                    div.appendChild(inner);
+                    div.appendChild(rmBtn);
                     container.appendChild(div);
                 } else {
                     const div = document.createElement('div');
@@ -11663,7 +12154,12 @@ onDbSearchInput: function(value) {
             if (!box) return;
             const q = (query || '').trim();
 
-            const db = (window.FindEngine && FindEngine.iemDatabase) || (window.CurveIndexer && CurveIndexer.catalog) || [];
+            // typeof guards: FindEngine and CurveIndexer are top-level consts
+            // in the bundle (never on window), so the old window.* checks made
+            // db always [] — the brand autocomplete never showed anything.
+            const db = ((typeof FindEngine !== 'undefined' && FindEngine.iemDatabase && FindEngine.iemDatabase.length > 0)
+                ? FindEngine.iemDatabase
+                : ((typeof CurveIndexer !== 'undefined' && CurveIndexer.catalog) ? CurveIndexer.catalog : []));
             const normQ = q.toLowerCase();
             const seen = new Set();
             const matches = [];
@@ -12010,6 +12506,44 @@ onDbSearchInput: function(value) {
                 container.appendChild(div);
             });
         },
+        // Serialize an image source (blob: URL string or Blob) to a bounded
+        // dataURL for JSON export. blob: object URLs are meaningless outside
+        // this session, and raw Blobs JSON.stringify to {} — backups need the
+        // bytes embedded. Returns null for absent/invalid images.
+        _imageToDataURL: function(sourceUrl, sourceBlob) {
+            return new Promise((resolve) => {
+                const blob = sourceBlob || null;
+                const url = sourceUrl || (blob ? URL.createObjectURL(blob) : null);
+                if (!url) { resolve(null); return; }
+                const revoke = sourceUrl ? null : url; // only revoke URLs we created
+                const img = new Image();
+                img.onload = () => {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        let w = img.width, h = img.height;
+                        const maxDim = 400;
+                        if (w > maxDim || h > maxDim) {
+                            if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+                            else { w = Math.round((w * maxDim) / h); h = maxDim; }
+                        }
+                        canvas.width = Math.max(1, w);
+                        canvas.height = Math.max(1, h);
+                        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+                        if (revoke) { try { URL.revokeObjectURL(revoke); } catch (_) {} }
+                        resolve(dataUrl);
+                    } catch (e) {
+                        if (revoke) { try { URL.revokeObjectURL(revoke); } catch (_) {} }
+                        resolve(null);
+                    }
+                };
+                img.onerror = () => {
+                    if (revoke) { try { URL.revokeObjectURL(revoke); } catch (_) {} }
+                    resolve(null);
+                };
+                img.src = url;
+            });
+        },
         downsampleImage: function(imgObj, maxDim = 400) {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
@@ -12054,6 +12588,20 @@ onDbSearchInput: function(value) {
                 ctx.drawImage(this.rawImageObj, 0, 0, w, h);
 
                 canvas.toBlob((blob) => {
+                    // toBlob may pass null on encode failure — fall back to a
+                    // dataURL-derived Blob so the upload never silently dies.
+                    if (!blob) {
+                        try {
+                            const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+                            const bin = atob(dataUrl.split(',')[1]);
+                            const bytes = new Uint8Array(bin.length);
+                            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                            blob = new Blob([bytes], { type: 'image/jpeg' });
+                        } catch (e) {
+                            showToast("Image processing failed — try another file.", "⚠️");
+                            return;
+                        }
+                    }
                     if (this.currentImage && this.currentImage.startsWith('blob:')) {
                         URL.revokeObjectURL(this.currentImage);
                     }
@@ -12121,10 +12669,17 @@ onDbSearchInput: function(value) {
         // Blob values get an object URL. Tracked for revocation on replace.
         _restoreStoredImage: function(value) {
             if (!value) { this.clearImage(); return; }
-            if (this.currentImage && this.currentImage.startsWith('blob:') && !(value instanceof Blob)) {
+            // Replace any stale uploaded-photo Blob with the incoming one so
+            // saveToLibrary (which prefers currentImageBlob) stores the photo
+            // actually on screen — the old upload's Blob used to survive here
+            // and get saved under the newly-loaded profile's name. For
+            // string images (dataURLs) the blob slot must be null: otherwise
+            // the stale Blob would shadow the correct string on the next save.
+            if (this.currentImage && this.currentImage.startsWith('blob:')) {
                 try { URL.revokeObjectURL(this.currentImage); } catch (_) {}
             }
             const isBlob = (typeof Blob !== 'undefined') && (value instanceof Blob);
+            this.currentImageBlob = isBlob ? value : null;
             this.currentImage = isBlob ? URL.createObjectURL(value) : value;
             this.rawImageObj = new Image();
             this.rawImageObj.onload = () => {
@@ -12482,11 +13037,12 @@ onDbSearchInput: function(value) {
             const Rs = dacImpedances[activeDacName] || 1.0;
 
             let pReqIem, vReqIem;
+            const splTarget = this.getListeningSplTarget();
             if (this.sensUnit === 'V') {
-                vReqIem = Math.pow(10, (115 - sensVal) / 20);
+                vReqIem = Math.pow(10, (splTarget - sensVal) / 20);
                 pReqIem = (vReqIem * vReqIem / impVal) * 1000;
             } else {
-                pReqIem = Math.pow(10, (115 - sensVal) / 10);
+                pReqIem = Math.pow(10, (splTarget - sensVal) / 10);
                 vReqIem = Math.sqrt((pReqIem * impVal) / 1000);
             }
 
@@ -12677,16 +13233,39 @@ if(this.radarChart) {
         await this.ensureChartReady();
 
         const finalScore = this.updateAll(); const id = `${brand}-${model}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        // Same-id saves overwrite silently (DBCache.put) — and the normalizer
+        // collapses distinct names onto one id (non-Latin names all become
+        // "-"). Confirm before replacing an EXISTING record so a save can't
+        // destroy a review without the user knowing.
+        const existing = await DBCache.getReview(id);
+        if (existing) {
+            const okToOverwrite = await UIKit.confirm({
+                title: "Overwrite existing review?",
+                message: `A saved review for "${existing.brand || ''} ${existing.model || ''}" already exists in the library. Saving again will replace it.`,
+                confirmLabel: "Overwrite",
+                danger: true
+            });
+            if (!okToOverwrite) { showToast("Save cancelled — nothing changed.", "ℹ️"); return; }
+        }
         const sliderValues = {}; this.sliderNodes.forEach(n => { if (n.element.id) sliderValues[n.element.id] = n.element.value; });
+        // ensureChartReady tolerates Chart.js failing to load (radarChart stays
+        // null) — the unguarded .data access below then rejected the whole
+        // async save with no toast. Fall back to the live slider-derived axes
+        // (the same values the chart would display).
+        const radarData = (this.radarChart && this.radarChart.data && this.radarChart.data.datasets && this.radarChart.data.datasets[0])
+            ? Array.from(this.radarChart.data.datasets[0].data)
+            : this.sliderNodes.map(n => parseFloat(n.element.value) || 0);
         // Price easter-egg writes non-numeric words (e.g. "Priceless 👑") via direct assignment
         // bypassing the digit-only input handler. Coerce to digits for storage so
         // library re-load and numeric consumers never see NaN, while keeping the
-        // on-screen easter-egg until next edit.
+        // on-screen easter-egg until next edit. Six digits, not four: real DB
+        // entries reach $59,000 and the old slice(0,4) silently corrupted them
+        // to a tenth of their value on save (59000 -> 5900).
         const rawPrice = document.getElementById('price').value || "";
-        const priceDigits = rawPrice.replace(/[^0-9]/g, '').slice(0, 4);
+        const priceDigits = rawPrice.replace(/[^0-9]/g, '').slice(0, 6) || null;
         const price = priceDigits;
 
-        const profile = { id, brand, model, score: parseFloat(finalScore), price: price, impedance: document.getElementById('impedance').value, sensitivity: document.getElementById('sensitivity').value, sensUnit: this.sensUnit || 'mW', image: this.currentImageBlob || this.currentImage, notes: document.getElementById('review-notes').value, refVolume: document.getElementById('listening-volume').value, selectedTags: Array.from(this.selectedTags), selectedGenres: Array.from(this.selectedGenres), selectedBass: Array.from(this.selectedBass), sliders: sliderValues, selectedDriverTypes: this.selectedDriverTypes, formFactor: this.formFactor || 'IEM', connector: this.connector || '2-pin', timestamp: Date.now(), radarData: Array.from(this.radarChart.data.datasets[0].data), toneData: (typeof Tone_Module !== 'undefined' && Tone_Module.getState) ? Tone_Module.getState() : null, eqData: (typeof EQ_Module !== 'undefined' && EQ_Module.getRealValues) ? EQ_Module.getRealValues() : null };
+        const profile = { id, brand, model, score: parseFloat(finalScore), price: price, impedance: document.getElementById('impedance').value, sensitivity: document.getElementById('sensitivity').value, sensUnit: this.sensUnit || 'mW', image: this.currentImageBlob || this.currentImage, notes: document.getElementById('review-notes').value, refVolume: document.getElementById('listening-volume').value, selectedTags: Array.from(this.selectedTags), selectedGenres: Array.from(this.selectedGenres), selectedBass: Array.from(this.selectedBass), sliders: sliderValues, selectedDriverTypes: this.selectedDriverTypes, formFactor: this.formFactor || 'IEM', connector: this.connector || '2-pin', crossoverOverride: this.crossoverOverride || false, wayOverride: this.wayOverride || false, currentCrossover: this.currentCrossover || 'UNK', currentWay: this.currentWay || 'UNK', timestamp: Date.now(), radarData: radarData, toneData: (typeof Tone_Module !== 'undefined' && Tone_Module.getState) ? Tone_Module.getState() : null, eqData: (typeof EQ_Module !== 'undefined' && EQ_Module.getRealValues) ? EQ_Module.getRealValues() : null };
 
         const success = await DBCache.saveReview(profile);
         if (success) {
@@ -12744,6 +13323,15 @@ if(this.radarChart) {
                 const safeImg = esc(imgPath);
                 const safeBrand = esc(item.brand);
                 const safeModel = esc(item.model);
+                // Imported library records can carry arbitrary strings (the
+                // save-time sanitizer is bypassed by direct JSON import), so
+                // price/volume/score must be coerced before interpolation.
+                // A string score ("9") previously threw toFixed and killed
+                // the whole library render.
+                const safePrice = esc(String(Number.isFinite(parseFloat(item.price)) ? item.price : '---'));
+                const safeVol = esc(String(item.refVolume || 'N/A'));
+                const numScore = Number(item.score);
+                const safeScore = Number.isFinite(numScore) ? numScore.toFixed(1) : '--';
 
                 tr.innerHTML = `
                     <td class="px-4 py-3"><input type="checkbox" class="compare-cb accent-blue-500 w-4 h-4 cursor-pointer" value="${safeId}"></td>
@@ -12752,14 +13340,27 @@ if(this.radarChart) {
                         ${imgPath ? `<img src="${safeImg}" class="w-8 h-8 object-cover rounded border border-[var(--border-color)] bg-[#111]">` : '<div class="w-8 h-8 rounded border border-[var(--border-color)] bg-[#111] flex items-center justify-center text-zinc-650">🎧</div>'}
                         <div>
                             <div class="text-xs">${safeBrand} <span class="text-[var(--accent-blue)]">${safeModel}</span></div>
-                            <div class="text-xs text-[var(--text-secondary)] font-normal mt-0.5">$${item.price || '---'} • Vol: ${item.refVolume || 'N/A'}</div>
+                            <div class="text-xs text-[var(--text-secondary)] font-normal mt-0.5">$${safePrice} • Vol: ${safeVol}</div>
                         </div>
                     </td>
-                    <td class="px-4 py-3 font-black text-md text-center text-[var(--accent-blue)]">${(item.score || 5.0).toFixed(1)}</td>
-                    <td class="px-4 py-3 text-right">
-                        <button onclick="IEM.loadFromLibrary('${item.id}')" class="px-3 py-1 bg-zinc-800 text-stone-200 rounded text-xs font-bold hover:bg-zinc-700 transition-colors shadow-sm">Load</button>
-                        <button onclick="IEM.deleteFromLibrary('${item.id}')" class="ml-2.5 text-red-500 hover:text-red-400 cursor-pointer text-[8px]">❌</button>
-                    </td>`;
+                    <td class="px-4 py-3 font-black text-md text-center text-[var(--accent-blue)]">${safeScore}</td>
+                    <td class="px-4 py-3 text-right"></td>`;
+                // Load/Delete buttons are DOM-built with real listeners (no
+                // onclick string literals) — imported ids can contain quotes
+                // that previously broke out of the inline handler string.
+                const loadBtn = document.createElement('button');
+                loadBtn.className = 'px-3 py-1 bg-zinc-800 text-stone-200 rounded text-xs font-bold hover:bg-zinc-700 transition-colors shadow-sm';
+                loadBtn.textContent = 'Load';
+                loadBtn.addEventListener('click', () => IEM_Module.loadFromLibrary(item.id));
+                const delBtn = document.createElement('button');
+                delBtn.className = 'ml-2.5 text-red-500 hover:text-red-400 cursor-pointer text-[8px]';
+                delBtn.textContent = '❌';
+                delBtn.addEventListener('click', () => IEM_Module.deleteFromLibrary(item.id));
+                const btnTd = document.createElement('td');
+                btnTd.className = 'px-4 py-3 text-right';
+                btnTd.appendChild(loadBtn);
+                btnTd.appendChild(delBtn);
+                tr.appendChild(btnTd);
                 fragment.appendChild(tr);
             });
 
@@ -12789,6 +13390,17 @@ if(this.radarChart) {
 
             this.selectedDriverTypes = profile.selectedDriverTypes || {};
             this.runDriverAutoLogic();
+
+            // Restore manual crossover/way overrides (same fields the config
+            // backup saves). Reset first when absent: a loaded profile with
+            // no override must not inherit the PREVIOUS profile's stuck
+            // override/currentCrossover/currentWay state.
+            this.crossoverOverride = !!profile.crossoverOverride;
+            this.wayOverride = !!profile.wayOverride;
+            this.currentCrossover = profile.currentCrossover || 'UNK';
+            this.currentWay = profile.currentWay || 'UNK';
+            this.updateCrossoverButtonsUI();
+            this.updateWayButtonsUI();
 
             this.selectedTags = new Set(profile.selectedTags || []); this.createTags('tonality-tags', this.tonalityTags, this.selectedTags); this.selectedGenres = new Set(profile.selectedGenres || []); this.createTags('genre-tags', this.genreTags, this.selectedGenres); this.selectedBass = new Set(profile.selectedBass || []); this.createTags('bass-tags', this.bassTags, this.selectedBass);
             if (profile.sliders) {
@@ -12841,7 +13453,21 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
         resetAll: function() {
             if(!confirm("Clear all current workspace data?")) return;
 
-            const preservedKeys = ['iem_library_v2', 'settings_theme_id', 'settings_font_id', 'settings_align_hz', 'settings_align_db'];
+            // Preserve user preferences that are NOT workspace review data.
+            // The old 5-key list let the wipe destroy the Find tab's curated
+            // taste favorites, playback/limiter/a11y settings, the hearing
+            // profile and reading scale — none of which belong to the review
+            // workspace this reset is scoped to.
+            const preservedKeys = [
+                'iem_library_v2',
+                'settings_theme_id', 'settings_export_theme_id', 'settings_font_id',
+                'settings_align_hz', 'settings_align_db',
+                'settings_reading_scale',
+                'settings_gapless', 'settings_crossfade', 'settings_crossfade_secs',
+                'settings_merger_limiter',
+                'a11y_bluelight',
+                'find_taste_favorites', 'find_canonical_profiles'
+            ];
             const preserved = {};
             preservedKeys.forEach(k => { preserved[k] = localStorage.getItem(k); });
             localStorage.clear();
@@ -12873,6 +13499,26 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
             this.createTags('genre-tags', this.genreTags, this.selectedGenres);
             this.createTags('bass-tags', this.bassTags, this.selectedBass);
 
+            // The hearing-test profile belongs to this workspace — clear its
+            // live layer too (previously only the persistence key was wiped,
+            // leaving the correction actively applied with a "Hearing: ON"
+            // badge that vanished on the next reload).
+            if (window.EQ && EQ_Module.hearingCalEnabled) {
+                EQ_Module.hearingCalEnabled = false;
+                EQ_Module.hearingOffsets = [0, 0, 0, 0, 0, 0, 0, 0];
+                if (EQ_Module.applyHearingCalibrationGains) EQ_Module.applyHearingCalibrationGains();
+                const lbl = document.getElementById('lbl-hearing-cal');
+                if (lbl) lbl.textContent = 'Hearing: Off';
+            }
+            localStorage.removeItem('settings_hearing_offsets');
+
+            // Sensitivity unit belongs to the spec panel: reset it alongside
+            // the sensitivity value (a dB/V session previously kept the V
+            // unit with a value reset to 80, producing "over-range" power
+            // math until the next toggle).
+            this.sensUnit = 'mW';
+            this.updateSensUnitUI();
+
             Tone_Module.reset(); EQ_Module.resetEQ(); TestLab_Module.stopAll(); PEQDB_Module.clearState(); this.updateAll();
         },
         saveConfig: async function() {
@@ -12894,27 +13540,44 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
                     impedance: document.getElementById('impedance')?.value || '5',
                     sensitivity: document.getElementById('sensitivity')?.value || '80',
                     notes: document.getElementById('review-notes')?.value || '',
-                    image: this.currentImage,
-                    selectedTags: Array.from(this.selectedTags || []),
-                    selectedGenres: Array.from(this.selectedGenres || []),
-                    selectedBass: Array.from(this.selectedBass || []),
-                    sliders: sliderValues,
-                    selectedDriverTypes: this.selectedDriverTypes || {},
-                    formFactor: this.formFactor || 'IEM',
-                    connector: this.connector || '2-pin',
-                    crossoverOverride: this.crossoverOverride || false,
-                    wayOverride: this.wayOverride || false,
-                    currentCrossover: this.currentCrossover || 'UNK',
-                    currentWay: this.currentWay || 'UNK',
-                    toneData: Tone_Module.getState(),
-                    eqData: EQ_Module.getRealValues()
-                };
+                // Workspace photo: blob: URLs die with the session and Blobs
+                // stringify to {} — serialize as a bounded dataURL instead.
+                // (Image is already <=400px from the upload pipeline; this is
+                // the same 0.75-quality JPEG the upload path produces.)
+                image: await this._imageToDataURL(this.currentImage, this.currentImageBlob),
+                selectedTags: Array.from(this.selectedTags || []),
+                selectedGenres: Array.from(this.selectedGenres || []),
+                selectedBass: Array.from(this.selectedBass || []),
+                sliders: sliderValues,
+                selectedDriverTypes: this.selectedDriverTypes || {},
+                formFactor: this.formFactor || 'IEM',
+                connector: this.connector || '2-pin',
+                crossoverOverride: this.crossoverOverride || false,
+                wayOverride: this.wayOverride || false,
+                currentCrossover: this.currentCrossover || 'UNK',
+                currentWay: this.currentWay || 'UNK',
+                sensUnit: this.sensUnit || 'mW',
+                toneData: Tone_Module.getState(),
+                eqData: EQ_Module.getRealValues()
+            };
 
-                const fullBackup = {
-                    backupType: "full_workstation_backup",
-                    activeWorkspace: currentWorkspace,
-                    library: await this.getLibrary()
-                };
+            // Library records hold photo Blobs (IndexedDB-native) — they must
+            // be converted to dataURLs BEFORE JSON.stringify, which would
+            // otherwise silently serialize every one of them to {}.
+            const rawLibrary = await this.getLibrary();
+            const serializedLibrary = [];
+            for (const rec of rawLibrary) {
+                if (rec && rec.image instanceof Blob) {
+                    rec.image = await this._imageToDataURL(null, rec.image);
+                }
+                serializedLibrary.push(rec);
+            }
+
+            const fullBackup = {
+                backupType: "full_workstation_backup",
+                activeWorkspace: currentWorkspace,
+                library: serializedLibrary
+            };
 
                 const blob = new Blob([JSON.stringify(fullBackup, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
@@ -13008,38 +13671,7 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
                     let rawText = ev.target.result;
                     rawText = rawText.replace(/^\uFEFF/, '').trim();
                     const data = JSON.parse(rawText);
-
-                    if (data && data.backupType === undefined && data.hasOwnProperty('activeCurves') === false && (data.library !== undefined || data.eqData !== undefined || data.sliders !== undefined)) {
-                        if (data.eqData || data.sliders) {
-                            if (data.library && Array.isArray(data.library)) {
-                                for (let i = 0; i < data.library.length; i++) {
-                                    await DBCache.saveReview(data.library[i]);
-                                }
-                            }
-                            const workspaceToLoad = data.activeWorkspace || data;
-                            this.loadProfileData(workspaceToLoad);
-                            await this.renderLibrary();
-                            showToast("Workspace and library restored!", "📥");
-                        } else {
-                            this.loadProfileData(data);
-                            showToast("Loaded profile successfully!", "📥");
-                        }
-                    } else if (data && data.backupType === "full_workstation_backup" || (data && data.hasOwnProperty('library') && Array.isArray(data.library))) {
-                        if (data.library && Array.isArray(data.library)) {
-                            for (let i = 0; i < data.library.length; i++) {
-                                await DBCache.saveReview(data.library[i]);
-                            }
-                        }
-                        if (data.activeWorkspace) {
-                            this.loadProfileData(data.activeWorkspace);
-                        }
-                        await this.renderLibrary();
-                        showToast("Workstation backup restored successfully!", "📥");
-                    } else {
-                        this.loadProfileData(data);
-                        const nameLabel = (data.brand || data.model) ? `${data.brand || ''} ${data.model || ''}` : "Profile";
-                        showToast(`Loaded ${nameLabel.trim()} successfully!`, "📥");
-                    }
+                    this._importParsedConfig(data);
                 } catch (err) {
                     console.error("Import parsing crash:", err);
                     showToast("Failed to parse file.", "⚠️");
@@ -13047,6 +13679,48 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
             };
             reader.readAsText(file);
             event.target.value = '';
+        },
+        // Shared importer for the file input AND the window drop handler.
+        // The drop path previously called loadProfileData directly, which
+        // ignored the backup structure entirely — dropping the app's own
+        // _backup.json blanked the workspace without restoring any of it.
+        _importParsedConfig: async function(data) {
+            try {
+                if (data && data.backupType === undefined && data.hasOwnProperty('activeCurves') === false && (data.library !== undefined || data.eqData !== undefined || data.sliders !== undefined)) {
+                    if (data.eqData || data.sliders) {
+                        if (data.library && Array.isArray(data.library)) {
+                            for (let i = 0; i < data.library.length; i++) {
+                                await DBCache.saveReview(data.library[i]);
+                            }
+                        }
+                        const workspaceToLoad = data.activeWorkspace || data;
+                        this.loadProfileData(workspaceToLoad);
+                        await this.renderLibrary();
+                        showToast("Workspace and library restored!", "📥");
+                    } else {
+                        this.loadProfileData(data);
+                        showToast("Loaded profile successfully!", "📥");
+                    }
+                } else if (data && data.backupType === "full_workstation_backup" || (data && data.hasOwnProperty('library') && Array.isArray(data.library))) {
+                    if (data.library && Array.isArray(data.library)) {
+                        for (let i = 0; i < data.library.length; i++) {
+                            await DBCache.saveReview(data.library[i]);
+                        }
+                    }
+                    if (data.activeWorkspace) {
+                        this.loadProfileData(data.activeWorkspace);
+                    }
+                    await this.renderLibrary();
+                    showToast("Workstation backup restored successfully!", "📥");
+                } else {
+                    this.loadProfileData(data);
+                    const nameLabel = (data.brand || data.model) ? `${data.brand || ''} ${data.model || ''}` : "Profile";
+                    showToast(`Loaded ${nameLabel.trim()} successfully!`, "📥");
+                }
+            } catch (err) {
+                console.error("Import parsing crash:", err);
+                showToast("Failed to parse file.", "⚠️");
+            }
         },
         exportColor: '#3b82f6',
         exportGrade: 'A',
@@ -13801,11 +14475,12 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
             if (isNaN(sensVal)) sensVal = 80;
 
             let pReqIemExport, vReq;
+            const splTargetExport = this.getListeningSplTarget();
             if (this.sensUnit === 'V') {
-                vReq = Math.pow(10, (115 - sensVal) / 20);
+                vReq = Math.pow(10, (splTargetExport - sensVal) / 20);
                 pReqIemExport = (vReq * vReq / impVal) * 1000;
             } else {
-                pReqIemExport = Math.pow(10, (115 - sensVal) / 10);
+                pReqIemExport = Math.pow(10, (splTargetExport - sensVal) / 10);
                 vReq = Math.sqrt((pReqIemExport * impVal) / 1000);
             }
 
@@ -14065,14 +14740,42 @@ return;
                 }
             }
         },
-        getState: function() { return { freq: this.current, volume: document.getElementById('tone-volume').value }; },
+        // #tone-volume / #tone-vol-display do not exist in index.html (the
+        // tone panel has no volume control). Every dereference must be
+        // guarded or getState() throws and kills its callers: Save-to-Library
+        // (iem-module.js saveToLibrary), workspace Export/Backup (saveConfig),
+        // Clear-all-workspace (resetAll — after localStorage.clear, leaving a
+        // half-wiped workspace), and profile import (loadProfileData).
+        _readToneVolume: function() {
+            const el = document.getElementById('tone-volume');
+            const raw = el ? parseFloat(el.value) : NaN;
+            return Number.isFinite(raw) ? raw : 50;
+        },
+        getState: function() { return { freq: this.current, volume: this._readToneVolume() }; },
         loadState: function(state) {
-            if (state) { this.current = state.freq || 0; document.getElementById('tone-slider').value = this.current; document.getElementById('tone-volume').value = (state.volume || 50); document.getElementById('tone-vol-display').innerText = (state.volume || 50) + '%'; if(this.gain) setAudioParamSmooth(this.gain.gain, (state.volume || 50) / 100 * 0.2); } else { this.reset(); }
+            if (state) {
+                this.current = state.freq || 0;
+                const slider = document.getElementById('tone-slider');
+                if (slider) slider.value = this.current;
+                const volEl = document.getElementById('tone-volume');
+                const vol = (state.volume !== undefined && Number.isFinite(parseFloat(state.volume))) ? parseFloat(state.volume) : 50;
+                if (volEl) volEl.value = vol;
+                const dispEl = document.getElementById('tone-vol-display');
+                if (dispEl) dispEl.innerText = vol + '%';
+                if (this.gain) setAudioParamSmooth(this.gain.gain, vol / 100 * 0.2);
+            } else { this.reset(); }
             this.updateUI();
         },
         reset: function() {
-            this.current = 0; document.getElementById('tone-slider').value = 0; document.getElementById('tone-volume').value = 50; document.getElementById('tone-vol-display').innerText = '50%';
-            if(this.gain) setAudioParamSmooth(this.gain.gain, 50 / 100 * 0.2); this.updateUI();
+            this.current = 0;
+            const slider = document.getElementById('tone-slider');
+            if (slider) slider.value = 0;
+            const volEl = document.getElementById('tone-volume');
+            if (volEl) volEl.value = 50;
+            const dispEl = document.getElementById('tone-vol-display');
+            if (dispEl) dispEl.innerText = '50%';
+            if (this.gain) setAudioParamSmooth(this.gain.gain, 50 / 100 * 0.2);
+            this.updateUI();
         }
     };
 
@@ -14702,12 +15405,13 @@ const EQ_Module = {
             echo: { damp: 0.36, filter: 0.91, fade: 0.27, predelay: 0.54, predelaymix: 0.58, size: 0.73, wet: 0.37, label: '🗣️ Echo' }
         },
 
-    updateStereoExpand: function(val) {
-        this.stereoExpandLevel = parseFloat(val);
-        const valEl = document.getElementById('stereo-expand-val');
-        if (valEl) valEl.textContent = val + "%";
-        this.updateCrossfeedDSP();
-    },
+        updateStereoExpand: function(val) {
+            const parsed = parseFloat(val);
+            this.stereoExpandLevel = Number.isFinite(parsed) ? parsed : 0;
+            const valEl = document.getElementById('stereo-expand-val');
+            if (valEl) valEl.textContent = this.stereoExpandLevel + "%";
+            this.updateCrossfeedDSP();
+        },
 
     graphModes: [
         { id: 'normal', label: '🎯 Exact' },
@@ -14926,6 +15630,11 @@ vizModalActive: false,
             }
 
             PEQDB_Module.targetMode = 'sculptor';
+            // Remember the pre-lab target mode: exitTuningLab previously left
+            // 'sculptor' set forever, which permanently disabled wheel zoom,
+            // background panning and dblclick-reset on the graph (all three
+            // gate on targetMode !== 'sculptor' in eq-graph-input.js).
+            PEQDB_Module._preLabTargetMode = (PEQDB_Module.targetMode && PEQDB_Module.targetMode !== 'sculptor') ? PEQDB_Module.targetMode : '';
             this.graphFocus = 'sculpt';
 
             const overlay = document.getElementById('graph-focus-selector');
@@ -14947,6 +15656,14 @@ vizModalActive: false,
             Mascot.isGeniusActive = false;
             this.isTuningLabActive = false;
             this.graphFocus = 'eq';
+            // Restore the pre-lab target mode (see enterTuningLab) so graph
+            // zoom/pan/dblclick-reset resume working after leaving the lab.
+            if (PEQDB_Module._preLabTargetMode !== undefined) {
+                PEQDB_Module.targetMode = PEQDB_Module._preLabTargetMode;
+                PEQDB_Module._preLabTargetMode = undefined;
+            } else {
+                PEQDB_Module.targetMode = '';
+            }
             setTimeout(() => Mascot.update(), 10);
 
             if (PEQDB_Module.isDrawingModeActive) {
@@ -15230,8 +15947,10 @@ vizModalActive: false,
                 const slider = document.getElementById("eq-a" + i);
                 const qSlider = document.getElementById("eq-q_a" + i);
 
+                // Advanced-band slider fills: the Q call previously passed
+                // (val, 10, undefined) -> ((q-10)/undefined)*100 = NaN%.
                 if (slider) setSliderFill(slider, b.g !== undefined ? b.g : 0, -20, 20);
-                if (qSlider) setSliderFill(qSlider, b.q !== undefined ? b.q : 0.1, 10);
+                if (qSlider) setSliderFill(qSlider, Number.isFinite(b.q) ? b.q : 0.1, 0.1, 10);
 
                 this.recalculateAutoGainMatch();
                 this.updatePreamp();
@@ -15335,7 +16054,7 @@ vizModalActive: false,
         computeEffectivePreamp: function() {
             const preampSlider = document.getElementById("eq-preampSlider");
             let val = preampSlider ? (parseFloat(preampSlider.value) || 0) : 0;
-            
+
             if (this.autoGainMatchActive && this.eqEnabled) {
                 val += this.autoGainCompensationDb || 0;
             }
@@ -15348,7 +16067,12 @@ vizModalActive: false,
             if (this._masterToneMaxBoost) {
                 val -= this._masterToneMaxBoost;
             }
-            return val;
+            // Clamp to the worklet's own ±60 dB range (dsp-processor.js
+            // updatePreamp): the extreme stack (slider -20 + auto-gain -20 -
+            // hearing ~18 - loudness 14 - tone 8) can reach -80, which the
+            // worklet clamps but the graph/exports previously drew at full
+            // value — the curve lied about the audible level at the extremes.
+            return Math.max(-60, Math.min(60, val));
         },
         enablePreampEdit: function() {
             const disp = document.getElementById("eq-preampDisplay");
@@ -15408,7 +16132,15 @@ vizModalActive: false,
             this._masterToneMaxBoost = Math.max(0, bassGain, trebGain);
             this.updatePreamp();
 
-            if (!this.graphBuilt || !SharedAudio.workletNode) return;
+            if (!this.graphBuilt || !SharedAudio.workletNode) {
+                // Pre-boot: queue the tone so _buildDSPGraph's flush applies it
+                // once the worklet exists. Without this, dragging Bass/Treble
+                // before the first click updated the drawn curve and cut the
+                // preamp (via _masterToneMaxBoost) while the shelves themselves
+                // were never posted — audible level loss with no tone change.
+                if (this._queuePendingDsp) this._queuePendingDsp('masterTone');
+                return;
+            }
 
             SharedAudio.workletNode.port.postMessage({
                 type: 'updateSimulations',
@@ -15695,7 +16427,11 @@ switchCategory: function(catId) {
                     const value = config.val;
                     if (config.param === 'attack') setAudioParamSmooth(SharedAudio.compressor.attack, value / 1000, 0.015);
                     else if (config.param === 'release') setAudioParamSmooth(SharedAudio.compressor.release, value / 1000, 0.015);
-                    else if (config.param === 'ratio') setAudioParamSmooth(SharedAudio.compressor.ratio, value / 10, 0.015);
+                    // Same OFF-gate as the boot push (eq-dsp-graph.js): the
+                    // compressor node is permanently wired into the chain, so
+                    // resetting its sliders while compressorActive is false must
+                    // leave ratio at the neutral 1.0, not the 4.0 slider default.
+                    else if (config.param === 'ratio') setAudioParamSmooth(SharedAudio.compressor.ratio, this.compressorActive ? value / 10 : 1.0, 0.015);
                     else if (config.param === 'frequency' && SharedAudio.compressorFilter) setAudioParamSmooth(SharedAudio.compressorFilter.frequency, value, 0.015);
                     else if (config.param === 'threshold') setAudioParamSmooth(SharedAudio.compressor.threshold, value / 10, 0.015);
                     else if (config.param === 'gain' && SharedAudio.compressorGain) setAudioParamSmooth(SharedAudio.compressorGain.gain, Math.pow(10, (value / 10) / 20), 0.015);
@@ -15707,6 +16443,13 @@ switchCategory: function(catId) {
             }
 
             this._suppressDraw = _prevSuppress;
+            // The per-band updateSlider calls above all ran under
+            // isProgrammaticSliderUpdate=true, which suppresses their worklet
+            // push (eq-core.js:917). Send the filter bank now so the worklet
+            // actually resets — same pattern as applyPreset/applyCustomPreset/
+            // generateLeastSquaresAutoEQ. Without this the old coefficients
+            // keep playing until the next manual slider nudge.
+            if (this.graphBuilt) this.updateAudioConnections();
             if (!skipDraw) this.drawCurve();
             if (window.syncGlobalSliders) window.syncGlobalSliders();
         },
@@ -16027,7 +16770,15 @@ getLiveFiltersState: function() {
                 ? (PEQDB_Module.viewMinF + '-' + PEQDB_Module.viewMaxF) : 'x';
 
             const cheapKey = [simStrength, loudnessVol, Number.isFinite(deEsserFreq) ? +deEsserFreq.toFixed(2) : 0,
-                this.deEsserEnabled ? 1 : 0, this.deEsserReductionDb || 0,
+                this.deEsserEnabled ? 1 : 0,
+                // Quantize the tracked de-esser gain: the viz tracker smooths
+                // deEsserReductionDb toward a moving target every frame at
+                // full float precision (eq-visualizer.js), so keying the
+                // magnitude cache on the raw value defeated the cache and
+                // forced a full ~30-biquad x 1000-pt recompute every frame
+                // while the de-esser was active. 0.05 dB steps are far below
+                // audibility/visual resolution.
+                Number.isFinite(this.deEsserReductionDb) ? +this.deEsserReductionDb.toFixed(2) : 0,
                 this.loudnessActive ? 1 : 0, this.loudnessCalibrationVol, this.loudnessStrength,
                 this.crossoverActive ? 1 : 0, this.crossoverType,
                 this.crossoverLowTrim, this.crossoverLowMidTrim, this.crossoverMidTrim,
@@ -16464,14 +17215,16 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
 
             EQ_Module.isProgrammaticSliderUpdate = true;
 
+            try {
             const { preVal, mainVals } = eqData;
 
             if (preVal !== undefined) {
+                const numPreVal = parseFloat(preVal);
                 const preValEl = document.getElementById("eq-preampVal");
                 const preSlider = document.getElementById("eq-preampSlider");
-                if (preValEl) preValEl.value = preVal.toFixed(1);
-                if (preSlider) preSlider.value = Math.max(-20, Math.min(20, preVal));
-                if (this.preampNode) setAudioParamSmooth(this.preampNode.gain, Math.pow(10, preVal / 20));
+                if (preValEl && Number.isFinite(numPreVal)) preValEl.value = numPreVal.toFixed(1);
+                if (preSlider && Number.isFinite(numPreVal)) preSlider.value = Math.max(-20, Math.min(20, numPreVal));
+                if (this.preampNode && Number.isFinite(numPreVal)) setAudioParamSmooth(this.preampNode.gain, Math.pow(10, numPreVal / 20));
                 this.updatePreamp();
             }
 
@@ -16479,10 +17232,18 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
                 mainVals.forEach((v, i) => {
                     if (i < this.bands.length) {
                         const b = this.bands[i];
-                        const hz = v.hz !== undefined ? v.hz : b.hz;
-                        const g = v.g !== undefined ? v.g : 0.0;
-                        const q = v.q !== undefined ? v.q : b.defaultQ;
-                        const type = v.type || 'peaking';
+                        // Imported profiles are untrusted: coerce every field
+                        // so a string/null member can never reach .toFixed and
+                        // throw (which, before the try/finally, permanently
+                        // wedged isProgrammaticSliderUpdate=true and killed
+                        // all audio updates for the session).
+                        const rawHz = (v && v.hz !== undefined) ? parseFloat(v.hz) : NaN;
+                        const rawG = (v && v.g !== undefined) ? parseFloat(v.g) : NaN;
+                        const rawQ = (v && v.q !== undefined) ? parseFloat(v.q) : NaN;
+                        const hz = Number.isFinite(rawHz) ? rawHz : b.hz;
+                        const g = Number.isFinite(rawG) ? rawG : 0.0;
+                        const q = Number.isFinite(rawQ) ? rawQ : b.defaultQ;
+                        const type = (v && typeof v.type === 'string' && ['peaking','lowshelf','highshelf','highpass','lowpass','notch'].includes(v.type)) ? v.type : 'peaking';
 
                         b.type = type;
 
@@ -16518,10 +17279,13 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
                 eqData.advVals.forEach((v, i) => {
                     if (i < this.advancedBands.length) {
                         const b = this.advancedBands[i];
-                        b.hz = v.hz !== undefined ? v.hz : b.hz;
-                        b.g = v.g !== undefined ? v.g : 0.0;
-                        b.q = v.q !== undefined ? v.q : b.defaultQ;
-                        b.type = v.type || 'peaking';
+                        const rawAdvHz = (v && v.hz !== undefined) ? parseFloat(v.hz) : NaN;
+                        const rawAdvG = (v && v.g !== undefined) ? parseFloat(v.g) : NaN;
+                        const rawAdvQ = (v && v.q !== undefined) ? parseFloat(v.q) : NaN;
+                        b.hz = Number.isFinite(rawAdvHz) ? rawAdvHz : b.hz;
+                        b.g = Number.isFinite(rawAdvG) ? rawAdvG : 0.0;
+                        b.q = Number.isFinite(rawAdvQ) ? rawAdvQ : b.defaultQ;
+                        b.type = (v && typeof v.type === 'string' && ['peaking','lowshelf','highshelf','highpass','lowpass','notch'].includes(v.type)) ? v.type : 'peaking';
 
                         const fInput = document.getElementById("eq-af" + i);
                         const sSlider = document.getElementById("eq-a" + i);
@@ -16536,8 +17300,18 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
                 });
             }
             this.drawCurve();
+            } finally {
+                // ALWAYS release the programmatic flag, even when a malformed
+                // member threw mid-loop — a stuck true flag silently disabled
+                // every subsequent manual audio update for the whole session.
+                EQ_Module.isProgrammaticSliderUpdate = false;
+            }
 
-            EQ_Module.isProgrammaticSliderUpdate = false;
+            // Same as applyPreset/applyCustomPreset/resetEQ: the per-band
+            // updateSlider calls ran under the programmatic flag, so push the
+            // solved filter bank to the worklet now — imported EQ profiles
+            // previously stayed inaudible until the next manual slider nudge.
+            if (this.graphBuilt) this.updateAudioConnections();
 
             // An imported/loaded profile reshaped the DSP curve even though it
             // was applied programmatically — unlock Similar-mode matching.
@@ -16711,6 +17485,13 @@ toggleVizFullscreen: function() {
 const EQ_DspGraphMethods = {        _dspBuildPromise: null,
         ensureDSPGraph: async function() {
             if (this.graphBuilt) return;
+            // Failure cooldown: a failed addModule marks _dspBuildFailedAt; the
+            // per-click boot handler retries the whole build, so without a
+            // cooldown every click re-fired the error toast (and a partial
+            // first build could strand the media source on an orphaned
+            // worklet — see the source-rewire guard below).
+            if (this._dspBuildFailedAt && (Date.now() - this._dspBuildFailedAt) < 5000) return;
+            this._dspBuildFailedAt = null;
             // Re-entrancy guard. Callers fire this concurrently (document click
             // handler, playback hook, drag flush, queued DSP tags). Each awaited
             // addModule independently and built a SECOND worklet graph; the media
@@ -16746,6 +17527,13 @@ const EQ_DspGraphMethods = {        _dspBuildPromise: null,
                 await ctx.audioWorklet.addModule('app/js/dsp-processor.js');
                 console.log("[AudioEngine] AudioWorklet dsp-processor module loaded successfully.");
             } catch (err) {
+                // Terminal-failure marking: without it, every subsequent click
+                // re-ran the FULL build (error-toast spam) and, if a first
+                // attempt died partway, a second run created a NEW worklet
+                // node while this.source/sourceGain still fed the old orphan —
+                // silence with a live-looking UI. Allow a retried build only
+                // after a cooldown; graphBuilt stays false either way.
+                this._dspBuildFailedAt = Date.now();
                 console.error("[AudioEngine] Failed to load AudioWorklet module. Falling back to native structures.", err);
                 showDebugError("AudioWorklet failed to load. Check console/network paths.", "dsp-processor.js");
                 return;
@@ -16767,8 +17555,10 @@ const EQ_DspGraphMethods = {        _dspBuildPromise: null,
 
             this.musicVolumeNode = ctx.createGain();
             const volSlider = document.getElementById("eq-musicVolumeSlider");
-            const initialVol = volSlider ? (parseFloat(volSlider.value) / 100) : 0.5;
-            this.musicVolumeNode.gain.value = initialVol;
+            const rawVol = volSlider ? parseFloat(volSlider.value) : NaN;
+            // NaN guard: an unparsed slider value set gain.value = NaN —
+            // permanent silence from the whole output chain.
+            this.musicVolumeNode.gain.value = Number.isFinite(rawVol) ? (rawVol / 100) : 0.5;
 
             this.inputGainNode.connect(SharedAudio.workletNode);
 
@@ -16848,6 +17638,19 @@ const EQ_DspGraphMethods = {        _dspBuildPromise: null,
                 this.sourceGain.connect(this.inputGainNode);
                 this.audioEl.volume = 1.0;
                 this.connected = true;
+            } else if (this.source && this.sourceGain) {
+                // Rebuild after a failed/partial first attempt: the existing
+                // MediaElementSource is one-per-element for the context's
+                // lifetime and may still be wired to an ORPHANED worklet from
+                // the previous run — re-point the gain arm at THIS build's
+                // inputGainNode so updateFilters messages reach the bank the
+                // source is actually feeding.
+                try {
+                    this.sourceGain.disconnect();
+                    this.sourceGain.connect(this.inputGainNode);
+                } catch (e) {
+                    console.warn("[AudioEngine] Source arm rewire on rebuild failed:", e);
+                }
             }
 
             // Gapless/crossfade standby arm: the B element (eq-audio-gapless)
@@ -16884,6 +17687,14 @@ const EQ_DspGraphMethods = {        _dspBuildPromise: null,
                         else if (tag === 'gear') this.applyGearSimDSP();
                         else if (tag === 'hearing') this.applyHearingCalibrationGains();
                         else if (tag === 'tape') this.updateTapeModDSP();
+                        // DAC source sim (slots 10/11 + inputGainNode headroom).
+                        // The old 'simulation' queue tag collided with the
+                        // eartip updater above — this producer now queues
+                        // 'sourceSim' (see eq-source-sim.js).
+                        else if (tag === 'sourceSim') this.applySourceSimulation();
+                        // Full re-apply (both shelves), not a single-slider
+                        // call: updateMasterTone reads Bass AND Treble and
+                        // pushes slots 22+23 together.
                         else if (tag === 'masterTone') this.updateMasterTone('bass', document.getElementById('eq-masterBass')?.value || 0);
                     } catch(_) {}
                 }
@@ -16899,9 +17710,27 @@ const EQ_DspGraphMethods = {        _dspBuildPromise: null,
             this.updateLoudnessDSP();
             this.updateCrossoverDSP();
 
+            // DAC source sim (slots 10/11 + inputGainNode headroom):
+            // applySourceSimulation runs pre-boot from IEM.updateAll() and
+            // queues 'sourceSim' — flushed above; this explicit call covers
+            // the boot path with no queued tags too.
+            this.applySourceSimulation();
+
+            // Master Bass/Treble shelves (worklet sim slots 22/23): pre-boot
+            // drags queue the 'masterTone' tag (flushed above), but the boot
+            // re-apply list previously omitted it — a session that set tone
+            // pre-boot got the preamp cut without the shelves.
+            this.updateMasterTone('bass', document.getElementById('eq-masterBass')?.value || 0);
+
             const ratioSlider = document.getElementById('comp-ratio-slider');
             if (ratioSlider) {
-                this.updateCompressorParam('ratio', parseFloat(ratioSlider.value) / 10);
+                // Only push the live ratio when the compressor is actually
+                // ON. Pushing the slider default unconditionally meant every
+                // fresh session booted with 4:1 compression while the UI
+                // read "Comp: OFF" (OFF is represented solely by ratio=1 —
+                // the node is permanently wired into the chain).
+                this.updateCompressorParam('ratio',
+                    this.compressorActive ? parseFloat(ratioSlider.value) / 10 : 1.0);
             }
 
             // With the standby arm live, preload the next track so the first
@@ -17229,9 +18058,19 @@ const EQ_MediaTransportMethods = {
                         if(modalBtn) modalBtn.innerHTML = "<span>▶</span><span>Play</span>";
                     }
                 });
+                // During a crossfade the retiring element keeps playing until
+                // the retirement timeout pauses it. If it reaches its natural
+                // end inside that window, 'ended' fires nextTrack() while the
+                // crossfade to the NEXT track is already in flight — and with
+                // _preloadedIndex nulled mid-transition, the hard path replaces
+                // the audibly playing standby: two advances for one seam.
+                // Ignore 'ended' from any element that is not the active
+                // player (the retirement timeout owns the swap), and while a
+                // transition is in flight.
                 this.audioEl.addEventListener('ended', () => {
                     Mascot.update();
                     EQ_Module.updateReverbDSP();
+                    if (this._transitioning || this.audioEl !== this._activeEl()) return;
                     this.nextTrack();
                 });
                 if (this.gaplessEl) {
@@ -17270,6 +18109,7 @@ const EQ_MediaTransportMethods = {
                     this.gaplessEl.addEventListener('ended', () => {
                         Mascot.update();
                         EQ_Module.updateReverbDSP();
+                        if (this._transitioning || this.gaplessEl !== this._activeEl()) return;
                         this.nextTrack();
                     });
                 }
@@ -17310,10 +18150,18 @@ const EQ_MediaTransportMethods = {
 
             const attachTimeUpdate = (el) => {
                 if (!el) return;
-                el.addEventListener('timeupdate', () => updateScrubDisplay(el));
-                el.addEventListener('canplay', () => updateScrubDisplay(el));
-                el.addEventListener('loadeddata', () => updateScrubDisplay(el));
+                // Only the ACTIVE element may repaint the shared scrub/duration
+                // displays: the standby element fires loadeddata/durationchange
+                // when preloading the NEXT track and timeupdate throughout a
+                // crossfade — the retiring arm previously hijacked the scrub
+                // to 0:00 / the next track's duration (persistently wrong
+                // when paused while standby staging).
+                const isActiveEl = () => el === this._activeEl();
+                el.addEventListener('timeupdate', () => { if (isActiveEl()) updateScrubDisplay(el); });
+                el.addEventListener('canplay', () => { if (isActiveEl()) updateScrubDisplay(el); });
+                el.addEventListener('loadeddata', () => { if (isActiveEl()) updateScrubDisplay(el); });
                 el.addEventListener('durationchange', () => {
+                    if (!isActiveEl()) return;
                     const dur = el.duration;
                     if (dur && Number.isFinite(dur) && dur > 0) {
                         const formatted = this.formatTime(dur);
@@ -17483,15 +18331,27 @@ const EQ_GraphInputMethods = {
                     ? this.computeEffectivePreamp()
                     : (parseFloat(document.getElementById("eq-preampSlider")?.value) || 0);
                 bandEls();
+                // NEAREST-match hit testing: overlapping band dots (common
+                // after AutoEQ lands adjacent bands near each other) previously
+                // grabbed the FIRST band inside 18px even when another was
+                // closer — clicking the visually-top dot could grab the band
+                // underneath it.
+                let bestDist = Infinity;
+                let bestIdx = -1;
                 for (let i = 0; i < EQ_Module.bands.length; i++) {
                     const hz = parseFloat(eqFEls[i]?.value || EQ_Module.bands[i].hz);
                     const g = parseFloat(eqSEls[i]?.value || 0);
                     const nodeX = w * (Math.log10(hz / minF) / Math.log10(maxF / minF));
 
                     const nodeY = h - (((alignDb + g + preVal) - min) / (max - min)) * h;
-                    if (Math.hypot(nodeX - clickX, nodeY - clickY) < 18) {
-                        return { type: 'main', i };
+                    const dist = Math.hypot(nodeX - clickX, nodeY - clickY);
+                    if (dist < 18 && dist < bestDist) {
+                        bestDist = dist;
+                        bestIdx = i;
                     }
+                }
+                if (bestIdx >= 0) {
+                    return { type: 'main', i: bestIdx };
                 }
                 return null;
             };
@@ -17608,16 +18468,26 @@ const EQ_GraphInputMethods = {
                 });
 
                 let dragFrameId = null;
+                // TRUE rAF coalescing: store the LATEST pointer coords and
+                // read them inside the frame callback. The old closure captured
+                // the event that SCHEDULED the frame and discarded every
+                // intermediate move — during fast drags the node trailed the
+                // pointer by up to a frame plus all intermediate motion, and
+                // the final pre-mouseup move could be dropped entirely.
+                let lastMoveX = null;
+                let lastMoveY = null;
                 window.addEventListener('mousemove', e => {
-
+                    lastMoveX = e.clientX;
+                    lastMoveY = e.clientY;
                     if (dragFrameId) return;
-
                     dragFrameId = requestAnimationFrame(() => {
                         dragFrameId = null;
+                        if (lastMoveX === null || lastMoveY === null) return;
+                        const eX = lastMoveX, eY = lastMoveY;
 
                         const rect = squigCanvas.getBoundingClientRect();
-                        const clientX = e.clientX - rect.left;
-                        const clientY = e.clientY - rect.top;
+                        const clientX = eX - rect.left;
+                        const clientY = eY - rect.top;
                         const w = rect.width;
                         const h = rect.height;
 
@@ -17734,6 +18604,21 @@ const EQ_GraphInputMethods = {
                         }
 
                         if (!isPanning && !isDraggingEQNode && !isDraggingSculptNode) {
+                            // Skip the hover work entirely when the pointer is
+                            // outside the canvas (the window-level handler
+                            // fires for every pixel of slider drags, list
+                            // scrolls, etc.): getBoundingClientRect + the
+                            // band hit-test loop ran on all of those moves.
+                            if (clientX < 0 || clientY < 0 || clientX > w || clientY > h) {
+                                if (EQ_Module.hoverEQNode) {
+                                    EQ_Module.hoverEQNode = null;
+                                    EQ_Module.drawCurve();
+                                }
+                                if (PEQDB_Module.hoverSculptIndex !== -1) {
+                                    PEQDB_Module.hoverSculptIndex = -1;
+                                    EQ_Module.drawCurve();
+                                }
+                            } else {
                             let eqHoverNode = null;
                             if (EQ_Module.graphFocus === 'eq') {
                                 eqHoverNode = getEQNodeAtCoords(clientX, clientY, w, h, minF, maxF, min, max);
@@ -17770,6 +18655,7 @@ const EQ_GraphInputMethods = {
                             } else {
                                 squigCanvas.style.cursor = 'default';
                             }
+                            } // end in-canvas hover block
                         }
 
                         if (!isPanning) return;
@@ -17884,6 +18770,49 @@ const EQ_GraphInputMethods = {
                         isPanning = false;
                         EQ_Module.isDragging = false;
                         squigCanvas.style.cursor = 'default';
+                    }
+                });
+
+                // Capture-loss safety net: mouseup is never delivered when the
+                // OS steals the pointer mid-drag (alt-tab, right-click context
+                // menu, devtools focus). The drag flags then stayed true and
+                // the NEXT plain mousemove teleported a band node / panned the
+                // view. Treat capture loss exactly like mouseup ( WITHOUT the
+                // mouseup path's commit logic — the drag position is unknown).
+                const cancelDragState = () => {
+                    if (isDraggingEQNode) {
+                        isDraggingEQNode = false;
+                        EQ_Module.isDragging = false;
+                        EQ_Module.activeEQNode = null;
+                        squigCanvas.style.cursor = 'default';
+                    }
+                    if (isDraggingSculptNode) {
+                        isDraggingSculptNode = false;
+                        PEQDB_Module.isDragging = false;
+                        EQ_Module.isDragging = false;
+                        squigCanvas.style.cursor = 'default';
+                    }
+                    if (isPanning) {
+                        isPanning = false;
+                        EQ_Module.isDragging = false;
+                        squigCanvas.style.cursor = 'default';
+                    }
+                    if (PEQDB_Module.isDrawingModeActive && PEQDB_Module.isUserDrawing) {
+                        // Convert to the mouseup commit path so the stroke is
+                        // not lost: synthesize a mouseup at the last known point.
+                        try { squigCanvas.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })); } catch (_) {}
+                    }
+                    if (dragFrameId) {
+                        cancelAnimationFrame(dragFrameId);
+                        dragFrameId = null;
+                    }
+                };
+                squigCanvas.addEventListener('pointercancel', cancelDragState);
+                window.addEventListener('blur', cancelDragState);
+                document.addEventListener('mouseleave', (e) => {
+                    // Pointer left the window entirely while a drag was live.
+                    if (e.relatedTarget === null && (isDraggingEQNode || isDraggingSculptNode || isPanning)) {
+                        cancelDragState();
                     }
                 });
 
@@ -18174,18 +19103,11 @@ startVisualizer: function() {
                     this.drawCurve();
                 }
 
-                if (!hasData) {
-                    const time = Date.now() * 0.0025;
-                    for (let i = 0; i < bufferLength; i++) {
-                        timeDomain[i] = 128 + Math.sin(i * 0.035 + time) * 30 * Math.sin(time * 0.2);
-
-                        const weight = Math.pow((i / bufferLength), 1.5);
-                        const baseValue = 45 + Math.sin(i * 0.06 - time) * 20;
-                        const freqResponse = Math.sin(i * 0.035 + time) * 30 * Math.sin(time * 0.2);
-
-                        dataArray[i] = Math.max(0, baseValue * (1 - weight) + freqResponse * weight);
-                    }
-                }
+                // NOTE: the old !hasData branch synthesized a fake animated
+                // waveform/spectrum (~3x sin per FFT bin per frame) purely for
+                // motion while nothing was audible. Removed: the analyser
+                // reads above already refreshed the buffers with true silence
+                // (zeros / 128s), so the visualizer renders a real flat line.
 
             if (SharedAudio.analyserL && SharedAudio.analyserR) {
                 const binCountL = SharedAudio.analyserL.frequencyBinCount;
@@ -18269,16 +19191,26 @@ if (diffR > 0.4) {
                     }
                 }
 
-                const peaksHoldL = vizPeaksL();
-                const targetPeakLeft = this.peakL.toFixed(1) + "%";
-                for (let i = 0; i < peaksHoldL.length; i++) {
-                    peaksHoldL[i].style.left = targetPeakLeft;
+                // Change-gated peak writes: these are layout-invalidating
+                // style.left writes that previously ran unconditionally at
+                // 60fps (unlike the bars above, which gate on diff). Cache
+                // the last written value and touch the DOM only when the
+                // rounded percentage actually moved.
+                if (this._lastPeakLeftL !== this.peakL.toFixed(1)) {
+                    this._lastPeakLeftL = this.peakL.toFixed(1);
+                    const peaksHoldL = vizPeaksL();
+                    const targetPeakLeft = this._lastPeakLeftL + "%";
+                    for (let i = 0; i < peaksHoldL.length; i++) {
+                        peaksHoldL[i].style.left = targetPeakLeft;
+                    }
                 }
-
-                const peaksHoldR = vizPeaksR();
-                const targetPeakRight = this.peakR.toFixed(1) + "%";
-                for (let i = 0; i < peaksHoldR.length; i++) {
-                    peaksHoldR[i].style.left = targetPeakRight;
+                if (this._lastPeakLeftR !== this.peakR.toFixed(1)) {
+                    this._lastPeakLeftR = this.peakR.toFixed(1);
+                    const peaksHoldR = vizPeaksR();
+                    const targetPeakRight = this._lastPeakLeftR + "%";
+                    for (let i = 0; i < peaksHoldR.length; i++) {
+                        peaksHoldR[i].style.left = targetPeakRight;
+                    }
                 }
 
                 const currentAutoGain = (SharedAudio.autoGainNode) ? SharedAudio.autoGainNode.gain.value : 1.0;
@@ -18286,30 +19218,39 @@ if (diffR > 0.4) {
                 const isAttenuationActive = (reductionDb < -0.15);
 
                 const clippingTexts = vizClips();
-                for (let i = 0; i < clippingTexts.length; i++) {
-                    const el = clippingTexts[i];
-
-                    // Only swap the state classes — never replace className, or the
-                    // fixed width (w-16 / min-w-[64px]) gets stripped and the footer
-                    // right group reflows (scrub + peak meter jump right).
-                    el.classList.remove('text-emerald-400', 'text-amber-500', 'text-rose-500', 'animate-pulse', 'cursor-pointer');
-
-                    if (isAttenuationActive) {
-                        el.textContent = `${reductionDb.toFixed(1)} dB`;
-                        el.classList.add('text-amber-500', 'animate-pulse', 'cursor-pointer');
-                        el.title = "Anti-Clip AGC active. Automatically maintaining headroom.";
-                    } else {
-                        el.title = "";
-                        if (this.meterCurrentL > 94 || this.meterCurrentR > 94) {
-                            el.textContent = "⚡ Clipping";
-                            el.classList.add('text-rose-500', 'animate-pulse');
-                        } else if (this.meterCurrentL > 75 || this.meterCurrentR > 75) {
-                            el.textContent = "⚠️ Warning";
-                            el.classList.add('text-amber-500');
-                        } else {
-                            el.textContent = "Stable";
-                            el.classList.add('text-emerald-400');
-                        }
+                // Compute the label ONCE, then touch the DOM only when the
+                // state actually changed — the old block ran 5 classList ops
+                // + textContent + title writes per element per frame, even
+                // while the label sat unchanged at "Stable".
+                let clipLabel, clipClasses, clipTitle;
+                if (isAttenuationActive) {
+                    clipLabel = `${reductionDb.toFixed(1)} dB`;
+                    clipClasses = 'text-amber-500 animate-pulse cursor-pointer';
+                    clipTitle = "Anti-Clip AGC active. Automatically maintaining headroom.";
+                } else if (this.meterCurrentL > 94 || this.meterCurrentR > 94) {
+                    clipLabel = "⚡ Clipping";
+                    clipClasses = 'text-rose-500 animate-pulse';
+                    clipTitle = "";
+                } else if (this.meterCurrentL > 75 || this.meterCurrentR > 75) {
+                    clipLabel = "⚠️ Warning";
+                    clipClasses = 'text-amber-500';
+                    clipTitle = "";
+                } else {
+                    clipLabel = "Stable";
+                    clipClasses = 'text-emerald-400';
+                    clipTitle = "";
+                }
+                if (this._lastClipLabel !== clipLabel) {
+                    this._lastClipLabel = clipLabel;
+                    for (let i = 0; i < clippingTexts.length; i++) {
+                        const el = clippingTexts[i];
+                        // Only swap the state classes — never replace className, or the
+                        // fixed width (w-16 / min-w-[64px]) gets stripped and the footer
+                        // right group reflows (scrub + peak meter jump right).
+                        el.classList.remove('text-emerald-400', 'text-amber-500', 'text-rose-500', 'animate-pulse', 'cursor-pointer');
+                        clipClasses.split(' ').forEach(c => { if (c) el.classList.add(c); });
+                        el.textContent = clipLabel;
+                        el.title = clipTitle;
                     }
                 }
             }
@@ -18458,10 +19399,16 @@ if (diffR > 0.4) {
                     const mobTimeCur = vizNode('mobile-time-current');
                     const mobScrub = vizNode('mobile-scrub');
                     const mobTimeDur = vizNode('mobile-time-duration');
-
-                    if (timeCur) timeCur.textContent = formattedCur;
-                    if (mobTimeCur) mobTimeCur.textContent = formattedCur;
-                    if (modalTimeCur) modalTimeCur.textContent = formattedCur;
+                    // textContent writes are style/paint-invalidation even
+                    // when identical — write only when the second-resolution
+                    // display string actually changed (formatTime's output
+                    // changes at most a few times a second).
+                    if (this._lastTimeText !== formattedCur) {
+                        this._lastTimeText = formattedCur;
+                        if (timeCur) timeCur.textContent = formattedCur;
+                        if (mobTimeCur) mobTimeCur.textContent = formattedCur;
+                        if (modalTimeCur) modalTimeCur.textContent = formattedCur;
+                    }
 
                     if (vizActiveEl.duration) {
                         const pct = (vizActiveEl.currentTime / vizActiveEl.duration) * 100;
@@ -18470,9 +19417,12 @@ if (diffR > 0.4) {
                         if (modalScrub) modalScrub.value = pct;
 
                         const formattedDur = this.formatTime(vizActiveEl.duration);
-                        if (timeDur) timeDur.textContent = formattedDur;
-                        if (mobTimeDur) mobTimeDur.textContent = formattedDur;
-                        if (modalTimeDur) modalTimeDur.textContent = formattedDur;
+                        if (this._lastDurText !== formattedDur) {
+                            this._lastDurText = formattedDur;
+                            if (timeDur) timeDur.textContent = formattedDur;
+                            if (mobTimeDur) mobTimeDur.textContent = formattedDur;
+                            if (modalTimeDur) modalTimeDur.textContent = formattedDur;
+                        }
                     }
                 }
 
@@ -19492,7 +20442,17 @@ const DBCache = {
                     for (let i = 0; i < Math.min(100, lines.length); i++) {
                         const line = lines[i].trim();
                         if (line.startsWith('#') || line === '') continue;
-                        if ((line.includes('\t') || line.includes(';')) && line.includes(',')) {
+                        // Comma-as-decimal when the line contains BOTH a comma
+                        // and a second separator. This includes plain spaces:
+                        // European exports like "1000,5 80,2" (space-delimited,
+                        // comma-decimal) previously failed this check, fell to
+                        // the comma-splitting branch, and mis-parsed every
+                        // pair ("1000,5 80,2" -> f=1000, a=5). Mirrors
+                        // parseRawFRText's heuristic so the DB loader and the
+                        // Smart RF importer agree on the same file. The strict
+                        // grouped-digit repair below still protects genuine
+                        // "1,000"-style thousands separators.
+                        if (line.includes(',') && (line.includes('\t') || line.includes(';') || line.includes(' '))) {
                             commaIsDecimal = true;
                             break;
                         }
@@ -20813,7 +21773,10 @@ const savedDb = localStorage.getItem('settings_align_db');
             const targetFile = (item.files && item.files[fileIndex]) ? item.files[fileIndex] : item.primaryFilePath;
             const curveUid = `${id}_src_${fileIndex}`;
 
-            const activeIndex = this.STATE.activeCurves.findIndex(c => c.uid === curveUid || (item.files.length <= 1 && c.id === id));
+            // Guard item.files: imported/Smart-RF/fallback dataset items carry
+            // only data/id/name (no files array) — the unguarded .length threw
+            // on the remove-toggle click, making imported curves un-removable.
+            const activeIndex = this.STATE.activeCurves.findIndex(c => c.uid === curveUid || ((item.files ? item.files.length <= 1 : true) && c.id === id));
             if (activeIndex >= 0) {
                 this.STATE.activeCurves.splice(activeIndex, 1);
             } else {
@@ -20885,14 +21848,21 @@ const savedDb = localStorage.getItem('settings_align_db');
             EQ_Module.drawCurve();
             this.renderActiveCurvesDock();
             // Keep the Similar tab's LOAD/role badges in sync when a curve is
-            // toggled while Similar mode is open.
-            if (this.searchMode === 'similar' && this._lastSimilarGroups) {
-                this.renderSimilarList(this._lastSimilarGroups, this._lastSimilarRefName || '');
+            // toggled while Similar mode is open. (_lastSimilarGroups was never
+            // assigned anywhere — the gate was permanently false and the badge
+            // refresh this comment promises silently never ran. Use the
+            // matches list, which IS populated by every scan.)
+            if (this.searchMode === 'similar' && this._lastSimilarMatches) {
+                this.renderSimilarList(this._lastSimilarMatches, this._lastSimilarRefName || '');
             }
         },
         setTarget: function(val) {
             this.STATE.activeCurves = this.STATE.activeCurves.filter(c => c.role !== 'target');
             this.targetMode = val;
+            // A target change outside the Tuning Lab supersedes the pre-lab
+            // snapshot — exitTuningLab must not clobber the user's newer
+            // selection (see enterTuningLab/exitTuningLab in eq-core.js).
+            if (!EQ_Module.isTuningLabActive) this._preLabTargetMode = undefined;
 
             const btn = document.getElementById('target-cycle-btn');
             const hiddenSel = document.getElementById('target-selector');
@@ -21033,7 +22003,12 @@ const savedDb = localStorage.getItem('settings_align_db');
                 }
                 for (let i = 0; i < EQ_Module.advancedBands.length; i++) {
                     const b = EQ_Module.advancedBands[i];
-                    optimizedBands.push({ freq: b.hz, q: b.q !== undefined ? b.q : b.defaultQ, type: 'peaking', gain: 0.0, role: 'adv', index: i });
+                    // Model each advanced band with its REAL filter type. The
+                    // audio path (updateAudioConnections) applies these bands
+                    // with their configured types (band 0 is a lowshelf; 7/8/9
+                    // are highshelves) — modeling them all as peaking made the
+                    // solver optimize gains for the wrong transfer functions.
+                    optimizedBands.push({ freq: b.hz, q: b.q !== undefined ? b.q : b.defaultQ, type: b.type || 'peaking', gain: 0.0, role: 'adv', index: i });
                 }
             } else {
 
@@ -21278,7 +22253,7 @@ const savedDb = localStorage.getItem('settings_align_db');
                 item.setAttribute('data-uid', c.uid);
                 item.title = "Drag to Base / Target / Reference slot to change role";
                 const roleLabel = c.role==='base'?'BASE':(c.role==='target'?'TARGET':'REF');
-                item.innerHTML = `<div class="flex items-center justify-between w-full h-6 select-none" draggable="false"><span class="px-2 py-0.5 rounded text-[8.5px] font-black tracking-wider text-white uppercase bg-black/60 border border-white/10 flex-shrink-0" title="Drag to rearrange" draggable="false">${roleLabel}</span><div class="flex items-center gap-1.5" draggable="false"><button onclick="PEQDB_Module.toggleVisible(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 text-white text-[11px] flex items-center justify-center border border-white/10 cursor-pointer" title="Show or hide this curve" draggable="false">${c.visible?'👁️':'🙈'}</button><button onclick="PEQDB_Module.cycleColor(this.closest('[data-uid]').dataset.uid)" class="w-5 h-5 rounded-full border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style="background-color:${c.color}" title="Change this curve's color" draggable="false"></button><button onclick="PEQDB_Module.removeCurve(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-black text-[11px] flex items-center justify-center cursor-pointer" title="Remove this curve" draggable="false">✕</button></div></div><div onclick="PEQDB_Module.renameCurve(this.closest('[data-uid]').dataset.uid)" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5" draggable="false"><div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none"><span id="marquee-${c.uid}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span></div></div><div class="flex justify-between items-center w-full h-6" draggable="false"><div class="flex items-center gap-1.5 h-6 decibel-stepper flex-shrink-0 select-none" style="width:110px !important;min-width:110px !important;max-width:110px !important;" draggable="false"><button type="button" onclick="event.stopPropagation();PEQDB_Module.adjustCurveOffset(this.closest('[data-uid]').dataset.uid,-1)" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve down 1 dB" draggable="false">◄</button><button type="button" onclick="event.stopPropagation();" class="flex-1 h-6 bg-[var(--bg-input)] border-2 border-black text-[#c85a0e] font-mono font-black text-[9px] flex items-center justify-center text-center cursor-default select-none focus:outline-none px-0 min-w-0" draggable="false">${(c.offset||0)>=0?'+':''}${c.offset||0}dB</button><button type="button" onclick="event.stopPropagation();PEQDB_Module.adjustCurveOffset(this.closest('[data-uid]').dataset.uid,1)" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve up 1 dB" draggable="false">►</button></div><div class="flex items-center gap-1.5" draggable="false"><button onclick="PEQDB_Module.exportCurveByUid(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Export this curve as a text file" draggable="false">📥</button><button onclick="PEQDB_Module.findMatchesFromDock(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Find similar curves" draggable="false">🔍</button></div></div>`;
+                item.innerHTML = `<div class="flex items-center justify-between w-full h-6 select-none" draggable="false"><span class="px-2 py-0.5 rounded text-[8.5px] font-black tracking-wider text-white uppercase bg-black/60 border border-white/10 flex-shrink-0" title="Drag to rearrange" draggable="false">${roleLabel}</span><div class="flex items-center gap-1.5" draggable="false"><button onclick="PEQDB_Module.toggleVisible(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 text-white text-[11px] flex items-center justify-center border border-white/10 cursor-pointer" title="Show or hide this curve" draggable="false">${c.visible?'👁️':'🙈'}</button><button onclick="PEQDB_Module.cycleColor(this.closest('[data-uid]').dataset.uid)" class="w-5 h-5 rounded-full border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style="background-color:${c.color}" title="Change this curve's color" draggable="false"></button><button onclick="PEQDB_Module.removeCurve(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-black text-[11px] flex items-center justify-center cursor-pointer" title="Remove this curve" draggable="false">✕</button></div></div><div onclick="PEQDB_Module.renameCurve(this.closest('[data-uid]').dataset.uid)" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5" draggable="false"><div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none"><span id="marquee-${esc(c.uid)}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span></div></div><div class="flex justify-between items-center w-full h-6" draggable="false"><div class="flex items-center gap-1.5 h-6 decibel-stepper flex-shrink-0 select-none" style="width:110px !important;min-width:110px !important;max-width:110px !important;" draggable="false"><button type="button" onclick="event.stopPropagation();PEQDB_Module.adjustCurveOffset(this.closest('[data-uid]').dataset.uid,-1)" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve down 1 dB" draggable="false">◄</button><button type="button" onclick="event.stopPropagation();" class="flex-1 h-6 bg-[var(--bg-input)] border-2 border-black text-[#c85a0e] font-mono font-black text-[9px] flex items-center justify-center text-center cursor-default select-none focus:outline-none px-0 min-w-0" draggable="false">${(c.offset||0)>=0?'+':''}${c.offset||0}dB</button><button type="button" onclick="event.stopPropagation();PEQDB_Module.adjustCurveOffset(this.closest('[data-uid]').dataset.uid,1)" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve up 1 dB" draggable="false">►</button></div><div class="flex items-center gap-1.5" draggable="false"><button onclick="PEQDB_Module.exportCurveByUid(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Export this curve as a text file" draggable="false">📥</button><button onclick="PEQDB_Module.findMatchesFromDock(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Find similar curves" draggable="false">🔍</button></div></div>`;
                 if (c.role==='base') { baseSlot.appendChild(item); baseCount++; }
                 else if (c.role==='target') { targetSlot.appendChild(item); targetCount++; }
                 else { referencePile.appendChild(item); refCount++; }
@@ -22114,7 +23089,10 @@ const countEl = document.getElementById('peqdb-result-count');
             }
 
             list.innerHTML = html;
-            this.lastSimilarHTML = list.innerHTML;
+            // (lastSimilarHTML dead store removed: it re-serialized the
+            // entire just-built list into a JS string every rescan —
+            // megabytes of transient garbage at 1000+ matches — and had no
+            // readers anywhere.)
 
             list.style.overflowX = 'hidden';
             setTimeout(() => {
@@ -22409,19 +23387,38 @@ const countEl = document.getElementById('peqdb-result-count');
                 composite[i] += realValues.preVal;
             }
 
-            const magRes = new Float32Array(points);
-            const phaseRes = new Float32Array(points);
-
+            // (The legacy native-BiquadFilterNode 'mathFilters' bank was
+            // removed with the AudioWorklet refactor — this tool crashed with
+            // a TypeError on every invocation. Rebuilt with
+            // getBiquadMagnitude (eq-biquad-math.js), the same RBJ math the
+            // worklet and the drawn curve use, mirroring updateAudioConnections'
+            // main-band rules: per-band type, DOM hz/gain/Q, bypass flags and
+            // the shelf/HP/LP slope cascade.)
             EQ_Module.bands.forEach((b, i) => {
-                const fNode = EQ_Module.mathFilters[i];
-                fNode.type = b.type || 'peaking';
-                fNode.frequency.value = parseFloat(document.getElementById("eq-f" + i)?.value || b.hz);
-                fNode.gain.value = parseFloat(document.getElementById("eq-s" + i)?.value || 0);
-                fNode.Q.value = parseFloat(document.getElementById("eq-q_m" + i)?.value || b.defaultQ);
+                const isBypassed = window.bypassedBands.has("m" + i);
+                if (isBypassed) return;
+                const type = b.type || 'peaking';
 
-                fNode.getFrequencyResponse(freqs, magRes, phaseRes);
-                for (let j = 0; j < points; j++) {
-                    composite[j] += 20 * Math.log10(Math.max(1e-10, magRes[j]));
+                const rawHz = parseFloat(document.getElementById("eq-f" + i)?.value);
+                const hz = Number.isFinite(rawHz) ? rawHz : b.hz;
+                const rawG = parseFloat(document.getElementById("eq-s" + i)?.value);
+                const g = Number.isFinite(rawG) ? rawG : 0.0;
+                const rawQ = parseFloat(document.getElementById("eq-q_m" + i)?.value);
+                const q = Number.isFinite(rawQ) ? rawQ : b.defaultQ;
+
+                const slopeCapable = (type === 'lowshelf' || type === 'highshelf' || type === 'lowpass' || type === 'highpass');
+                const activeSlope = slopeCapable ? (b.slope || 12) : 12;
+                const cascadeNodesCount = Math.max(1, Math.round(activeSlope / 12));
+                const hasNoGain = ['highpass', 'lowpass', 'notch'].includes(type);
+                const nodeGain = (type === 'lowshelf' || type === 'highshelf')
+                    ? (hasNoGain ? 0.0 : g) / cascadeNodesCount
+                    : (hasNoGain ? 0.0 : g);
+
+                for (let k = 0; k < cascadeNodesCount; k++) {
+                    for (let j = 0; j < points; j++) {
+                        composite[j] += 20 * Math.log10(Math.max(1e-10,
+                            EQ_Module.getBiquadMagnitude(type, freqs[j], hz, q, nodeGain)));
+                    }
                 }
             });
 
@@ -22481,7 +23478,11 @@ const countEl = document.getElementById('peqdb-result-count');
             let text = "Guessing";
             let colorClass = "text-zinc-500";
 
-            if (total >= 4) {
+            // A perfect 3/3 is p=0.125 — suggestive, not significant, but
+            // calling it "Guessing" overstated the case the other way. Show
+            // the trend with an explicit small-sample caveat instead of the
+            // flat dismissal.
+            if (total >= 4 || (total >= 2 && correct === total)) {
                 if (confidence >= 95) {
                     text = "Highly Significant";
                     colorClass = "text-emerald-400";
@@ -22495,10 +23496,13 @@ const countEl = document.getElementById('peqdb-result-count');
                     text = "Insignificant";
                     colorClass = "text-red-400";
                 }
+                if (total < 4) text += " (small sample)";
             }
 
             return {
-                pct: Math.max(0, confidence).toFixed(1),
+                // Number, not string: callers compose it for display and any
+                // future numeric consumer got string coercion before.
+                pct: Math.max(0, Math.round(confidence * 10) / 10),
                 text: text,
                 class: colorClass
             };
@@ -22521,6 +23525,15 @@ const countEl = document.getElementById('peqdb-result-count');
         abxTargetAnswer: null,
         abxTrialsOptions: [5, 10, 15, 20],
         abxCycleTrials: function(dir) {
+            // Changing the denominator mid-session ends/rescores a running
+            // test against a number it was never configured for (7 >= 5 ends
+            // it early; 10 -> 15 silently extends it). Lock the stepper while
+            // a session is active — the same treatment the A/B crossfade
+            // controls already get via setABXControlsEnabled.
+            if (this.abxIsActive) {
+                showToast("Finish or stop the current test before changing the trial count.", "⚠️");
+                return;
+            }
             const opts = this.abxTrialsOptions;
             let idx = opts.indexOf(this.abxTotalTrials);
             if (idx < 0) idx = opts.indexOf(10);
@@ -22608,11 +23621,12 @@ const countEl = document.getElementById('peqdb-result-count');
                 return;
             }
 
-            this.stopAll();
+            this.stopAll(false, this.burninActive);
             this.abxIsActive = true;
             this.abxTrialIndex = 0;
             this.abxCorrect = 0;
             this.abxIncorrect = 0;
+            this._abxAnswered = false;
 
             if (isNaN(this.abxTotalTrials) || this.abxTotalTrials < 5) this.abxTotalTrials = 10;
             this.abxRenderTrials();
@@ -22653,6 +23667,8 @@ const countEl = document.getElementById('peqdb-result-count');
             }
 
             this.abxTargetAnswer = Math.random() < 0.5 ? 'A' : 'B';
+            // Re-arm the one-answer-per-trial guard (abxChoose sets it).
+            this._abxAnswered = false;
 
             const progress = document.getElementById('abx-progress-lbl');
             if (progress) progress.textContent = `Trial ${this.abxTrialIndex + 1}/${this.abxTotalTrials}`;
@@ -22664,6 +23680,10 @@ const countEl = document.getElementById('peqdb-result-count');
             }
 
             await EQ_Module.ensureDSPGraph();
+            // The session may have been stopped while this await was pending
+            // (e.g. STOP clicked during trial start, or a tab switch) — never
+            // start audio for a session that is no longer active.
+            if (!this.abxIsActive) return;
             this.ensureABSources();
             // ensureABSources() only creates gainNodeA/gainNodeB once and
             // wires them into the shared audio graph; updateABFade() is the
@@ -22706,6 +23726,11 @@ const countEl = document.getElementById('peqdb-result-count');
         },
         abxChoose: function(choice) {
             if (!this.abxIsActive) return;
+            // One answer per trial: nothing disabled the choice row during
+            // the 1s inter-trial window, so a rapid double-click scored the
+            // same target twice and skipped a trial index.
+            if (this._abxAnswered) return;
+            this._abxAnswered = true;
 
             const isCorrect = choice === this.abxTargetAnswer;
             if (isCorrect) {
@@ -22777,6 +23802,7 @@ const countEl = document.getElementById('peqdb-result-count');
             this.abxTrialIndex = 0;
             this.abxCorrect = 0;
             this.abxIncorrect = 0;
+            this._abxAnswered = false;
             if (this._abxTrialTimer) { clearTimeout(this._abxTrialTimer); this._abxTrialTimer = null; }
 
             const startBtn = document.getElementById('abx-start-btn');
@@ -22937,10 +23963,23 @@ const countEl = document.getElementById('peqdb-result-count');
             }
 
             this.updateABMarquee();
+
+            // Wire the START/STOP button's initial state. The static
+            // data-action="click_101_TestLab_abxStart" was removed from
+            // index.html: with it, clicking STOP fired BOTH abxStart
+            // (capture-phase EventBinding delegation) and the dynamically
+            // assigned abxReset — the resumed async trial then played
+            // looping audio with the session flag already false. The button
+            // is now driven exclusively by the dynamic onclick that
+            // abxStart/abxReset/abxEndGame re-assign on every state change.
+            const startBtn = document.getElementById('abx-start-btn');
+            if (startBtn && !startBtn.onclick) {
+                startBtn.onclick = () => this.abxStart();
+            }
         },
         clearComparisonTracks: function() {
             if (this.abxIsActive) this.abxReset();
-            this.stopAll();
+            this.stopAll(false, this.burninActive);
             const audioA = document.getElementById('ab-audio-a');
             const audioB = document.getElementById('ab-audio-b');
             const fileA = document.getElementById('ab-file-a');
@@ -22987,6 +24026,21 @@ const countEl = document.getElementById('peqdb-result-count');
                     this.sourceA.connect(this.gainNodeA).connect(dest);
                     this.sourceB.connect(this.gainNodeB).connect(dest);
                     this.abSourcesConnected = true;
+                } else if (this._abReroutedToMaster && EQ_Module.inputGainNode) {
+                    // The silence-probe previously bypassed the DSP chain and
+                    // nothing ever wired it back (abSourcesConnected stayed
+                    // true), so every later A/B and ABX playback silently ran
+                    // without EQ. Restore the DSP route now that the chain
+                    // exists — collapsed-connect semantics make this idempotent.
+                    try {
+                        this.gainNodeA.disconnect();
+                        this.gainNodeB.disconnect();
+                        this.gainNodeA.connect(EQ_Module.inputGainNode);
+                        this.gainNodeB.connect(EQ_Module.inputGainNode);
+                        this._abReroutedToMaster = false;
+                    } catch (e) {
+                        console.warn('[A/B] DSP chain rewire failed:', e);
+                    }
                 }
             } catch (e) {
                 console.warn('[A/B] Failed to wire comparison sources:', e);
@@ -23050,7 +24104,7 @@ setABXControlsEnabled: function(enabled) {
                 // chain while A/B compares two files (levels, meters, de-esser
                 // and AGC all assume a single source).
                 if (window.EQ && EQ.stopPlaylistPlayback) EQ.stopPlaylistPlayback();
-                this.stopAll();
+                this.stopAll(false, this.burninActive);
                 audioA.currentTime = 0;
                 audioB.currentTime = 0;
                 this.updateABFade();
@@ -23096,20 +24150,38 @@ setABXControlsEnabled: function(enabled) {
                         if (!stillPlaying) {
                             showToast("Tracks stopped unexpectedly right after starting.", "⚠️");
                         } else if (!metered) {
-                            // Elements running but the master bus sees silence — auto-reroute to master
-                            // instead of requiring user to click "Direct" toast. Keeps old behavior's
-                            // logging but makes playback work immediately.
-                            try {
-                                const dest = SharedAudio.masterGain;
-                                this.gainNodeA.disconnect();
-                                this.gainNodeB.disconnect();
-                                this.gainNodeA.connect(dest);
-                                this.gainNodeB.connect(dest);
-                                showToast("A/B auto-routed to master (DSP chain bypassed).", "🔌");
-                            } catch (e) {
-                                console.warn('[A/B] direct reroute failed:', e);
-                                showToast("No signal reaching output — check files.", "⚠️");
-                            }
+                            // A single 350ms probe false-positives on quiet
+                            // intros (fade-ins, live recordings, encoder
+                            // silence): rerouting away from the EQ chain on
+                            // that evidence permanently bypassed DSP for the
+                            // session (abSourcesConnected stayed true and
+                            // nothing ever rewired it). Re-probe once after a
+                            // grace period; only reroute if STILL silent.
+                            setTimeout(() => {
+                                let metered2 = false;
+                                try {
+                                    const probe2 = new Uint8Array(SharedAudio.analyser ? SharedAudio.analyser.fftSize : 1024);
+                                    if (SharedAudio.analyser) {
+                                        SharedAudio.analyser.getByteTimeDomainData(probe2);
+                                        for (let i = 0; i < probe2.length; i++) {
+                                            if (Math.abs(probe2[i] - 128) > 2) { metered2 = true; break; }
+                                        }
+                                    }
+                                } catch (_) {}
+                                if (metered2 || audioA.paused || audioB.paused) return;
+                                try {
+                                    const dest = SharedAudio.masterGain;
+                                    this.gainNodeA.disconnect();
+                                    this.gainNodeB.disconnect();
+                                    this.gainNodeA.connect(dest);
+                                    this.gainNodeB.connect(dest);
+                                    this._abReroutedToMaster = true;
+                                    showToast("No signal through the DSP chain — A/B routed to master (bypassed).", "🔌");
+                                } catch (e) {
+                                    console.warn('[A/B] direct reroute failed:', e);
+                                    showToast("No signal reaching output — check files.", "⚠️");
+                                }
+                            }, 1000);
                         }
                     }, 350);
                 } catch (err) {
@@ -23207,18 +24279,108 @@ setABXControlsEnabled: function(enabled) {
         _hearingStaircaseStartLevel: 0.06, // start audible for most users
         _hearingStaircaseMinLevel: 0.0004,
 
+        // Progress bar + instruction line helpers (UI mirror of staircase state).
+        // The bar is SEGMENTED (one cell per test frequency) and DRIVES OFF
+        // ANSWERS, not just tone boundaries: the current tone's cell fills
+        // continuously as the user answers (a realistic tone takes 3-9
+        // answers, so boundary-only progress looked frozen for 40+ clicks).
+        // Colors are set via inline style.background — class swaps depended
+        // on compiled CSS that can go stale between tailwind rebuilds.
+        _updateHearingTestUI: function(opts) {
+            const o = opts || {};
+            const instr = document.getElementById('hearing-test-instruction');
+            const status = document.getElementById('hearing-test-status');
+            const hzDisp = document.getElementById('hearing-test-hz');
+            const pctDisp = document.getElementById('hearing-progress-pct');
+            const calRow = document.getElementById('hearing-cal-row');
+            const SEG_COLORS = {
+                done: '#34d399',    // emerald-400
+                active: '#06b6d4',   // cyan-500
+                pending: '#18181b'   // zinc-900
+            };
+
+            if (o.progress !== undefined) {
+                // o.progress is a FRACTION 0..1 of the whole 8-tone test,
+                // already including partial credit for the current tone.
+                const frac = Math.max(0, Math.min(1, o.progress));
+                const pct = Math.round(frac * 100);
+                if (pctDisp) pctDisp.textContent = pct + '%';
+
+                const segs = document.querySelectorAll('.hearing-seg');
+                const totalSegs = segs.length || 8;
+                const segSize = 1 / totalSegs;
+                segs.forEach(seg => {
+                    const idx = parseInt(seg.getAttribute('data-seg'), 10);
+                    if (idx === undefined || isNaN(idx)) return;
+                    const segStart = idx * segSize;
+                    let color;
+                    if (frac >= 1) {
+                        color = SEG_COLORS.done;
+                    } else if (frac >= segStart + segSize - 1e-9) {
+                        color = SEG_COLORS.done;      // this tone fully complete
+                    } else if (frac >= segStart) {
+                        color = SEG_COLORS.active;   // this tone in progress (>= not >: at tone start frac === segStart exactly)
+                    } else {
+                        color = SEG_COLORS.pending;
+                    }
+                    seg.style.background = color;
+                });
+            }
+            if (o.showSlider === true && calRow) calRow.classList.remove('hidden');
+            if (o.showSlider === false && calRow) calRow.classList.add('hidden');
+            if (o.instruction !== undefined && instr) {
+                instr.innerHTML = o.instruction;
+            }
+            if (o.status !== undefined && status) status.textContent = o.status;
+            if (o.hz !== undefined && hzDisp) hzDisp.textContent = o.hz;
+        },
+
+        // Fraction of the ENTIRE test completed, credited per-answer:
+        // finished tones count fully; the current tone credits its answers
+        // against an expected budget (8 answers ≈ a typical staircase; the
+        // force-finish path is 3).
+        _hearingTestFraction: function() {
+            const freqCount = this.hearingTestFreqs.length;
+            if (this.hearingStep < 0 || this.hearingStep >= freqCount) {
+                return this._hearingAllDone ? 1 : 0;
+            }
+            const per = 1 / freqCount;
+            const doneFrac = this.hearingStep * per;
+            // Answers given within the current tone (staircase records
+            // every answer as a reversal-or-step; budget on the generous
+            // side so the bar never races ahead of reality).
+            const answers = this._hearingToneAnswers || 0;
+            const ANSWER_BUDGET = 8;
+            const toneFrac = Math.min(1, answers / ANSWER_BUDGET) * per;
+            return Math.min(1 - 1e-9, doneFrac + toneFrac);
+        },
+
         startHearingStaircase: async function() {
             const ctx = SharedAudio.init(); await ctx.resume();
             if (this.hearingOsc) { this.stopHearingTone(); }
 
+            // The pre-test slider sets where the staircase begins: the user
+            // calibrated "comfortably audible" at this level. LOCKED once the
+            // test begins — mid-test level changes would corrupt the
+            // staircase, so the slider row hides for the duration.
+            const calSlider = document.getElementById('hearing-test-vol');
+            if (calSlider) {
+                const raw = parseFloat(calSlider.value);
+                if (Number.isFinite(raw) && raw > 0) {
+                    this._hearingStaircaseStartLevel = Math.max(0.002, Math.min(this._hearingStaircaseMaxLevel, (raw / 100) * 0.12));
+                }
+            }
+
             // Begin at frequency 0 (250 Hz).
             this.hearingStep = 0;
             this.hearingThresholds = [0, 0, 0, 0, 0, 0, 0, 0];
+            this._hearingAllDone = false;
             this._beginHearingFrequency(0);
         },
 
         _beginHearingFrequency: function(stepIdx) {
             this.hearingStep = stepIdx;
+            this._hearingToneAnswers = 0; // per-answer progress within this tone
             // Staircase state: level in linear gain, step in dB, reversal
             // bookkeeping, and the collected reversal levels for averaging.
             this.staircase = {
@@ -23226,8 +24388,10 @@ setABXControlsEnabled: function(enabled) {
                 stepDb: 12,
                 lastAnswer: null,
                 reversals: [],
+                reversalSteps: [],
                 reversalCount: 0,
                 lastReversalDir: 0,
+                sameAnswerRun: 0,
                 done: false,
                 thresholdDb: null
             };
@@ -23238,11 +24402,14 @@ setABXControlsEnabled: function(enabled) {
             const notHeardBtn = document.getElementById('hearing-not-heard-btn');
             if (notHeardBtn) notHeardBtn.classList.remove('hidden');
 
-            const status = document.getElementById('hearing-test-status');
-            const hzDisp = document.getElementById('hearing-test-hz');
             const freq = this.hearingTestFreqs[stepIdx];
-            if (status) status.textContent = `Staircase ${stepIdx + 1}/8 — listen, then answer.`;
-            if (hzDisp) hzDisp.textContent = `${freq} Hz`;
+            this._updateHearingTestUI({
+                status: `Tone ${stepIdx + 1} of 8`,
+                hz: `${freq} Hz`,
+                progress: this._hearingTestFraction(),
+                showSlider: false, // locked in — hide the calibration row
+                instruction: `Hear the <span class="text-white font-bold">${freq} Hz</span> tone? Answer honestly — it homes in on your limit.`
+            });
         },
 
         _playHearingToneAt: function(level) {
@@ -23267,26 +24434,75 @@ setABXControlsEnabled: function(enabled) {
         hearingStaircaseAnswer: function(dir) {
             const st = this.staircase;
             if (!st || st.done) return;
+            this._hearingToneAnswers = (this._hearingToneAnswers || 0) + 1;
 
             // Level step in dB (down when heard, up when not heard).
             const dbStep = st.stepDb * (dir > 0 ? -1 : 1);
+            const prevLevel = st.level;
             st.level = Math.max(this._hearingStaircaseMinLevel,
                 Math.min(this._hearingStaircaseMaxLevel, st.level * Math.pow(10, dbStep / 20)));
+
+            // STUCK GUARD: repeating the same answer runs the level into the
+            // ceiling/floor with no reversals — the staircase could never
+            // converge (spamming "Heard +" parked at -68 dBFS forever, the
+            // exact reported bug). If the level is clamped at a bound and the
+            // same answer keeps coming, force-finish this frequency:
+            //   - pegged at the FLOOR while hearing -> extremely sensitive at
+            //     this band; record the floor as the threshold.
+            //   - pegged at the CEILING while NOT hearing -> can't hear this
+            //     band at safe levels; record the ceiling (max loss).
+            const hitFloor = st.level <= this._hearingStaircaseMinLevel + 1e-9;
+            const hitCeil = st.level >= this._hearingStaircaseMaxLevel - 1e-9;
+            const clamped = (hitFloor && dir > 0) || (hitCeil && dir < 0);
+            if (clamped && st.lastAnswer === dir) {
+                st.sameAnswerRun++;
+                if (st.sameAnswerRun >= 2) {
+                    st.thresholdDb = 20 * Math.log10(Math.max(1e-6, st.level));
+                    st.done = true;
+                    this._updateHearingTestUI({
+                        status: dir > 0 ? 'Keen ear here — next tone!' : 'Too quiet to hear — max boost recorded.',
+                        instruction: dir > 0
+                            ? 'You heard it at the quietest safe level.'
+                            : 'Unheard even at max safe level — this tone gets full correction.'
+                    });
+                    this._finishHearingFrequency();
+                    return;
+                }
+            } else {
+                st.sameAnswerRun = 0;
+            }
 
             // Reversal = answer flipped vs the previous one.
             const reversed = (st.lastAnswer !== null && st.lastAnswer !== dir);
             if (reversed) {
                 st.reversalCount++;
-                st.reversals.push(20 * Math.log10(Math.max(1e-6, st.level)));
+                // Record the PRE-step level: the tone the user actually just
+                // answered on is the turnaround point (st.level has already
+                // advanced one full step past it — recording the post-step
+                // value biased every reversal by a full step size).
+                const reversalDb = 20 * Math.log10(Math.max(1e-6, prevLevel));
+                const stepUsed = st.stepDb;
+                st.reversals.push(reversalDb);
+                st.reversalSteps.push(stepUsed);
                 // Halve the step after every reversal: 12 -> 6 -> 3 -> 1.5.
                 st.stepDb = Math.max(1.5, st.stepDb / 2);
-                // Threshold: two reversals at the finest (1.5dB) step.
-                if (st.stepDb <= 1.5 && st.reversals.length >= 2) {
+                // Threshold: two reversals AT the finest (1.5 dB) step —
+                // averaging the last two reversal levels only when BOTH
+                // were measured with the final step size. (Checking after
+                // the halve made stepDb<=1.5 true on the 3rd reversal while
+                // the averaged pair came from 6 dB / 3 dB steps.)
+                const lastTwoSteps = st.reversalSteps.slice(-2);
+                if (st.stepDb <= 1.5 && st.reversals.length >= 2
+                    && lastTwoSteps.length === 2
+                    && lastTwoSteps[0] <= 1.5 && lastTwoSteps[1] <= 1.5) {
                     // Average the last two reversal levels (the classic
                     // 2-reversal mean at final step size).
                     const lastTwo = st.reversals.slice(-2);
                     st.thresholdDb = (lastTwo[0] + lastTwo[1]) / 2;
                     st.done = true;
+                    this._updateHearingTestUI({
+                        status: 'Threshold locked ✔'
+                    });
                     this._finishHearingFrequency();
                     return;
                 }
@@ -23295,11 +24511,18 @@ setABXControlsEnabled: function(enabled) {
 
             this._playHearingToneAt(st.level);
 
-            const status = document.getElementById('hearing-test-status');
-            if (status) {
-                const dbFs = 20 * Math.log10(Math.max(1e-6, st.level));
-                status.textContent = `${this.hearingTestFreqs[this.hearingStep]} Hz · ${dbFs.toFixed(1)} dBFS · step ±${st.stepDb}dB · reversals ${st.reversalCount}`;
-            }
+            const dbFs = 20 * Math.log10(Math.max(1e-6, st.level));
+            const freqIdx = this.hearingStep;
+            this._updateHearingTestUI({
+                status: `Tone ${freqIdx + 1}/8 · ${dbFs.toFixed(1)} dBFS`,
+                // Per-ANSWER progress: every click moves the current segment's
+                // fill forward (boundary-only progress previously looked
+                // frozen for 40+ answers in a realistic run).
+                progress: this._hearingTestFraction(),
+                instruction: reversed
+                    ? 'Almost there — narrowing in on your limit.'
+                    : (dir > 0 ? 'Got quieter. Still hear it?' : 'Got louder. Hear it now?')
+            });
         },
 
         _finishHearingFrequency: function() {
@@ -23322,16 +24545,20 @@ setABXControlsEnabled: function(enabled) {
 
         _finishHearingStaircaseAll: function() {
             this.hearingStep = -1;
+            this._hearingAllDone = true;
 
             const btn = document.getElementById('hearing-test-btn');
             if (btn) btn.textContent = 'Start Test';
             const notHeardBtn = document.getElementById('hearing-not-heard-btn');
             if (notHeardBtn) notHeardBtn.classList.add('hidden');
 
-            const status = document.getElementById('hearing-test-status');
-            if (status) status.textContent = 'Staircase complete — profile computed.';
-            const hzDisp = document.getElementById('hearing-test-hz');
-            if (hzDisp) hzDisp.textContent = 'DONE';
+            this._updateHearingTestUI({
+                status: 'Done — correction applied ✔',
+                hz: 'DONE',
+                progress: 1,
+                showSlider: true, // test over — calibration row can come back
+                instruction: 'Saved & active on the EQ. Reloads with the app until Reset.'
+            });
 
             this.calculateHearingCorrection();
         },
@@ -23375,20 +24602,52 @@ setABXControlsEnabled: function(enabled) {
         },
         updateHearingTestVolume: function() {
             const slider = document.getElementById('hearing-test-vol');
-            // During a staircase the test owns the tone level — the slider
-            // is only a pre-test comfort calibration and must not override
-            // the adaptive step.
-            if (slider && this.hearingGain && SharedAudio.ctx && !this.staircase) {
-                const vol = parseFloat(slider.value) / 100;
-                const safeVol = vol * 0.12;
-                setAudioParamSmooth(this.hearingGain.gain, safeVol);
+            const raw = slider ? parseFloat(slider.value) : NaN;
+            const vol = Number.isFinite(raw) ? raw : 0;
 
-                const el = document.getElementById('brand-icon-emoji');
-                if (el) {
-                    Mascot.setExpression('hearing_test');
-                    const scaleFactor = 0.8 + (vol * 0.7);
-                    el.style.transform = `scale(${scaleFactor})`;
+            // Live % readout beside the slider.
+            const calVal = document.getElementById('hearing-cal-val');
+            if (calVal) calVal.textContent = Math.round(vol) + '%';
+
+            // During a staircase the test owns the tone level — the row is
+            // hidden anyway; ignore stray input events.
+            if (this.staircase) return;
+
+            // Pre/post-test: the slider is a LIVE calibration preview. Play
+            // 1 kHz at the chosen level so the user hears exactly what they
+            // are setting (the old version required a tone to already be
+            // playing, which never happened outside a test — the control did
+            // nothing at all).
+            const ctx = SharedAudio.init();
+            if (!ctx) return;
+            if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+            const safeVol = (vol / 100) * 0.12;
+            if (vol <= 0) {
+                this.stopHearingTone();
+                this._updateHearingTestUI({
+                    instruction: 'Raise the level until the preview tone is comfortable.'
+                });
+            } else {
+                if (!this.hearingOsc) {
+                    this.stopHearingTone();
+                    this.hearingOsc = ctx.createOscillator();
+                    this.hearingGain = ctx.createGain();
+                    this.hearingOsc.type = 'sine';
+                    this.hearingOsc.frequency.value = 1000;
+                    this.hearingGain.gain.value = Math.max(0.0001, safeVol);
+                    this.hearingOsc.connect(this.hearingGain).connect(SharedAudio.masterGain);
+                    this.hearingOsc.start();
+                } else if (this.hearingGain) {
+                    setAudioParamSmooth(this.hearingGain.gain, Math.max(0.0001, safeVol), 0.02);
                 }
+                this._updateHearingTestUI({
+                    instruction: `Previewing 1 kHz at ${Math.round(vol)}% — lock this in with Start Test.`
+                });
+            }
+
+            // Remember the calibration so Start Test begins from this level.
+            if (vol > 0) {
+                this._hearingStaircaseStartLevel = Math.max(0.002, Math.min(this._hearingStaircaseMaxLevel, safeVol));
             }
         },
         stopHearingTone: function() {
@@ -23421,9 +24680,15 @@ setABXControlsEnabled: function(enabled) {
             this.stopHearingTone();
             this.hearingStep = -1;
             this.staircase = null;
+            this._hearingAllDone = false;
+            this._hearingToneAnswers = 0;
             this.hearingThresholds = [0, 0, 0, 0, 0, 0, 0, 0];
             EQ_Module.hearingOffsets = [0, 0, 0, 0, 0, 0, 0, 0];
             EQ_Module.hearingCalEnabled = false;
+            // Clear the persisted profile too — Reset means "remove my saved
+            // hearing correction", not just "discard this run" (the old
+            // version left a stale copy that re-armed itself on next reload).
+            try { localStorage.removeItem('settings_hearing_offsets'); } catch (e) {}
 
             const btn = document.getElementById('hearing-test-btn');
             const status = document.getElementById('hearing-test-status');
@@ -23436,11 +24701,22 @@ setABXControlsEnabled: function(enabled) {
 
             if (btn) btn.textContent = 'Start Test';
             if (notHeardBtn) notHeardBtn.classList.add('hidden');
-            if (status) status.textContent = 'Status: Idle';
+            if (status) status.textContent = 'Hearing Test: Idle';
             if (hzDisp) hzDisp.textContent = '--- Hz';
-            if (volSlider) volSlider.value = 0;
+            if (volSlider) volSlider.value = 50;
+            const calVal = document.getElementById('hearing-cal-val');
+            if (calVal) calVal.textContent = '50%';
             if (calBtn) calBtn.classList.remove('active-btn');
             if (calLbl) calLbl.textContent = 'Hearing: Off';
+            this._updateHearingTestUI({
+                progress: 0,
+                showSlider: true,
+                instruction: 'Set the level so the preview tone is comfortable, then Start Test.'
+            });
+            // Segments back to pending color (inline styles — not classes).
+            document.querySelectorAll('.hearing-seg').forEach(seg => {
+                seg.style.background = '#18181b';
+            });
 
             if (generateBtn) {
                 generateBtn.disabled = true;
@@ -23639,15 +24915,33 @@ setABXControlsEnabled: function(enabled) {
             const dot = document.getElementById('spatial-dot');
             if (!pad || !dot) return;
 
-            this.spatialOrbitInterval = setInterval(() => {
-                this.spatialOrbitAngle += 0.018;
+            // rAF with delta-time instead of setInterval(16): timer ticks
+            // land between vsync frames (double paints) or drift past them
+            // (stutter), and the old per-tick style.left/top writes forced a
+            // pad-subtree layout every 16ms. One compositor transform per
+            // frame keeps the orbit locked to the display.
+            // Angle speed matches the old timer exactly: 0.018 rad/tick at
+            // one tick per 16ms ≈ 1.125 rad/s.
+            const ANGLE_PER_MS = 0.018 / 16;
+            let lastTs = null;
+            let orbitRect = null;
+
+            const orbitFrame = (ts) => {
+                if (lastTs === null) lastTs = ts;
+                const dt = Math.min(64, ts - lastTs); // tab-switch clamp
+                lastTs = ts;
+
+                this.spatialOrbitAngle += ANGLE_PER_MS * dt;
                 if (this.spatialOrbitAngle > Math.PI * 2) {
                     this.spatialOrbitAngle -= Math.PI * 2;
                 }
 
-                const rect = pad.getBoundingClientRect();
-                const cw = rect.width;
-                const ch = rect.height;
+                if (!orbitRect || orbitRect.width !== pad.clientWidth || orbitRect.height !== pad.clientHeight) {
+                    orbitRect = pad.getBoundingClientRect();
+                }
+
+                const cw = orbitRect.width;
+                const ch = orbitRect.height;
 
                 const cx = cw / 2;
                 const cy = ch / 2;
@@ -23655,9 +24949,6 @@ setABXControlsEnabled: function(enabled) {
 
                 const x = cx + Math.cos(this.spatialOrbitAngle) * radius;
                 const y = cy + Math.sin(this.spatialOrbitAngle) * radius;
-
-                dot.style.left = `${x}px`;
-                dot.style.top = `${y}px`;
 
                 const normDist = radius / Math.min(cx, cy);
                 let normX = normDist * Math.cos(this.spatialOrbitAngle) * 5.0;
@@ -23683,12 +24974,15 @@ setABXControlsEnabled: function(enabled) {
                 }
 
                 const scale = 2.0 - (normDist * 1.4);
-                dot.style.transform = `translate(-50%, -50%) scale(${scale})`;
-            }, 16);
+                dot.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) translate(-50%, -50%) scale(${scale.toFixed(3)})`;
+
+                this.spatialOrbitInterval = requestAnimationFrame(orbitFrame);
+            };
+            this.spatialOrbitInterval = requestAnimationFrame(orbitFrame);
         },
         stopSpatialOrbitTimerOnly: function() {
             if (this.spatialOrbitInterval) {
-                clearInterval(this.spatialOrbitInterval);
+                cancelAnimationFrame(this.spatialOrbitInterval);
                 this.spatialOrbitInterval = null;
             }
         },
@@ -23714,7 +25008,12 @@ setABXControlsEnabled: function(enabled) {
             const updateDotVisualDepth = () => {
                 const normalized = (10 - Math.abs(this.spatialDepthZ)) / 10;
                 const scale = 0.6 + normalized * 1.4;
-                dot.style.transform = `translate(-50%, -50%) scale(${scale})`;
+                // Keep the dot centered on its last known position when only
+                // the depth changes (wheel): position is part of the same
+                // compositor transform now, not left/top.
+                const x = this.lastPosX !== undefined ? this.lastPosX : pad.clientWidth / 2;
+                const y = this.lastPosY !== undefined ? this.lastPosY : pad.clientHeight / 2;
+                dot.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) translate(-50%, -50%) scale(${scale.toFixed(3)})`;
             };
 
             pad.addEventListener('mouseenter', () => {
@@ -23759,8 +25058,40 @@ setABXControlsEnabled: function(enabled) {
                 }
             }, { passive: false });
 
+            // Compositor-only dot movement: the dot's position lives entirely
+            // in one translate3d() transform (GPU layer, zero layout work).
+            // The old per-mousemove style.left/top writes forced
+            // recalc+layout on the whole pad subtree (grid background +
+            // radar-pulse animation) at the mouse's event rate; a cached
+            // getBoundingClientRect removes the forced-layout read too.
+            let padRect = pad.getBoundingClientRect();
+            let padRectCheckedAt = 0;
+            const refreshPadRect = () => {
+                // Rects are only invalidated by layout changes (resize, tab
+                // switch, column reflow) — re-measure at most every 500ms,
+                // not per event.
+                const now = performance.now();
+                if (now - padRectCheckedAt > 500) {
+                    padRect = pad.getBoundingClientRect();
+                    padRectCheckedAt = now;
+                }
+                return padRect;
+            };
+            window.addEventListener('resize', () => { padRectCheckedAt = 0; });
+
+            // rAF coalescing: store the latest pointer coords and apply them
+            // once per frame — drag updates land at exactly vsync rate, and
+            // intermediate mouse events (125-240Hz on gaming mice) cost a
+            // variable assignment instead of a style write.
+            let pendingPtrX = null;
+            let pendingPtrY = null;
+            let dotFrameScheduled = false;
+            const applyDotTransform = (x, y, scale) => {
+                dot.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) translate(-50%, -50%) scale(${scale.toFixed(3)})`;
+            };
+
             const updatePosition = (e) => {
-                const rect = pad.getBoundingClientRect();
+                const rect = refreshPadRect();
                 let clientX, clientY;
 
                 if (e.touches && e.touches.length > 0) {
@@ -23778,8 +25109,23 @@ setABXControlsEnabled: function(enabled) {
                 x = Math.max(0, Math.min(rect.width, x));
                 y = Math.max(0, Math.min(rect.height, y));
 
-                dot.style.left = `${x}px`;
-                dot.style.top = `${y}px`;
+                // Batch the position into the per-frame apply below.
+                pendingPtrX = x;
+                pendingPtrY = y;
+                if (!dotFrameScheduled) {
+                    dotFrameScheduled = true;
+                    requestAnimationFrame(() => {
+                        dotFrameScheduled = false;
+                        if (pendingPtrX === null) return;
+                        // Scale follows the same distance falloff as the
+                        // panner math below — computed once per applied frame.
+                        const cx = rect.width / 2;
+                        const cy = rect.height / 2;
+                        const maxDist = Math.min(cx, cy) || 1;
+                        const normDist = Math.min(1.0, Math.hypot(pendingPtrX - cx, pendingPtrY - cy) / maxDist);
+                        applyDotTransform(pendingPtrX, pendingPtrY, 2.0 - (normDist * 1.4));
+                    });
+                }
 
                 const prevX = this.lastPosX !== undefined ? this.lastPosX : x;
                 const prevY = this.lastPosY !== undefined ? this.lastPosY : y;
@@ -23851,9 +25197,6 @@ setABXControlsEnabled: function(enabled) {
                     this.spatialPanner.setPosition(normX, normY, normZ);
                 }
             }
-
-            const scale = 2.0 - (normDist * 1.4);
-            dot.style.transform = `translate(-50%, -50%) scale(${scale})`;
             };
 
             pad.addEventListener('mousemove', (e) => {
@@ -23982,7 +25325,8 @@ setABXControlsEnabled: function(enabled) {
             }, 100);
         },
         playChannelTone: async function(channel) {
-         this.stopAll(true);
+         // Channel tones are short diagnostics; preserve a running burn-in.
+         this.stopAll(true, this.burninActive);
 
          ['l', 'r', 'c'].forEach(k => {
              const btn = document.getElementById('c-test-' + k);
@@ -24503,14 +25847,21 @@ toggleChannelSwap: function() {
 
             this.activeNodes = this.activeNodes.filter(n => !leakNodes.includes(n));
 
-            if (this.imbalanceInterval) {
-                clearInterval(this.imbalanceInterval);
-                this.imbalanceInterval = null;
+            // The imbalance meter is the burn-in panel's L/R level display.
+            // Killing it unconditionally — including on the tab-switch path
+            // that PRESERVES burn-in audio — left the meters pinned at 0%
+            // while the noise kept playing. Only clear it when burn-in is
+            // being stopped too (the meter would otherwise read dead signal).
+            if (!(preserveBurnin && this.burninActive)) {
+                if (this.imbalanceInterval) {
+                    clearInterval(this.imbalanceInterval);
+                    this.imbalanceInterval = null;
+                }
+                const imbalanceL = document.getElementById('imbalance-meter-l');
+                const imbalanceR = document.getElementById('imbalance-meter-r');
+                if (imbalanceL) imbalanceL.style.width = "0%";
+                if (imbalanceR) imbalanceR.style.width = "0%";
             }
-            const imbalanceL = document.getElementById('imbalance-meter-l');
-            const imbalanceR = document.getElementById('imbalance-meter-r');
-            if (imbalanceL) imbalanceL.style.width = "0%";
-            if (imbalanceR) imbalanceR.style.width = "0%";
 
             this.activeNodes.forEach(node => {
                 if (node instanceof GainNode) {
@@ -24542,24 +25893,65 @@ toggleChannelSwap: function() {
                     try { node.disconnect(); } catch(e){}
                 });
             }, 25);
-            const spatialBtn = document.getElementById('spatial-btn');
-            if (spatialBtn) {
-                spatialBtn.innerHTML = '▶️ Start';
-                spatialBtn.classList.remove('text-red-400');
-            }
-            this.spatialActive = false;
+            // Route spatial teardown through stopSpatialAudio instead of
+            // flipping spatialActive directly: the direct flip left
+            // playbackActive=true with the pause button showing while
+            // nothing played (updatePlayerButtonsUI never ran), and skipped
+            // the custom-track resume bookkeeping (spatialOffset), so custom
+            // tracks lost their position. #spatial-btn never existed in
+            // index.html (the real controls are #spatial-play-btn/pause-btn,
+            // synced by updatePlayerButtonsUI below).
+            this.stopSpatialAudio();
+            this.stopSpatialOrbitTimerOnly();
+            this.playbackActive = false;
+            this.updatePlayerButtonsUI();
             const abBtn = document.getElementById('ab-play-btn');
             if (abBtn) abBtn.innerHTML = 'Play Sync';
             this.abPlaying = false;
             const audioA = document.getElementById('ab-audio-a');
             const audioB = document.getElementById('ab-audio-b');
+
+            // An ABX session's inter-trial timer must die with everything
+            // else: stopAll previously left abxIsActive=true and the 1s
+            // timer armed, so switching tabs right after answering started
+            // a trial in the background (looping elements, no answer UI
+            // reachable). Full reset of the session state, same as abxReset.
+            if (this.abxIsActive || this._abxTrialTimer) {
+                if (this._abxTrialTimer) { clearTimeout(this._abxTrialTimer); this._abxTrialTimer = null; }
+                this.abxIsActive = false;
+                this.abxTrialIndex = 0;
+                this.abxCorrect = 0;
+                this.abxIncorrect = 0;
+
+                const startBtn = document.getElementById('abx-start-btn');
+                if (startBtn) {
+                    startBtn.textContent = 'START TEST';
+                    startBtn.onclick = () => this.abxStart();
+                }
+                const choicesRow = document.getElementById('abx-choices-row');
+                if (choicesRow) { choicesRow.style.pointerEvents = 'none'; choicesRow.style.opacity = '0.5'; }
+                this.setABXControlsEnabled(true);
+
+                const abxStatus = document.getElementById('abx-status-lbl');
+                if (abxStatus) abxStatus.textContent = '';
+                const abxProgress = document.getElementById('abx-progress-lbl');
+                if (abxProgress) abxProgress.textContent = 'Trial 0/10';
+                const confPct = document.getElementById('abx-confidence-pct');
+                const confTxt = document.getElementById('abx-confidence-text');
+                const confWrap = document.getElementById('abx-confidence-wrapper');
+                if (confPct && confTxt && confWrap) {
+                    confPct.textContent = '0.0%';
+                    confTxt.textContent = 'No Trials';
+                    confWrap.className = 'text-zinc-500';
+                }
+            }
             if (audioA) audioA.pause();
             if (audioB) audioB.pause();
         },
                 startResonanceScan: function() {
 
             Mascot.triggerTemporaryExpression('scan_idle', 300000);
-            this.stopAll(true);
+            this.stopAll(true, this.burninActive);
 
             const ctx = SharedAudio.init(); ctx.resume();
             this.resonanceActive = true;
@@ -24809,7 +26201,7 @@ toggleChannelSwap: function() {
             showToast("Ear Resonance Peak Tuner Reset", "🔄");
         },
         playSweep: async function(startFreq, endFreq, duration) {
-        this.stopAll(true);
+        this.stopAll(true, this.burninActive);
 
         if (window.EQ && EQ.audioEl && !EQ.audioEl.paused) {
             EQ.togglePlayState();
@@ -24858,7 +26250,7 @@ toggleChannelSwap: function() {
             this.startImbalanceMeter();
         },
         playTransientSlam: async function() {
-            this.stopAll(true);
+            this.stopAll(true, this.burninActive);
             await EQ_Module.ensureDSPGraph();
             const ctx = SharedAudio.ctx;
             Mascot.update();
@@ -24895,7 +26287,7 @@ toggleChannelSwap: function() {
             this.startImbalanceMeter();
         },
         playSibilanceTest: async function() {
-            this.stopAll(true);
+            this.stopAll(true, this.burninActive);
             await EQ_Module.ensureDSPGraph();
             const ctx = SharedAudio.ctx;
             Mascot.update();
@@ -24999,7 +26391,7 @@ toggleChannelSwap: function() {
             }
         },
     playDetailRetrieval: async function() {
-        this.stopAll(true);
+        this.stopAll(true, this.burninActive);
         await EQ_Module.ensureDSPGraph();
         const ctx = SharedAudio.ctx;
         Mascot.update();
@@ -25058,7 +26450,7 @@ toggleChannelSwap: function() {
             this.startImbalanceMeter();
         },
         playPolarityTest: async function() {
-            this.stopAll(true);
+            this.stopAll(true, this.burninActive);
             await EQ_Module.ensureDSPGraph();
             const ctx = SharedAudio.ctx || SharedAudio.init();
             Mascot.update();
@@ -25097,7 +26489,7 @@ toggleChannelSwap: function() {
             this.startImbalanceMeter();
         },
         playImaging: async function() {
-            this.stopAll();
+            this.stopAll(false, this.burninActive);
             await EQ_Module.ensureDSPGraph();
             const ctx = SharedAudio.ctx || SharedAudio.init();
 
@@ -25128,7 +26520,7 @@ toggleChannelSwap: function() {
             this.startImbalanceMeter();
         },
         playSoundstage: async function() {
-            this.stopAll(true);
+            this.stopAll(true, this.burninActive);
             await EQ_Module.ensureDSPGraph();
             const ctx = SharedAudio.ctx || SharedAudio.init();
             Mascot.update();
@@ -25159,7 +26551,7 @@ toggleChannelSwap: function() {
             this.startImbalanceMeter();
         },
         playFPSImaging: async function() {
-            this.stopAll(true);
+            this.stopAll(true, this.burninActive);
             await EQ_Module.ensureDSPGraph();
             const ctx = SharedAudio.ctx || SharedAudio.init();
             Mascot.update();
@@ -25522,8 +26914,11 @@ loadSoundLibrary: async function() {
             const dot = document.getElementById('spatial-dot');
             if (pad && dot) {
                 const rect = pad.getBoundingClientRect();
-                const x = parseFloat(dot.style.left) || (rect.width / 2);
-                const y = parseFloat(dot.style.top) || (rect.height / 2);
+                // The dot's position now lives in its transform (compositor
+                // layer — see initSpatialPad); read the tracked logical
+                // position instead of the no-longer-written style.left/top.
+                const x = (this.lastPosX !== undefined) ? this.lastPosX : (rect.width / 2);
+                const y = (this.lastPosY !== undefined) ? this.lastPosY : (rect.height / 2);
                 const normX = ((x / rect.width) * 10) - 5;
                 const normY = (((rect.height - y) / rect.height) * 10) - 5;
                 const now = ctx.currentTime;
@@ -25875,7 +27270,7 @@ loadSoundLibrary: async function() {
             if (window.updateExpandedAutoHide) window.updateExpandedAutoHide();
         },
         toggleBassLeakTest: function(side) {
-            this.stopAll(true);
+            this.stopAll(true, this.burninActive);
             const ctx = SharedAudio.init(); ctx.resume();
 
             this.leakTestActive = true;
@@ -26061,7 +27456,14 @@ loadSoundLibrary: async function() {
         setTimeout(() => {
             if (PEQDB_Module && PEQDB_Module.startBackgroundLoading) {
                 try {
-
+                    // (Restored: the invocation was accidentally deleted,
+                    // leaving this if/try scaffolding behind — the 1.2s deferred
+                    // DB warmup never ran.) typeof guard — FindEngine is a
+                    // top-level const, never a window property.
+                    PEQDB_Module.startBackgroundLoading();
+                    if (typeof FindEngine !== 'undefined' && FindEngine.checkInitialProgress) {
+                        FindEngine.checkInitialProgress();
+                    }
                 } catch (err) {
                     console.error('[Boot] startBackgroundLoading failed:', err);
                 }
@@ -26513,9 +27915,17 @@ loadSoundLibrary: async function() {
                     try {
                         const saved = localStorage.getItem('find_taste_favorites');
                         if (saved) {
-                            this.tasteFavorites = JSON.parse(saved);
+                            const parsed = JSON.parse(saved);
+                            // Shape validation (same discipline as
+                            // _getSpecSelection): a valid-JSON non-array
+                            // (legacy format, partial write, hand edit) made
+                            // .map/.some throw in taste flows — crash-on-scan
+                            // and crash-on-type until the key was cleared.
+                            this.tasteFavorites = Array.isArray(parsed)
+                                ? parsed.filter(f => f && typeof f === 'object' && f.id)
+                                : [];
                         }
-                    } catch(e) {}
+                    } catch(e) { this.tasteFavorites = []; }
                     this.renderTasteChips();
                 },
 
@@ -26783,7 +28193,12 @@ loadSoundLibrary: async function() {
                 loadDatabase: async function() {
                     try {
 
-                        if (window.CurveIndexer && Array.isArray(CurveIndexer.catalog) && CurveIndexer.catalog.length > 0) {
+                        // typeof, not window.*: CurveIndexer is a top-level
+                        // const (peqdb-module.js), never assigned to window,
+                        // so the old window.CurveIndexer guard was always
+                        // false and this whole function re-fetched and
+                        // re-parsed the 2.77 MB database a second time.
+                        if (typeof CurveIndexer !== 'undefined' && Array.isArray(CurveIndexer.catalog) && CurveIndexer.catalog.length > 0) {
                             this.iemDatabase = CurveIndexer.catalog;
                         } else if (typeof DecompressionStream !== 'undefined') {
                             // Prefer the 12x-smaller .gz (0.22MB vs 2.64MB) and
@@ -26965,7 +28380,7 @@ loadSoundLibrary: async function() {
                     const sources = [
                         this.iemDatabase,
                         (window.PEQDB_Module && PEQDB_Module.STATE && PEQDB_Module.STATE.dataset),
-                        (window.CurveIndexer && CurveIndexer.catalog)
+                        (typeof CurveIndexer !== 'undefined' && CurveIndexer.catalog) ? CurveIndexer.catalog : null
                     ];
                     const seen = new Set();
                     const brands = [];
@@ -27777,7 +29192,12 @@ loadSoundLibrary: async function() {
                     const freqs = CurveUtils.generateLogGrid(100);
 
                     dataset.forEach(item => {
-                        if (!item.data) return;
+                        // <2-point "curves" interpolate as flat-75 (perfectly
+                        // neutral) and score as ideal — skip them, mirroring the
+                        // worker's buildCanonicalProfiles guard (find-worker.js)
+                        // so the local fallback path can't rank junk entries at
+                        // the top when the Worker is unavailable.
+                        if (!item.data || item.data.length < 2) return;
 
                         const nameLower = item.name.toLowerCase();
 
@@ -28306,16 +29726,41 @@ loadSoundLibrary: async function() {
                     if (label) label.textContent = this.tuneWithSpecs ? '🔒 FILTER BY SPECS: ON' : '🔒 FILTER BY SPECS: OFF';
                 },
 
-getDriveabilityStatus: function(impedance, sensitivity) {
-                    if (!impedance || !sensitivity) return null;
+                // Unified driveability math. Three systems previously
+                // disagreed (this badge, getDriveability's imp/sens cutoffs,
+                // and the Power tab's dacLimits ratios): the same IEM could
+                // show "Phone OK" in one card and "Desktop Amp Needed" in
+                // another. This one now (a) reads the SAME SPL target the
+                // Power tab uses (IEM_Module.getListeningSplTarget), and
+                // (b) honors dB/V vs dB/mW — they differ by 10*log10(1000/Z),
+                // ~15 dB at 32Ω, which previously flipped the verdict.
+                // Thresholds mirror the Power tab's dacLimits voltages
+                // (Phone 0.4V, Laptop 1.0V, Dongle 2.0V, Desktop 4.0V) with a
+                // little headroom margin.
+                getDriveabilityStatus: function(impedance, sensitivity, sensUnit) {
+                    // 0/empty sensitivity means "no data" in hand-maintained DB
+                    // entries — treat as unknown rather than computing an
+                    // absurd requirement from 0 dB/mW.
+                    if (impedance == null || sensitivity == null || !sensitivity) return null;
                     const imp = parseFloat(impedance);
                     const sens = parseFloat(sensitivity);
-                    if (isNaN(imp) || isNaN(sens)) return null;
+                    if (!Number.isFinite(imp) || imp <= 0 || !Number.isFinite(sens)) return null;
 
-                    const vReq = Math.sqrt((Math.pow(10, (115 - sens) / 10) * imp) / 1000);
+                    let splTarget = 115;
+                    if (typeof IEM_Module !== 'undefined' && IEM_Module.getListeningSplTarget) {
+                        try { splTarget = IEM_Module.getListeningSplTarget(); } catch (_) {}
+                    }
+
+                    let vReq;
+                    if (sensUnit === 'V') {
+                        vReq = Math.pow(10, (splTarget - sens) / 20);
+                    } else {
+                        const pReq = Math.pow(10, (splTarget - sens) / 10); // mW, dB/mW
+                        vReq = Math.sqrt((pReq * imp) / 1000);
+                    }
 
                     if (vReq <= 0.45) return { label: '📱 Phone OK', color: 'text-emerald-400' };
-                    if (vReq <= 1.5) return { label: '🔌 Dongle Rec', color: 'text-amber-400' };
+                    if (vReq <= 1.2) return { label: '🔌 Dongle Rec', color: 'text-amber-400' };
                     if (vReq <= 3.5) return { label: '🎧 Portable/DAC Amp', color: 'text-sky-400' };
                     return { label: '🖥️ Desktop Amp Needed', color: 'text-rose-400' };
                 },
@@ -28415,7 +29860,14 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                     cats.forEach(cat => {
                         const scored = priced.map(e => {
                             const res = EG.scoreCategory(cat, e.tags, e.interp, freqs);
-                            const bonus = Math.min(5, (e.price / maxPrice) * 5);
+                            // No price bonus: must stay identical to the worker's
+                            // scoreEndgameCategories (find-worker.js) — at equal
+                            // acoustics the cheapest option should win, not the
+                            // priciest affordable one. The local path previously
+                            // added up to +5 for expensive items, so the same
+                            // query ranked differently depending on whether the
+                            // Worker was available.
+                            const bonus = 0;
                             return { entry: e, composite: res.score + bonus, reason: res.reason, tagMatch: res.tagMatch, curveScore: res.curveScore };
                         }).sort((a, b) => b.composite - a.composite);
                         if (!scored.length) { out[cat.id] = { pool: [] }; return; }
@@ -28672,15 +30124,17 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                         const gameGenreMatch = cached.gameGenreMatch;
                         const tagsHtml = cached.tagsHtml;
 
-                        let driveHtml = '<span class="text-zinc-500 font-bold">⚡ Easy to drive</span>';
-                        if (dbEntry && dbEntry.impedance_ohm && dbEntry.sensitivity_db) {
-                            const imp = parseFloat(dbEntry.impedance_ohm);
-                            const sens = parseFloat(dbEntry.sensitivity_db);
-                            if (imp >= 64 || sens < 98) {
-                                driveHtml = '<span class="text-amber-400 font-bold" title="Higher impedance / lower sensitivity - benefits from an amp">⚡ Amp Req.</span>';
-                            } else {
-                                driveHtml = '<span class="text-emerald-400 font-bold">⚡ Easy to Drive</span>';
-                            }
+                        // Shared driveability scorer (same one the upgrade and
+                        // match cards use) reading the REAL DB fields. The old
+                        // local block read impedance_ohm/sensitivity_db —
+                        // fields that exist in 0/5131 entries — so every card
+                        // rendered "Easy to drive", 300Ω sets included.
+                        const driveStatus = dbEntry ? this.getDriveabilityStatus(dbEntry.impedance, dbEntry.sensitivity) : null;
+                        let driveHtml;
+                        if (driveStatus) {
+                            driveHtml = `<span class="${driveStatus.color} font-bold">⚡ ${driveStatus.label}</span>`;
+                        } else {
+                            driveHtml = '<span class="text-zinc-500 font-bold">⚡ Drive: N/A</span>';
                         }
 
                         const curveIdToLoad = item.id || (dbEntry ? dbEntry.id : finalName);
@@ -28890,11 +30344,18 @@ getDriveabilityStatus: function(impedance, sensitivity) {
 
                     scrollEl.innerHTML = matches.map(item => {
                         const db = this.getDbEntry(item);
-                        const p = db && db.price_usd ? db.price_usd : (item.price_usd || '200+');
+                        // Numeric JS argument only: a '200+' display fallback
+                        // interpolated here was a permanent SyntaxError for
+                        // that row's onclick (and parseFloat('200+') fell
+                        // back to 500 in the savings math). Keep the display
+                        // string separate from the numeric argument.
+                        const rawP = (db && db.price_usd != null) ? db.price_usd : (item.price_usd != null ? item.price_usd : null);
+                        const numP = Number.isFinite(parseFloat(rawP)) ? parseFloat(rawP) : 250;
+                        const dispP = rawP != null ? rawP : '200+';
                         return `
-                            <div data-letter="${alphaKeyOf(item)}" onclick="FindEngine.setGkFlagship('${escJs(item.id)}', '${escJs(item.name)}', ${p})" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800 flex justify-between">
+                            <div data-letter="${alphaKeyOf(item)}" onclick="FindEngine.setGkFlagship('${escJs(item.id)}', '${escJs(item.name)}', ${numP})" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800 flex justify-between">
                                 <span>${esc(item.name)}</span>
-                                <span class="text-amber-400 font-mono ml-2">$${p}</span>
+                                <span class="text-amber-400 font-mono ml-2">$${dispP}</span>
                             </div>
                         `;
                     }).join('');
@@ -28905,6 +30366,7 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                     this.selectedGkFlagshipName = name;
                     this.selectedGkFlagshipPrice = parseFloat(price) || 500;
                     this._gkHasRun = false;
+                    this._renderEpoch = (this._renderEpoch || 0) + 1; // kill pending chunk chains
                     const grid = document.getElementById('find-matches-grid');
                     const emptyState = document.getElementById('find-empty-state');
                     const overlay = document.getElementById('find-scanning-overlay');
@@ -28924,7 +30386,7 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                         slot.innerHTML = `
                             <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                                 <span class="emoji-font vibrant-emoji text-sm flex-shrink-0 leading-none">👑</span>
-                                <span class="text-xs font-black text-[var(--text-main)] truncate">${name} ($${this.selectedGkFlagshipPrice})</span>
+                                <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(name)} ($${this.selectedGkFlagshipPrice})</span>
                             </div>
                             <button type="button" onclick="FindEngine.clearGkFlagship()" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the flagship target">✕</button>
                         `;
@@ -29665,6 +31127,35 @@ applyGenreFilters: function(matches) {
                         const dbEntry = c.db || this.getDbEntry(c.item) || (PEQDB_Module.STATE.dataset ? PEQDB_Module.STATE.dataset.find(d => d.id === c.item.id) : null);
                         curveIdToLoad = dbEntry ? dbEntry.id : c.item.id;
                         candidateName = c.item ? c.item.name : '';
+                    } else if (typeof idx === 'string' && idx.startsWith('eg_')) {
+                        // Endgame cards (value strip 'eg_val' + category
+                        // 'eg_<catId>'): resolve the currently-displayed pool
+                        // entry from the last scan's state. The numeric
+                        // fallback below used to receive these keys and
+                        // silently no-opped ('eg_basshead' - 1 = NaN), leaving
+                        // every Endgame Load button dead.
+                        if (!this._lastEndgame) return;
+                        const st = this.cardState[idx] || { srcIdx: 0, roleIdx: 0 };
+                        srcIdx = st.srcIdx || 0;
+                        const roleOpt = this.cardRoleOptions[st.roleIdx || 0];
+                        role = roleOpt ? roleOpt.role : 'reference';
+
+                        let entry = null;
+                        if (idx === 'eg_val') {
+                            const pool = (this._lastEndgame._value && this._lastEndgame._value.pool) || [];
+                            const vi = (this._endgameState && this._endgameState._value || 0) % (pool.length || 1);
+                            entry = pool[vi];
+                        } else {
+                            const catId = idx.slice(3);
+                            const pool = (this._lastEndgame[catId] && this._lastEndgame[catId].pool) || [];
+                            const ci = (this._endgameState && this._endgameState[catId] || 0) % (pool.length || 1);
+                            entry = pool[ci];
+                        }
+                        if (!entry || !entry.id) return;
+
+                        const dbEntry = this.getDbEntry(entry) || (PEQDB_Module.STATE.dataset ? PEQDB_Module.STATE.dataset.find(d => d.id === entry.id) : null);
+                        curveIdToLoad = dbEntry ? dbEntry.id : entry.id;
+                        candidateName = entry.name || '';
                     } else {
                         const match = this._lastMatches ? this._lastMatches[idx - 1] : null;
                         if (!match) return;
@@ -29772,14 +31263,20 @@ applyGenreFilters: function(matches) {
                     }
 
                     container.innerHTML = matches.map(item => `
-                        <div onclick="FindEngine.setUpgradeBaseIem('${item.id}', '${item.name.replace(/'/g, "\\'")}')" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
-                            ${item.name}
+                        <div onclick="FindEngine.setUpgradeBaseIem('${escJs(item.id)}', '${escJs(item.name)}')" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
+                            ${esc(item.name)}
                         </div>
                     `).join('');
                 },
 
                 setUpgradeBaseIem: function(id, name) {
                     this.selectedUpgradeBaseIemId = id;
+                    // Invalidate the cached base interp — the new base must
+                    // not keep feeding step-card EQ badges scored against the
+                    // previous IEM's curve.
+                    this._upgradeBaseInterp = null;
+                    this._upgradeBaseFreqs = null;
+                    this._renderEpoch = (this._renderEpoch || 0) + 1; // kill pending chunk chains
                     const searchInput = document.getElementById('find-upgrade-search');
                     const searchResults = document.getElementById('find-upgrade-search-results');
                     const baseSlot = document.getElementById('find-upgrade-base-slot');
@@ -29810,6 +31307,9 @@ applyGenreFilters: function(matches) {
                 clearUpgradeBaseIem: function() {
                     this.selectedUpgradeBaseIemId = null;
                     this._upgradeHasRun = false;
+                    this._upgradeBaseInterp = null;
+                    this._upgradeBaseFreqs = null;
+                    this._renderEpoch = (this._renderEpoch || 0) + 1; // kill pending chunk chains
                     const grid = document.getElementById('find-matches-grid');
                     const emptyState = document.getElementById('find-empty-state');
                     const overlay = document.getElementById('find-scanning-overlay');
@@ -29891,8 +31391,13 @@ applyGenreFilters: function(matches) {
                     const candBassBoost = candSubBass - candMidrange;
 
                     if (goal === 'direct') {
+                        // Level-fit the MAE (mirror scoreInterp / find-worker):
+                        // a pure level offset is not a tuning difference. The
+                        // un-aligned loop rejected shape-identical
+                        // level-shifted candidates while the card's tonalMatch
+                        // (which DOES level-fit) called them near-clones.
                         let totalDiff = 0;
-                        for (let i = 0; i < freqs.length; i++) totalDiff += Math.abs(candInterp[i] - baseInterp[i]);
+                        for (let i = 0; i < freqs.length; i++) totalDiff += Math.abs((candInterp[i] + alignOffset) - baseInterp[i]);
                         const mae = totalDiff / freqs.length;
                         const passed = (mae <= 2.8);
                         return { passed, reason: passed ? "High Tonal Match to Base IEM" : "Tuning Deviates From Base" };
@@ -29910,8 +31415,9 @@ applyGenreFilters: function(matches) {
                         const passed = (candTreble >= baseTreble - 1.0) && (candPinna >= candMidrange + 2.5);
                         return { passed, reason: passed ? "Measured Spatial Air & Pinna Balance" : "Narrow High-Frequency Energy" };
                     } else if (goal === 'refine') {
+                        // Same level-fit as 'direct' (see above).
                         let totalDiff = 0;
-                        for (let i = 0; i < freqs.length; i++) totalDiff += Math.abs(candInterp[i] - baseInterp[i]);
+                        for (let i = 0; i < freqs.length; i++) totalDiff += Math.abs((candInterp[i] + alignOffset) - baseInterp[i]);
                         const mae = totalDiff / freqs.length;
                         const passed = (mae <= 2.2);
                         return { passed, reason: passed ? "High Tonal Shape Continuity" : "Tonal Shape Deviates Too Far" };
@@ -30050,6 +31556,11 @@ applyGenreFilters: function(matches) {
                     const c = pool[curIdx];
                     const total = pool.length;
 
+                    // Escape DB-derived strings for attribute interpolation
+                    // (the database is user-replaceable — same contract as
+                    // renderEndgameResults/renderMatches).
+                    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
                     const stepHeaderMap = {
                         1: { title: '🌱 STARTER', emoji: '🌱' },
                         2: { title: '🚀 LEAP', emoji: '🚀' },
@@ -30088,9 +31599,15 @@ applyGenreFilters: function(matches) {
 
                     const dbEntry = c.db || FindEngine.getDbEntry(c.item) || (PEQDB_Module.STATE.dataset ? PEQDB_Module.STATE.dataset.find(d => d.id === c.item.id) : null);
                     const driveability = dbEntry ? FindEngine.getDriveabilityStatus(dbEntry.impedance, dbEntry.sensitivity) : null;
-                    const targetCurve = FindEngine.generateTargetCurve();
-                    const freqs = CurveUtils.generateLogGrid(100);
-                    const targetInterp = CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]);
+                    // Score the EQ badge against the UPGRADE BASE IEM (stored
+                    // by renderUpgradePathway), falling back to the Find target
+                    // only when no upgrade scan is live. The old
+                    // generateTargetCurve() read the Find-tab sliders — an
+                    // unrelated earlier session's tuning produced the badge's
+                    // boost/preamp advice.
+                    const freqs = FindEngine._upgradeBaseFreqs || CurveUtils.generateLogGrid(100);
+                    const targetInterp = FindEngine._upgradeBaseInterp
+                        || CurveUtils.normalizeTo75dB(FindEngine.generateTargetCurve(), 500, 75).map(pt => pt[1]);
                     const candInterp = c.item.interp || (c.item.data ? CurveUtils.cubicSplineInterpolate(CurveUtils.normalizeTo75dB(c.item.data, 500, 75), freqs) : null);
                     const eqFeat = candInterp ? FindEngine.calculateEQFeasibility(candInterp, targetInterp, freqs) : null;
 
@@ -30101,7 +31618,7 @@ applyGenreFilters: function(matches) {
                     const uniqueTags = [...new Set(rawTags || [])].slice(0, 4);
                     const tagsHtml = uniqueTags.map(t => {
                         const emoji = FindEngine.getTagEmoji(t);
-                        return `<span class="find-tag-icon" data-tooltip="${t}">${emoji || '🏷️'}</span>`;
+                        return `<span class="find-tag-icon" data-tooltip="${esc(t)}">${emoji || '🏷️'}</span>`;
                     }).join('');
 
                     const rawFiles = (dbEntry && Array.isArray(dbEntry.files)) ? dbEntry.files : (c.item.files || []);
@@ -30143,18 +31660,18 @@ applyGenreFilters: function(matches) {
                                 </div>
 
                                 <div class="flex items-center gap-2 w-full mt-1">
-                                    <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0" data-id="${curveIdToLoad}" data-name="${name}" onclick="event.stopPropagation();">
+                                    <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0" data-id="${esc(curveIdToLoad)}" data-name="${esc(name)}" onclick="event.stopPropagation();">
                                     <div class="flex-1 overflow-hidden relative flex items-center h-5">
-                                        <span id="marquee-ug-${stepNum}" class="text-xs font-black text-stone-200 inline-block whitespace-nowrap">${name}</span>
+                                        <span id="marquee-ug-${stepNum}" class="text-xs font-black text-stone-200 inline-block whitespace-nowrap">${esc(name)}</span>
                                     </div>
                                 </div>
 
                                 <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
                                     <span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>
                                     ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
-                                    ${driverType ? `<span class="spec-icon-badge" data-tooltip="${driverTooltip}">${driverEmoji}</span>` : ''}
-                                    ${connector ? `<span class="spec-icon-badge" data-tooltip="${connectorTooltip}">${connectorEmoji}</span>` : ''}
-                                    <span class="spec-icon-badge" data-tooltip="${formTooltip}">${formEmoji}</span>
+                                    ${driverType ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
+                                    ${connector ? `<span class="spec-icon-badge" data-tooltip="${esc(connectorTooltip)}">${connectorEmoji}</span>` : ''}
+                                    <span class="spec-icon-badge" data-tooltip="${esc(formTooltip)}">${formEmoji}</span>
                                 </div>
 
                                 <div class="flex items-center gap-2 mt-1 w-full">
@@ -30275,6 +31792,12 @@ applyGenreFilters: function(matches) {
                             const freqs = CurveUtils.generateLogGrid(100);
                             const baseNorm = CurveUtils.normalizeTo75dB(baseItem.data, 500, 75);
                             const baseInterp = CurveUtils.cubicSplineInterpolate(baseNorm, freqs);
+                            // Remember the upgrade base curve so the step
+                            // cards' EQ-feasibility badge is scored against
+                            // THIS base (the user's owned IEM), not the Find
+                            // tab's unrelated tuning sliders.
+                            this._upgradeBaseInterp = baseInterp;
+                            this._upgradeBaseFreqs = freqs;
 
                             const goal = this.selectedUpgradeGoal;
                             const candidateEntries = [];
@@ -30579,10 +32102,18 @@ applyGenreFilters: function(matches) {
                     let observer = null;
                     let chainActive = false;
 
+                    // Render epoch: resetFindResults / selector setters bump
+                    // this._renderEpoch so an in-flight chunk chain (and its
+                    // scroll observer callbacks) abort instead of repopulating
+                    // the "cleared" grid or interleaving old cards into a new
+                    // scan's results.
+                    const renderEpoch = (this._renderEpoch = (this._renderEpoch || 0) + 1);
+                    const isStale = () => this._renderEpoch !== renderEpoch;
+
                     const scheduleChunk = () => {
-                        if (chainActive || !matchesToRender.length) return;
+                        if (chainActive || isStale() || !matchesToRender.length) return;
                         chainActive = true;
-                        setTimeout(() => { chainActive = false; renderChunk(); }, 16);
+                        setTimeout(() => { chainActive = false; if (!isStale()) renderChunk(); }, 16);
                     };
 
                     const refreshMarquee = () => {
@@ -30600,6 +32131,7 @@ applyGenreFilters: function(matches) {
                         sentinel.style.height = '2px';
                         grid.appendChild(sentinel);
                         observer = new IntersectionObserver((entries) => {
+                            if (isStale()) { detachObserver(); return; }
                             if (entries.some(en => en.isIntersecting)) {
                                 renderCap = Math.min(renderCap + SCROLL_WINDOW, matchesToRender.length);
                                 if (cursor < renderCap) scheduleChunk();
@@ -30637,6 +32169,7 @@ applyGenreFilters: function(matches) {
                     };
 
                     const renderChunk = () => {
+                        if (isStale()) return;
                         const end = Math.min(cursor + CHUNK_SIZE, renderCap, matchesToRender.length);
                         const matchesFragment = document.createDocumentFragment();
 
@@ -30738,6 +32271,18 @@ applyGenreFilters: function(matches) {
                         const formEmoji = formFactorEmojiMap[formFactorRaw] || FindEngine.formFactorEmojis['IEM'];
                         const formTooltip = formFactorRaw || 'In-Ear Monitor (IEM)';
 
+                        // Escaped for attribute interpolation: brand/model/
+                        // variant/tags/tooltips come from the user-replaceable
+                        // database (see esc/escJs in app-core-shared.js).
+                        // Declared AFTER every input above exists — placing
+                        // this block earlier read formTooltip before its
+                        // const declaration (TDZ ReferenceError).
+                        const escFinalName = esc(finalName);
+                        const escCurveId = esc(curveIdToLoad);
+                        const escDriverTip = esc(driverTooltip);
+                        const escConnectorTip = esc(connectorTooltip);
+                        const escFormTip = esc(formTooltip);
+
                         if (!this.cardState[idx]) this.cardState[idx] = { srcIdx: 0, roleIdx: 0 };
                         const currentRoleOpt = this.cardRoleOptions[this.cardState[idx].roleIdx || 0];
 
@@ -30794,18 +32339,18 @@ applyGenreFilters: function(matches) {
 
                                     <div class="space-y-1">
                                         <div class="flex items-start gap-2 w-full">
-                                            <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0 mt-0.5" data-id="${curveIdToLoad}" data-name="${finalName}" onclick="event.stopPropagation(); FindEngine.updateFloatingCompareBar();">
+                                            <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0 mt-0.5" data-id="${escCurveId}" data-name="${escFinalName}" onclick="event.stopPropagation(); FindEngine.updateFloatingCompareBar();">
                                             <div class="flex-1 w-full">
-                                                <span class="text-xs font-black text-stone-200 leading-snug line-clamp-2">${finalName}</span>
+                                                <span class="text-xs font-black text-stone-200 leading-snug line-clamp-2">${escFinalName}</span>
                                             </div>
                                         </div>
 
                                         <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
                                             ${price !== null && price !== undefined ? `<span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>` : ''}
                                             ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
-                                            ${driverType ? `<span class="spec-icon-badge" data-tooltip="${driverTooltip}">${driverEmoji}</span>` : ''}
-                                            ${connector ? `<span class="spec-icon-badge" data-tooltip="${connectorTooltip}">${connectorEmoji}</span>` : ''}
-                                            <span class="spec-icon-badge" data-tooltip="${formTooltip}">${formEmoji}</span>
+                                            ${driverType ? `<span class="spec-icon-badge" data-tooltip="${escDriverTip}">${driverEmoji}</span>` : ''}
+                                            ${connector ? `<span class="spec-icon-badge" data-tooltip="${escConnectorTip}">${connectorEmoji}</span>` : ''}
+                                            <span class="spec-icon-badge" data-tooltip="${escFormTip}">${formEmoji}</span>
                                         </div>
 
                                         <div class="h-[42px] w-full rounded-none border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
@@ -30871,6 +32416,10 @@ applyGenreFilters: function(matches) {
 
                 resetFindResults: function() {
                     this._lastMatches = null;
+                    // Invalidate any pending chunked-render chain (see
+                    // renderMatches): a scheduled chunk previously re-appended
+                    // old cards into the cleared grid for up to renderCap items.
+                    this._renderEpoch = (this._renderEpoch || 0) + 1;
                     if (this._findObserver) { this._findObserver.disconnect(); this._findObserver = null; }
                     const grid = document.getElementById('find-matches-grid');
                     if (grid) grid.innerHTML = '';
@@ -31029,8 +32578,8 @@ applyGenreFilters: function(matches) {
                         const isAdded = this.tasteFavorites.some(f => f.id === item.id);
 
                         html += `
-                            <div class="peqdb-row-item flex items-center justify-between p-1.5 cursor-pointer hover:bg-[var(--bg-card)] mb-1 transition-all select-none" onclick="FindEngine.addTasteFavorite('${item.id}')">
-                                <span class="text-xs text-stone-200 font-bold truncate flex-1 pr-2">${item.name}</span>
+                            <div class="peqdb-row-item flex items-center justify-between p-1.5 cursor-pointer hover:bg-[var(--bg-card)] mb-1 transition-all select-none" onclick="FindEngine.addTasteFavorite('${escJs(item.id)}')">
+                                <span class="text-xs text-stone-200 font-bold truncate flex-1 pr-2">${esc(item.name)}</span>
                                 ${isAdded ? '<span class="text-[9px] text-rose-400 font-black flex-shrink-0 ml-1">✓ Added</span>' : '<span class="text-[9px] text-[var(--accent-blue)] font-black flex-shrink-0 ml-1">+ Add</span>'}
                             </div>
                         `;
@@ -31185,9 +32734,9 @@ applyGenreFilters: function(matches) {
                             div.innerHTML = `
                                 <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                                     <span class="emoji-font vibrant-emoji text-lg flex-shrink-0 overflow-visible" style="line-height: 1.25;">❤️</span>
-                                    <span class="text-xs font-black text-[var(--text-main)] truncate">${f.name}</span>
+                                    <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(f.name)}</span>
                                 </div>
-                                <button type="button" onclick="event.stopPropagation(); FindEngine.removeTasteFavorite('${f.id}')" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${f.name.replace(/"/g, '&quot;')}">✕</button>
+                                <button type="button" onclick="event.stopPropagation(); FindEngine.removeTasteFavorite('${escJs(f.id)}')" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${esc(f.name)}">✕</button>
                             `;
                             container.appendChild(div);
                         } else {
@@ -31685,10 +33234,12 @@ const handlers = {
             // pinning large structured-cloned datasets in memory.
             window.addEventListener('pagehide', () => {
                 try {
-                    if (window.FindEngine && FindEngine._findWorker) FindEngine._findWorker.terminate();
-                    if (window.FindEngine && FindEngine.similarityWorker) FindEngine.similarityWorker.terminate();
-                    // Loudness worker blob URL is ~1 KB but its worker holds decoded buffers
-                    if (window.EQ && EQ._loudnessWorkerBlobUrl) { try { URL.revokeObjectURL(EQ._loudnessWorkerBlobUrl); } catch(_){} EQ._loudnessWorkerBlobUrl = null; }
+                    // typeof guards, NOT window.FindEngine: FindEngine is a
+                    // top-level const in the bundle (a lexical binding, never
+                    // a window property), so the old window.FindEngine checks
+                    // were always false and this cleanup never ran.
+                    if (typeof FindEngine !== 'undefined' && FindEngine._findWorker) FindEngine._findWorker.terminate();
+                    if (typeof EQ !== 'undefined' && EQ._loudnessWorkerBlobUrl) { try { URL.revokeObjectURL(EQ._loudnessWorkerBlobUrl); } catch(_){} EQ._loudnessWorkerBlobUrl = null; }
                 } catch (_) {}
             });
         })();

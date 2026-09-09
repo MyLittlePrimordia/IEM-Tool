@@ -35,6 +35,10 @@ EQ_Module.customEffects.neon_stars = function(fctx, dataArray, timeDomain, w, h,
     }
     
     fctx.save();
+    // Same color for all 150 stars every frame — set once, not per star
+    // (fillStyle assignment forces a canvas state update even when identical).
+    fctx.fillStyle = themeAccent;
+    const starScale = 1.0 + treble * 1.2;
     starParticles.forEach(star => {
         // Move stars downwards, accelerated by music's bass intensity
         star.y += star.speed * (1.0 + bassIntensity * 4.0);
@@ -42,11 +46,10 @@ EQ_Module.customEffects.neon_stars = function(fctx, dataArray, timeDomain, w, h,
             star.y = 0;
             star.x = Math.random() * w;
         }
-        
+
         // Draw star glow
-        fctx.fillStyle = themeAccent;
         fctx.beginPath();
-        fctx.arc(star.x, star.y, star.size * (1.0 + treble * 1.2), 0, Math.PI * 2);
+        fctx.arc(star.x, star.y, star.size * starScale, 0, Math.PI * 2);
         fctx.fill();
     });
     fctx.restore();

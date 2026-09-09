@@ -371,9 +371,17 @@
                     try {
                         const saved = localStorage.getItem('find_taste_favorites');
                         if (saved) {
-                            this.tasteFavorites = JSON.parse(saved);
+                            const parsed = JSON.parse(saved);
+                            // Shape validation (same discipline as
+                            // _getSpecSelection): a valid-JSON non-array
+                            // (legacy format, partial write, hand edit) made
+                            // .map/.some throw in taste flows — crash-on-scan
+                            // and crash-on-type until the key was cleared.
+                            this.tasteFavorites = Array.isArray(parsed)
+                                ? parsed.filter(f => f && typeof f === 'object' && f.id)
+                                : [];
                         }
-                    } catch(e) {}
+                    } catch(e) { this.tasteFavorites = []; }
                     this.renderTasteChips();
                 },
 
@@ -641,7 +649,12 @@
                 loadDatabase: async function() {
                     try {
 
-                        if (window.CurveIndexer && Array.isArray(CurveIndexer.catalog) && CurveIndexer.catalog.length > 0) {
+                        // typeof, not window.*: CurveIndexer is a top-level
+                        // const (peqdb-module.js), never assigned to window,
+                        // so the old window.CurveIndexer guard was always
+                        // false and this whole function re-fetched and
+                        // re-parsed the 2.77 MB database a second time.
+                        if (typeof CurveIndexer !== 'undefined' && Array.isArray(CurveIndexer.catalog) && CurveIndexer.catalog.length > 0) {
                             this.iemDatabase = CurveIndexer.catalog;
                         } else if (typeof DecompressionStream !== 'undefined') {
                             // Prefer the 12x-smaller .gz (0.22MB vs 2.64MB) and
@@ -823,7 +836,7 @@
                     const sources = [
                         this.iemDatabase,
                         (window.PEQDB_Module && PEQDB_Module.STATE && PEQDB_Module.STATE.dataset),
-                        (window.CurveIndexer && CurveIndexer.catalog)
+                        (typeof CurveIndexer !== 'undefined' && CurveIndexer.catalog) ? CurveIndexer.catalog : null
                     ];
                     const seen = new Set();
                     const brands = [];
@@ -1635,7 +1648,12 @@
                     const freqs = CurveUtils.generateLogGrid(100);
 
                     dataset.forEach(item => {
-                        if (!item.data) return;
+                        // <2-point "curves" interpolate as flat-75 (perfectly
+                        // neutral) and score as ideal — skip them, mirroring the
+                        // worker's buildCanonicalProfiles guard (find-worker.js)
+                        // so the local fallback path can't rank junk entries at
+                        // the top when the Worker is unavailable.
+                        if (!item.data || item.data.length < 2) return;
 
                         const nameLower = item.name.toLowerCase();
 
@@ -2164,16 +2182,41 @@
                     if (label) label.textContent = this.tuneWithSpecs ? '🔒 FILTER BY SPECS: ON' : '🔒 FILTER BY SPECS: OFF';
                 },
 
-getDriveabilityStatus: function(impedance, sensitivity) {
-                    if (!impedance || !sensitivity) return null;
+                // Unified driveability math. Three systems previously
+                // disagreed (this badge, getDriveability's imp/sens cutoffs,
+                // and the Power tab's dacLimits ratios): the same IEM could
+                // show "Phone OK" in one card and "Desktop Amp Needed" in
+                // another. This one now (a) reads the SAME SPL target the
+                // Power tab uses (IEM_Module.getListeningSplTarget), and
+                // (b) honors dB/V vs dB/mW — they differ by 10*log10(1000/Z),
+                // ~15 dB at 32Ω, which previously flipped the verdict.
+                // Thresholds mirror the Power tab's dacLimits voltages
+                // (Phone 0.4V, Laptop 1.0V, Dongle 2.0V, Desktop 4.0V) with a
+                // little headroom margin.
+                getDriveabilityStatus: function(impedance, sensitivity, sensUnit) {
+                    // 0/empty sensitivity means "no data" in hand-maintained DB
+                    // entries — treat as unknown rather than computing an
+                    // absurd requirement from 0 dB/mW.
+                    if (impedance == null || sensitivity == null || !sensitivity) return null;
                     const imp = parseFloat(impedance);
                     const sens = parseFloat(sensitivity);
-                    if (isNaN(imp) || isNaN(sens)) return null;
+                    if (!Number.isFinite(imp) || imp <= 0 || !Number.isFinite(sens)) return null;
 
-                    const vReq = Math.sqrt((Math.pow(10, (115 - sens) / 10) * imp) / 1000);
+                    let splTarget = 115;
+                    if (typeof IEM_Module !== 'undefined' && IEM_Module.getListeningSplTarget) {
+                        try { splTarget = IEM_Module.getListeningSplTarget(); } catch (_) {}
+                    }
+
+                    let vReq;
+                    if (sensUnit === 'V') {
+                        vReq = Math.pow(10, (splTarget - sens) / 20);
+                    } else {
+                        const pReq = Math.pow(10, (splTarget - sens) / 10); // mW, dB/mW
+                        vReq = Math.sqrt((pReq * imp) / 1000);
+                    }
 
                     if (vReq <= 0.45) return { label: '📱 Phone OK', color: 'text-emerald-400' };
-                    if (vReq <= 1.5) return { label: '🔌 Dongle Rec', color: 'text-amber-400' };
+                    if (vReq <= 1.2) return { label: '🔌 Dongle Rec', color: 'text-amber-400' };
                     if (vReq <= 3.5) return { label: '🎧 Portable/DAC Amp', color: 'text-sky-400' };
                     return { label: '🖥️ Desktop Amp Needed', color: 'text-rose-400' };
                 },
@@ -2273,7 +2316,14 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                     cats.forEach(cat => {
                         const scored = priced.map(e => {
                             const res = EG.scoreCategory(cat, e.tags, e.interp, freqs);
-                            const bonus = Math.min(5, (e.price / maxPrice) * 5);
+                            // No price bonus: must stay identical to the worker's
+                            // scoreEndgameCategories (find-worker.js) — at equal
+                            // acoustics the cheapest option should win, not the
+                            // priciest affordable one. The local path previously
+                            // added up to +5 for expensive items, so the same
+                            // query ranked differently depending on whether the
+                            // Worker was available.
+                            const bonus = 0;
                             return { entry: e, composite: res.score + bonus, reason: res.reason, tagMatch: res.tagMatch, curveScore: res.curveScore };
                         }).sort((a, b) => b.composite - a.composite);
                         if (!scored.length) { out[cat.id] = { pool: [] }; return; }
@@ -2530,15 +2580,17 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                         const gameGenreMatch = cached.gameGenreMatch;
                         const tagsHtml = cached.tagsHtml;
 
-                        let driveHtml = '<span class="text-zinc-500 font-bold">⚡ Easy to drive</span>';
-                        if (dbEntry && dbEntry.impedance_ohm && dbEntry.sensitivity_db) {
-                            const imp = parseFloat(dbEntry.impedance_ohm);
-                            const sens = parseFloat(dbEntry.sensitivity_db);
-                            if (imp >= 64 || sens < 98) {
-                                driveHtml = '<span class="text-amber-400 font-bold" title="Higher impedance / lower sensitivity - benefits from an amp">⚡ Amp Req.</span>';
-                            } else {
-                                driveHtml = '<span class="text-emerald-400 font-bold">⚡ Easy to Drive</span>';
-                            }
+                        // Shared driveability scorer (same one the upgrade and
+                        // match cards use) reading the REAL DB fields. The old
+                        // local block read impedance_ohm/sensitivity_db —
+                        // fields that exist in 0/5131 entries — so every card
+                        // rendered "Easy to drive", 300Ω sets included.
+                        const driveStatus = dbEntry ? this.getDriveabilityStatus(dbEntry.impedance, dbEntry.sensitivity) : null;
+                        let driveHtml;
+                        if (driveStatus) {
+                            driveHtml = `<span class="${driveStatus.color} font-bold">⚡ ${driveStatus.label}</span>`;
+                        } else {
+                            driveHtml = '<span class="text-zinc-500 font-bold">⚡ Drive: N/A</span>';
                         }
 
                         const curveIdToLoad = item.id || (dbEntry ? dbEntry.id : finalName);
@@ -2748,11 +2800,18 @@ getDriveabilityStatus: function(impedance, sensitivity) {
 
                     scrollEl.innerHTML = matches.map(item => {
                         const db = this.getDbEntry(item);
-                        const p = db && db.price_usd ? db.price_usd : (item.price_usd || '200+');
+                        // Numeric JS argument only: a '200+' display fallback
+                        // interpolated here was a permanent SyntaxError for
+                        // that row's onclick (and parseFloat('200+') fell
+                        // back to 500 in the savings math). Keep the display
+                        // string separate from the numeric argument.
+                        const rawP = (db && db.price_usd != null) ? db.price_usd : (item.price_usd != null ? item.price_usd : null);
+                        const numP = Number.isFinite(parseFloat(rawP)) ? parseFloat(rawP) : 250;
+                        const dispP = rawP != null ? rawP : '200+';
                         return `
-                            <div data-letter="${alphaKeyOf(item)}" onclick="FindEngine.setGkFlagship('${escJs(item.id)}', '${escJs(item.name)}', ${p})" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800 flex justify-between">
+                            <div data-letter="${alphaKeyOf(item)}" onclick="FindEngine.setGkFlagship('${escJs(item.id)}', '${escJs(item.name)}', ${numP})" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800 flex justify-between">
                                 <span>${esc(item.name)}</span>
-                                <span class="text-amber-400 font-mono ml-2">$${p}</span>
+                                <span class="text-amber-400 font-mono ml-2">$${dispP}</span>
                             </div>
                         `;
                     }).join('');
@@ -2763,6 +2822,7 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                     this.selectedGkFlagshipName = name;
                     this.selectedGkFlagshipPrice = parseFloat(price) || 500;
                     this._gkHasRun = false;
+                    this._renderEpoch = (this._renderEpoch || 0) + 1; // kill pending chunk chains
                     const grid = document.getElementById('find-matches-grid');
                     const emptyState = document.getElementById('find-empty-state');
                     const overlay = document.getElementById('find-scanning-overlay');
@@ -2782,7 +2842,7 @@ getDriveabilityStatus: function(impedance, sensitivity) {
                         slot.innerHTML = `
                             <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                                 <span class="emoji-font vibrant-emoji text-sm flex-shrink-0 leading-none">👑</span>
-                                <span class="text-xs font-black text-[var(--text-main)] truncate">${name} ($${this.selectedGkFlagshipPrice})</span>
+                                <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(name)} ($${this.selectedGkFlagshipPrice})</span>
                             </div>
                             <button type="button" onclick="FindEngine.clearGkFlagship()" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the flagship target">✕</button>
                         `;
@@ -3523,6 +3583,35 @@ applyGenreFilters: function(matches) {
                         const dbEntry = c.db || this.getDbEntry(c.item) || (PEQDB_Module.STATE.dataset ? PEQDB_Module.STATE.dataset.find(d => d.id === c.item.id) : null);
                         curveIdToLoad = dbEntry ? dbEntry.id : c.item.id;
                         candidateName = c.item ? c.item.name : '';
+                    } else if (typeof idx === 'string' && idx.startsWith('eg_')) {
+                        // Endgame cards (value strip 'eg_val' + category
+                        // 'eg_<catId>'): resolve the currently-displayed pool
+                        // entry from the last scan's state. The numeric
+                        // fallback below used to receive these keys and
+                        // silently no-opped ('eg_basshead' - 1 = NaN), leaving
+                        // every Endgame Load button dead.
+                        if (!this._lastEndgame) return;
+                        const st = this.cardState[idx] || { srcIdx: 0, roleIdx: 0 };
+                        srcIdx = st.srcIdx || 0;
+                        const roleOpt = this.cardRoleOptions[st.roleIdx || 0];
+                        role = roleOpt ? roleOpt.role : 'reference';
+
+                        let entry = null;
+                        if (idx === 'eg_val') {
+                            const pool = (this._lastEndgame._value && this._lastEndgame._value.pool) || [];
+                            const vi = (this._endgameState && this._endgameState._value || 0) % (pool.length || 1);
+                            entry = pool[vi];
+                        } else {
+                            const catId = idx.slice(3);
+                            const pool = (this._lastEndgame[catId] && this._lastEndgame[catId].pool) || [];
+                            const ci = (this._endgameState && this._endgameState[catId] || 0) % (pool.length || 1);
+                            entry = pool[ci];
+                        }
+                        if (!entry || !entry.id) return;
+
+                        const dbEntry = this.getDbEntry(entry) || (PEQDB_Module.STATE.dataset ? PEQDB_Module.STATE.dataset.find(d => d.id === entry.id) : null);
+                        curveIdToLoad = dbEntry ? dbEntry.id : entry.id;
+                        candidateName = entry.name || '';
                     } else {
                         const match = this._lastMatches ? this._lastMatches[idx - 1] : null;
                         if (!match) return;
@@ -3630,14 +3719,20 @@ applyGenreFilters: function(matches) {
                     }
 
                     container.innerHTML = matches.map(item => `
-                        <div onclick="FindEngine.setUpgradeBaseIem('${item.id}', '${item.name.replace(/'/g, "\\'")}')" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
-                            ${item.name}
+                        <div onclick="FindEngine.setUpgradeBaseIem('${escJs(item.id)}', '${escJs(item.name)}')" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
+                            ${esc(item.name)}
                         </div>
                     `).join('');
                 },
 
                 setUpgradeBaseIem: function(id, name) {
                     this.selectedUpgradeBaseIemId = id;
+                    // Invalidate the cached base interp — the new base must
+                    // not keep feeding step-card EQ badges scored against the
+                    // previous IEM's curve.
+                    this._upgradeBaseInterp = null;
+                    this._upgradeBaseFreqs = null;
+                    this._renderEpoch = (this._renderEpoch || 0) + 1; // kill pending chunk chains
                     const searchInput = document.getElementById('find-upgrade-search');
                     const searchResults = document.getElementById('find-upgrade-search-results');
                     const baseSlot = document.getElementById('find-upgrade-base-slot');
@@ -3668,6 +3763,9 @@ applyGenreFilters: function(matches) {
                 clearUpgradeBaseIem: function() {
                     this.selectedUpgradeBaseIemId = null;
                     this._upgradeHasRun = false;
+                    this._upgradeBaseInterp = null;
+                    this._upgradeBaseFreqs = null;
+                    this._renderEpoch = (this._renderEpoch || 0) + 1; // kill pending chunk chains
                     const grid = document.getElementById('find-matches-grid');
                     const emptyState = document.getElementById('find-empty-state');
                     const overlay = document.getElementById('find-scanning-overlay');
@@ -3749,8 +3847,13 @@ applyGenreFilters: function(matches) {
                     const candBassBoost = candSubBass - candMidrange;
 
                     if (goal === 'direct') {
+                        // Level-fit the MAE (mirror scoreInterp / find-worker):
+                        // a pure level offset is not a tuning difference. The
+                        // un-aligned loop rejected shape-identical
+                        // level-shifted candidates while the card's tonalMatch
+                        // (which DOES level-fit) called them near-clones.
                         let totalDiff = 0;
-                        for (let i = 0; i < freqs.length; i++) totalDiff += Math.abs(candInterp[i] - baseInterp[i]);
+                        for (let i = 0; i < freqs.length; i++) totalDiff += Math.abs((candInterp[i] + alignOffset) - baseInterp[i]);
                         const mae = totalDiff / freqs.length;
                         const passed = (mae <= 2.8);
                         return { passed, reason: passed ? "High Tonal Match to Base IEM" : "Tuning Deviates From Base" };
@@ -3768,8 +3871,9 @@ applyGenreFilters: function(matches) {
                         const passed = (candTreble >= baseTreble - 1.0) && (candPinna >= candMidrange + 2.5);
                         return { passed, reason: passed ? "Measured Spatial Air & Pinna Balance" : "Narrow High-Frequency Energy" };
                     } else if (goal === 'refine') {
+                        // Same level-fit as 'direct' (see above).
                         let totalDiff = 0;
-                        for (let i = 0; i < freqs.length; i++) totalDiff += Math.abs(candInterp[i] - baseInterp[i]);
+                        for (let i = 0; i < freqs.length; i++) totalDiff += Math.abs((candInterp[i] + alignOffset) - baseInterp[i]);
                         const mae = totalDiff / freqs.length;
                         const passed = (mae <= 2.2);
                         return { passed, reason: passed ? "High Tonal Shape Continuity" : "Tonal Shape Deviates Too Far" };
@@ -3908,6 +4012,11 @@ applyGenreFilters: function(matches) {
                     const c = pool[curIdx];
                     const total = pool.length;
 
+                    // Escape DB-derived strings for attribute interpolation
+                    // (the database is user-replaceable — same contract as
+                    // renderEndgameResults/renderMatches).
+                    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
                     const stepHeaderMap = {
                         1: { title: '🌱 STARTER', emoji: '🌱' },
                         2: { title: '🚀 LEAP', emoji: '🚀' },
@@ -3946,9 +4055,15 @@ applyGenreFilters: function(matches) {
 
                     const dbEntry = c.db || FindEngine.getDbEntry(c.item) || (PEQDB_Module.STATE.dataset ? PEQDB_Module.STATE.dataset.find(d => d.id === c.item.id) : null);
                     const driveability = dbEntry ? FindEngine.getDriveabilityStatus(dbEntry.impedance, dbEntry.sensitivity) : null;
-                    const targetCurve = FindEngine.generateTargetCurve();
-                    const freqs = CurveUtils.generateLogGrid(100);
-                    const targetInterp = CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]);
+                    // Score the EQ badge against the UPGRADE BASE IEM (stored
+                    // by renderUpgradePathway), falling back to the Find target
+                    // only when no upgrade scan is live. The old
+                    // generateTargetCurve() read the Find-tab sliders — an
+                    // unrelated earlier session's tuning produced the badge's
+                    // boost/preamp advice.
+                    const freqs = FindEngine._upgradeBaseFreqs || CurveUtils.generateLogGrid(100);
+                    const targetInterp = FindEngine._upgradeBaseInterp
+                        || CurveUtils.normalizeTo75dB(FindEngine.generateTargetCurve(), 500, 75).map(pt => pt[1]);
                     const candInterp = c.item.interp || (c.item.data ? CurveUtils.cubicSplineInterpolate(CurveUtils.normalizeTo75dB(c.item.data, 500, 75), freqs) : null);
                     const eqFeat = candInterp ? FindEngine.calculateEQFeasibility(candInterp, targetInterp, freqs) : null;
 
@@ -3959,7 +4074,7 @@ applyGenreFilters: function(matches) {
                     const uniqueTags = [...new Set(rawTags || [])].slice(0, 4);
                     const tagsHtml = uniqueTags.map(t => {
                         const emoji = FindEngine.getTagEmoji(t);
-                        return `<span class="find-tag-icon" data-tooltip="${t}">${emoji || '🏷️'}</span>`;
+                        return `<span class="find-tag-icon" data-tooltip="${esc(t)}">${emoji || '🏷️'}</span>`;
                     }).join('');
 
                     const rawFiles = (dbEntry && Array.isArray(dbEntry.files)) ? dbEntry.files : (c.item.files || []);
@@ -4001,18 +4116,18 @@ applyGenreFilters: function(matches) {
                                 </div>
 
                                 <div class="flex items-center gap-2 w-full mt-1">
-                                    <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0" data-id="${curveIdToLoad}" data-name="${name}" onclick="event.stopPropagation();">
+                                    <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0" data-id="${esc(curveIdToLoad)}" data-name="${esc(name)}" onclick="event.stopPropagation();">
                                     <div class="flex-1 overflow-hidden relative flex items-center h-5">
-                                        <span id="marquee-ug-${stepNum}" class="text-xs font-black text-stone-200 inline-block whitespace-nowrap">${name}</span>
+                                        <span id="marquee-ug-${stepNum}" class="text-xs font-black text-stone-200 inline-block whitespace-nowrap">${esc(name)}</span>
                                     </div>
                                 </div>
 
                                 <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
                                     <span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>
                                     ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
-                                    ${driverType ? `<span class="spec-icon-badge" data-tooltip="${driverTooltip}">${driverEmoji}</span>` : ''}
-                                    ${connector ? `<span class="spec-icon-badge" data-tooltip="${connectorTooltip}">${connectorEmoji}</span>` : ''}
-                                    <span class="spec-icon-badge" data-tooltip="${formTooltip}">${formEmoji}</span>
+                                    ${driverType ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
+                                    ${connector ? `<span class="spec-icon-badge" data-tooltip="${esc(connectorTooltip)}">${connectorEmoji}</span>` : ''}
+                                    <span class="spec-icon-badge" data-tooltip="${esc(formTooltip)}">${formEmoji}</span>
                                 </div>
 
                                 <div class="flex items-center gap-2 mt-1 w-full">
@@ -4133,6 +4248,12 @@ applyGenreFilters: function(matches) {
                             const freqs = CurveUtils.generateLogGrid(100);
                             const baseNorm = CurveUtils.normalizeTo75dB(baseItem.data, 500, 75);
                             const baseInterp = CurveUtils.cubicSplineInterpolate(baseNorm, freqs);
+                            // Remember the upgrade base curve so the step
+                            // cards' EQ-feasibility badge is scored against
+                            // THIS base (the user's owned IEM), not the Find
+                            // tab's unrelated tuning sliders.
+                            this._upgradeBaseInterp = baseInterp;
+                            this._upgradeBaseFreqs = freqs;
 
                             const goal = this.selectedUpgradeGoal;
                             const candidateEntries = [];
@@ -4437,10 +4558,18 @@ applyGenreFilters: function(matches) {
                     let observer = null;
                     let chainActive = false;
 
+                    // Render epoch: resetFindResults / selector setters bump
+                    // this._renderEpoch so an in-flight chunk chain (and its
+                    // scroll observer callbacks) abort instead of repopulating
+                    // the "cleared" grid or interleaving old cards into a new
+                    // scan's results.
+                    const renderEpoch = (this._renderEpoch = (this._renderEpoch || 0) + 1);
+                    const isStale = () => this._renderEpoch !== renderEpoch;
+
                     const scheduleChunk = () => {
-                        if (chainActive || !matchesToRender.length) return;
+                        if (chainActive || isStale() || !matchesToRender.length) return;
                         chainActive = true;
-                        setTimeout(() => { chainActive = false; renderChunk(); }, 16);
+                        setTimeout(() => { chainActive = false; if (!isStale()) renderChunk(); }, 16);
                     };
 
                     const refreshMarquee = () => {
@@ -4458,6 +4587,7 @@ applyGenreFilters: function(matches) {
                         sentinel.style.height = '2px';
                         grid.appendChild(sentinel);
                         observer = new IntersectionObserver((entries) => {
+                            if (isStale()) { detachObserver(); return; }
                             if (entries.some(en => en.isIntersecting)) {
                                 renderCap = Math.min(renderCap + SCROLL_WINDOW, matchesToRender.length);
                                 if (cursor < renderCap) scheduleChunk();
@@ -4495,6 +4625,7 @@ applyGenreFilters: function(matches) {
                     };
 
                     const renderChunk = () => {
+                        if (isStale()) return;
                         const end = Math.min(cursor + CHUNK_SIZE, renderCap, matchesToRender.length);
                         const matchesFragment = document.createDocumentFragment();
 
@@ -4596,6 +4727,18 @@ applyGenreFilters: function(matches) {
                         const formEmoji = formFactorEmojiMap[formFactorRaw] || FindEngine.formFactorEmojis['IEM'];
                         const formTooltip = formFactorRaw || 'In-Ear Monitor (IEM)';
 
+                        // Escaped for attribute interpolation: brand/model/
+                        // variant/tags/tooltips come from the user-replaceable
+                        // database (see esc/escJs in app-core-shared.js).
+                        // Declared AFTER every input above exists — placing
+                        // this block earlier read formTooltip before its
+                        // const declaration (TDZ ReferenceError).
+                        const escFinalName = esc(finalName);
+                        const escCurveId = esc(curveIdToLoad);
+                        const escDriverTip = esc(driverTooltip);
+                        const escConnectorTip = esc(connectorTooltip);
+                        const escFormTip = esc(formTooltip);
+
                         if (!this.cardState[idx]) this.cardState[idx] = { srcIdx: 0, roleIdx: 0 };
                         const currentRoleOpt = this.cardRoleOptions[this.cardState[idx].roleIdx || 0];
 
@@ -4652,18 +4795,18 @@ applyGenreFilters: function(matches) {
 
                                     <div class="space-y-1">
                                         <div class="flex items-start gap-2 w-full">
-                                            <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0 mt-0.5" data-id="${curveIdToLoad}" data-name="${finalName}" onclick="event.stopPropagation(); FindEngine.updateFloatingCompareBar();">
+                                            <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0 mt-0.5" data-id="${escCurveId}" data-name="${escFinalName}" onclick="event.stopPropagation(); FindEngine.updateFloatingCompareBar();">
                                             <div class="flex-1 w-full">
-                                                <span class="text-xs font-black text-stone-200 leading-snug line-clamp-2">${finalName}</span>
+                                                <span class="text-xs font-black text-stone-200 leading-snug line-clamp-2">${escFinalName}</span>
                                             </div>
                                         </div>
 
                                         <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
                                             ${price !== null && price !== undefined ? `<span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>` : ''}
                                             ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
-                                            ${driverType ? `<span class="spec-icon-badge" data-tooltip="${driverTooltip}">${driverEmoji}</span>` : ''}
-                                            ${connector ? `<span class="spec-icon-badge" data-tooltip="${connectorTooltip}">${connectorEmoji}</span>` : ''}
-                                            <span class="spec-icon-badge" data-tooltip="${formTooltip}">${formEmoji}</span>
+                                            ${driverType ? `<span class="spec-icon-badge" data-tooltip="${escDriverTip}">${driverEmoji}</span>` : ''}
+                                            ${connector ? `<span class="spec-icon-badge" data-tooltip="${escConnectorTip}">${connectorEmoji}</span>` : ''}
+                                            <span class="spec-icon-badge" data-tooltip="${escFormTip}">${formEmoji}</span>
                                         </div>
 
                                         <div class="h-[42px] w-full rounded-none border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
@@ -4729,6 +4872,10 @@ applyGenreFilters: function(matches) {
 
                 resetFindResults: function() {
                     this._lastMatches = null;
+                    // Invalidate any pending chunked-render chain (see
+                    // renderMatches): a scheduled chunk previously re-appended
+                    // old cards into the cleared grid for up to renderCap items.
+                    this._renderEpoch = (this._renderEpoch || 0) + 1;
                     if (this._findObserver) { this._findObserver.disconnect(); this._findObserver = null; }
                     const grid = document.getElementById('find-matches-grid');
                     if (grid) grid.innerHTML = '';
@@ -4887,8 +5034,8 @@ applyGenreFilters: function(matches) {
                         const isAdded = this.tasteFavorites.some(f => f.id === item.id);
 
                         html += `
-                            <div class="peqdb-row-item flex items-center justify-between p-1.5 cursor-pointer hover:bg-[var(--bg-card)] mb-1 transition-all select-none" onclick="FindEngine.addTasteFavorite('${item.id}')">
-                                <span class="text-xs text-stone-200 font-bold truncate flex-1 pr-2">${item.name}</span>
+                            <div class="peqdb-row-item flex items-center justify-between p-1.5 cursor-pointer hover:bg-[var(--bg-card)] mb-1 transition-all select-none" onclick="FindEngine.addTasteFavorite('${escJs(item.id)}')">
+                                <span class="text-xs text-stone-200 font-bold truncate flex-1 pr-2">${esc(item.name)}</span>
                                 ${isAdded ? '<span class="text-[9px] text-rose-400 font-black flex-shrink-0 ml-1">✓ Added</span>' : '<span class="text-[9px] text-[var(--accent-blue)] font-black flex-shrink-0 ml-1">+ Add</span>'}
                             </div>
                         `;
@@ -5043,9 +5190,9 @@ applyGenreFilters: function(matches) {
                             div.innerHTML = `
                                 <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                                     <span class="emoji-font vibrant-emoji text-lg flex-shrink-0 overflow-visible" style="line-height: 1.25;">❤️</span>
-                                    <span class="text-xs font-black text-[var(--text-main)] truncate">${f.name}</span>
+                                    <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(f.name)}</span>
                                 </div>
-                                <button type="button" onclick="event.stopPropagation(); FindEngine.removeTasteFavorite('${f.id}')" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${f.name.replace(/"/g, '&quot;')}">✕</button>
+                                <button type="button" onclick="event.stopPropagation(); FindEngine.removeTasteFavorite('${escJs(f.id)}')" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${esc(f.name)}">✕</button>
                             `;
                             container.appendChild(div);
                         } else {

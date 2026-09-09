@@ -19,6 +19,16 @@ EQ_Module.customEffects.eq_grid = function(fctx, dataArray, timeDomain, w, h, th
 
     const usableBins = Math.floor(dataArray.length * 0.7);
 
+    // Per-frame color table: the three heat tiers + the unlit cell color are
+    // the ONLY colors this effect ever draws (their variables — treble,
+    // midrange, bassIntensity, rgb — are constant within a frame). Building
+    // them once instead of per-cell removes ~570 string allocations +
+    // fillStyle churn per frame (~34k/sec at 60fps).
+    const colorHot = `rgba(255, 70, 70, ${(0.85 + treble * 0.15).toFixed(3)})`;
+    const colorMid = `rgba(255, 210, 60, ${(0.8 + midrange * 0.2).toFixed(3)})`;
+    const colorLow = `rgba(${rgb}, ${(0.75 + bassIntensity * 0.25).toFixed(3)})`;
+    const colorOff = `rgba(${rgb}, 0.06)`;
+
     fctx.save();
     for (let c = 0; c < colCount; c++) {
         const startBin = Math.floor(Math.pow(c / colCount, 1.4) * usableBins);
@@ -38,17 +48,11 @@ EQ_Module.customEffects.eq_grid = function(fctx, dataArray, timeDomain, w, h, th
 
             if (fromBottom < litRows) {
                 const heat = fromBottom / rowCount; // near 0 at bottom, near 1 at top
-                let cellColor;
-                if (heat > 0.75) {
-                    cellColor = `rgba(255, 70, 70, ${0.85 + treble * 0.15})`;
-                } else if (heat > 0.45) {
-                    cellColor = `rgba(255, 210, 60, ${0.8 + midrange * 0.2})`;
-                } else {
-                    cellColor = `rgba(${rgb}, ${0.75 + bassIntensity * 0.25})`;
-                }
-                fctx.fillStyle = cellColor;
+                if (heat > 0.75) fctx.fillStyle = colorHot;
+                else if (heat > 0.45) fctx.fillStyle = colorMid;
+                else fctx.fillStyle = colorLow;
             } else {
-                fctx.fillStyle = `rgba(${rgb}, 0.06)`;
+                fctx.fillStyle = colorOff;
             }
             fctx.fillRect(x + gap / 2, y + gap / 2, colWidth - gap, rowHeight - gap);
         }

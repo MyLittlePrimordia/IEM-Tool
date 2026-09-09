@@ -62,15 +62,27 @@ const EQ_GraphInputMethods = {
                     ? this.computeEffectivePreamp()
                     : (parseFloat(document.getElementById("eq-preampSlider")?.value) || 0);
                 bandEls();
+                // NEAREST-match hit testing: overlapping band dots (common
+                // after AutoEQ lands adjacent bands near each other) previously
+                // grabbed the FIRST band inside 18px even when another was
+                // closer — clicking the visually-top dot could grab the band
+                // underneath it.
+                let bestDist = Infinity;
+                let bestIdx = -1;
                 for (let i = 0; i < EQ_Module.bands.length; i++) {
                     const hz = parseFloat(eqFEls[i]?.value || EQ_Module.bands[i].hz);
                     const g = parseFloat(eqSEls[i]?.value || 0);
                     const nodeX = w * (Math.log10(hz / minF) / Math.log10(maxF / minF));
 
                     const nodeY = h - (((alignDb + g + preVal) - min) / (max - min)) * h;
-                    if (Math.hypot(nodeX - clickX, nodeY - clickY) < 18) {
-                        return { type: 'main', i };
+                    const dist = Math.hypot(nodeX - clickX, nodeY - clickY);
+                    if (dist < 18 && dist < bestDist) {
+                        bestDist = dist;
+                        bestIdx = i;
                     }
+                }
+                if (bestIdx >= 0) {
+                    return { type: 'main', i: bestIdx };
                 }
                 return null;
             };
@@ -187,16 +199,26 @@ const EQ_GraphInputMethods = {
                 });
 
                 let dragFrameId = null;
+                // TRUE rAF coalescing: store the LATEST pointer coords and
+                // read them inside the frame callback. The old closure captured
+                // the event that SCHEDULED the frame and discarded every
+                // intermediate move — during fast drags the node trailed the
+                // pointer by up to a frame plus all intermediate motion, and
+                // the final pre-mouseup move could be dropped entirely.
+                let lastMoveX = null;
+                let lastMoveY = null;
                 window.addEventListener('mousemove', e => {
-
+                    lastMoveX = e.clientX;
+                    lastMoveY = e.clientY;
                     if (dragFrameId) return;
-
                     dragFrameId = requestAnimationFrame(() => {
                         dragFrameId = null;
+                        if (lastMoveX === null || lastMoveY === null) return;
+                        const eX = lastMoveX, eY = lastMoveY;
 
                         const rect = squigCanvas.getBoundingClientRect();
-                        const clientX = e.clientX - rect.left;
-                        const clientY = e.clientY - rect.top;
+                        const clientX = eX - rect.left;
+                        const clientY = eY - rect.top;
                         const w = rect.width;
                         const h = rect.height;
 
@@ -313,6 +335,21 @@ const EQ_GraphInputMethods = {
                         }
 
                         if (!isPanning && !isDraggingEQNode && !isDraggingSculptNode) {
+                            // Skip the hover work entirely when the pointer is
+                            // outside the canvas (the window-level handler
+                            // fires for every pixel of slider drags, list
+                            // scrolls, etc.): getBoundingClientRect + the
+                            // band hit-test loop ran on all of those moves.
+                            if (clientX < 0 || clientY < 0 || clientX > w || clientY > h) {
+                                if (EQ_Module.hoverEQNode) {
+                                    EQ_Module.hoverEQNode = null;
+                                    EQ_Module.drawCurve();
+                                }
+                                if (PEQDB_Module.hoverSculptIndex !== -1) {
+                                    PEQDB_Module.hoverSculptIndex = -1;
+                                    EQ_Module.drawCurve();
+                                }
+                            } else {
                             let eqHoverNode = null;
                             if (EQ_Module.graphFocus === 'eq') {
                                 eqHoverNode = getEQNodeAtCoords(clientX, clientY, w, h, minF, maxF, min, max);
@@ -349,6 +386,7 @@ const EQ_GraphInputMethods = {
                             } else {
                                 squigCanvas.style.cursor = 'default';
                             }
+                            } // end in-canvas hover block
                         }
 
                         if (!isPanning) return;
@@ -463,6 +501,49 @@ const EQ_GraphInputMethods = {
                         isPanning = false;
                         EQ_Module.isDragging = false;
                         squigCanvas.style.cursor = 'default';
+                    }
+                });
+
+                // Capture-loss safety net: mouseup is never delivered when the
+                // OS steals the pointer mid-drag (alt-tab, right-click context
+                // menu, devtools focus). The drag flags then stayed true and
+                // the NEXT plain mousemove teleported a band node / panned the
+                // view. Treat capture loss exactly like mouseup ( WITHOUT the
+                // mouseup path's commit logic — the drag position is unknown).
+                const cancelDragState = () => {
+                    if (isDraggingEQNode) {
+                        isDraggingEQNode = false;
+                        EQ_Module.isDragging = false;
+                        EQ_Module.activeEQNode = null;
+                        squigCanvas.style.cursor = 'default';
+                    }
+                    if (isDraggingSculptNode) {
+                        isDraggingSculptNode = false;
+                        PEQDB_Module.isDragging = false;
+                        EQ_Module.isDragging = false;
+                        squigCanvas.style.cursor = 'default';
+                    }
+                    if (isPanning) {
+                        isPanning = false;
+                        EQ_Module.isDragging = false;
+                        squigCanvas.style.cursor = 'default';
+                    }
+                    if (PEQDB_Module.isDrawingModeActive && PEQDB_Module.isUserDrawing) {
+                        // Convert to the mouseup commit path so the stroke is
+                        // not lost: synthesize a mouseup at the last known point.
+                        try { squigCanvas.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })); } catch (_) {}
+                    }
+                    if (dragFrameId) {
+                        cancelAnimationFrame(dragFrameId);
+                        dragFrameId = null;
+                    }
+                };
+                squigCanvas.addEventListener('pointercancel', cancelDragState);
+                window.addEventListener('blur', cancelDragState);
+                document.addEventListener('mouseleave', (e) => {
+                    // Pointer left the window entirely while a drag was live.
+                    if (e.relatedTarget === null && (isDraggingEQNode || isDraggingSculptNode || isPanning)) {
+                        cancelDragState();
                     }
                 });
 

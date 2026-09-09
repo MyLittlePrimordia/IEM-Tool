@@ -84,8 +84,11 @@ function logCrash(err) {
         fs.renameSync(logPath, logPath + '.old');
       }
     } catch (_) {}
-    // Async append: a crash while logging must not block the process.
-    fs.appendFile(logPath, line, () => {});
+    // Synchronous append: the uncaughtException handler below calls
+    // app.exit(1) immediately after, so an async append raced the exit and
+    // the crash line was lost. fs.appendFileSync guarantees the write lands
+    // before the process goes down.
+    fs.appendFileSync(logPath, line);
   } catch (_) {}
 }
 
@@ -162,7 +165,10 @@ function serveFile(filePath, stats, req, res) {
     res.writeHead(206, headers);
     const stream = fs.createReadStream(filePath, { start, end });
     stream.pipe(res);
-    stream.on('error', () => { res.end(); });
+    // Destroy the socket on mid-stream errors: headers with a fixed
+    // Content-Length were already sent, so a plain res.end() delivers a
+    // truncated 206 body that range-clients treat as a corrupt download.
+    stream.on('error', () => { res.destroy(); });
     return;
   }
 
@@ -180,7 +186,9 @@ function serveFile(filePath, stats, req, res) {
   res.writeHead(200, headers);
   const stream = fs.createReadStream(filePath);
   stream.pipe(res);
-  stream.on('error', () => { res.end(); });
+  // Same as the 206 path: destroy instead of end() so a mid-stream failure
+  // can't deliver a short body under a 200 status.
+  stream.on('error', () => { res.destroy(); });
 }
 
 function getAppRoot() {

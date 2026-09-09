@@ -95,9 +95,19 @@ const EQ_MediaTransportMethods = {
                         if(modalBtn) modalBtn.innerHTML = "<span>▶</span><span>Play</span>";
                     }
                 });
+                // During a crossfade the retiring element keeps playing until
+                // the retirement timeout pauses it. If it reaches its natural
+                // end inside that window, 'ended' fires nextTrack() while the
+                // crossfade to the NEXT track is already in flight — and with
+                // _preloadedIndex nulled mid-transition, the hard path replaces
+                // the audibly playing standby: two advances for one seam.
+                // Ignore 'ended' from any element that is not the active
+                // player (the retirement timeout owns the swap), and while a
+                // transition is in flight.
                 this.audioEl.addEventListener('ended', () => {
                     Mascot.update();
                     EQ_Module.updateReverbDSP();
+                    if (this._transitioning || this.audioEl !== this._activeEl()) return;
                     this.nextTrack();
                 });
                 if (this.gaplessEl) {
@@ -136,6 +146,7 @@ const EQ_MediaTransportMethods = {
                     this.gaplessEl.addEventListener('ended', () => {
                         Mascot.update();
                         EQ_Module.updateReverbDSP();
+                        if (this._transitioning || this.gaplessEl !== this._activeEl()) return;
                         this.nextTrack();
                     });
                 }
@@ -176,10 +187,18 @@ const EQ_MediaTransportMethods = {
 
             const attachTimeUpdate = (el) => {
                 if (!el) return;
-                el.addEventListener('timeupdate', () => updateScrubDisplay(el));
-                el.addEventListener('canplay', () => updateScrubDisplay(el));
-                el.addEventListener('loadeddata', () => updateScrubDisplay(el));
+                // Only the ACTIVE element may repaint the shared scrub/duration
+                // displays: the standby element fires loadeddata/durationchange
+                // when preloading the NEXT track and timeupdate throughout a
+                // crossfade — the retiring arm previously hijacked the scrub
+                // to 0:00 / the next track's duration (persistently wrong
+                // when paused while standby staging).
+                const isActiveEl = () => el === this._activeEl();
+                el.addEventListener('timeupdate', () => { if (isActiveEl()) updateScrubDisplay(el); });
+                el.addEventListener('canplay', () => { if (isActiveEl()) updateScrubDisplay(el); });
+                el.addEventListener('loadeddata', () => { if (isActiveEl()) updateScrubDisplay(el); });
                 el.addEventListener('durationchange', () => {
+                    if (!isActiveEl()) return;
                     const dur = el.duration;
                     if (dur && Number.isFinite(dur) && dur > 0) {
                         const formatted = this.formatTime(dur);

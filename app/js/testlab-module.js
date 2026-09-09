@@ -34,7 +34,11 @@
             let text = "Guessing";
             let colorClass = "text-zinc-500";
 
-            if (total >= 4) {
+            // A perfect 3/3 is p=0.125 — suggestive, not significant, but
+            // calling it "Guessing" overstated the case the other way. Show
+            // the trend with an explicit small-sample caveat instead of the
+            // flat dismissal.
+            if (total >= 4 || (total >= 2 && correct === total)) {
                 if (confidence >= 95) {
                     text = "Highly Significant";
                     colorClass = "text-emerald-400";
@@ -48,10 +52,13 @@
                     text = "Insignificant";
                     colorClass = "text-red-400";
                 }
+                if (total < 4) text += " (small sample)";
             }
 
             return {
-                pct: Math.max(0, confidence).toFixed(1),
+                // Number, not string: callers compose it for display and any
+                // future numeric consumer got string coercion before.
+                pct: Math.max(0, Math.round(confidence * 10) / 10),
                 text: text,
                 class: colorClass
             };
@@ -74,6 +81,15 @@
         abxTargetAnswer: null,
         abxTrialsOptions: [5, 10, 15, 20],
         abxCycleTrials: function(dir) {
+            // Changing the denominator mid-session ends/rescores a running
+            // test against a number it was never configured for (7 >= 5 ends
+            // it early; 10 -> 15 silently extends it). Lock the stepper while
+            // a session is active — the same treatment the A/B crossfade
+            // controls already get via setABXControlsEnabled.
+            if (this.abxIsActive) {
+                showToast("Finish or stop the current test before changing the trial count.", "⚠️");
+                return;
+            }
             const opts = this.abxTrialsOptions;
             let idx = opts.indexOf(this.abxTotalTrials);
             if (idx < 0) idx = opts.indexOf(10);
@@ -161,11 +177,12 @@
                 return;
             }
 
-            this.stopAll();
+            this.stopAll(false, this.burninActive);
             this.abxIsActive = true;
             this.abxTrialIndex = 0;
             this.abxCorrect = 0;
             this.abxIncorrect = 0;
+            this._abxAnswered = false;
 
             if (isNaN(this.abxTotalTrials) || this.abxTotalTrials < 5) this.abxTotalTrials = 10;
             this.abxRenderTrials();
@@ -206,6 +223,8 @@
             }
 
             this.abxTargetAnswer = Math.random() < 0.5 ? 'A' : 'B';
+            // Re-arm the one-answer-per-trial guard (abxChoose sets it).
+            this._abxAnswered = false;
 
             const progress = document.getElementById('abx-progress-lbl');
             if (progress) progress.textContent = `Trial ${this.abxTrialIndex + 1}/${this.abxTotalTrials}`;
@@ -217,6 +236,10 @@
             }
 
             await EQ_Module.ensureDSPGraph();
+            // The session may have been stopped while this await was pending
+            // (e.g. STOP clicked during trial start, or a tab switch) — never
+            // start audio for a session that is no longer active.
+            if (!this.abxIsActive) return;
             this.ensureABSources();
             // ensureABSources() only creates gainNodeA/gainNodeB once and
             // wires them into the shared audio graph; updateABFade() is the
@@ -259,6 +282,11 @@
         },
         abxChoose: function(choice) {
             if (!this.abxIsActive) return;
+            // One answer per trial: nothing disabled the choice row during
+            // the 1s inter-trial window, so a rapid double-click scored the
+            // same target twice and skipped a trial index.
+            if (this._abxAnswered) return;
+            this._abxAnswered = true;
 
             const isCorrect = choice === this.abxTargetAnswer;
             if (isCorrect) {
@@ -330,6 +358,7 @@
             this.abxTrialIndex = 0;
             this.abxCorrect = 0;
             this.abxIncorrect = 0;
+            this._abxAnswered = false;
             if (this._abxTrialTimer) { clearTimeout(this._abxTrialTimer); this._abxTrialTimer = null; }
 
             const startBtn = document.getElementById('abx-start-btn');
@@ -490,10 +519,23 @@
             }
 
             this.updateABMarquee();
+
+            // Wire the START/STOP button's initial state. The static
+            // data-action="click_101_TestLab_abxStart" was removed from
+            // index.html: with it, clicking STOP fired BOTH abxStart
+            // (capture-phase EventBinding delegation) and the dynamically
+            // assigned abxReset — the resumed async trial then played
+            // looping audio with the session flag already false. The button
+            // is now driven exclusively by the dynamic onclick that
+            // abxStart/abxReset/abxEndGame re-assign on every state change.
+            const startBtn = document.getElementById('abx-start-btn');
+            if (startBtn && !startBtn.onclick) {
+                startBtn.onclick = () => this.abxStart();
+            }
         },
         clearComparisonTracks: function() {
             if (this.abxIsActive) this.abxReset();
-            this.stopAll();
+            this.stopAll(false, this.burninActive);
             const audioA = document.getElementById('ab-audio-a');
             const audioB = document.getElementById('ab-audio-b');
             const fileA = document.getElementById('ab-file-a');
@@ -540,6 +582,21 @@
                     this.sourceA.connect(this.gainNodeA).connect(dest);
                     this.sourceB.connect(this.gainNodeB).connect(dest);
                     this.abSourcesConnected = true;
+                } else if (this._abReroutedToMaster && EQ_Module.inputGainNode) {
+                    // The silence-probe previously bypassed the DSP chain and
+                    // nothing ever wired it back (abSourcesConnected stayed
+                    // true), so every later A/B and ABX playback silently ran
+                    // without EQ. Restore the DSP route now that the chain
+                    // exists — collapsed-connect semantics make this idempotent.
+                    try {
+                        this.gainNodeA.disconnect();
+                        this.gainNodeB.disconnect();
+                        this.gainNodeA.connect(EQ_Module.inputGainNode);
+                        this.gainNodeB.connect(EQ_Module.inputGainNode);
+                        this._abReroutedToMaster = false;
+                    } catch (e) {
+                        console.warn('[A/B] DSP chain rewire failed:', e);
+                    }
                 }
             } catch (e) {
                 console.warn('[A/B] Failed to wire comparison sources:', e);
@@ -603,7 +660,7 @@ setABXControlsEnabled: function(enabled) {
                 // chain while A/B compares two files (levels, meters, de-esser
                 // and AGC all assume a single source).
                 if (window.EQ && EQ.stopPlaylistPlayback) EQ.stopPlaylistPlayback();
-                this.stopAll();
+                this.stopAll(false, this.burninActive);
                 audioA.currentTime = 0;
                 audioB.currentTime = 0;
                 this.updateABFade();
@@ -649,20 +706,38 @@ setABXControlsEnabled: function(enabled) {
                         if (!stillPlaying) {
                             showToast("Tracks stopped unexpectedly right after starting.", "⚠️");
                         } else if (!metered) {
-                            // Elements running but the master bus sees silence — auto-reroute to master
-                            // instead of requiring user to click "Direct" toast. Keeps old behavior's
-                            // logging but makes playback work immediately.
-                            try {
-                                const dest = SharedAudio.masterGain;
-                                this.gainNodeA.disconnect();
-                                this.gainNodeB.disconnect();
-                                this.gainNodeA.connect(dest);
-                                this.gainNodeB.connect(dest);
-                                showToast("A/B auto-routed to master (DSP chain bypassed).", "🔌");
-                            } catch (e) {
-                                console.warn('[A/B] direct reroute failed:', e);
-                                showToast("No signal reaching output — check files.", "⚠️");
-                            }
+                            // A single 350ms probe false-positives on quiet
+                            // intros (fade-ins, live recordings, encoder
+                            // silence): rerouting away from the EQ chain on
+                            // that evidence permanently bypassed DSP for the
+                            // session (abSourcesConnected stayed true and
+                            // nothing ever rewired it). Re-probe once after a
+                            // grace period; only reroute if STILL silent.
+                            setTimeout(() => {
+                                let metered2 = false;
+                                try {
+                                    const probe2 = new Uint8Array(SharedAudio.analyser ? SharedAudio.analyser.fftSize : 1024);
+                                    if (SharedAudio.analyser) {
+                                        SharedAudio.analyser.getByteTimeDomainData(probe2);
+                                        for (let i = 0; i < probe2.length; i++) {
+                                            if (Math.abs(probe2[i] - 128) > 2) { metered2 = true; break; }
+                                        }
+                                    }
+                                } catch (_) {}
+                                if (metered2 || audioA.paused || audioB.paused) return;
+                                try {
+                                    const dest = SharedAudio.masterGain;
+                                    this.gainNodeA.disconnect();
+                                    this.gainNodeB.disconnect();
+                                    this.gainNodeA.connect(dest);
+                                    this.gainNodeB.connect(dest);
+                                    this._abReroutedToMaster = true;
+                                    showToast("No signal through the DSP chain — A/B routed to master (bypassed).", "🔌");
+                                } catch (e) {
+                                    console.warn('[A/B] direct reroute failed:', e);
+                                    showToast("No signal reaching output — check files.", "⚠️");
+                                }
+                            }, 1000);
                         }
                     }, 350);
                 } catch (err) {
@@ -760,18 +835,108 @@ setABXControlsEnabled: function(enabled) {
         _hearingStaircaseStartLevel: 0.06, // start audible for most users
         _hearingStaircaseMinLevel: 0.0004,
 
+        // Progress bar + instruction line helpers (UI mirror of staircase state).
+        // The bar is SEGMENTED (one cell per test frequency) and DRIVES OFF
+        // ANSWERS, not just tone boundaries: the current tone's cell fills
+        // continuously as the user answers (a realistic tone takes 3-9
+        // answers, so boundary-only progress looked frozen for 40+ clicks).
+        // Colors are set via inline style.background — class swaps depended
+        // on compiled CSS that can go stale between tailwind rebuilds.
+        _updateHearingTestUI: function(opts) {
+            const o = opts || {};
+            const instr = document.getElementById('hearing-test-instruction');
+            const status = document.getElementById('hearing-test-status');
+            const hzDisp = document.getElementById('hearing-test-hz');
+            const pctDisp = document.getElementById('hearing-progress-pct');
+            const calRow = document.getElementById('hearing-cal-row');
+            const SEG_COLORS = {
+                done: '#34d399',    // emerald-400
+                active: '#06b6d4',   // cyan-500
+                pending: '#18181b'   // zinc-900
+            };
+
+            if (o.progress !== undefined) {
+                // o.progress is a FRACTION 0..1 of the whole 8-tone test,
+                // already including partial credit for the current tone.
+                const frac = Math.max(0, Math.min(1, o.progress));
+                const pct = Math.round(frac * 100);
+                if (pctDisp) pctDisp.textContent = pct + '%';
+
+                const segs = document.querySelectorAll('.hearing-seg');
+                const totalSegs = segs.length || 8;
+                const segSize = 1 / totalSegs;
+                segs.forEach(seg => {
+                    const idx = parseInt(seg.getAttribute('data-seg'), 10);
+                    if (idx === undefined || isNaN(idx)) return;
+                    const segStart = idx * segSize;
+                    let color;
+                    if (frac >= 1) {
+                        color = SEG_COLORS.done;
+                    } else if (frac >= segStart + segSize - 1e-9) {
+                        color = SEG_COLORS.done;      // this tone fully complete
+                    } else if (frac >= segStart) {
+                        color = SEG_COLORS.active;   // this tone in progress (>= not >: at tone start frac === segStart exactly)
+                    } else {
+                        color = SEG_COLORS.pending;
+                    }
+                    seg.style.background = color;
+                });
+            }
+            if (o.showSlider === true && calRow) calRow.classList.remove('hidden');
+            if (o.showSlider === false && calRow) calRow.classList.add('hidden');
+            if (o.instruction !== undefined && instr) {
+                instr.innerHTML = o.instruction;
+            }
+            if (o.status !== undefined && status) status.textContent = o.status;
+            if (o.hz !== undefined && hzDisp) hzDisp.textContent = o.hz;
+        },
+
+        // Fraction of the ENTIRE test completed, credited per-answer:
+        // finished tones count fully; the current tone credits its answers
+        // against an expected budget (8 answers ≈ a typical staircase; the
+        // force-finish path is 3).
+        _hearingTestFraction: function() {
+            const freqCount = this.hearingTestFreqs.length;
+            if (this.hearingStep < 0 || this.hearingStep >= freqCount) {
+                return this._hearingAllDone ? 1 : 0;
+            }
+            const per = 1 / freqCount;
+            const doneFrac = this.hearingStep * per;
+            // Answers given within the current tone (staircase records
+            // every answer as a reversal-or-step; budget on the generous
+            // side so the bar never races ahead of reality).
+            const answers = this._hearingToneAnswers || 0;
+            const ANSWER_BUDGET = 8;
+            const toneFrac = Math.min(1, answers / ANSWER_BUDGET) * per;
+            return Math.min(1 - 1e-9, doneFrac + toneFrac);
+        },
+
         startHearingStaircase: async function() {
             const ctx = SharedAudio.init(); await ctx.resume();
             if (this.hearingOsc) { this.stopHearingTone(); }
 
+            // The pre-test slider sets where the staircase begins: the user
+            // calibrated "comfortably audible" at this level. LOCKED once the
+            // test begins — mid-test level changes would corrupt the
+            // staircase, so the slider row hides for the duration.
+            const calSlider = document.getElementById('hearing-test-vol');
+            if (calSlider) {
+                const raw = parseFloat(calSlider.value);
+                if (Number.isFinite(raw) && raw > 0) {
+                    this._hearingStaircaseStartLevel = Math.max(0.002, Math.min(this._hearingStaircaseMaxLevel, (raw / 100) * 0.12));
+                }
+            }
+
             // Begin at frequency 0 (250 Hz).
             this.hearingStep = 0;
             this.hearingThresholds = [0, 0, 0, 0, 0, 0, 0, 0];
+            this._hearingAllDone = false;
             this._beginHearingFrequency(0);
         },
 
         _beginHearingFrequency: function(stepIdx) {
             this.hearingStep = stepIdx;
+            this._hearingToneAnswers = 0; // per-answer progress within this tone
             // Staircase state: level in linear gain, step in dB, reversal
             // bookkeeping, and the collected reversal levels for averaging.
             this.staircase = {
@@ -779,8 +944,10 @@ setABXControlsEnabled: function(enabled) {
                 stepDb: 12,
                 lastAnswer: null,
                 reversals: [],
+                reversalSteps: [],
                 reversalCount: 0,
                 lastReversalDir: 0,
+                sameAnswerRun: 0,
                 done: false,
                 thresholdDb: null
             };
@@ -791,11 +958,14 @@ setABXControlsEnabled: function(enabled) {
             const notHeardBtn = document.getElementById('hearing-not-heard-btn');
             if (notHeardBtn) notHeardBtn.classList.remove('hidden');
 
-            const status = document.getElementById('hearing-test-status');
-            const hzDisp = document.getElementById('hearing-test-hz');
             const freq = this.hearingTestFreqs[stepIdx];
-            if (status) status.textContent = `Staircase ${stepIdx + 1}/8 — listen, then answer.`;
-            if (hzDisp) hzDisp.textContent = `${freq} Hz`;
+            this._updateHearingTestUI({
+                status: `Tone ${stepIdx + 1} of 8`,
+                hz: `${freq} Hz`,
+                progress: this._hearingTestFraction(),
+                showSlider: false, // locked in — hide the calibration row
+                instruction: `Hear the <span class="text-white font-bold">${freq} Hz</span> tone? Answer honestly — it homes in on your limit.`
+            });
         },
 
         _playHearingToneAt: function(level) {
@@ -820,26 +990,75 @@ setABXControlsEnabled: function(enabled) {
         hearingStaircaseAnswer: function(dir) {
             const st = this.staircase;
             if (!st || st.done) return;
+            this._hearingToneAnswers = (this._hearingToneAnswers || 0) + 1;
 
             // Level step in dB (down when heard, up when not heard).
             const dbStep = st.stepDb * (dir > 0 ? -1 : 1);
+            const prevLevel = st.level;
             st.level = Math.max(this._hearingStaircaseMinLevel,
                 Math.min(this._hearingStaircaseMaxLevel, st.level * Math.pow(10, dbStep / 20)));
+
+            // STUCK GUARD: repeating the same answer runs the level into the
+            // ceiling/floor with no reversals — the staircase could never
+            // converge (spamming "Heard +" parked at -68 dBFS forever, the
+            // exact reported bug). If the level is clamped at a bound and the
+            // same answer keeps coming, force-finish this frequency:
+            //   - pegged at the FLOOR while hearing -> extremely sensitive at
+            //     this band; record the floor as the threshold.
+            //   - pegged at the CEILING while NOT hearing -> can't hear this
+            //     band at safe levels; record the ceiling (max loss).
+            const hitFloor = st.level <= this._hearingStaircaseMinLevel + 1e-9;
+            const hitCeil = st.level >= this._hearingStaircaseMaxLevel - 1e-9;
+            const clamped = (hitFloor && dir > 0) || (hitCeil && dir < 0);
+            if (clamped && st.lastAnswer === dir) {
+                st.sameAnswerRun++;
+                if (st.sameAnswerRun >= 2) {
+                    st.thresholdDb = 20 * Math.log10(Math.max(1e-6, st.level));
+                    st.done = true;
+                    this._updateHearingTestUI({
+                        status: dir > 0 ? 'Keen ear here — next tone!' : 'Too quiet to hear — max boost recorded.',
+                        instruction: dir > 0
+                            ? 'You heard it at the quietest safe level.'
+                            : 'Unheard even at max safe level — this tone gets full correction.'
+                    });
+                    this._finishHearingFrequency();
+                    return;
+                }
+            } else {
+                st.sameAnswerRun = 0;
+            }
 
             // Reversal = answer flipped vs the previous one.
             const reversed = (st.lastAnswer !== null && st.lastAnswer !== dir);
             if (reversed) {
                 st.reversalCount++;
-                st.reversals.push(20 * Math.log10(Math.max(1e-6, st.level)));
+                // Record the PRE-step level: the tone the user actually just
+                // answered on is the turnaround point (st.level has already
+                // advanced one full step past it — recording the post-step
+                // value biased every reversal by a full step size).
+                const reversalDb = 20 * Math.log10(Math.max(1e-6, prevLevel));
+                const stepUsed = st.stepDb;
+                st.reversals.push(reversalDb);
+                st.reversalSteps.push(stepUsed);
                 // Halve the step after every reversal: 12 -> 6 -> 3 -> 1.5.
                 st.stepDb = Math.max(1.5, st.stepDb / 2);
-                // Threshold: two reversals at the finest (1.5dB) step.
-                if (st.stepDb <= 1.5 && st.reversals.length >= 2) {
+                // Threshold: two reversals AT the finest (1.5 dB) step —
+                // averaging the last two reversal levels only when BOTH
+                // were measured with the final step size. (Checking after
+                // the halve made stepDb<=1.5 true on the 3rd reversal while
+                // the averaged pair came from 6 dB / 3 dB steps.)
+                const lastTwoSteps = st.reversalSteps.slice(-2);
+                if (st.stepDb <= 1.5 && st.reversals.length >= 2
+                    && lastTwoSteps.length === 2
+                    && lastTwoSteps[0] <= 1.5 && lastTwoSteps[1] <= 1.5) {
                     // Average the last two reversal levels (the classic
                     // 2-reversal mean at final step size).
                     const lastTwo = st.reversals.slice(-2);
                     st.thresholdDb = (lastTwo[0] + lastTwo[1]) / 2;
                     st.done = true;
+                    this._updateHearingTestUI({
+                        status: 'Threshold locked ✔'
+                    });
                     this._finishHearingFrequency();
                     return;
                 }
@@ -848,11 +1067,18 @@ setABXControlsEnabled: function(enabled) {
 
             this._playHearingToneAt(st.level);
 
-            const status = document.getElementById('hearing-test-status');
-            if (status) {
-                const dbFs = 20 * Math.log10(Math.max(1e-6, st.level));
-                status.textContent = `${this.hearingTestFreqs[this.hearingStep]} Hz · ${dbFs.toFixed(1)} dBFS · step ±${st.stepDb}dB · reversals ${st.reversalCount}`;
-            }
+            const dbFs = 20 * Math.log10(Math.max(1e-6, st.level));
+            const freqIdx = this.hearingStep;
+            this._updateHearingTestUI({
+                status: `Tone ${freqIdx + 1}/8 · ${dbFs.toFixed(1)} dBFS`,
+                // Per-ANSWER progress: every click moves the current segment's
+                // fill forward (boundary-only progress previously looked
+                // frozen for 40+ answers in a realistic run).
+                progress: this._hearingTestFraction(),
+                instruction: reversed
+                    ? 'Almost there — narrowing in on your limit.'
+                    : (dir > 0 ? 'Got quieter. Still hear it?' : 'Got louder. Hear it now?')
+            });
         },
 
         _finishHearingFrequency: function() {
@@ -875,16 +1101,20 @@ setABXControlsEnabled: function(enabled) {
 
         _finishHearingStaircaseAll: function() {
             this.hearingStep = -1;
+            this._hearingAllDone = true;
 
             const btn = document.getElementById('hearing-test-btn');
             if (btn) btn.textContent = 'Start Test';
             const notHeardBtn = document.getElementById('hearing-not-heard-btn');
             if (notHeardBtn) notHeardBtn.classList.add('hidden');
 
-            const status = document.getElementById('hearing-test-status');
-            if (status) status.textContent = 'Staircase complete — profile computed.';
-            const hzDisp = document.getElementById('hearing-test-hz');
-            if (hzDisp) hzDisp.textContent = 'DONE';
+            this._updateHearingTestUI({
+                status: 'Done — correction applied ✔',
+                hz: 'DONE',
+                progress: 1,
+                showSlider: true, // test over — calibration row can come back
+                instruction: 'Saved & active on the EQ. Reloads with the app until Reset.'
+            });
 
             this.calculateHearingCorrection();
         },
@@ -928,20 +1158,52 @@ setABXControlsEnabled: function(enabled) {
         },
         updateHearingTestVolume: function() {
             const slider = document.getElementById('hearing-test-vol');
-            // During a staircase the test owns the tone level — the slider
-            // is only a pre-test comfort calibration and must not override
-            // the adaptive step.
-            if (slider && this.hearingGain && SharedAudio.ctx && !this.staircase) {
-                const vol = parseFloat(slider.value) / 100;
-                const safeVol = vol * 0.12;
-                setAudioParamSmooth(this.hearingGain.gain, safeVol);
+            const raw = slider ? parseFloat(slider.value) : NaN;
+            const vol = Number.isFinite(raw) ? raw : 0;
 
-                const el = document.getElementById('brand-icon-emoji');
-                if (el) {
-                    Mascot.setExpression('hearing_test');
-                    const scaleFactor = 0.8 + (vol * 0.7);
-                    el.style.transform = `scale(${scaleFactor})`;
+            // Live % readout beside the slider.
+            const calVal = document.getElementById('hearing-cal-val');
+            if (calVal) calVal.textContent = Math.round(vol) + '%';
+
+            // During a staircase the test owns the tone level — the row is
+            // hidden anyway; ignore stray input events.
+            if (this.staircase) return;
+
+            // Pre/post-test: the slider is a LIVE calibration preview. Play
+            // 1 kHz at the chosen level so the user hears exactly what they
+            // are setting (the old version required a tone to already be
+            // playing, which never happened outside a test — the control did
+            // nothing at all).
+            const ctx = SharedAudio.init();
+            if (!ctx) return;
+            if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+            const safeVol = (vol / 100) * 0.12;
+            if (vol <= 0) {
+                this.stopHearingTone();
+                this._updateHearingTestUI({
+                    instruction: 'Raise the level until the preview tone is comfortable.'
+                });
+            } else {
+                if (!this.hearingOsc) {
+                    this.stopHearingTone();
+                    this.hearingOsc = ctx.createOscillator();
+                    this.hearingGain = ctx.createGain();
+                    this.hearingOsc.type = 'sine';
+                    this.hearingOsc.frequency.value = 1000;
+                    this.hearingGain.gain.value = Math.max(0.0001, safeVol);
+                    this.hearingOsc.connect(this.hearingGain).connect(SharedAudio.masterGain);
+                    this.hearingOsc.start();
+                } else if (this.hearingGain) {
+                    setAudioParamSmooth(this.hearingGain.gain, Math.max(0.0001, safeVol), 0.02);
                 }
+                this._updateHearingTestUI({
+                    instruction: `Previewing 1 kHz at ${Math.round(vol)}% — lock this in with Start Test.`
+                });
+            }
+
+            // Remember the calibration so Start Test begins from this level.
+            if (vol > 0) {
+                this._hearingStaircaseStartLevel = Math.max(0.002, Math.min(this._hearingStaircaseMaxLevel, safeVol));
             }
         },
         stopHearingTone: function() {
@@ -974,9 +1236,15 @@ setABXControlsEnabled: function(enabled) {
             this.stopHearingTone();
             this.hearingStep = -1;
             this.staircase = null;
+            this._hearingAllDone = false;
+            this._hearingToneAnswers = 0;
             this.hearingThresholds = [0, 0, 0, 0, 0, 0, 0, 0];
             EQ_Module.hearingOffsets = [0, 0, 0, 0, 0, 0, 0, 0];
             EQ_Module.hearingCalEnabled = false;
+            // Clear the persisted profile too — Reset means "remove my saved
+            // hearing correction", not just "discard this run" (the old
+            // version left a stale copy that re-armed itself on next reload).
+            try { localStorage.removeItem('settings_hearing_offsets'); } catch (e) {}
 
             const btn = document.getElementById('hearing-test-btn');
             const status = document.getElementById('hearing-test-status');
@@ -989,11 +1257,22 @@ setABXControlsEnabled: function(enabled) {
 
             if (btn) btn.textContent = 'Start Test';
             if (notHeardBtn) notHeardBtn.classList.add('hidden');
-            if (status) status.textContent = 'Status: Idle';
+            if (status) status.textContent = 'Hearing Test: Idle';
             if (hzDisp) hzDisp.textContent = '--- Hz';
-            if (volSlider) volSlider.value = 0;
+            if (volSlider) volSlider.value = 50;
+            const calVal = document.getElementById('hearing-cal-val');
+            if (calVal) calVal.textContent = '50%';
             if (calBtn) calBtn.classList.remove('active-btn');
             if (calLbl) calLbl.textContent = 'Hearing: Off';
+            this._updateHearingTestUI({
+                progress: 0,
+                showSlider: true,
+                instruction: 'Set the level so the preview tone is comfortable, then Start Test.'
+            });
+            // Segments back to pending color (inline styles — not classes).
+            document.querySelectorAll('.hearing-seg').forEach(seg => {
+                seg.style.background = '#18181b';
+            });
 
             if (generateBtn) {
                 generateBtn.disabled = true;
@@ -1192,15 +1471,33 @@ setABXControlsEnabled: function(enabled) {
             const dot = document.getElementById('spatial-dot');
             if (!pad || !dot) return;
 
-            this.spatialOrbitInterval = setInterval(() => {
-                this.spatialOrbitAngle += 0.018;
+            // rAF with delta-time instead of setInterval(16): timer ticks
+            // land between vsync frames (double paints) or drift past them
+            // (stutter), and the old per-tick style.left/top writes forced a
+            // pad-subtree layout every 16ms. One compositor transform per
+            // frame keeps the orbit locked to the display.
+            // Angle speed matches the old timer exactly: 0.018 rad/tick at
+            // one tick per 16ms ≈ 1.125 rad/s.
+            const ANGLE_PER_MS = 0.018 / 16;
+            let lastTs = null;
+            let orbitRect = null;
+
+            const orbitFrame = (ts) => {
+                if (lastTs === null) lastTs = ts;
+                const dt = Math.min(64, ts - lastTs); // tab-switch clamp
+                lastTs = ts;
+
+                this.spatialOrbitAngle += ANGLE_PER_MS * dt;
                 if (this.spatialOrbitAngle > Math.PI * 2) {
                     this.spatialOrbitAngle -= Math.PI * 2;
                 }
 
-                const rect = pad.getBoundingClientRect();
-                const cw = rect.width;
-                const ch = rect.height;
+                if (!orbitRect || orbitRect.width !== pad.clientWidth || orbitRect.height !== pad.clientHeight) {
+                    orbitRect = pad.getBoundingClientRect();
+                }
+
+                const cw = orbitRect.width;
+                const ch = orbitRect.height;
 
                 const cx = cw / 2;
                 const cy = ch / 2;
@@ -1208,9 +1505,6 @@ setABXControlsEnabled: function(enabled) {
 
                 const x = cx + Math.cos(this.spatialOrbitAngle) * radius;
                 const y = cy + Math.sin(this.spatialOrbitAngle) * radius;
-
-                dot.style.left = `${x}px`;
-                dot.style.top = `${y}px`;
 
                 const normDist = radius / Math.min(cx, cy);
                 let normX = normDist * Math.cos(this.spatialOrbitAngle) * 5.0;
@@ -1236,12 +1530,15 @@ setABXControlsEnabled: function(enabled) {
                 }
 
                 const scale = 2.0 - (normDist * 1.4);
-                dot.style.transform = `translate(-50%, -50%) scale(${scale})`;
-            }, 16);
+                dot.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) translate(-50%, -50%) scale(${scale.toFixed(3)})`;
+
+                this.spatialOrbitInterval = requestAnimationFrame(orbitFrame);
+            };
+            this.spatialOrbitInterval = requestAnimationFrame(orbitFrame);
         },
         stopSpatialOrbitTimerOnly: function() {
             if (this.spatialOrbitInterval) {
-                clearInterval(this.spatialOrbitInterval);
+                cancelAnimationFrame(this.spatialOrbitInterval);
                 this.spatialOrbitInterval = null;
             }
         },
@@ -1267,7 +1564,12 @@ setABXControlsEnabled: function(enabled) {
             const updateDotVisualDepth = () => {
                 const normalized = (10 - Math.abs(this.spatialDepthZ)) / 10;
                 const scale = 0.6 + normalized * 1.4;
-                dot.style.transform = `translate(-50%, -50%) scale(${scale})`;
+                // Keep the dot centered on its last known position when only
+                // the depth changes (wheel): position is part of the same
+                // compositor transform now, not left/top.
+                const x = this.lastPosX !== undefined ? this.lastPosX : pad.clientWidth / 2;
+                const y = this.lastPosY !== undefined ? this.lastPosY : pad.clientHeight / 2;
+                dot.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) translate(-50%, -50%) scale(${scale.toFixed(3)})`;
             };
 
             pad.addEventListener('mouseenter', () => {
@@ -1312,8 +1614,40 @@ setABXControlsEnabled: function(enabled) {
                 }
             }, { passive: false });
 
+            // Compositor-only dot movement: the dot's position lives entirely
+            // in one translate3d() transform (GPU layer, zero layout work).
+            // The old per-mousemove style.left/top writes forced
+            // recalc+layout on the whole pad subtree (grid background +
+            // radar-pulse animation) at the mouse's event rate; a cached
+            // getBoundingClientRect removes the forced-layout read too.
+            let padRect = pad.getBoundingClientRect();
+            let padRectCheckedAt = 0;
+            const refreshPadRect = () => {
+                // Rects are only invalidated by layout changes (resize, tab
+                // switch, column reflow) — re-measure at most every 500ms,
+                // not per event.
+                const now = performance.now();
+                if (now - padRectCheckedAt > 500) {
+                    padRect = pad.getBoundingClientRect();
+                    padRectCheckedAt = now;
+                }
+                return padRect;
+            };
+            window.addEventListener('resize', () => { padRectCheckedAt = 0; });
+
+            // rAF coalescing: store the latest pointer coords and apply them
+            // once per frame — drag updates land at exactly vsync rate, and
+            // intermediate mouse events (125-240Hz on gaming mice) cost a
+            // variable assignment instead of a style write.
+            let pendingPtrX = null;
+            let pendingPtrY = null;
+            let dotFrameScheduled = false;
+            const applyDotTransform = (x, y, scale) => {
+                dot.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) translate(-50%, -50%) scale(${scale.toFixed(3)})`;
+            };
+
             const updatePosition = (e) => {
-                const rect = pad.getBoundingClientRect();
+                const rect = refreshPadRect();
                 let clientX, clientY;
 
                 if (e.touches && e.touches.length > 0) {
@@ -1331,8 +1665,23 @@ setABXControlsEnabled: function(enabled) {
                 x = Math.max(0, Math.min(rect.width, x));
                 y = Math.max(0, Math.min(rect.height, y));
 
-                dot.style.left = `${x}px`;
-                dot.style.top = `${y}px`;
+                // Batch the position into the per-frame apply below.
+                pendingPtrX = x;
+                pendingPtrY = y;
+                if (!dotFrameScheduled) {
+                    dotFrameScheduled = true;
+                    requestAnimationFrame(() => {
+                        dotFrameScheduled = false;
+                        if (pendingPtrX === null) return;
+                        // Scale follows the same distance falloff as the
+                        // panner math below — computed once per applied frame.
+                        const cx = rect.width / 2;
+                        const cy = rect.height / 2;
+                        const maxDist = Math.min(cx, cy) || 1;
+                        const normDist = Math.min(1.0, Math.hypot(pendingPtrX - cx, pendingPtrY - cy) / maxDist);
+                        applyDotTransform(pendingPtrX, pendingPtrY, 2.0 - (normDist * 1.4));
+                    });
+                }
 
                 const prevX = this.lastPosX !== undefined ? this.lastPosX : x;
                 const prevY = this.lastPosY !== undefined ? this.lastPosY : y;
@@ -1404,9 +1753,6 @@ setABXControlsEnabled: function(enabled) {
                     this.spatialPanner.setPosition(normX, normY, normZ);
                 }
             }
-
-            const scale = 2.0 - (normDist * 1.4);
-            dot.style.transform = `translate(-50%, -50%) scale(${scale})`;
             };
 
             pad.addEventListener('mousemove', (e) => {
@@ -1535,7 +1881,8 @@ setABXControlsEnabled: function(enabled) {
             }, 100);
         },
         playChannelTone: async function(channel) {
-         this.stopAll(true);
+         // Channel tones are short diagnostics; preserve a running burn-in.
+         this.stopAll(true, this.burninActive);
 
          ['l', 'r', 'c'].forEach(k => {
              const btn = document.getElementById('c-test-' + k);
@@ -2056,14 +2403,21 @@ toggleChannelSwap: function() {
 
             this.activeNodes = this.activeNodes.filter(n => !leakNodes.includes(n));
 
-            if (this.imbalanceInterval) {
-                clearInterval(this.imbalanceInterval);
-                this.imbalanceInterval = null;
+            // The imbalance meter is the burn-in panel's L/R level display.
+            // Killing it unconditionally — including on the tab-switch path
+            // that PRESERVES burn-in audio — left the meters pinned at 0%
+            // while the noise kept playing. Only clear it when burn-in is
+            // being stopped too (the meter would otherwise read dead signal).
+            if (!(preserveBurnin && this.burninActive)) {
+                if (this.imbalanceInterval) {
+                    clearInterval(this.imbalanceInterval);
+                    this.imbalanceInterval = null;
+                }
+                const imbalanceL = document.getElementById('imbalance-meter-l');
+                const imbalanceR = document.getElementById('imbalance-meter-r');
+                if (imbalanceL) imbalanceL.style.width = "0%";
+                if (imbalanceR) imbalanceR.style.width = "0%";
             }
-            const imbalanceL = document.getElementById('imbalance-meter-l');
-            const imbalanceR = document.getElementById('imbalance-meter-r');
-            if (imbalanceL) imbalanceL.style.width = "0%";
-            if (imbalanceR) imbalanceR.style.width = "0%";
 
             this.activeNodes.forEach(node => {
                 if (node instanceof GainNode) {
@@ -2095,24 +2449,65 @@ toggleChannelSwap: function() {
                     try { node.disconnect(); } catch(e){}
                 });
             }, 25);
-            const spatialBtn = document.getElementById('spatial-btn');
-            if (spatialBtn) {
-                spatialBtn.innerHTML = '▶️ Start';
-                spatialBtn.classList.remove('text-red-400');
-            }
-            this.spatialActive = false;
+            // Route spatial teardown through stopSpatialAudio instead of
+            // flipping spatialActive directly: the direct flip left
+            // playbackActive=true with the pause button showing while
+            // nothing played (updatePlayerButtonsUI never ran), and skipped
+            // the custom-track resume bookkeeping (spatialOffset), so custom
+            // tracks lost their position. #spatial-btn never existed in
+            // index.html (the real controls are #spatial-play-btn/pause-btn,
+            // synced by updatePlayerButtonsUI below).
+            this.stopSpatialAudio();
+            this.stopSpatialOrbitTimerOnly();
+            this.playbackActive = false;
+            this.updatePlayerButtonsUI();
             const abBtn = document.getElementById('ab-play-btn');
             if (abBtn) abBtn.innerHTML = 'Play Sync';
             this.abPlaying = false;
             const audioA = document.getElementById('ab-audio-a');
             const audioB = document.getElementById('ab-audio-b');
+
+            // An ABX session's inter-trial timer must die with everything
+            // else: stopAll previously left abxIsActive=true and the 1s
+            // timer armed, so switching tabs right after answering started
+            // a trial in the background (looping elements, no answer UI
+            // reachable). Full reset of the session state, same as abxReset.
+            if (this.abxIsActive || this._abxTrialTimer) {
+                if (this._abxTrialTimer) { clearTimeout(this._abxTrialTimer); this._abxTrialTimer = null; }
+                this.abxIsActive = false;
+                this.abxTrialIndex = 0;
+                this.abxCorrect = 0;
+                this.abxIncorrect = 0;
+
+                const startBtn = document.getElementById('abx-start-btn');
+                if (startBtn) {
+                    startBtn.textContent = 'START TEST';
+                    startBtn.onclick = () => this.abxStart();
+                }
+                const choicesRow = document.getElementById('abx-choices-row');
+                if (choicesRow) { choicesRow.style.pointerEvents = 'none'; choicesRow.style.opacity = '0.5'; }
+                this.setABXControlsEnabled(true);
+
+                const abxStatus = document.getElementById('abx-status-lbl');
+                if (abxStatus) abxStatus.textContent = '';
+                const abxProgress = document.getElementById('abx-progress-lbl');
+                if (abxProgress) abxProgress.textContent = 'Trial 0/10';
+                const confPct = document.getElementById('abx-confidence-pct');
+                const confTxt = document.getElementById('abx-confidence-text');
+                const confWrap = document.getElementById('abx-confidence-wrapper');
+                if (confPct && confTxt && confWrap) {
+                    confPct.textContent = '0.0%';
+                    confTxt.textContent = 'No Trials';
+                    confWrap.className = 'text-zinc-500';
+                }
+            }
             if (audioA) audioA.pause();
             if (audioB) audioB.pause();
         },
                 startResonanceScan: function() {
 
             Mascot.triggerTemporaryExpression('scan_idle', 300000);
-            this.stopAll(true);
+            this.stopAll(true, this.burninActive);
 
             const ctx = SharedAudio.init(); ctx.resume();
             this.resonanceActive = true;
@@ -2362,7 +2757,7 @@ toggleChannelSwap: function() {
             showToast("Ear Resonance Peak Tuner Reset", "🔄");
         },
         playSweep: async function(startFreq, endFreq, duration) {
-        this.stopAll(true);
+        this.stopAll(true, this.burninActive);
 
         if (window.EQ && EQ.audioEl && !EQ.audioEl.paused) {
             EQ.togglePlayState();
@@ -2411,7 +2806,7 @@ toggleChannelSwap: function() {
             this.startImbalanceMeter();
         },
         playTransientSlam: async function() {
-            this.stopAll(true);
+            this.stopAll(true, this.burninActive);
             await EQ_Module.ensureDSPGraph();
             const ctx = SharedAudio.ctx;
             Mascot.update();
@@ -2448,7 +2843,7 @@ toggleChannelSwap: function() {
             this.startImbalanceMeter();
         },
         playSibilanceTest: async function() {
-            this.stopAll(true);
+            this.stopAll(true, this.burninActive);
             await EQ_Module.ensureDSPGraph();
             const ctx = SharedAudio.ctx;
             Mascot.update();
@@ -2552,7 +2947,7 @@ toggleChannelSwap: function() {
             }
         },
     playDetailRetrieval: async function() {
-        this.stopAll(true);
+        this.stopAll(true, this.burninActive);
         await EQ_Module.ensureDSPGraph();
         const ctx = SharedAudio.ctx;
         Mascot.update();
@@ -2611,7 +3006,7 @@ toggleChannelSwap: function() {
             this.startImbalanceMeter();
         },
         playPolarityTest: async function() {
-            this.stopAll(true);
+            this.stopAll(true, this.burninActive);
             await EQ_Module.ensureDSPGraph();
             const ctx = SharedAudio.ctx || SharedAudio.init();
             Mascot.update();
@@ -2650,7 +3045,7 @@ toggleChannelSwap: function() {
             this.startImbalanceMeter();
         },
         playImaging: async function() {
-            this.stopAll();
+            this.stopAll(false, this.burninActive);
             await EQ_Module.ensureDSPGraph();
             const ctx = SharedAudio.ctx || SharedAudio.init();
 
@@ -2681,7 +3076,7 @@ toggleChannelSwap: function() {
             this.startImbalanceMeter();
         },
         playSoundstage: async function() {
-            this.stopAll(true);
+            this.stopAll(true, this.burninActive);
             await EQ_Module.ensureDSPGraph();
             const ctx = SharedAudio.ctx || SharedAudio.init();
             Mascot.update();
@@ -2712,7 +3107,7 @@ toggleChannelSwap: function() {
             this.startImbalanceMeter();
         },
         playFPSImaging: async function() {
-            this.stopAll(true);
+            this.stopAll(true, this.burninActive);
             await EQ_Module.ensureDSPGraph();
             const ctx = SharedAudio.ctx || SharedAudio.init();
             Mascot.update();
@@ -3075,8 +3470,11 @@ loadSoundLibrary: async function() {
             const dot = document.getElementById('spatial-dot');
             if (pad && dot) {
                 const rect = pad.getBoundingClientRect();
-                const x = parseFloat(dot.style.left) || (rect.width / 2);
-                const y = parseFloat(dot.style.top) || (rect.height / 2);
+                // The dot's position now lives in its transform (compositor
+                // layer — see initSpatialPad); read the tracked logical
+                // position instead of the no-longer-written style.left/top.
+                const x = (this.lastPosX !== undefined) ? this.lastPosX : (rect.width / 2);
+                const y = (this.lastPosY !== undefined) ? this.lastPosY : (rect.height / 2);
                 const normX = ((x / rect.width) * 10) - 5;
                 const normY = (((rect.height - y) / rect.height) * 10) - 5;
                 const now = ctx.currentTime;
@@ -3428,7 +3826,7 @@ loadSoundLibrary: async function() {
             if (window.updateExpandedAutoHide) window.updateExpandedAutoHide();
         },
         toggleBassLeakTest: function(side) {
-            this.stopAll(true);
+            this.stopAll(true, this.burninActive);
             const ctx = SharedAudio.init(); ctx.resume();
 
             this.leakTestActive = true;
@@ -3614,7 +4012,14 @@ loadSoundLibrary: async function() {
         setTimeout(() => {
             if (PEQDB_Module && PEQDB_Module.startBackgroundLoading) {
                 try {
-
+                    // (Restored: the invocation was accidentally deleted,
+                    // leaving this if/try scaffolding behind — the 1.2s deferred
+                    // DB warmup never ran.) typeof guard — FindEngine is a
+                    // top-level const, never a window property.
+                    PEQDB_Module.startBackgroundLoading();
+                    if (typeof FindEngine !== 'undefined' && FindEngine.checkInitialProgress) {
+                        FindEngine.checkInitialProgress();
+                    }
                 } catch (err) {
                     console.error('[Boot] startBackgroundLoading failed:', err);
                 }

@@ -37,10 +37,12 @@
             // pinning large structured-cloned datasets in memory.
             window.addEventListener('pagehide', () => {
                 try {
-                    if (window.FindEngine && FindEngine._findWorker) FindEngine._findWorker.terminate();
-                    if (window.FindEngine && FindEngine.similarityWorker) FindEngine.similarityWorker.terminate();
-                    // Loudness worker blob URL is ~1 KB but its worker holds decoded buffers
-                    if (window.EQ && EQ._loudnessWorkerBlobUrl) { try { URL.revokeObjectURL(EQ._loudnessWorkerBlobUrl); } catch(_){} EQ._loudnessWorkerBlobUrl = null; }
+                    // typeof guards, NOT window.FindEngine: FindEngine is a
+                    // top-level const in the bundle (a lexical binding, never
+                    // a window property), so the old window.FindEngine checks
+                    // were always false and this cleanup never ran.
+                    if (typeof FindEngine !== 'undefined' && FindEngine._findWorker) FindEngine._findWorker.terminate();
+                    if (typeof EQ !== 'undefined' && EQ._loudnessWorkerBlobUrl) { try { URL.revokeObjectURL(EQ._loudnessWorkerBlobUrl); } catch(_){} EQ._loudnessWorkerBlobUrl = null; }
                 } catch (_) {}
             });
         })();

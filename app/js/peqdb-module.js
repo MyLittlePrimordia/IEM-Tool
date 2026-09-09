@@ -394,7 +394,17 @@
                     for (let i = 0; i < Math.min(100, lines.length); i++) {
                         const line = lines[i].trim();
                         if (line.startsWith('#') || line === '') continue;
-                        if ((line.includes('\t') || line.includes(';')) && line.includes(',')) {
+                        // Comma-as-decimal when the line contains BOTH a comma
+                        // and a second separator. This includes plain spaces:
+                        // European exports like "1000,5 80,2" (space-delimited,
+                        // comma-decimal) previously failed this check, fell to
+                        // the comma-splitting branch, and mis-parsed every
+                        // pair ("1000,5 80,2" -> f=1000, a=5). Mirrors
+                        // parseRawFRText's heuristic so the DB loader and the
+                        // Smart RF importer agree on the same file. The strict
+                        // grouped-digit repair below still protects genuine
+                        // "1,000"-style thousands separators.
+                        if (line.includes(',') && (line.includes('\t') || line.includes(';') || line.includes(' '))) {
                             commaIsDecimal = true;
                             break;
                         }
@@ -1715,7 +1725,10 @@ const savedDb = localStorage.getItem('settings_align_db');
             const targetFile = (item.files && item.files[fileIndex]) ? item.files[fileIndex] : item.primaryFilePath;
             const curveUid = `${id}_src_${fileIndex}`;
 
-            const activeIndex = this.STATE.activeCurves.findIndex(c => c.uid === curveUid || (item.files.length <= 1 && c.id === id));
+            // Guard item.files: imported/Smart-RF/fallback dataset items carry
+            // only data/id/name (no files array) — the unguarded .length threw
+            // on the remove-toggle click, making imported curves un-removable.
+            const activeIndex = this.STATE.activeCurves.findIndex(c => c.uid === curveUid || ((item.files ? item.files.length <= 1 : true) && c.id === id));
             if (activeIndex >= 0) {
                 this.STATE.activeCurves.splice(activeIndex, 1);
             } else {
@@ -1787,14 +1800,21 @@ const savedDb = localStorage.getItem('settings_align_db');
             EQ_Module.drawCurve();
             this.renderActiveCurvesDock();
             // Keep the Similar tab's LOAD/role badges in sync when a curve is
-            // toggled while Similar mode is open.
-            if (this.searchMode === 'similar' && this._lastSimilarGroups) {
-                this.renderSimilarList(this._lastSimilarGroups, this._lastSimilarRefName || '');
+            // toggled while Similar mode is open. (_lastSimilarGroups was never
+            // assigned anywhere — the gate was permanently false and the badge
+            // refresh this comment promises silently never ran. Use the
+            // matches list, which IS populated by every scan.)
+            if (this.searchMode === 'similar' && this._lastSimilarMatches) {
+                this.renderSimilarList(this._lastSimilarMatches, this._lastSimilarRefName || '');
             }
         },
         setTarget: function(val) {
             this.STATE.activeCurves = this.STATE.activeCurves.filter(c => c.role !== 'target');
             this.targetMode = val;
+            // A target change outside the Tuning Lab supersedes the pre-lab
+            // snapshot — exitTuningLab must not clobber the user's newer
+            // selection (see enterTuningLab/exitTuningLab in eq-core.js).
+            if (!EQ_Module.isTuningLabActive) this._preLabTargetMode = undefined;
 
             const btn = document.getElementById('target-cycle-btn');
             const hiddenSel = document.getElementById('target-selector');
@@ -1935,7 +1955,12 @@ const savedDb = localStorage.getItem('settings_align_db');
                 }
                 for (let i = 0; i < EQ_Module.advancedBands.length; i++) {
                     const b = EQ_Module.advancedBands[i];
-                    optimizedBands.push({ freq: b.hz, q: b.q !== undefined ? b.q : b.defaultQ, type: 'peaking', gain: 0.0, role: 'adv', index: i });
+                    // Model each advanced band with its REAL filter type. The
+                    // audio path (updateAudioConnections) applies these bands
+                    // with their configured types (band 0 is a lowshelf; 7/8/9
+                    // are highshelves) — modeling them all as peaking made the
+                    // solver optimize gains for the wrong transfer functions.
+                    optimizedBands.push({ freq: b.hz, q: b.q !== undefined ? b.q : b.defaultQ, type: b.type || 'peaking', gain: 0.0, role: 'adv', index: i });
                 }
             } else {
 
@@ -2180,7 +2205,7 @@ const savedDb = localStorage.getItem('settings_align_db');
                 item.setAttribute('data-uid', c.uid);
                 item.title = "Drag to Base / Target / Reference slot to change role";
                 const roleLabel = c.role==='base'?'BASE':(c.role==='target'?'TARGET':'REF');
-                item.innerHTML = `<div class="flex items-center justify-between w-full h-6 select-none" draggable="false"><span class="px-2 py-0.5 rounded text-[8.5px] font-black tracking-wider text-white uppercase bg-black/60 border border-white/10 flex-shrink-0" title="Drag to rearrange" draggable="false">${roleLabel}</span><div class="flex items-center gap-1.5" draggable="false"><button onclick="PEQDB_Module.toggleVisible(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 text-white text-[11px] flex items-center justify-center border border-white/10 cursor-pointer" title="Show or hide this curve" draggable="false">${c.visible?'👁️':'🙈'}</button><button onclick="PEQDB_Module.cycleColor(this.closest('[data-uid]').dataset.uid)" class="w-5 h-5 rounded-full border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style="background-color:${c.color}" title="Change this curve's color" draggable="false"></button><button onclick="PEQDB_Module.removeCurve(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-black text-[11px] flex items-center justify-center cursor-pointer" title="Remove this curve" draggable="false">✕</button></div></div><div onclick="PEQDB_Module.renameCurve(this.closest('[data-uid]').dataset.uid)" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5" draggable="false"><div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none"><span id="marquee-${c.uid}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span></div></div><div class="flex justify-between items-center w-full h-6" draggable="false"><div class="flex items-center gap-1.5 h-6 decibel-stepper flex-shrink-0 select-none" style="width:110px !important;min-width:110px !important;max-width:110px !important;" draggable="false"><button type="button" onclick="event.stopPropagation();PEQDB_Module.adjustCurveOffset(this.closest('[data-uid]').dataset.uid,-1)" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve down 1 dB" draggable="false">◄</button><button type="button" onclick="event.stopPropagation();" class="flex-1 h-6 bg-[var(--bg-input)] border-2 border-black text-[#c85a0e] font-mono font-black text-[9px] flex items-center justify-center text-center cursor-default select-none focus:outline-none px-0 min-w-0" draggable="false">${(c.offset||0)>=0?'+':''}${c.offset||0}dB</button><button type="button" onclick="event.stopPropagation();PEQDB_Module.adjustCurveOffset(this.closest('[data-uid]').dataset.uid,1)" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve up 1 dB" draggable="false">►</button></div><div class="flex items-center gap-1.5" draggable="false"><button onclick="PEQDB_Module.exportCurveByUid(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Export this curve as a text file" draggable="false">📥</button><button onclick="PEQDB_Module.findMatchesFromDock(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Find similar curves" draggable="false">🔍</button></div></div>`;
+                item.innerHTML = `<div class="flex items-center justify-between w-full h-6 select-none" draggable="false"><span class="px-2 py-0.5 rounded text-[8.5px] font-black tracking-wider text-white uppercase bg-black/60 border border-white/10 flex-shrink-0" title="Drag to rearrange" draggable="false">${roleLabel}</span><div class="flex items-center gap-1.5" draggable="false"><button onclick="PEQDB_Module.toggleVisible(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 text-white text-[11px] flex items-center justify-center border border-white/10 cursor-pointer" title="Show or hide this curve" draggable="false">${c.visible?'👁️':'🙈'}</button><button onclick="PEQDB_Module.cycleColor(this.closest('[data-uid]').dataset.uid)" class="w-5 h-5 rounded-full border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style="background-color:${c.color}" title="Change this curve's color" draggable="false"></button><button onclick="PEQDB_Module.removeCurve(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-black text-[11px] flex items-center justify-center cursor-pointer" title="Remove this curve" draggable="false">✕</button></div></div><div onclick="PEQDB_Module.renameCurve(this.closest('[data-uid]').dataset.uid)" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5" draggable="false"><div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none"><span id="marquee-${esc(c.uid)}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span></div></div><div class="flex justify-between items-center w-full h-6" draggable="false"><div class="flex items-center gap-1.5 h-6 decibel-stepper flex-shrink-0 select-none" style="width:110px !important;min-width:110px !important;max-width:110px !important;" draggable="false"><button type="button" onclick="event.stopPropagation();PEQDB_Module.adjustCurveOffset(this.closest('[data-uid]').dataset.uid,-1)" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve down 1 dB" draggable="false">◄</button><button type="button" onclick="event.stopPropagation();" class="flex-1 h-6 bg-[var(--bg-input)] border-2 border-black text-[#c85a0e] font-mono font-black text-[9px] flex items-center justify-center text-center cursor-default select-none focus:outline-none px-0 min-w-0" draggable="false">${(c.offset||0)>=0?'+':''}${c.offset||0}dB</button><button type="button" onclick="event.stopPropagation();PEQDB_Module.adjustCurveOffset(this.closest('[data-uid]').dataset.uid,1)" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve up 1 dB" draggable="false">►</button></div><div class="flex items-center gap-1.5" draggable="false"><button onclick="PEQDB_Module.exportCurveByUid(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Export this curve as a text file" draggable="false">📥</button><button onclick="PEQDB_Module.findMatchesFromDock(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Find similar curves" draggable="false">🔍</button></div></div>`;
                 if (c.role==='base') { baseSlot.appendChild(item); baseCount++; }
                 else if (c.role==='target') { targetSlot.appendChild(item); targetCount++; }
                 else { referencePile.appendChild(item); refCount++; }
@@ -3016,7 +3041,10 @@ const countEl = document.getElementById('peqdb-result-count');
             }
 
             list.innerHTML = html;
-            this.lastSimilarHTML = list.innerHTML;
+            // (lastSimilarHTML dead store removed: it re-serialized the
+            // entire just-built list into a JS string every rescan —
+            // megabytes of transient garbage at 1000+ matches — and had no
+            // readers anywhere.)
 
             list.style.overflowX = 'hidden';
             setTimeout(() => {
@@ -3311,19 +3339,38 @@ const countEl = document.getElementById('peqdb-result-count');
                 composite[i] += realValues.preVal;
             }
 
-            const magRes = new Float32Array(points);
-            const phaseRes = new Float32Array(points);
-
+            // (The legacy native-BiquadFilterNode 'mathFilters' bank was
+            // removed with the AudioWorklet refactor — this tool crashed with
+            // a TypeError on every invocation. Rebuilt with
+            // getBiquadMagnitude (eq-biquad-math.js), the same RBJ math the
+            // worklet and the drawn curve use, mirroring updateAudioConnections'
+            // main-band rules: per-band type, DOM hz/gain/Q, bypass flags and
+            // the shelf/HP/LP slope cascade.)
             EQ_Module.bands.forEach((b, i) => {
-                const fNode = EQ_Module.mathFilters[i];
-                fNode.type = b.type || 'peaking';
-                fNode.frequency.value = parseFloat(document.getElementById("eq-f" + i)?.value || b.hz);
-                fNode.gain.value = parseFloat(document.getElementById("eq-s" + i)?.value || 0);
-                fNode.Q.value = parseFloat(document.getElementById("eq-q_m" + i)?.value || b.defaultQ);
+                const isBypassed = window.bypassedBands.has("m" + i);
+                if (isBypassed) return;
+                const type = b.type || 'peaking';
 
-                fNode.getFrequencyResponse(freqs, magRes, phaseRes);
-                for (let j = 0; j < points; j++) {
-                    composite[j] += 20 * Math.log10(Math.max(1e-10, magRes[j]));
+                const rawHz = parseFloat(document.getElementById("eq-f" + i)?.value);
+                const hz = Number.isFinite(rawHz) ? rawHz : b.hz;
+                const rawG = parseFloat(document.getElementById("eq-s" + i)?.value);
+                const g = Number.isFinite(rawG) ? rawG : 0.0;
+                const rawQ = parseFloat(document.getElementById("eq-q_m" + i)?.value);
+                const q = Number.isFinite(rawQ) ? rawQ : b.defaultQ;
+
+                const slopeCapable = (type === 'lowshelf' || type === 'highshelf' || type === 'lowpass' || type === 'highpass');
+                const activeSlope = slopeCapable ? (b.slope || 12) : 12;
+                const cascadeNodesCount = Math.max(1, Math.round(activeSlope / 12));
+                const hasNoGain = ['highpass', 'lowpass', 'notch'].includes(type);
+                const nodeGain = (type === 'lowshelf' || type === 'highshelf')
+                    ? (hasNoGain ? 0.0 : g) / cascadeNodesCount
+                    : (hasNoGain ? 0.0 : g);
+
+                for (let k = 0; k < cascadeNodesCount; k++) {
+                    for (let j = 0; j < points; j++) {
+                        composite[j] += 20 * Math.log10(Math.max(1e-10,
+                            EQ_Module.getBiquadMagnitude(type, freqs[j], hz, q, nodeGain)));
+                    }
                 }
             });
 

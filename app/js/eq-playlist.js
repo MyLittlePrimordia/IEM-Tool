@@ -419,15 +419,28 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             }
         },
 
-fadeMusicVolume: function(targetVal, duration = 0.015) {
+        fadeMusicVolume: function(targetVal, duration = 0.015) {
             if (this.connected && this.graphBuilt && this.musicVolumeNode && SharedAudio.ctx) {
                 const now = SharedAudio.ctx.currentTime;
                 // User volume only — per-track loudness match lives on the
                 // element gain arms (sourceGain/gaplessGain), so applying it
                 // here would boost BOTH tracks mid-crossfade.
+                // _volFadeActive marks the fade's ownership window so a
+                // concurrent slider move can't stomp the ramp (see
+                // updateMusicVolume).
+                this._volFadeActive = true;
                 this.musicVolumeNode.gain.setTargetAtTime(Math.max(0, Math.min(1, targetVal)), now, duration);
+                const ms = Math.max(60, Math.ceil((duration * 6) * 1000));
+                setTimeout(() => {
+                    this._volFadeActive = false;
+                    // If the user moved the slider during the fade, their
+                    // value wins once it completes.
+                    if (this._pendingVolPct !== undefined && this.connected && this.graphBuilt && this.musicVolumeNode && SharedAudio.ctx) {
+                        setAudioParamSmooth(this.musicVolumeNode.gain, this._pendingVolPct, 0.05);
+                    }
+                }, ms);
             } else {
-                // Graph absent �?" mirror the fade on the active element attribute directly.
+                // Graph absent — mirror the fade on the active element attribute directly.
                 const active = this._activeEl();
                 if (active) active.volume = Math.max(0, Math.min(1, targetVal));
             }
@@ -474,18 +487,24 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
             return this._activeIsA ? this.gaplessEl : this.audioEl;
         },
 
-        // Mirrors nextTrack()'s decision tree WITHOUT swapping sources, so the
-        // shuffle bag advances exactly once per track (preloading IS the advance).
+        // Mirrors nextTrack()'s decision tree WITHOUT swapping sources, so
+        // the shuffle bag advances exactly once per track (preloading IS the
+        // advance).
         _computeNextPlaylistIndex: function() {
             if (this.repeatActive) return this.playlistIndex;
             if (this.shuffleActive) return this._nextShuffledIndex();
             return (this.playlistIndex + 1) % this.playlist.length;
         },
 
-        // Load the next track into the idle element so it can be crossfaded in
-        // at the seam. Called after every track start (and at boot when gapless
-        // or crossfade is enabled). Never touches the active element.
-        _preloadNextTrack: function() {
+        // Idempotent preload: _preloadNextTrack is invoked from several sites
+        // per track (boot, first user gesture via _buildDSPGraph, gapless/
+        // crossfade toggles, track starts, crossfade retirement). Every call
+        // that REACHED _computeNextPlaylistIndex burned another shuffle-bag
+        // position, silently skipping a track per call. Skip instead when the
+        // idle element already holds the correct next track for the CURRENT
+        // playlist position — the preload only advances when the position (or
+        // the required next track) actually changed.
+        _preloadNextTrack: function(force) {
             if (!this._standbyReady() || !this.playlist || this.playlist.length === 0) return;
             if (this.repeatActive && this.playlist.length === 1) {
                 // Single-track repeat: preloading is wasteful.
@@ -495,7 +514,38 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
             }
             const idle = this._idleEl();
             if (!idle) return;
-            const nextIndex = this._computeNextPlaylistIndex();
+
+            // Sequential / repeat: the next index is pure math on the
+            // current position — safe to compute without side effects.
+            if (!this.shuffleActive) {
+                const seqNext = this.repeatActive
+                    ? this.playlistIndex
+                    : (this.playlistIndex + 1) % this.playlist.length;
+                if (!force && this._preloadedIndex === seqNext && this._standbyTrackIndex === seqNext) {
+                    const preTrack = this.playlist[seqNext];
+                    const preUrl = preTrack ? this._ensureTrackUrl(preTrack) : null;
+                    if (preUrl && idle.src === preUrl) return; // already staged
+                }
+                this._stageStandby(idle, seqNext);
+                return;
+            }
+
+            // Shuffle: the bag may only advance when the position moved or a
+            // caller explicitly re-stages (force). If a valid preload for the
+            // current position already exists, keep it.
+            if (!force && this._preloadedIndex !== null && this._preloadedIndex !== undefined
+                && this._standbyTrackIndex === this._preloadedIndex
+                && this._preloadedFromPosition === this.playlistIndex) {
+                const stagedTrack = this.playlist[this._preloadedIndex];
+                const stagedUrl = stagedTrack ? this._ensureTrackUrl(stagedTrack) : null;
+                if (stagedUrl && idle.src === stagedUrl) return; // already staged
+            }
+            const nextIndex = this._computeNextPlaylistIndex(); // advances the bag ONCE
+            this._stageStandby(idle, nextIndex);
+        },
+
+        // Point the idle element at playlist[nextIndex] and record the staging.
+        _stageStandby: function(idle, nextIndex) {
             const track = this.playlist[nextIndex];
             if (!track) { this._standbyTrackIndex = null; this._preloadedIndex = null; return; }
             const url = this._ensureTrackUrl(track);
@@ -504,6 +554,7 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
             if (idle.src !== url) { idle.src = url; idle.load(); }
             this._standbyTrackIndex = nextIndex;
             this._preloadedIndex = nextIndex;
+            this._preloadedFromPosition = this.playlistIndex;
         },
 
         // Crossfade the idle element (which holds track `index`) into the active
@@ -540,9 +591,14 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
                 // standby element is retired — kill playback and zero its
                 // arm so the stale track can't keep bleeding into the graph
                 // (the seam fade already moved on to a different arm).
+                // GUARD: same reactivation case as the retirement timeout —
+                // a newer crossfade may have made THIS element the active
+                // player; never pause the live arm.
                 if (seq !== this._playSeq) {
-                    try { standby.pause(); } catch (e) {}
-                    if (newGain) newGain.gain.setTargetAtTime(0, SharedAudio.ctx.currentTime, 0.005);
+                    if (standby !== this._activeEl()) {
+                        try { standby.pause(); } catch (e) {}
+                        if (newGain) newGain.gain.setTargetAtTime(0, SharedAudio.ctx.currentTime, 0.005);
+                    }
                     return;
                 }
                 const slider = document.getElementById("eq-musicVolumeSlider");
@@ -573,16 +629,26 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
                 // Always retire the old element and drop its arm — even if a
                 // newer playPlaylistIndex took over (seq mismatch), the old
                 // element must not keep bleeding audio into the graph.
-                try { oldActive.pause(); } catch (e) {}
-                if (oldGain) oldGain.gain.setTargetAtTime(0, ctx.currentTime, 0.01);
+                // GUARD: if a newer crossfade has since made this element the
+                // ACTIVE player again (e.g. two skips inside one overlap
+                // window: A->B, then B->A before this timeout fires), pausing
+                // it here would stop the live track mid-playback. Only pause
+                // and mute it while it is still the idle arm.
+                if (oldActive && oldActive !== this._activeEl()) {
+                    try { oldActive.pause(); } catch (e) {}
+                    if (oldGain) oldGain.gain.setTargetAtTime(0, ctx.currentTime, 0.01);
+                }
                 this._transitioning = false;
                 if (seq !== this._playSeq) return; // a newer switch owns the preload
                 const nextTrack = this.playlist[this.playlistIndex];
                 const prevTrack = this.playlist[oldIndex];
                 // Preload the following track into the retired element before
                 // revoking the old URL so the reference is never dangling.
+                // Same reactivation guard: a newer crossfade already owns the
+                // preload slot for the element — don't swap its source under
+                // the newer transition.
                 const idle = this._idleEl();
-                if (idle) {
+                if (idle && idle === oldActive) {
                     const nextNext = this._computeNextPlaylistIndex();
                     const t2 = this.playlist[nextNext];
                     if (t2) {
@@ -590,9 +656,17 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
                         if (u2 && idle.src !== u2) { idle.src = u2; idle.load(); }
                         this._standbyTrackIndex = nextNext;
                         this._preloadedIndex = nextNext;
+                        this._preloadedFromPosition = this.playlistIndex;
                     }
                 }
-                if (prevTrack && nextTrack && prevTrack !== nextTrack) {
+                // Revoke the retired track's blob URL — but never when the
+                // standby was just pointed at that SAME track (2-track lists
+                // and shuffle wrap-backs): the preload above hands idle the
+                // previous track's url, and revoking it mid-load aborts the
+                // fetch, stalls readyState < 2 and silently degrades the next
+                // seam to the gapped hard-swap path.
+                if (prevTrack && nextTrack && prevTrack !== nextTrack
+                    && this.playlist[this._standbyTrackIndex] !== prevTrack) {
                     this._revokeTrackUrl(prevTrack);
                 }
             }, overlap * 1000 + 250);
@@ -825,6 +899,7 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
             this._activeIsA = true;
             this._standbyTrackIndex = null;
             this._preloadedIndex = null;
+            this._preloadedFromPosition = null;
             this._transitioning = false;
             if (this.sourceGain) this.sourceGain.gain.value = 1;
             if (this.gaplessGain) this.gaplessGain.gain.value = 0;
@@ -900,6 +975,7 @@ fadeMusicVolume: function(targetVal, duration = 0.015) {
             if (this._standbyReady()) {
                 this._standbyTrackIndex = null;
                 this._preloadedIndex = null;
+                this._preloadedFromPosition = null;
             }
 
             if (this.shuffleActive) {
@@ -997,6 +1073,7 @@ await ctx.resume();
                     if (this.audioEl) this.audioEl.volume = 1.0;
                     if (this.gaplessEl) this.gaplessEl.volume = 1.0;
                     this.fadeMusicVolume(0, 0.005); // Start silent
+                    const playPauseSeq = this._pauseSeq;
                     active.play().then(() => {
                         const slider = document.getElementById("eq-musicVolumeSlider");
                         const vol = slider ? parseFloat(slider.value) / 100 : 0.5;
@@ -1004,7 +1081,17 @@ await ctx.resume();
                         // Lazy loudness measurement: only decode when playback
                         // actually starts, never at boot or on pause.
                         this._analyzeCurrentLoudness();
-                    }).catch(e => console.log("Playback blocked or interrupted."));
+                    }).catch(e => {
+                        // Rejected play() (autoplay policy, interruption):
+                        // the buttons above already flipped to the "playing"
+                        // state — revert them so the UI isn't claiming
+                        // playback that never started.
+                        console.log("Playback blocked or interrupted.");
+                        if (playPauseSeq !== this._pauseSeq) return;
+                        if (btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
+                        if (mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
+                        if (modalPlayBtn) modalPlayBtn.innerHTML = "<span>▶</span><span>Play</span>";
+                    });
                 }
                 if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
                 if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
@@ -1094,7 +1181,15 @@ this.fadeMusicVolume(vol, 0.015);
             if (this.connected && this.graphBuilt && this.musicVolumeNode) {
                 if (this.audioEl) this.audioEl.volume = 1.0; // Lock browser streams at maximum to prevent unsynced thread-stepping clicks
                 if (this.gaplessEl) this.gaplessEl.volume = 1.0;
-                setAudioParamSmooth(this.musicVolumeNode.gain, Math.max(0, Math.min(1, vol)), 0.05);
+                // Volume-ownership handoff: while a play/pause/crossfade fade
+                // is in flight, fadeMusicVolume owns this param — a slider
+                // move mid-fade stomped the fade target (audible pop, exactly
+                // what the fade exists to prevent). The pending fade's
+                // .then() re-asserts the user's value right after.
+                if (!this._volFadeActive) {
+                    setAudioParamSmooth(this.musicVolumeNode.gain, Math.max(0, Math.min(1, vol)), 0.05);
+                }
+                this._pendingVolPct = Math.max(0, Math.min(1, vol));
             } else {
                 // DSP graph not built yet — fall back to the element volume so the
                 // slider always affects what you hear.

@@ -237,7 +237,30 @@ var Mascot = window.Mascot || {
             (intensity - this.currentIntensity) * Math.min(1, dt * speed);
 
         var i = Math.max(0, Math.min(1, this.currentIntensity));
+
+        // Round the inputs that feed the style strings: when the smoothed
+        // intensity hasn't moved a visible step (paused tab, idle silence,
+        // settled level), the composed strings are identical and the three
+        // style writes below are skipped entirely — this runs at up to 60Hz
+        // from the visualizer loop, and every write forces a style recalc on
+        // the header element.
+        var iq = Math.round(i * 100) / 100;
+        var iu = Math.round(i * 20) / 20; // coarser step for blur/glow sizes
+        var key = expr + '|' + iq + '|' + iu + '|' + Math.round(now / 80);
+        if (this._lastReactiveKey === key) return;
+        this._lastReactiveKey = key;
+
         var shake, scaleX, scaleY, rot, blur, glowColor, glowSize;
+
+        // 'vibing' is the visualizer's default playing expression and its
+        // transform is owned by the CSS keyframe class (anim-mascot-vibing —
+        // the inline transform loses the cascade anyway, so that write was
+        // pure wasted style recalc). Only the glow state matters for it.
+        if (expr === 'vibing') {
+            el.style.filter = 'none';
+            el.style.textShadow = iu > 0.5 ? '0 0 4px rgba(var(--accent-blue-rgb), 0.3)' : 'none';
+            return;
+        }
 
         switch(expr) {
             case 'bassface':
@@ -301,15 +324,6 @@ var Mascot = window.Mascot || {
                 el.style.transform = 'translateX(' + shake.toFixed(1) + 'px) translateY(' + (Math.cos(now * 0.14) * i * 2).toFixed(1) + 'px) scaleX(' + scaleX.toFixed(2) + ') scaleY(' + scaleY.toFixed(2) + ') rotate(' + rot.toFixed(1) + 'deg)';
                 el.style.filter = 'blur(' + blur.toFixed(1) + 'px)';
                 el.style.textShadow = '0 0 ' + glowSize + 'px ' + glowColor;
-                break;
-
-            case 'vibing':
-                var bobY = Math.sin(now * 0.004) * i * 4;
-                rot = Math.sin(now * 0.003) * i * 3;
-                blur = 0;
-                el.style.transform = 'translateY(' + bobY.toFixed(1) + 'px) rotate(' + rot.toFixed(1) + 'deg)';
-                el.style.filter = 'none';
-                el.style.textShadow = i > 0.5 ? '0 0 4px rgba(var(--accent-blue-rgb), 0.3)' : 'none';
                 break;
 
             case 'imbalance':

@@ -37,7 +37,10 @@ const EQ_CrossfeedMethods = {
             }
 
             const slider = document.getElementById('crossfeed-level');
-            const levelVal = slider ? parseFloat(slider.value) : 0;
+            const rawLevel = slider ? parseFloat(slider.value) : 0;
+            // NaN guard: an unparsed slider value would flow straight into
+            // the cross/direct/expand gains as NaN (silence).
+            const levelVal = Number.isFinite(rawLevel) ? rawLevel : 0;
 
             // Per-mode presets: each speaker position varies the arrival
             // (delay), the high-frequency rolloff (lowpass) and the bleed
@@ -81,7 +84,10 @@ const EQ_CrossfeedMethods = {
             setAudioParamSmooth(SharedAudio.directGainR.gain, directVal, 0.02);
 
             // Calculate and apply phase-inverted coefficients for Stereo Expansion
-            const expandVal = isOff ? 0 : -(this.stereoExpandLevel / 100) * 0.65; // High-precision negative gain
+            // NaN guard: stereoExpandLevel is assigned from a slider in
+            // updateStereoExpand (eq-core.js) with a bare parseFloat.
+            const rawExpand = parseFloat(this.stereoExpandLevel);
+            const expandVal = isOff ? 0 : -((Number.isFinite(rawExpand) ? rawExpand : 0) / 100) * 0.65; // High-precision negative gain
             if (SharedAudio.expandGainL && SharedAudio.expandGainR) {
                 setAudioParamSmooth(SharedAudio.expandGainL.gain, expandVal, 0.02);
                 setAudioParamSmooth(SharedAudio.expandGainR.gain, expandVal, 0.02);

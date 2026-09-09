@@ -143,7 +143,10 @@ const App_Theme = {
 
             const fontBtn = document.getElementById('font-cycle-btn');
             if (fontBtn) {
-                fontBtn.innerHTML = `<span>${meta.emoji} ${fontId}</span>`;
+                // textContent, not innerHTML: fontId originates from
+                // localStorage (settings_font_id) which a compromised or
+                // hand-edited store could turn into markup.
+                fontBtn.textContent = (meta.emoji || '🔤') + ' ' + fontId;
             }
 
             if (typeof IEM_Module !== 'undefined' && IEM_Module.selectExportFont) {
@@ -222,19 +225,35 @@ const App_Theme = {
             this.fontMeta = [];
 
             const loadedEntries = [];
+            // Load all font faces CONCURRENTLY: the serial await chain
+            // waited for each file in turn, multiplying boot font-ready time
+            // by the number of faces. Each face resolves/fails
+            // independently; per-face catch preserves the old fallback.
+            const fileFonts = [];
             for (var i = 0; i < fontList.length; i++) {
                 var f = fontList[i];
                 if (!f.file || f.file.includes(',')) {
                     loadedEntries.push({ meta: f, isSystemStack: true });
-                    continue;
+                } else {
+                    fileFonts.push(f);
                 }
+            }
+            const loadResults = await Promise.all(fileFonts.map((f) => {
                 try {
-                    var fontFace = new FontFace(f.name, 'url(./app/fonts/' + f.file + ')');
-                    await fontFace.load();
-                    document.fonts.add(fontFace);
-                    loadedEntries.push({ meta: f, isSystemStack: false });
-                } catch (fontErr) {
-                    console.warn(`[Offline Font Notice] Local font "${f.name}" (${f.file}) not found in ./app/fonts/. Falling back.`);
+                    const fontFace = new FontFace(f.name, 'url(./app/fonts/' + f.file + ')');
+                    return fontFace.load().then(() => {
+                        document.fonts.add(fontFace);
+                        return { meta: f, ok: true };
+                    }).catch(() => ({ meta: f, ok: false }));
+                } catch (e) {
+                    return Promise.resolve({ meta: f, ok: false });
+                }
+            }));
+            for (const r of loadResults) {
+                if (r.ok) {
+                    loadedEntries.push({ meta: r.meta, isSystemStack: false });
+                } else {
+                    console.warn(`[Offline Font Notice] Local font "${r.meta.name}" (${r.meta.file}) not found in ./app/fonts/. Falling back.`);
                 }
             }
 

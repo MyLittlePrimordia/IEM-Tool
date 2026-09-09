@@ -53,13 +53,23 @@ const EQ_SmartImportMethods = {
                     try {
                         var data = JSON.parse(text, function(k, v) { if (k === '__proto__' || k === 'constructor' || k === 'prototype') return undefined; return v; });
                         if (data.mainVals || data.advVals || data.preVal !== undefined) {
-                            // Validate EQ payload before applying — prevents prototype pollution side-effects and TypeErrors from malformed arrays
-                            var validMain = !data.mainVals || Array.isArray(data.mainVals);
-                            var validAdv = !data.advVals || Array.isArray(data.advVals);
+                            // Validate EQ payload before applying — prevents prototype pollution side-effects and TypeErrors from malformed arrays.
+                            // Members must be OBJECTS with the expected fields: a bare
+                            // numeric array ([4,3,2,...]) is the app's internal
+                            // gain-array preset style, NOT a loadValues payload —
+                            // applying it used to "succeed" while silently
+                            // flattening every band to defaults.
+                            var validMain = !data.mainVals || (Array.isArray(data.mainVals) && data.mainVals.every(function(m) { return m && typeof m === 'object'; }));
+                            var validAdv = !data.advVals || (Array.isArray(data.advVals) && data.advVals.every(function(m) { return m && typeof m === 'object'; }));
                             if (validMain && validAdv) { EQ.loadValues(data); showToast("EQ profile loaded!", "📊"); EQ.closeSmartImportModal(); return; }
+                            showToast("JSON looks like an EQ profile but band arrays are malformed (each band must be an object like {\"g\":2,\"hz\":105,\"q\":1.4}).", "⚠️");
+                            return;
                         }
                         if (typeof data.brand === 'string' && typeof data.model === 'string') { IEM.loadConfigDirect(data); showToast("IEM Profile loaded!", "📝"); EQ.closeSmartImportModal(); return; }
-                    } catch(e) {}
+                    } catch(e) {
+                        showToast("Invalid JSON: " + (e && e.message ? e.message : 'parse error'), "⚠️");
+                        return;
+                    }
                 }
                 
                 if (text.includes("GraphicEQ:")) {
@@ -129,7 +139,7 @@ const EQ_SmartImportMethods = {
                     if (!clean || clean.startsWith('#') || clean.startsWith('*') || clean.startsWith('//')) return;
                     
                     // 1. Detect Preamp gain values across multiple syntaxes
-                    var preampMatch = clean.match(/preamp\s*[:=,\s]\s*([-\d.]+)/i);
+                    var preampMatch = clean.match(/preamp\s*[:=,\s]\s*([+-\d.]+)/i);
                     if (preampMatch) {
                         preamp = parseFloat(preampMatch[1]) || 0;
                         return;
@@ -140,12 +150,14 @@ const EQ_SmartImportMethods = {
                     var filterType = self.detectFilterType(clean);
                     
                     // Check for standard Peace format: "Filter X: ON PK Fc 105 Hz Gain -3.0 dB Q 1.4"
-                    var peaceMatch = clean.match(/Fc\s*([\d.]+)\s*Hz\s*Gain\s*([-\d.]+)\s*dB\s*Q\s*([\d.]+)/i);
+                    // [+-\d.]+ — some exporters sign positive gains ("Gain +3.0 dB");
+                    // [-\d.]+ silently dropped those lines (half-imported EQ).
+                    var peaceMatch = clean.match(/Fc\s*([\d.]+)\s*Hz\s*Gain\s*([+-\d.]+)\s*dB\s*Q\s*([\d.]+)/i);
                     if (peaceMatch) {
                         fc = Math.round(parseFloat(peaceMatch[1]));
                         gain = parseFloat(peaceMatch[2]);
                         q = parseFloat(peaceMatch[3]);
-                    } 
+                    }
                     // Check for Qudelix-5K CSV format: "Filter 1,ON,PEAK,20,-3.5,1.2"
                     // (also NOTCH / LSC / HSC / LPQ / HPQ types)
                     else if (filterType) {
@@ -154,7 +166,12 @@ const EQ_SmartImportMethods = {
                             var fVal = parseFloat(csvParts[csvParts.length - 3]);
                             var gVal = parseFloat(csvParts[csvParts.length - 2]);
                             var qVal = parseFloat(csvParts[csvParts.length - 1]);
-                            if (!isNaN(fVal) && !isNaN(gVal) && !isNaN(qVal)) {
+                            // Same range validation as the raw-numbers branch:
+                            // NaN-only filtering previously accepted 1e9 Hz /
+                            // -1e9 dB / Q 1e-9, polluting the band model and
+                            // re-exporting garbage filter lines.
+                            if (!isNaN(fVal) && !isNaN(gVal) && !isNaN(qVal)
+                                && fVal >= 10 && fVal <= 24000 && gVal >= -40 && gVal <= 40 && qVal >= 0.01 && qVal <= 40) {
                                 fc = Math.round(fVal);
                                 gain = gVal;
                                 q = qVal;

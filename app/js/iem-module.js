@@ -195,7 +195,76 @@ window.updateExpandedAutoHide = function() {
         return this.domCache.get(id);
     },
     saveWorkspaceState: function() {
+        // Persist the hearing-test correction so it survives reloads. The
+        // hearing layer is a separate EQ layer (worklet sim slots 12-19,
+        // included in exports), so restoring it re-applies the exact profile
+        // the user measured without touching their faders.
+        try {
+            if (window.EQ && EQ_Module.hearingCalEnabled && Array.isArray(EQ_Module.hearingOffsets)) {
+                const anyNonZero = EQ_Module.hearingOffsets.some(v => v !== 0);
+                if (anyNonZero) {
+                    localStorage.setItem('settings_hearing_offsets', JSON.stringify(EQ_Module.hearingOffsets));
+                } else {
+                    localStorage.removeItem('settings_hearing_offsets');
+                }
+            } else {
+                localStorage.removeItem('settings_hearing_offsets');
+            }
+        } catch (e) { /* storage full — non-fatal */ }
+    },
+    restoreHearingCorrection: function() {
+        // Boot-time counterpart of saveWorkspaceState. Re-applies the saved
+        // hearing layer (and lights the UI badges) without re-running the test.
+        try {
+            const saved = localStorage.getItem('settings_hearing_offsets');
+            if (!saved) return false;
+            const offsets = JSON.parse(saved);
+            if (!Array.isArray(offsets) || offsets.length !== 8 || !offsets.some(v => Number.isFinite(v) && v !== 0)) return false;
 
+            EQ_Module.hearingOffsets = offsets.map(v => (Number.isFinite(v) ? Math.max(0, Math.min(6, v)) : 0));
+            EQ_Module.hearingCalEnabled = true;
+
+            const btn = document.getElementById('btn-hearing-cal');
+            const lbl = document.getElementById('lbl-hearing-cal');
+            if (btn && lbl) {
+                btn.classList.add('active-btn');
+                lbl.textContent = 'Hearing: ON';
+            }
+
+            // Reflect the restored profile in the Test Lab panel state.
+            const genBtn = document.getElementById('hearing-eq-generate-btn');
+            if (genBtn) {
+                genBtn.classList.remove('hidden', 'bg-zinc-800', 'text-zinc-500', 'cursor-not-allowed');
+                genBtn.classList.add('bg-emerald-500', 'text-white', 'hover:brightness-110', 'cursor-pointer');
+                genBtn.disabled = false;
+            }
+            const status = document.getElementById('hearing-test-status');
+            if (status) status.textContent = 'Saved hearing profile active.';
+            const hzDisp = document.getElementById('hearing-test-hz');
+            if (hzDisp) hzDisp.textContent = 'SAVED';
+            const pctDisp = document.getElementById('hearing-progress-pct');
+            if (pctDisp) pctDisp.textContent = '100%';
+            const segs = document.querySelectorAll('.hearing-seg');
+            segs.forEach(seg => { seg.style.background = '#34d399'; });
+            const instr = document.getElementById('hearing-test-instruction');
+            if (instr) {
+                instr.innerHTML = 'Saved correction active. <span class="text-white font-bold">Start Test</span> re-measures · <span class="text-white font-bold">Reset</span> clears.';
+            }
+
+            // Mirror raw thresholds into TestLab so a re-run of
+            // convertHearingToEQ has sane source data (offsets are the
+            // capped/shaped version of thresholds; re-deriving thresholds
+            // from them is not exact — but bake-to-faders uses offsets).
+            if (window.TestLab && TestLab_Module) {
+                TestLab_Module.hearingThresholds = offsets.map(v => v * 2.5); // loss*0.4 inverse, approx
+            }
+
+            EQ_Module.applyHearingCalibrationGains();
+            return true;
+        } catch (e) {
+            console.warn('[Hearing] Restore failed:', e);
+            return false;
+        }
     },
     mobileDrawerOpen: false,
     toggleMobileDrawer: function() {
@@ -403,7 +472,11 @@ window.updateExpandedAutoHide = function() {
                 if (tabId === 'iem' && window.IEM) {
                     IEM.ensureChartReady();
                 }
-                if (tabId === 'find' && window.FindEngine) {
+                // typeof guard: FindEngine is a top-level const in the
+                // bundle, never assigned to window — the old window.FindEngine
+                // check was always false, so returning to the Find tab never
+                // re-drew the target viz or re-applied the mobile section.
+                if (tabId === 'find' && typeof FindEngine !== 'undefined' && FindEngine.drawTargetVisualization) {
                 setTimeout(() => {
                     FindEngine.drawTargetVisualization();
                     App.setFindSection(App.activeFindSection);
@@ -1019,6 +1092,16 @@ setGlobalFont: function(fontId) {
         rippleEffect: function(event, button) {
             try {
                 if (!button) return;
+                // Never reposition fixed/absolute elements: forcing
+                // position:relative here once DEMOTED every fixed-position
+                // button (e.g. the ? shortcuts FAB, fixed bottom-right) to
+                // relative, teleporting it into body flow, clipped off the
+                // left-bottom edge — visually "the FAB moved to the left
+                // corner after clicking it". Overlay buttons get no ripple
+                // (their positioning IS the layout; a decorative span inside
+                // a 32px round FAB added nothing anyway).
+                const pos = window.getComputedStyle(button).position;
+                if (pos === 'fixed' || pos === 'absolute' || pos === 'sticky') return;
                 button.style.position = 'relative';
 
                 const circle = document.createElement('span');
@@ -1158,6 +1241,12 @@ setGlobalFont: function(fontId) {
                 if (!window.mushroomSporesActive) {
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                     canvas.style.display = 'none';
+                    // The loop is dead but the started flag stays true, so a
+                    // second activation hit the guard above and never
+                    // re-scheduled draw() — the spores stayed off forever
+                    // after the first deactivate. Reset the flag here so
+                    // runGlobalSporesLoop can restart cleanly.
+                    this._sporesLoopStarted = false;
                     return;
                 }
 
@@ -1482,6 +1571,17 @@ setGlobalFont: function(fontId) {
             } catch (error) {
                 console.error("Settings alignment load failed:", error);
             }
+
+            // Restore the saved hearing correction layer (if any) — after the
+            // DSP graph paths exist so applyHearingCalibrationGains reaches
+            // the worklet (it also self-queues via the pending-DSP path).
+            try {
+                if (typeof this.restoreHearingCorrection === 'function') {
+                    this.restoreHearingCorrection();
+                }
+            } catch (err) {
+                console.error("Hearing correction restore failed:", err);
+            }
         },
         init: function() {
             try {
@@ -1579,9 +1679,13 @@ setGlobalFont: function(fontId) {
 
                                 const data = JSON.parse(rawText);
                                 if (data && typeof data === 'object') {
-                                    IEM_Module.loadProfileData(data);
-                                    const label = (data.brand || data.model) ? `${data.brand || ''} ${data.model || ''}` : "Blank Profile";
-                                    showToast(`Loaded ${label.trim()} successfully!`, "📥");
+                                    // Route through the shared importer so a
+                                    // dropped full_workstation_backup actually
+                                    // restores its workspace+library — the old
+                                    // direct loadProfileData call blanked the
+                                    // workspace (all backup fields undefined)
+                                    // while reporting success.
+                                    IEM_Module._importParsedConfig(data);
                                 } else {
                                     showToast("Invalid JSON profile structure.", "⚠️");
                                 }
@@ -1722,7 +1826,10 @@ setGlobalFont: function(fontId) {
             if (sensEl && Number.isFinite(rawSens)) {
                 const delta = 10 * Math.log10(1000 / imp);
                 const converted = toV ? rawSens + delta : rawSens - delta;
-                const clamped = Math.max(80, Math.min(125, converted));
+                // Clamp to the UI range [55,150] (see handleGaugeSlider) —
+                // wide enough that the dB/V <-> dB/mW round trip is lossless
+                // for every representable impedance/sensitivity pair.
+                const clamped = Math.max(55, Math.min(150, converted));
                 sensEl.value = clamped.toFixed(0);
                 const slider = document.getElementById('sensitivity-slider');
                 if (slider) slider.value = clamped;
@@ -1833,6 +1940,18 @@ setGlobalFont: function(fontId) {
                 btn.textContent = labelMap[val] || 'Normal';
             }
             this.updateAll();
+        },
+        // SPL target (dB) used by every power requirement calculation. The
+        // listening-volume selector previously changed NOTHING — all three
+        // power-math sites hardcoded 115 dB. 'variable' keeps 115 (the
+        // historical default) since the user hasn't declared a level.
+        // Single source of truth: iem-module live math, the Review card
+        // export, and FindEngine's driveability badge all read this.
+        LISTENING_SPL_TARGETS: { low: 105, moderate: 115, high: 120, variable: 115 },
+        getListeningSplTarget: function() {
+            const input = document.getElementById('listening-volume');
+            const v = input ? input.value : 'moderate';
+            return this.LISTENING_SPL_TARGETS[v] !== undefined ? this.LISTENING_SPL_TARGETS[v] : 115;
         },
         formFactorOptions: ['IEM', 'Earbuds (Wired)', 'Wireless Earbuds (TWS)', 'Over-Ear Headphones (Wired)', 'Wireless Over-Ear Headphones'],
         connectorOptions: ['2-pin', 'MMCX', 'QDC', 'A2DC', 'Fixed Cable', 'Detachable Cable', 'Bluetooth', 'Electrostatic'],
@@ -2206,8 +2325,8 @@ onDbSearchInput: function(value) {
 
             if (document.getElementById('impedance')) document.getElementById('impedance').value = Math.max(5, Math.min(300, Math.round(item.impedance || 5)));
             if (document.getElementById('impedance-slider')) document.getElementById('impedance-slider').value = Math.min(300, Math.max(5, Math.round(item.impedance || 5)));
-            if (document.getElementById('sensitivity')) document.getElementById('sensitivity').value = Math.max(80, Math.min(125, Math.round(item.sensitivity || 80)));
-            if (document.getElementById('sensitivity-slider')) document.getElementById('sensitivity-slider').value = Math.min(125, Math.max(80, Math.round(item.sensitivity || 80)));
+            if (document.getElementById('sensitivity')) document.getElementById('sensitivity').value = Math.max(55, Math.min(150, Math.round(item.sensitivity || 80)));
+            if (document.getElementById('sensitivity-slider')) document.getElementById('sensitivity-slider').value = Math.min(150, Math.max(55, Math.round(item.sensitivity || 80)));
             let impEl = document.getElementById('impedance');
             if (impEl) document.getElementById('impedance').dispatchEvent(new Event('input', { bubbles: true }));
 
@@ -2655,7 +2774,11 @@ onDbSearchInput: function(value) {
             const needle = document.getElementById(`${id}-needle`);
             const light = document.getElementById(`${id}-light`);
             const input = document.getElementById(id);
-            const config = { impedance: { min: 5, max: 300 }, sensitivity: { min: 80, max: 125 } };
+            // Sensitivity range widened from [80,125] to [55,150]: dB/V values
+            // (dB/mW + 10*log10(1000/Z)) legitimately reach ~148 dB/V at low
+            // impedance, and 615 DB entries fall outside the old window — the
+            // old clamp corrupted unit-toggle round-trips by up to 8 dB.
+            const config = { impedance: { min: 5, max: 300 }, sensitivity: { min: 55, max: 150 } };
             const constraint = config[id];
 
             if (!constraint || !needle) return;
@@ -2889,13 +3012,35 @@ onDbSearchInput: function(value) {
                     const div = document.createElement('div');
                     div.className = 'bg-[var(--bg-card)] border-2 border-[var(--border-color)] px-2 py-1 flex items-center justify-between gap-1 select-none w-full h-full relative';
                     div.style.cssText = 'box-shadow: 2px 2px 0px 0px var(--border-color) !important;';
-                    div.innerHTML = `
-                        <div class="flex items-center gap-2 min-w-0 flex-1 overflow-visible">
-                            <span class="emoji-font vibrant-emoji ${animClass} text-2xl flex-shrink-0 leading-none" style="display: inline-block; transform-origin: center;">${emoji}</span>
-                            <span class="text-[9.5px] font-black text-[var(--text-main)] truncate leading-tight">${text}</span>
-                        </div>
-                        <button type="button" onclick="event.stopPropagation(); IEM.removeReviewTag('${tag}')" class="w-4 h-4 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[9px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${text}">✕</button>
-                    `;
+                    // DOM-built, no innerHTML: tags come from profiles that can
+                    // be imported from JSON files (selectedTags is attacker-
+                    // controllable text), and both the chip body and the
+                    // inline onclick string literal were raw-interpolated.
+                    const inner = document.createElement('div');
+                    inner.className = 'flex items-center gap-2 min-w-0 flex-1 overflow-visible';
+                    const emojiSpan = document.createElement('span');
+                    emojiSpan.className = `emoji-font vibrant-emoji ${animClass} text-2xl flex-shrink-0 leading-none`;
+                    emojiSpan.style.cssText = 'display: inline-block; transform-origin: center;';
+                    emojiSpan.textContent = emoji;
+                    const textSpan = document.createElement('span');
+                    textSpan.className = 'text-[9.5px] font-black text-[var(--text-main)] truncate leading-tight';
+                    textSpan.textContent = text;
+                    inner.appendChild(emojiSpan);
+                    inner.appendChild(textSpan);
+
+                    const rmBtn = document.createElement('button');
+                    rmBtn.type = 'button';
+                    rmBtn.className = 'w-4 h-4 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[9px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black';
+                    rmBtn.title = 'Remove ' + text;
+                    rmBtn.textContent = '✕';
+                    const tagToRemove = tag;
+                    rmBtn.addEventListener('click', (ev) => {
+                        ev.stopPropagation();
+                        IEM_Module.removeReviewTag(tagToRemove);
+                    });
+
+                    div.appendChild(inner);
+                    div.appendChild(rmBtn);
                     container.appendChild(div);
                 } else {
                     const div = document.createElement('div');
@@ -2910,7 +3055,12 @@ onDbSearchInput: function(value) {
             if (!box) return;
             const q = (query || '').trim();
 
-            const db = (window.FindEngine && FindEngine.iemDatabase) || (window.CurveIndexer && CurveIndexer.catalog) || [];
+            // typeof guards: FindEngine and CurveIndexer are top-level consts
+            // in the bundle (never on window), so the old window.* checks made
+            // db always [] — the brand autocomplete never showed anything.
+            const db = ((typeof FindEngine !== 'undefined' && FindEngine.iemDatabase && FindEngine.iemDatabase.length > 0)
+                ? FindEngine.iemDatabase
+                : ((typeof CurveIndexer !== 'undefined' && CurveIndexer.catalog) ? CurveIndexer.catalog : []));
             const normQ = q.toLowerCase();
             const seen = new Set();
             const matches = [];
@@ -3257,6 +3407,44 @@ onDbSearchInput: function(value) {
                 container.appendChild(div);
             });
         },
+        // Serialize an image source (blob: URL string or Blob) to a bounded
+        // dataURL for JSON export. blob: object URLs are meaningless outside
+        // this session, and raw Blobs JSON.stringify to {} — backups need the
+        // bytes embedded. Returns null for absent/invalid images.
+        _imageToDataURL: function(sourceUrl, sourceBlob) {
+            return new Promise((resolve) => {
+                const blob = sourceBlob || null;
+                const url = sourceUrl || (blob ? URL.createObjectURL(blob) : null);
+                if (!url) { resolve(null); return; }
+                const revoke = sourceUrl ? null : url; // only revoke URLs we created
+                const img = new Image();
+                img.onload = () => {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        let w = img.width, h = img.height;
+                        const maxDim = 400;
+                        if (w > maxDim || h > maxDim) {
+                            if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+                            else { w = Math.round((w * maxDim) / h); h = maxDim; }
+                        }
+                        canvas.width = Math.max(1, w);
+                        canvas.height = Math.max(1, h);
+                        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+                        if (revoke) { try { URL.revokeObjectURL(revoke); } catch (_) {} }
+                        resolve(dataUrl);
+                    } catch (e) {
+                        if (revoke) { try { URL.revokeObjectURL(revoke); } catch (_) {} }
+                        resolve(null);
+                    }
+                };
+                img.onerror = () => {
+                    if (revoke) { try { URL.revokeObjectURL(revoke); } catch (_) {} }
+                    resolve(null);
+                };
+                img.src = url;
+            });
+        },
         downsampleImage: function(imgObj, maxDim = 400) {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
@@ -3301,6 +3489,20 @@ onDbSearchInput: function(value) {
                 ctx.drawImage(this.rawImageObj, 0, 0, w, h);
 
                 canvas.toBlob((blob) => {
+                    // toBlob may pass null on encode failure — fall back to a
+                    // dataURL-derived Blob so the upload never silently dies.
+                    if (!blob) {
+                        try {
+                            const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+                            const bin = atob(dataUrl.split(',')[1]);
+                            const bytes = new Uint8Array(bin.length);
+                            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                            blob = new Blob([bytes], { type: 'image/jpeg' });
+                        } catch (e) {
+                            showToast("Image processing failed — try another file.", "⚠️");
+                            return;
+                        }
+                    }
                     if (this.currentImage && this.currentImage.startsWith('blob:')) {
                         URL.revokeObjectURL(this.currentImage);
                     }
@@ -3368,10 +3570,17 @@ onDbSearchInput: function(value) {
         // Blob values get an object URL. Tracked for revocation on replace.
         _restoreStoredImage: function(value) {
             if (!value) { this.clearImage(); return; }
-            if (this.currentImage && this.currentImage.startsWith('blob:') && !(value instanceof Blob)) {
+            // Replace any stale uploaded-photo Blob with the incoming one so
+            // saveToLibrary (which prefers currentImageBlob) stores the photo
+            // actually on screen — the old upload's Blob used to survive here
+            // and get saved under the newly-loaded profile's name. For
+            // string images (dataURLs) the blob slot must be null: otherwise
+            // the stale Blob would shadow the correct string on the next save.
+            if (this.currentImage && this.currentImage.startsWith('blob:')) {
                 try { URL.revokeObjectURL(this.currentImage); } catch (_) {}
             }
             const isBlob = (typeof Blob !== 'undefined') && (value instanceof Blob);
+            this.currentImageBlob = isBlob ? value : null;
             this.currentImage = isBlob ? URL.createObjectURL(value) : value;
             this.rawImageObj = new Image();
             this.rawImageObj.onload = () => {
@@ -3729,11 +3938,12 @@ onDbSearchInput: function(value) {
             const Rs = dacImpedances[activeDacName] || 1.0;
 
             let pReqIem, vReqIem;
+            const splTarget = this.getListeningSplTarget();
             if (this.sensUnit === 'V') {
-                vReqIem = Math.pow(10, (115 - sensVal) / 20);
+                vReqIem = Math.pow(10, (splTarget - sensVal) / 20);
                 pReqIem = (vReqIem * vReqIem / impVal) * 1000;
             } else {
-                pReqIem = Math.pow(10, (115 - sensVal) / 10);
+                pReqIem = Math.pow(10, (splTarget - sensVal) / 10);
                 vReqIem = Math.sqrt((pReqIem * impVal) / 1000);
             }
 
@@ -3924,16 +4134,39 @@ if(this.radarChart) {
         await this.ensureChartReady();
 
         const finalScore = this.updateAll(); const id = `${brand}-${model}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        // Same-id saves overwrite silently (DBCache.put) — and the normalizer
+        // collapses distinct names onto one id (non-Latin names all become
+        // "-"). Confirm before replacing an EXISTING record so a save can't
+        // destroy a review without the user knowing.
+        const existing = await DBCache.getReview(id);
+        if (existing) {
+            const okToOverwrite = await UIKit.confirm({
+                title: "Overwrite existing review?",
+                message: `A saved review for "${existing.brand || ''} ${existing.model || ''}" already exists in the library. Saving again will replace it.`,
+                confirmLabel: "Overwrite",
+                danger: true
+            });
+            if (!okToOverwrite) { showToast("Save cancelled — nothing changed.", "ℹ️"); return; }
+        }
         const sliderValues = {}; this.sliderNodes.forEach(n => { if (n.element.id) sliderValues[n.element.id] = n.element.value; });
+        // ensureChartReady tolerates Chart.js failing to load (radarChart stays
+        // null) — the unguarded .data access below then rejected the whole
+        // async save with no toast. Fall back to the live slider-derived axes
+        // (the same values the chart would display).
+        const radarData = (this.radarChart && this.radarChart.data && this.radarChart.data.datasets && this.radarChart.data.datasets[0])
+            ? Array.from(this.radarChart.data.datasets[0].data)
+            : this.sliderNodes.map(n => parseFloat(n.element.value) || 0);
         // Price easter-egg writes non-numeric words (e.g. "Priceless 👑") via direct assignment
         // bypassing the digit-only input handler. Coerce to digits for storage so
         // library re-load and numeric consumers never see NaN, while keeping the
-        // on-screen easter-egg until next edit.
+        // on-screen easter-egg until next edit. Six digits, not four: real DB
+        // entries reach $59,000 and the old slice(0,4) silently corrupted them
+        // to a tenth of their value on save (59000 -> 5900).
         const rawPrice = document.getElementById('price').value || "";
-        const priceDigits = rawPrice.replace(/[^0-9]/g, '').slice(0, 4);
+        const priceDigits = rawPrice.replace(/[^0-9]/g, '').slice(0, 6) || null;
         const price = priceDigits;
 
-        const profile = { id, brand, model, score: parseFloat(finalScore), price: price, impedance: document.getElementById('impedance').value, sensitivity: document.getElementById('sensitivity').value, sensUnit: this.sensUnit || 'mW', image: this.currentImageBlob || this.currentImage, notes: document.getElementById('review-notes').value, refVolume: document.getElementById('listening-volume').value, selectedTags: Array.from(this.selectedTags), selectedGenres: Array.from(this.selectedGenres), selectedBass: Array.from(this.selectedBass), sliders: sliderValues, selectedDriverTypes: this.selectedDriverTypes, formFactor: this.formFactor || 'IEM', connector: this.connector || '2-pin', timestamp: Date.now(), radarData: Array.from(this.radarChart.data.datasets[0].data), toneData: (typeof Tone_Module !== 'undefined' && Tone_Module.getState) ? Tone_Module.getState() : null, eqData: (typeof EQ_Module !== 'undefined' && EQ_Module.getRealValues) ? EQ_Module.getRealValues() : null };
+        const profile = { id, brand, model, score: parseFloat(finalScore), price: price, impedance: document.getElementById('impedance').value, sensitivity: document.getElementById('sensitivity').value, sensUnit: this.sensUnit || 'mW', image: this.currentImageBlob || this.currentImage, notes: document.getElementById('review-notes').value, refVolume: document.getElementById('listening-volume').value, selectedTags: Array.from(this.selectedTags), selectedGenres: Array.from(this.selectedGenres), selectedBass: Array.from(this.selectedBass), sliders: sliderValues, selectedDriverTypes: this.selectedDriverTypes, formFactor: this.formFactor || 'IEM', connector: this.connector || '2-pin', crossoverOverride: this.crossoverOverride || false, wayOverride: this.wayOverride || false, currentCrossover: this.currentCrossover || 'UNK', currentWay: this.currentWay || 'UNK', timestamp: Date.now(), radarData: radarData, toneData: (typeof Tone_Module !== 'undefined' && Tone_Module.getState) ? Tone_Module.getState() : null, eqData: (typeof EQ_Module !== 'undefined' && EQ_Module.getRealValues) ? EQ_Module.getRealValues() : null };
 
         const success = await DBCache.saveReview(profile);
         if (success) {
@@ -3991,6 +4224,15 @@ if(this.radarChart) {
                 const safeImg = esc(imgPath);
                 const safeBrand = esc(item.brand);
                 const safeModel = esc(item.model);
+                // Imported library records can carry arbitrary strings (the
+                // save-time sanitizer is bypassed by direct JSON import), so
+                // price/volume/score must be coerced before interpolation.
+                // A string score ("9") previously threw toFixed and killed
+                // the whole library render.
+                const safePrice = esc(String(Number.isFinite(parseFloat(item.price)) ? item.price : '---'));
+                const safeVol = esc(String(item.refVolume || 'N/A'));
+                const numScore = Number(item.score);
+                const safeScore = Number.isFinite(numScore) ? numScore.toFixed(1) : '--';
 
                 tr.innerHTML = `
                     <td class="px-4 py-3"><input type="checkbox" class="compare-cb accent-blue-500 w-4 h-4 cursor-pointer" value="${safeId}"></td>
@@ -3999,14 +4241,27 @@ if(this.radarChart) {
                         ${imgPath ? `<img src="${safeImg}" class="w-8 h-8 object-cover rounded border border-[var(--border-color)] bg-[#111]">` : '<div class="w-8 h-8 rounded border border-[var(--border-color)] bg-[#111] flex items-center justify-center text-zinc-650">🎧</div>'}
                         <div>
                             <div class="text-xs">${safeBrand} <span class="text-[var(--accent-blue)]">${safeModel}</span></div>
-                            <div class="text-xs text-[var(--text-secondary)] font-normal mt-0.5">$${item.price || '---'} • Vol: ${item.refVolume || 'N/A'}</div>
+                            <div class="text-xs text-[var(--text-secondary)] font-normal mt-0.5">$${safePrice} • Vol: ${safeVol}</div>
                         </div>
                     </td>
-                    <td class="px-4 py-3 font-black text-md text-center text-[var(--accent-blue)]">${(item.score || 5.0).toFixed(1)}</td>
-                    <td class="px-4 py-3 text-right">
-                        <button onclick="IEM.loadFromLibrary('${item.id}')" class="px-3 py-1 bg-zinc-800 text-stone-200 rounded text-xs font-bold hover:bg-zinc-700 transition-colors shadow-sm">Load</button>
-                        <button onclick="IEM.deleteFromLibrary('${item.id}')" class="ml-2.5 text-red-500 hover:text-red-400 cursor-pointer text-[8px]">❌</button>
-                    </td>`;
+                    <td class="px-4 py-3 font-black text-md text-center text-[var(--accent-blue)]">${safeScore}</td>
+                    <td class="px-4 py-3 text-right"></td>`;
+                // Load/Delete buttons are DOM-built with real listeners (no
+                // onclick string literals) — imported ids can contain quotes
+                // that previously broke out of the inline handler string.
+                const loadBtn = document.createElement('button');
+                loadBtn.className = 'px-3 py-1 bg-zinc-800 text-stone-200 rounded text-xs font-bold hover:bg-zinc-700 transition-colors shadow-sm';
+                loadBtn.textContent = 'Load';
+                loadBtn.addEventListener('click', () => IEM_Module.loadFromLibrary(item.id));
+                const delBtn = document.createElement('button');
+                delBtn.className = 'ml-2.5 text-red-500 hover:text-red-400 cursor-pointer text-[8px]';
+                delBtn.textContent = '❌';
+                delBtn.addEventListener('click', () => IEM_Module.deleteFromLibrary(item.id));
+                const btnTd = document.createElement('td');
+                btnTd.className = 'px-4 py-3 text-right';
+                btnTd.appendChild(loadBtn);
+                btnTd.appendChild(delBtn);
+                tr.appendChild(btnTd);
                 fragment.appendChild(tr);
             });
 
@@ -4036,6 +4291,17 @@ if(this.radarChart) {
 
             this.selectedDriverTypes = profile.selectedDriverTypes || {};
             this.runDriverAutoLogic();
+
+            // Restore manual crossover/way overrides (same fields the config
+            // backup saves). Reset first when absent: a loaded profile with
+            // no override must not inherit the PREVIOUS profile's stuck
+            // override/currentCrossover/currentWay state.
+            this.crossoverOverride = !!profile.crossoverOverride;
+            this.wayOverride = !!profile.wayOverride;
+            this.currentCrossover = profile.currentCrossover || 'UNK';
+            this.currentWay = profile.currentWay || 'UNK';
+            this.updateCrossoverButtonsUI();
+            this.updateWayButtonsUI();
 
             this.selectedTags = new Set(profile.selectedTags || []); this.createTags('tonality-tags', this.tonalityTags, this.selectedTags); this.selectedGenres = new Set(profile.selectedGenres || []); this.createTags('genre-tags', this.genreTags, this.selectedGenres); this.selectedBass = new Set(profile.selectedBass || []); this.createTags('bass-tags', this.bassTags, this.selectedBass);
             if (profile.sliders) {
@@ -4088,7 +4354,21 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
         resetAll: function() {
             if(!confirm("Clear all current workspace data?")) return;
 
-            const preservedKeys = ['iem_library_v2', 'settings_theme_id', 'settings_font_id', 'settings_align_hz', 'settings_align_db'];
+            // Preserve user preferences that are NOT workspace review data.
+            // The old 5-key list let the wipe destroy the Find tab's curated
+            // taste favorites, playback/limiter/a11y settings, the hearing
+            // profile and reading scale — none of which belong to the review
+            // workspace this reset is scoped to.
+            const preservedKeys = [
+                'iem_library_v2',
+                'settings_theme_id', 'settings_export_theme_id', 'settings_font_id',
+                'settings_align_hz', 'settings_align_db',
+                'settings_reading_scale',
+                'settings_gapless', 'settings_crossfade', 'settings_crossfade_secs',
+                'settings_merger_limiter',
+                'a11y_bluelight',
+                'find_taste_favorites', 'find_canonical_profiles'
+            ];
             const preserved = {};
             preservedKeys.forEach(k => { preserved[k] = localStorage.getItem(k); });
             localStorage.clear();
@@ -4120,6 +4400,26 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
             this.createTags('genre-tags', this.genreTags, this.selectedGenres);
             this.createTags('bass-tags', this.bassTags, this.selectedBass);
 
+            // The hearing-test profile belongs to this workspace — clear its
+            // live layer too (previously only the persistence key was wiped,
+            // leaving the correction actively applied with a "Hearing: ON"
+            // badge that vanished on the next reload).
+            if (window.EQ && EQ_Module.hearingCalEnabled) {
+                EQ_Module.hearingCalEnabled = false;
+                EQ_Module.hearingOffsets = [0, 0, 0, 0, 0, 0, 0, 0];
+                if (EQ_Module.applyHearingCalibrationGains) EQ_Module.applyHearingCalibrationGains();
+                const lbl = document.getElementById('lbl-hearing-cal');
+                if (lbl) lbl.textContent = 'Hearing: Off';
+            }
+            localStorage.removeItem('settings_hearing_offsets');
+
+            // Sensitivity unit belongs to the spec panel: reset it alongside
+            // the sensitivity value (a dB/V session previously kept the V
+            // unit with a value reset to 80, producing "over-range" power
+            // math until the next toggle).
+            this.sensUnit = 'mW';
+            this.updateSensUnitUI();
+
             Tone_Module.reset(); EQ_Module.resetEQ(); TestLab_Module.stopAll(); PEQDB_Module.clearState(); this.updateAll();
         },
         saveConfig: async function() {
@@ -4141,27 +4441,44 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
                     impedance: document.getElementById('impedance')?.value || '5',
                     sensitivity: document.getElementById('sensitivity')?.value || '80',
                     notes: document.getElementById('review-notes')?.value || '',
-                    image: this.currentImage,
-                    selectedTags: Array.from(this.selectedTags || []),
-                    selectedGenres: Array.from(this.selectedGenres || []),
-                    selectedBass: Array.from(this.selectedBass || []),
-                    sliders: sliderValues,
-                    selectedDriverTypes: this.selectedDriverTypes || {},
-                    formFactor: this.formFactor || 'IEM',
-                    connector: this.connector || '2-pin',
-                    crossoverOverride: this.crossoverOverride || false,
-                    wayOverride: this.wayOverride || false,
-                    currentCrossover: this.currentCrossover || 'UNK',
-                    currentWay: this.currentWay || 'UNK',
-                    toneData: Tone_Module.getState(),
-                    eqData: EQ_Module.getRealValues()
-                };
+                // Workspace photo: blob: URLs die with the session and Blobs
+                // stringify to {} — serialize as a bounded dataURL instead.
+                // (Image is already <=400px from the upload pipeline; this is
+                // the same 0.75-quality JPEG the upload path produces.)
+                image: await this._imageToDataURL(this.currentImage, this.currentImageBlob),
+                selectedTags: Array.from(this.selectedTags || []),
+                selectedGenres: Array.from(this.selectedGenres || []),
+                selectedBass: Array.from(this.selectedBass || []),
+                sliders: sliderValues,
+                selectedDriverTypes: this.selectedDriverTypes || {},
+                formFactor: this.formFactor || 'IEM',
+                connector: this.connector || '2-pin',
+                crossoverOverride: this.crossoverOverride || false,
+                wayOverride: this.wayOverride || false,
+                currentCrossover: this.currentCrossover || 'UNK',
+                currentWay: this.currentWay || 'UNK',
+                sensUnit: this.sensUnit || 'mW',
+                toneData: Tone_Module.getState(),
+                eqData: EQ_Module.getRealValues()
+            };
 
-                const fullBackup = {
-                    backupType: "full_workstation_backup",
-                    activeWorkspace: currentWorkspace,
-                    library: await this.getLibrary()
-                };
+            // Library records hold photo Blobs (IndexedDB-native) — they must
+            // be converted to dataURLs BEFORE JSON.stringify, which would
+            // otherwise silently serialize every one of them to {}.
+            const rawLibrary = await this.getLibrary();
+            const serializedLibrary = [];
+            for (const rec of rawLibrary) {
+                if (rec && rec.image instanceof Blob) {
+                    rec.image = await this._imageToDataURL(null, rec.image);
+                }
+                serializedLibrary.push(rec);
+            }
+
+            const fullBackup = {
+                backupType: "full_workstation_backup",
+                activeWorkspace: currentWorkspace,
+                library: serializedLibrary
+            };
 
                 const blob = new Blob([JSON.stringify(fullBackup, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
@@ -4255,38 +4572,7 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
                     let rawText = ev.target.result;
                     rawText = rawText.replace(/^\uFEFF/, '').trim();
                     const data = JSON.parse(rawText);
-
-                    if (data && data.backupType === undefined && data.hasOwnProperty('activeCurves') === false && (data.library !== undefined || data.eqData !== undefined || data.sliders !== undefined)) {
-                        if (data.eqData || data.sliders) {
-                            if (data.library && Array.isArray(data.library)) {
-                                for (let i = 0; i < data.library.length; i++) {
-                                    await DBCache.saveReview(data.library[i]);
-                                }
-                            }
-                            const workspaceToLoad = data.activeWorkspace || data;
-                            this.loadProfileData(workspaceToLoad);
-                            await this.renderLibrary();
-                            showToast("Workspace and library restored!", "📥");
-                        } else {
-                            this.loadProfileData(data);
-                            showToast("Loaded profile successfully!", "📥");
-                        }
-                    } else if (data && data.backupType === "full_workstation_backup" || (data && data.hasOwnProperty('library') && Array.isArray(data.library))) {
-                        if (data.library && Array.isArray(data.library)) {
-                            for (let i = 0; i < data.library.length; i++) {
-                                await DBCache.saveReview(data.library[i]);
-                            }
-                        }
-                        if (data.activeWorkspace) {
-                            this.loadProfileData(data.activeWorkspace);
-                        }
-                        await this.renderLibrary();
-                        showToast("Workstation backup restored successfully!", "📥");
-                    } else {
-                        this.loadProfileData(data);
-                        const nameLabel = (data.brand || data.model) ? `${data.brand || ''} ${data.model || ''}` : "Profile";
-                        showToast(`Loaded ${nameLabel.trim()} successfully!`, "📥");
-                    }
+                    this._importParsedConfig(data);
                 } catch (err) {
                     console.error("Import parsing crash:", err);
                     showToast("Failed to parse file.", "⚠️");
@@ -4294,6 +4580,48 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
             };
             reader.readAsText(file);
             event.target.value = '';
+        },
+        // Shared importer for the file input AND the window drop handler.
+        // The drop path previously called loadProfileData directly, which
+        // ignored the backup structure entirely — dropping the app's own
+        // _backup.json blanked the workspace without restoring any of it.
+        _importParsedConfig: async function(data) {
+            try {
+                if (data && data.backupType === undefined && data.hasOwnProperty('activeCurves') === false && (data.library !== undefined || data.eqData !== undefined || data.sliders !== undefined)) {
+                    if (data.eqData || data.sliders) {
+                        if (data.library && Array.isArray(data.library)) {
+                            for (let i = 0; i < data.library.length; i++) {
+                                await DBCache.saveReview(data.library[i]);
+                            }
+                        }
+                        const workspaceToLoad = data.activeWorkspace || data;
+                        this.loadProfileData(workspaceToLoad);
+                        await this.renderLibrary();
+                        showToast("Workspace and library restored!", "📥");
+                    } else {
+                        this.loadProfileData(data);
+                        showToast("Loaded profile successfully!", "📥");
+                    }
+                } else if (data && data.backupType === "full_workstation_backup" || (data && data.hasOwnProperty('library') && Array.isArray(data.library))) {
+                    if (data.library && Array.isArray(data.library)) {
+                        for (let i = 0; i < data.library.length; i++) {
+                            await DBCache.saveReview(data.library[i]);
+                        }
+                    }
+                    if (data.activeWorkspace) {
+                        this.loadProfileData(data.activeWorkspace);
+                    }
+                    await this.renderLibrary();
+                    showToast("Workstation backup restored successfully!", "📥");
+                } else {
+                    this.loadProfileData(data);
+                    const nameLabel = (data.brand || data.model) ? `${data.brand || ''} ${data.model || ''}` : "Profile";
+                    showToast(`Loaded ${nameLabel.trim()} successfully!`, "📥");
+                }
+            } catch (err) {
+                console.error("Import parsing crash:", err);
+                showToast("Failed to parse file.", "⚠️");
+            }
         },
         exportColor: '#3b82f6',
         exportGrade: 'A',
@@ -5048,11 +5376,12 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
             if (isNaN(sensVal)) sensVal = 80;
 
             let pReqIemExport, vReq;
+            const splTargetExport = this.getListeningSplTarget();
             if (this.sensUnit === 'V') {
-                vReq = Math.pow(10, (115 - sensVal) / 20);
+                vReq = Math.pow(10, (splTargetExport - sensVal) / 20);
                 pReqIemExport = (vReq * vReq / impVal) * 1000;
             } else {
-                pReqIemExport = Math.pow(10, (115 - sensVal) / 10);
+                pReqIemExport = Math.pow(10, (splTargetExport - sensVal) / 10);
                 vReq = Math.sqrt((pReqIemExport * impVal) / 1000);
             }
 

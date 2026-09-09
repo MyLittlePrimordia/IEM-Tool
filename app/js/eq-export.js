@@ -61,8 +61,42 @@ const EQ_ExportMethods = {
                 }, 50);
             });
         },
+        // Export preamp parity: the live audio path applies
+        // computeEffectivePreamp() = slider + autoGain - hearing - loudness -
+        // masterTone headroom (eq-core.js), but exporters read the raw
+        // #eq-preampVal (slider-only) while ALSO emitting the hearing-cal
+        // peaks and master bass/treble shelves — the very boosts that
+        // triggered the live headroom pull-back. The exported preset then
+        // played up to ~14 dB hotter than the tool (clip-prone on target
+        // hardware). Loudness compensation and auto-gain are intentionally
+        // omitted from every export (they cancel out), so the correct export
+        // preamp is: slider - hearingHeadroom - masterToneHeadroom.
+        getExportPreamp: function() {
+            var preValEl = document.getElementById("eq-preampVal");
+            var slider = preValEl ? parseFloat(preValEl.value) : 0;
+            if (!Number.isFinite(slider)) slider = 0;
+            var hearing = (this.hearingCalEnabled && Number.isFinite(this._hearingMaxBoost)) ? this._hearingMaxBoost : 0;
+            var tone = Number.isFinite(this._masterToneMaxBoost) ? this._masterToneMaxBoost : 0;
+            return Math.max(-60, Math.min(60, slider - hearing - tone));
+        },
+        // Export-snapshot of the band state: identical to getRealValues EXCEPT
+        // it honors the master EQ toggle. The live DSP ORs !eqEnabled into
+        // every band's bypass (eq-dsp-graph.js updateAudioConnections) and the
+        // drawn curve gates on it too (getCompositeFilterMagnitude) — the five
+        // exporters previously read full nonzero band state, so exporting with
+        // EQ: OFF produced a preset that sounded nothing like the flat output.
+        // (getRealValues stays untouched: state SAVE must preserve the config
+        // regardless of the bypass.)
+        getExportValues: function() {
+            const vals = this.getRealValues() || {};
+            if (this.eqEnabled === false) {
+                vals.mainVals = (vals.mainVals || []).map(v => v ? Object.assign({}, v, { g: 0 }) : v);
+                vals.advVals = (vals.advVals || []).map(v => v ? Object.assign({}, v, { g: 0 }) : v);
+            }
+            return vals;
+        },
         exportPeace: function() {
-            var _a = this.getRealValues() || {}, preVal = _a.preVal || 0, mainVals = _a.mainVals || [], advVals = _a.advVals || [];
+            var _a = this.getExportValues() || {}, preVal = this.getExportPreamp(), mainVals = _a.mainVals || [], advVals = _a.advVals || [];
             var out = 'Preamp: ' + preVal.toFixed(1) + ' dB\n';
             var fIdx = 1;
 
@@ -82,16 +116,15 @@ const EQ_ExportMethods = {
                 
                 out += 'Filter ' + (fIdx++) + ': ON ' + apoType + ' Fc ' + v.hz + ' Hz Gain ' + gVal.toFixed(1) + ' dB Q ' + v.q.toFixed(2) + '\n';
             };
-            
-            const bandCount = PEQDB_Module.autoeqResolution || 10;
-            
-            // 1. Export Standard Bands (Up to 10)
+
+            // 1. Export Standard Bands (all 10)
             // The DSP always applies all 10 standard + all 10 advanced bands
             // regardless of autoeqResolution, so every non-flat band must be
             // exported — a smaller bandCount only affects how many get a slot
-            // in the auto-EQ resolution, not what the user hears.
-            const standardCountToExport = Math.min(10, bandCount);
-            for (let i = 0; i < standardCountToExport; i++) {
+            // in the auto-EQ resolution, not what the user hears. (The old
+            // Math.min(10, bandCount) silently dropped audible standard
+            // bands whenever autoeqResolution was set below 10.)
+            for (let i = 0; i < 10; i++) {
                 exportBand(mainVals[i]);
             }
             
@@ -151,7 +184,7 @@ const EQ_ExportMethods = {
             showToast("Exported Peace GUI EQ Preset!", "📜");
         },
         exportWavelet: function() {
-            var _a = this.getRealValues() || {}, preVal = _a.preVal || 0, mainVals = _a.mainVals || [], advVals = _a.advVals || [];
+            var _a = this.getExportValues() || {}, preVal = this.getExportPreamp(), mainVals = _a.mainVals || [], advVals = _a.advVals || [];
             var waveletFreqs = [20, 21, 22, 23, 24, 26, 27, 29, 30, 32, 34, 36, 38, 40, 43, 45, 48, 50, 53, 56, 59, 63, 66, 70, 74, 78, 83, 87, 92, 97, 103, 109, 115, 121, 128, 136, 143, 151, 160, 169, 178, 188, 199, 210, 222, 235, 248, 262, 277, 292, 309, 326, 345, 364, 385, 406, 429, 453, 479, 506, 534, 565, 596, 630, 665, 703, 743, 784, 829, 875, 924, 977, 1032, 1090, 1151, 1216, 1284, 1357, 1433, 1514, 1599, 1689, 1784, 1885, 1991, 2103, 2221, 2347, 2479, 2618, 2766, 2921, 3086, 3260, 3443, 3637, 3842, 4058, 4287, 4528, 4783, 5052, 5337, 5637, 5955, 6290, 6644, 7018, 7414, 7831, 8272, 8738, 9230, 9749, 10298, 10878, 11490, 12137, 12821, 13543, 14305, 15110, 15961, 16860, 17809, 18812, 19871];
             var outEntries = [];
             var self = this;
@@ -310,6 +343,12 @@ const EQ_ExportMethods = {
             };
 
             Object.entries(standardTemplates).forEach(([id, cfg]) => {
+                // Curated presets (eq-presets-data.js, layered on top of the
+                // base bank in eq-core init) win for overlapping ids: this
+                // dynamic injection used to run LAST and silently stomp 13
+                // curated entries (vocal_music, tactical, field, ...) with the
+                // older template values.
+                if (EQ_PresetsData.curatedPresets && Object.prototype.hasOwnProperty.call(EQ_PresetsData.curatedPresets, id)) return;
                 this.eqPresets[id] = {
                     p: cfg.p,
                     m: cfg.m,
@@ -318,7 +357,7 @@ const EQ_ExportMethods = {
             });
         },
         exportPoweramp: function() {
-            var _a = this.getRealValues() || {}, preVal = _a.preVal || 0, mainVals = _a.mainVals || [], advVals = _a.advVals || [];
+            var _a = this.getExportValues() || {}, preVal = this.getExportPreamp(), mainVals = _a.mainVals || [], advVals = _a.advVals || [];
             
             let targetName = "Custom EQ";
             if (typeof PEQDB_Module !== 'undefined' && PEQDB_Module.STATE && PEQDB_Module.STATE.activeCurves) {
@@ -453,83 +492,108 @@ const EQ_ExportMethods = {
             }
         },
         exportQudelix: function() {
-            var _a = this.getRealValues() || {}, preVal = _a.preVal || 0, mainVals = _a.mainVals || [], advVals = _a.advVals || [];
+            var _a = this.getExportValues() || {}, preVal = this.getExportPreamp(), mainVals = _a.mainVals || [], advVals = _a.advVals || [];
             var out = 'Preamp,' + preVal.toFixed(1) + ',dB\n';
-            var fIdx = 1;
 
             var typeMap = {
                 peaking: 'PEAK', lowshelf: 'LSHELF', highshelf: 'HSHELF',
                 highpass: 'HPASS', lowpass: 'LPASS', notch: 'NOTCH'
             };
 
-            var exportBand = function(v) {
+            // The Qudelix-5K's single onboard PEQ chain accepts 10 filters.
+            // Collect every non-flat candidate (standard, advanced, virtual,
+            // hearing-cal, de-esser, tone shelves), rank by |gain| so the
+            // most audible bands survive, and truncate to exactly 10 — the
+            // old exporter wrote main bands only and could still emit >10
+            // lines (hearing/de-esser/tone) that the device silently ignored.
+            var candidates = [];
+
+            var collectBand = function(v, sourceLabel) {
+                if (!v) return;
                 var qType = typeMap[v.type] || 'PEAK';
                 var hasNoGain = ['highpass', 'lowpass', 'notch'].includes(v.type);
                 var gVal = hasNoGain ? 0.0 : v.g;
-                
                 if (v.type === 'peaking' && v.g === 0) return;
-                
-                out += 'Filter ' + (fIdx++) + ',ON,' + qType + ',' + v.hz + ',' + gVal.toFixed(1) + ',' + v.q.toFixed(2) + '\n';
+                candidates.push({
+                    line: qType + ',' + v.hz + ',' + gVal.toFixed(1) + ',' + v.q.toFixed(2),
+                    weight: Math.abs(gVal),
+                    label: sourceLabel + ' ' + v.hz + 'Hz ' + gVal.toFixed(1) + 'dB Q' + v.q.toFixed(2)
+                });
             };
 
-            mainVals.forEach(exportBand);
-            // Advanced bands ignored for hardware compatibility — the Qudelix-5K's onboard PEQ only
-            // supports 10 bands, so bands 11+ can't be written to this format at all.
-
-            // The old drop-detection here compared the number of *written*
-            // filter lines against 10 -- which is the wrong signal in both
-            // directions: hearing-cal/de-esser/tone-shelf lines can push
-            // that count past 10 with zero advanced/virtual bands ever
-            // touched (false "bands were dropped" warning on a lossless
-            // export), while a real advanced/virtual band is silently
-            // skipped above regardless of how few main bands are active
-            // (no warning at all, real EQ data missing from a "success"
-            // toast). Count what's actually omitted instead.
-            const activeAdvBands = advVals.filter(function(v) {
-                return v && !(v.type === 'peaking' && v.g === 0);
-            }).length;
-            const activeVirtualBands = (this.virtualBands || []).filter(function(v) {
-                return v && v.g !== 0;
-            }).length;
-            const droppedBands = activeAdvBands + activeVirtualBands;
+            mainVals.forEach(function(v) { collectBand(v, 'std'); });
+            advVals.forEach(function(v) { collectBand(v, 'adv'); });
+            (this.virtualBands || []).forEach(function(v) {
+                if (v && v.g !== 0) collectBand({ hz: v.hz, g: v.g, q: v.q, type: v.type || 'peaking' }, 'virtual');
+            });
 
             if (this.hearingCalEnabled) {
                 [250, 500, 1000, 2000, 4000, 8000, 12000, 16000].forEach(function(freq, idx) {
                     var gain = EQ_Module.hearingOffsets[idx] || 0;
-                    if (gain !== 0) out += 'Filter ' + (fIdx++) + ',ON,PEAK,' + freq + ',' + gain.toFixed(1) + ',1.00\n';
+                    if (gain !== 0) {
+                        candidates.push({
+                            line: 'PEAK,' + freq + ',' + gain.toFixed(1) + ',1.00',
+                            weight: Math.abs(gain),
+                            label: 'hearing ' + freq + 'Hz ' + gain.toFixed(1) + 'dB'
+                        });
+                    }
                 });
             }
 
             // Resonance notch lives in main band 8 (see exportPeace note) —
-            // already exported via mainVals; no extra filter here.
+            // already collected via mainVals; no extra entry here.
 
             if (this.deEsserEnabled) {
                 var deFreqQ = (typeof this.deEsserCurrentFreq === 'number' && isFinite(this.deEsserCurrentFreq)) ? Math.round(this.deEsserCurrentFreq) : 6000;
-                out += 'Filter ' + (fIdx++) + ',ON,PEAK,' + deFreqQ + ',' + (-3.0 * (this.deEsserSensitivity / 100)).toFixed(1) + ',2.50\n';
+                var deGain = -3.0 * (this.deEsserSensitivity / 100);
+                if (deGain !== 0) {
+                    candidates.push({
+                        line: 'PEAK,' + deFreqQ + ',' + deGain.toFixed(1) + ',2.50',
+                        weight: Math.abs(deGain),
+                        label: 'de-esser ' + deFreqQ + 'Hz ' + deGain.toFixed(1) + 'dB'
+                    });
+                }
             }
 
             var bassSlider = document.getElementById("eq-masterBass");
             var trebSlider = document.getElementById("eq-masterTreble");
             if (bassSlider && parseFloat(bassSlider.value) !== 0) {
-                out += 'Filter ' + (fIdx++) + ',ON,LSHELF,105,' + parseFloat(bassSlider.value).toFixed(1) + ',0.70\n';
+                var bg = parseFloat(bassSlider.value);
+                candidates.push({ line: 'LSHELF,105,' + bg.toFixed(1) + ',0.70', weight: Math.abs(bg), label: 'bass shelf ' + bg.toFixed(1) + 'dB' });
             }
             if (trebSlider && parseFloat(trebSlider.value) !== 0) {
-                out += 'Filter ' + (fIdx++) + ',ON,HSHELF,8000,' + parseFloat(trebSlider.value).toFixed(1) + ',0.70\n';
+                var tg = parseFloat(trebSlider.value);
+                candidates.push({ line: 'HSHELF,8000,' + tg.toFixed(1) + ',0.70', weight: Math.abs(tg), label: 'treble shelf ' + tg.toFixed(1) + 'dB' });
             }
 
-            const qudelixLineOverflow = (fIdx - 1) > 10;
+            // Rank by |gain| (desc); keep insertion order on ties so standard
+            // bands win over the auxiliary banks at equal weight.
+            var order = candidates.map(function(c, i) { return { c: c, i: i }; });
+            order.sort(function(a, b) { return (b.c.weight - a.c.weight) || (a.i - b.i); });
+
+            const MAX_FILTERS = 10;
+            var kept = order.slice(0, MAX_FILTERS);
+            var dropped = order.slice(MAX_FILTERS);
+            // Restore original insertion order among the kept set so the
+            // band ordering in the file matches the EQ's band order.
+            kept.sort(function(a, b) { return a.i - b.i; });
+
+            for (var k = 0; k < kept.length; k++) {
+                out += 'Filter ' + (k + 1) + ',ON,' + kept[k].c.line + '\n';
+            }
+            if (dropped.length > 0) {
+                out += '# Dropped for 10-band limit: ' + dropped.map(function(d) { return d.c.label; }).join('; ') + '\n';
+            }
 
             this.triggerDownload(this.getSanitizedExportFilename("Qudelix5K", "csv"), out);
-            if (droppedBands > 0) {
-                showToast(`Exported — ${droppedBands} advanced/virtual band(s) exceed the Qudelix-5K's 10-band PEQ and were omitted.`, "⚠️");
-            } else if (qudelixLineOverflow) {
-                showToast("Exported — note: total filters exceed the Qudelix-5K's 10-band PEQ; the device may ignore the extras.", "⚠️");
+            if (dropped.length > 0) {
+                showToast(`Exported — kept the 10 highest-impact filters; dropped ${dropped.length} band(s), listed in the file's '# Dropped' comment.`, "⚠️");
             } else {
                 showToast("Exported Qudelix-5K CSV Preset!", "🎛️");
             }
         },
         exportFxSound: function() {
-            var _a = this.getRealValues() || {}, preVal = _a.preVal || 0, mainVals = _a.mainVals || [], advVals = _a.advVals || [];
+            var _a = this.getExportValues() || {}, preVal = this.getExportPreamp(), mainVals = _a.mainVals || [], advVals = _a.advVals || [];
             
             let targetName = "Custom EQ";
             if (typeof PEQDB_Module !== 'undefined' && PEQDB_Module.STATE && PEQDB_Module.STATE.activeCurves) {

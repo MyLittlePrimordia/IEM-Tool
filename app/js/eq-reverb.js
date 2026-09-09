@@ -1,5 +1,6 @@
 const EQ_ReverbMethods = {
     toggleReverb: function() {
+        const wasActive = this.reverbActive;
         this.reverbActive = !this.reverbActive;
         const btn = document.getElementById('btn-reverb-toggle');
         const lbl = document.getElementById('lbl-reverb-state');
@@ -11,6 +12,25 @@ const EQ_ReverbMethods = {
             if (lbl) lbl.textContent = 'Reverb: ON';
             if (presetBtn) presetBtn.classList.remove('opacity-40', 'pointer-events-none');
             if (container) container.classList.remove('opacity-40', 'pointer-events-none');
+            // First enable with the default mix=0 params made ON silent: the
+            // ConvolverNode still holds the 2-sample silent boot buffer and
+            // dryGain=1/wetGain=0. Apply the selected preset's wet level and
+            // rebuild the impulse so the effect is actually audible the
+            // moment it's switched on.
+            if (!wasActive) {
+                const preset = this.reverbPresets[this.reverbPresetSelected] || this.reverbPresets.small_room;
+                if (preset && (this.reverbParams.mix || 0) === 0) {
+                    this.reverbParams.mix = preset.wet !== undefined ? preset.wet : 0.32;
+                    const mixVal = document.getElementById('rev-mix-val');
+                    const mixSliderEl = document.getElementById('rev-mix-slider');
+                    if (mixVal) mixVal.textContent = this.reverbParams.mix.toFixed(2);
+                    if (mixSliderEl) {
+                        mixSliderEl.value = Math.round(this.reverbParams.mix * 100);
+                        if (window.syncGlobalSliders) window.syncGlobalSliders(mixSliderEl);
+                    }
+                }
+                this.scheduleImpulseRebuild();
+            }
             showToast("Reverb Engine active. Simulating natural room reflections.", "📣");
         } else {
             if (btn) btn.classList.remove('is-on');
@@ -277,7 +297,10 @@ const EQ_ReverbMethods = {
             setAudioParamSmooth(SharedAudio.wetGainNode.gain, wetGain, 0.015);
             
             if (SharedAudio.reverbFilterNode) {
-                setAudioParamSmooth(SharedAudio.reverbFilterNode.frequency, this.reverbParams.filter * 20000, 0.015);
+                // Floor at 100 Hz: filter*20000 with filter=0 would set the
+                // wet-path lowpass to 0 Hz and silently kill all reverb.
+                const filterHz = Math.max(100, (Number.isFinite(this.reverbParams.filter) ? this.reverbParams.filter : 1) * 20000);
+                setAudioParamSmooth(SharedAudio.reverbFilterNode.frequency, filterHz, 0.015);
             }
         },
 };

@@ -1,8 +1,12 @@
 const EQ_SourceSimMethods = {
         applySourceSimulation: function() {
             if (!this.graphBuilt) {
-                if (this._queuePendingDsp) this._queuePendingDsp('simulation');
-                else { this._pendingDspQueue = this._pendingDspQueue || []; if (!this._pendingDspQueue.includes('simulation')) this._pendingDspQueue.push('simulation'); if (!this.graphBuilt) this.ensureDSPGraph && this.ensureDSPGraph().catch(()=>{}); }
+                // NOTE: 'sourceSim', NOT 'simulation' — the flush map binds
+                // 'simulation' to the eartip/fit updater (slots 0-4). Queuing
+                // 'simulation' here meant the DAC shelves (slots 10/11) and
+                // the inputGainNode headroom were silently never applied.
+                if (this._queuePendingDsp) this._queuePendingDsp('sourceSim');
+                else { this._pendingDspQueue = this._pendingDspQueue || []; if (!this._pendingDspQueue.includes('sourceSim')) this._pendingDspQueue.push('sourceSim'); if (!this.graphBuilt) this.ensureDSPGraph && this.ensureDSPGraph().catch(()=>{}); }
                 this.drawCurve && this.drawCurve();
                 return;
             }

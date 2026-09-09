@@ -136,7 +136,13 @@ const order = ['crossoverFreq1', 'crossoverFreq2', 'crossoverFreq3', 'crossoverF
             }
 
             order.forEach((key, i) => {
-                if (!Number.isFinite(this[key])) this[key] = key === changedKey ? sliderMin[key] : this[key];
+                // NaN guard: a corrupt value used to self-assign here
+                // (this[key] = this[key]) which left NaN in place, and the
+                // Math.min/max clamps below then propagated NaN into the
+                // worklet payload — a NaN frequency poisons the biquad
+                // coefficients into permanent silence. Reset to the
+                // slider's default zone instead.
+                if (!Number.isFinite(this[key])) this[key] = sliderMin[key];
                 this[key] = Math.max(sliderMin[key], Math.min(sliderMax[key], this[key]));
                 const paramName = paramNames[i];
                 const slider = document.getElementById(`xo-${paramName}-slider`);
@@ -198,11 +204,16 @@ const order = ['crossoverFreq1', 'crossoverFreq2', 'crossoverFreq3', 'crossoverF
             }
 
             const type = this.crossoverType;
-            const lG = Math.pow(10, this.crossoverLowTrim / 20);
-            const lmG = Math.pow(10, type === '5way' ? this.crossoverLowMidTrim / 20 : -150 / 20);
-            const mG = Math.pow(10, (type === '3way' || type === '4way' || type === '5way') ? this.crossoverMidTrim / 20 : -150 / 20);
-            const hmG = Math.pow(10, (type === '4way' || type === '5way') ? this.crossoverHighMidTrim / 20 : -150 / 20);
-            const hG = Math.pow(10, this.crossoverHighTrim / 20);
+            // Trim guards: a corrupt profile can write NaN directly onto the
+            // trim fields (the setter path is guarded, direct assignment
+            // isn't); Math.pow(10, NaN/20) = NaN gain would poison the
+            // worklet into silence. Treat non-finite as unity (0 dB).
+            const safeTrim = (v) => Number.isFinite(v) ? v : 0;
+            const lG = Math.pow(10, safeTrim(this.crossoverLowTrim) / 20);
+            const lmG = Math.pow(10, type === '5way' ? safeTrim(this.crossoverLowMidTrim) / 20 : -150 / 20);
+            const mG = Math.pow(10, (type === '3way' || type === '4way' || type === '5way') ? safeTrim(this.crossoverMidTrim) / 20 : -150 / 20);
+            const hmG = Math.pow(10, (type === '4way' || type === '5way') ? safeTrim(this.crossoverHighMidTrim) / 20 : -150 / 20);
+            const hG = Math.pow(10, safeTrim(this.crossoverHighTrim) / 20);
 
             const payload = [
                 // Driver 1 Lowpass

@@ -1565,8 +1565,13 @@
 
         .section-card {
             background: var(--bg-card);
-            backdrop-filter: blur(25px);
-            -webkit-backdrop-filter: blur(25px);
+            /* backdrop-filter: blur(25px) removed: every theme ships a fully
+               OPAQUE --bg-card (verified: 9/9 hex colors), so the 25px blur of
+               the content behind each card was 100% invisible output at 100%
+               GPU cost — 14 cards kept live blur surfaces, and each newly
+               shown card had to instantiate its blur synchronously on tab
+               switch (the perceived switch delay). Cards look identical
+               without it. */
             border: 1px solid rgba(255, 255, 255, 0.04);
             border-radius: 8px;
 
@@ -3606,7 +3611,7 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
         .spatial-axis-h { position: absolute; top: calc(50% - 1px); left: 0; right: 0; height: 2px; background: rgba(var(--accent-blue-rgb), 0.35); transition: background var(--transition-speed); }
         .spatial-axis-v { position: absolute; left: calc(50% - 1px); top: 0; bottom: 0; width: 2px; background: rgba(var(--accent-blue-rgb), 0.35); transition: background var(--transition-speed); }
         .spatial-listener { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--text-secondary); font-size: 16px; pointer-events: none; }
-        .spatial-source { position: absolute; width: 24px; height: 24px; transform: translate(-50%, -50%); pointer-events: none; transition: transform 0.1s ease; display: flex; align-items: center; justify-content: center; }
+        .spatial-source { position: absolute; left: 0; top: 0; width: 24px; height: 24px; transform: translate(-50%, -50%); pointer-events: none; will-change: transform; display: flex; align-items: center; justify-content: center; }
         .spatial-core { width: 7px; height: 7px; background-color: var(--accent-blue); border-radius: 50%; box-shadow: 0 0 8px var(--accent-blue); position: absolute; z-index: 10; }
         .spatial-reticle { width: 16px; height: 16px; border: 1px solid var(--accent-blue); opacity: 0.45; border-radius: 50%; position: absolute; z-index: 5; }
         .spatial-tick-v { width: 1px; height: 24px; background: linear-gradient(to bottom, var(--accent-blue) 0%, var(--accent-blue) 25%, transparent 25%, transparent 75%, var(--accent-blue) 75%, var(--accent-blue) 100%); position: absolute; opacity: 0.6; }

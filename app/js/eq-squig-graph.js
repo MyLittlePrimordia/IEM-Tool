@@ -177,7 +177,11 @@ const EQ_SquigGraphMethods = {
             // Only inputs that actually affect the static layer belong here:
             // zoom, alignment, and the drawn curves. EQ model / sim state changes
             // are handled by the mode layer's own signature.
-            const currentStaticState = `${minF}-${maxF}-${min}-${max}-${PEQDB_Module.alignHz}-${PEQDB_Module.alignDb}-${activeCurvesState}`;
+            // Resonance cal shifts target-curve frequencies inside
+            // drawNormalCurves (getShiftedFrequency) — it belongs in BOTH
+            // signatures or the toggle serves a stale cached raster.
+            const resState = (EQ_Module.resonanceCalEnabled ? 'r1' : 'r0') + '-' + (PEQDB_Module.resonanceHz || '8000');
+            const currentStaticState = `${minF}-${maxF}-${min}-${max}-${PEQDB_Module.alignHz}-${PEQDB_Module.alignDb}-${resState}-${activeCurvesState}`;
 
             if (this.lastStaticState !== currentStaticState) {
                 this.staticDirty = true;
@@ -419,6 +423,9 @@ const EQ_SquigGraphMethods = {
                 this._magCacheFreqKey, this._magCacheNumPoints,
                 preVal, w, h, minF, maxF, min, max,
                 PEQDB_Module.alignHz, PEQDB_Module.alignDb,
+                // Resonance shifts the target curve's evaluated frequencies
+                // inside this layer (getShiftedFrequency in drawNormalCurves).
+                EQ_Module.resonanceCalEnabled ? 'r1' : 'r0', PEQDB_Module.resonanceHz || '8000',
                 splineState, virtualState
             ].join('|');
             this._renderModeLayer(cc, w, h, dpr, targetW, targetH, minF, maxF, min, max,
@@ -739,16 +746,25 @@ const EQ_SquigGraphMethods = {
                     mcc.setLineDash([]);
 
                     if (baseSpline && targetSpline) {
+                        // Evaluate both splines ONCE per pixel and reuse —
+                        // the old dashed + solid passes each re-evaluated the
+                        // same two splines at the same frequencies (~2000
+                        // wasted evals per rebuild).
+                        const baseVals = new Float32Array(steps);
+                        const targetVals = new Float32Array(steps);
+                        for (let i = 0; i < steps; i++) {
+                            const f = freqs[i];
+                            baseVals[i] = PEQDB_Module.Spline.evaluate(baseSpline, f);
+                            targetVals[i] = PEQDB_Module.Spline.evaluate(targetSpline, f);
+                        }
+
                         mcc.beginPath();
                         mcc.strokeStyle = "rgba(239, 68, 68, 0.4)";
                         mcc.lineWidth = 1.5;
                         mcc.setLineDash([5, 5]);
                         for (let i = 0; i < steps; i++) {
                             const curX = (i / (steps - 1)) * w;
-                            const f = freqs[i];
-                            const baseDbVal = PEQDB_Module.Spline.evaluate(baseSpline, f);
-                            const targetDbVal = PEQDB_Module.Spline.evaluate(targetSpline, f);
-                            const y = EQ_Module.dbToY_squig((baseDbVal - targetDbVal) + PEQDB_Module.alignDb, h);
+                            const y = EQ_Module.dbToY_squig((baseVals[i] - targetVals[i]) + PEQDB_Module.alignDb, h);
                             if (i === 0) mcc.moveTo(curX, y); else mcc.lineTo(curX, y);
                         }
                         mcc.stroke();
@@ -759,10 +775,7 @@ const EQ_SquigGraphMethods = {
                         mcc.lineWidth = 2.5;
                         for (let i = 0; i < steps; i++) {
                             const curX = (i / (steps - 1)) * w;
-                            const f = freqs[i];
-                            const baseDbVal = PEQDB_Module.Spline.evaluate(baseSpline, f);
-                            const targetDbVal = PEQDB_Module.Spline.evaluate(targetSpline, f);
-                            const y = EQ_Module.dbToY_squig((baseDbVal + eqDb[i] - targetDbVal) + PEQDB_Module.alignDb, h);
+                            const y = EQ_Module.dbToY_squig((baseVals[i] + eqDb[i] - targetVals[i]) + PEQDB_Module.alignDb, h);
                             if (i === 0) mcc.moveTo(curX, y); else mcc.lineTo(curX, y);
                         }
                         mcc.stroke();
@@ -902,8 +915,12 @@ const EQ_SquigGraphMethods = {
             // EVERY draw (up to 60Hz overlay) even when nothing changed.
             // Recompute only when curves/view fingerprint changes; replay the
             // cached points otherwise (vers bump on spline rebuilds above).
-            const fp = [base.id || base.uid, base._splineVersion || 0,
-                refs.map(r => (r.id || r.uid) + ':' + (r._splineVersion || 0)).join(','),
+            // Offsets are included in BOTH the fingerprint and the evaluation:
+            // the main curve renderer draws curves shifted by c.offset, so a
+            // nudge-adjusted reference previously made the dashed diff trace
+            // contradict the visibly offset curves by exactly that amount.
+            const fp = [base.id || base.uid, base._splineVersion || 0, base.offset || 0,
+                refs.map(r => (r.id || r.uid) + ':' + (r._splineVersion || 0) + ':' + (r.offset || 0)).join(','),
                 minF, maxF, steps, w, h, PEQDB_Module.alignDb].join('|');
             let paths = this._diffOverlayPaths;
             if (!paths || paths.fp !== fp) {
@@ -916,8 +933,8 @@ const EQ_SquigGraphMethods = {
                             if (f < minF || f > maxF) continue;
                             const x = w * (Math.log10(f / minF) / Math.log10(maxF / minF));
                             const evalF = PEQDB_Module.getShiftedFrequency(f, 'target');
-                            const baseDb = PEQDB_Module.Spline.evaluate(base.cachedSpline, evalF);
-                            const refDb = PEQDB_Module.Spline.evaluate(ref.cachedSpline, evalF);
+                            const baseDb = PEQDB_Module.Spline.evaluate(base.cachedSpline, evalF) + (base.offset || 0);
+                            const refDb = PEQDB_Module.Spline.evaluate(ref.cachedSpline, evalF) + (ref.offset || 0);
                             pts.push([x, EQ_Module.dbToY_squig(PEQDB_Module.alignDb + (refDb - baseDb), h)]);
                         }
                         return { color: ref.color, pts };

@@ -17,15 +17,22 @@ const EQ_TempoMethods = {
         }
         this.updateTempoDSP();
     },
-
     updateTempoDSP: function() {
-        if (this.audioEl) {
-            this.audioEl.playbackRate = this.tempoActive ? (this.tempoSpeed || 1.0) : 1.0;
-        }
+        // Apply to BOTH playback arms — with gapless/crossfade active the
+        // standby element takes over at the seam and previously stayed at
+        // 1.0x, pitch-jumping mid-track.
+        const rate = this.tempoActive ? (this.tempoSpeed || 1.0) : 1.0;
+        if (this.audioEl) this.audioEl.playbackRate = rate;
+        if (this.gaplessEl) this.gaplessEl.playbackRate = rate;
     },
-
     updateTempoSpeed: function(val) {
-        this.tempoSpeed = Math.max(0.1, Math.min(5, (parseFloat(val) || 100) / 100));
+        // Guard the parse: parseFloat('') || 100 mapped a programmatic 0 to
+        // 100 (1.0x) instead of the floor.
+        const parsed = parseFloat(val);
+        this.tempoSpeed = Math.max(0.1, Math.min(5, Number.isFinite(parsed) ? parsed / 100 : 100 / 100));
         this.updateTempoDSP();
+        // The readout had no writer — it showed 1.00x forever.
+        const disp = document.getElementById('tempo-speed-val');
+        if (disp) disp.textContent = this.tempoSpeed.toFixed(2) + 'x';
     },
 };

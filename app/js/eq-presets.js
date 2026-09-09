@@ -305,20 +305,43 @@ const EQ_PresetMethods = {
                     preSlider.value = p.p;
                     this.updatePreamp();
                 }
-                // Built-in presets store only gains; stale band types (e.g. shelf)
-                // from a prior custom preset would otherwise persist and produce a
-                // different audible response than the preset intended. Reset to PK.
+                // Built-in presets store only gains; stale band state (types,
+                // frequencies, Q — settable via Smart Import, number inputs and
+                // custom presets) would otherwise persist and produce a
+                // different audible response than the preset intended.
+                // Reset type AND Hz/Q to the band defaults, and clear bypass.
+                window.bypassedBands = window.bypassedBands || new Set();
+                window.bypassedBands.clear();
                 if (p.m) {
                     p.m.forEach((val, i) => {
                         const b = this.bands[i];
-                        if (b && b.type && b.type !== 'peaking') {
-                            b.type = 'peaking';
-                            b.slope = 12;
-                            this.handleTypeChange(i, 'peaking');
-                            const typeBtn = document.getElementById(`eq-t_m${i}`);
-                            if (typeBtn) typeBtn.textContent = 'PK';
-                            const slopeBtn = document.getElementById(`eq-sl_m${i}`);
-                            if (slopeBtn) slopeBtn.classList.add('hidden');
+                        if (b) {
+                            if (b.type && b.type !== 'peaking') {
+                                b.type = 'peaking';
+                                b.slope = 12;
+                                this.handleTypeChange(i, 'peaking');
+                                const typeBtn = document.getElementById(`eq-t_m${i}`);
+                                if (typeBtn) typeBtn.textContent = 'PK';
+                                const slopeBtn = document.getElementById(`eq-sl_m${i}`);
+                                if (slopeBtn) slopeBtn.classList.add('hidden');
+                            }
+                            // Reset Hz/Q to the band defaults — a preset's
+                            // curated gains land at the curated frequencies,
+                            // not whatever a previous import left behind.
+                            const fInput = document.getElementById("eq-f" + i);
+                            if (fInput) fInput.value = b.hz;
+                            const fsSlider = document.getElementById(`eq-fs_m${i}`);
+                            if (fsSlider) fsSlider.value = this.logHzToSlider(b.hz);
+                            const qSlider = document.getElementById("eq-q_m" + i);
+                            if (qSlider) qSlider.value = b.defaultQ;
+                            const qNum = document.getElementById(`eq-q_m${i}_num`);
+                            if (qNum) qNum.value = b.defaultQ.toFixed(2);
+                            // Un-bypass the band and restore its indicator
+                            // (bypass state is honored by updateAudioConnections).
+                            const bypassBtn = document.getElementById(`eq-bp_m${i}`);
+                            if (bypassBtn) { bypassBtn.textContent = "🟢"; bypassBtn.style.color = "var(--accent-green)"; }
+                            const bypassCard = bypassBtn ? bypassBtn.closest('.eq-band-card') : null;
+                            if (bypassCard) { bypassCard.style.opacity = "1"; bypassCard.classList.remove('bypassed'); }
                         }
                         const slider = document.getElementById("eq-s" + i);
                         if (slider) {
@@ -335,6 +358,8 @@ const EQ_PresetMethods = {
                         const b = this.advancedBands[i];
                         if (b) {
                             b.g = val;
+                            // Same completeness as the main loop: reset the
+                            // advanced band's type, Hz and Q to defaults.
                             if (b.type && b.type !== 'peaking') {
                                 b.type = 'peaking';
                                 const typeBtn = document.getElementById(`eq-t_a${i}`);
@@ -342,6 +367,14 @@ const EQ_PresetMethods = {
                                 const gainRow = document.getElementById(`row-gain_a${i}`);
                                 if (gainRow) { gainRow.style.opacity = '1'; gainRow.style.pointerEvents = 'auto'; }
                             }
+                            b.hz = b.defaultHz || b.hz;
+                            b.q = b.defaultQ;
+                            const afInput = document.getElementById("eq-af" + i);
+                            if (afInput) afInput.value = b.hz;
+                            const aqSlider = document.getElementById("eq-q_a" + i);
+                            if (aqSlider) aqSlider.value = b.defaultQ;
+                            const bypassBtnA = document.getElementById(`eq-bp_a${i}`);
+                            if (bypassBtnA) { bypassBtnA.textContent = "🟢"; bypassBtnA.style.color = "var(--accent-green)"; }
                         }
                         // The live DSP reads the fader value (getLiveAdvancedFiltersState),
                         // so mirror the gain onto the slider element, not just the model.

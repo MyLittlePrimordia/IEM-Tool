@@ -113,22 +113,22 @@
             <input type="file" id="import-input" accept=".json" class="hidden" data-action-change="change_69_IEM_importConfig_event">
 
             <nav class="flex bg-[var(--bg-input)] p-1.5 gap-2 items-center" id="top-nav-bar" style="border: 2px solid var(--border-color); box-shadow: 3px 3px 0px 0px var(--border-color);">
-                            <button data-action="click_42_App_switchTab__find" id="tab-find-btn" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
+                            <button data-action="click_42_App_switchTab__find" id="tab-find-btn" data-tooltip="🔍 Find — search & match IEMs by taste, specs and price" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
                 <span class="text-[21px] leading-none">🔍</span>
             </button>
-			                <button data-action="click_19_App_switchTab__eq" id="tab-eq-btn" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
+			                <button data-action="click_19_App_switchTab__eq" id="tab-eq-btn" data-tooltip="🎚️ EQ — parametric EQ, AutoEQ and the curve database" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
                 <span class="text-[21px] leading-none">🎚️</span>
             </button>
-			                <button data-action="click_40_App_switchTab__testlab" id="tab-testlab-btn" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
+			                <button data-action="click_40_App_switchTab__testlab" id="tab-testlab-btn" data-tooltip="🔬 Test Lab — hearing test, ABX, resonance and burn-in" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
                 <span class="text-[21px] leading-none">🔬</span>
             </button>
-			<button data-action="click_198_App_switchTab__iem" id="tab-iem-btn" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
+			<button data-action="click_198_App_switchTab__iem" id="tab-iem-btn" data-tooltip="📝 Review — score and review your gear" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
                 <span class="text-[21px] leading-none">📝</span>
             </button>
-            <button data-action="click_291_App_switchTab__visualizer" id="tab-visualizer-btn" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
+            <button data-action="click_291_App_switchTab__visualizer" id="tab-visualizer-btn" data-tooltip="📊 Visualizer — full-screen spectrum & waveform" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
                 <span class="text-[21px] leading-none">📊</span>
             </button>
-            <button data-action="click_80_App_switchTab__settings" id="tab-settings-btn" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
+            <button data-action="click_80_App_switchTab__settings" id="tab-settings-btn" data-tooltip="⚙️ Settings — themes, fonts and playback options" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
                 <span class="text-[21px] leading-none">⚙️</span>
             </button>
         </nav>
@@ -179,7 +179,7 @@
                                 <div class="grid grid-cols-2 gap-2 pt-1">
                                     <div>
                                         <label id="price-label" data-action="click_138_App_triggerPriceSlotMachine" class="block text-xs uppercase text-zinc-400 font-bold mb-1 cursor-pointer hover:text-white select-none transition-colors" >Price (<span class="text-emerald-400 font-black animate-pulse" style="text-shadow: 0 0 5px #10b981; display: inline-block;">$</span>)</label>
-                                        <input id="price" type="text" maxlength="4" data-action-input="input_44_this_value___this_value_replace____0_9__g" placeholder="0" class="w-full input-bg-fix px-2.5 py-1 text-center font-bold outline-none h-8 text-xs">
+                                        <input id="price" type="text" maxlength="6" data-action-input="input_44_this_value___this_value_replace____0_9__g" placeholder="0" class="w-full input-bg-fix px-2.5 py-1 text-center font-bold outline-none h-8 text-xs">
                                     </div>
                                     <div>
                                         <label class="block text-xs uppercase text-zinc-400 font-bold mb-1">Listening Volume</label>
@@ -271,7 +271,7 @@
                                     </div>
 
                                     <div class="flex flex-col gap-1.5 w-full">
-                                        <div class="gauge-container" data-id="sensitivity" data-min="80" data-max="125">
+                                        <div class="gauge-container" data-id="sensitivity" data-min="55" data-max="150">
                                             <div class="gauge-dial"><div id="sensitivity-needle" class="gauge-needle"></div></div>
                                             <input id="sensitivity" type="number" value="80" class="gauge-input-overlay" readonly>
                                             <div id="sensitivity-light" class="gauge-light"></div>
@@ -280,7 +280,7 @@
                                             </div>
                                         </div>
                                         <div class="flex items-center justify-center w-full px-1 py-0.5">
-                                            <input type="range" id="sensitivity-slider" min="80" max="125" value="80" class="iem-slider w-full" data-action-input="input_296_IEM_handleGaugeSlider__sensitivity___this_value">
+                                            <input type="range" id="sensitivity-slider" min="55" max="150" value="80" class="iem-slider w-full" data-action-input="input_296_IEM_handleGaugeSlider__sensitivity___this_value">
                                         </div>
                                     </div>
                                 </div>
@@ -1650,7 +1650,7 @@
                                                     <span>Pre-Delay</span>
                                                     <span id="rev-predelay-val" class="font-mono text-pink-400">0.02</span>
                                                 </div>
-                                                <input type="range" id="rev-predelay-slider" min="0" max="100" value="20" class="w-full h-1 cursor-pointer" data-action-input="input_52_EQ_updateReverbParam__predelay___this_value___1000">
+                                                <input type="range" id="rev-predelay-slider" min="0" max="1000" value="20" class="w-full h-1 cursor-pointer" data-action-input="input_52_EQ_updateReverbParam__predelay___this_value___1000">
                                             </div>
 
                                             <div class="flex flex-col gap-1">
@@ -2098,7 +2098,13 @@
                                     </div>
 
                                     <div class="flex items-center justify-between gap-2">
-                                        <button id="abx-start-btn" data-action="click_101_TestLab_abxStart" class="bg-indigo-600/15 border-2 border-black text-indigo-400 hover:bg-indigo-600/20 font-bold text-xs px-2.5 h-8 shadow whitespace-nowrap flex-shrink-0">START TEST</button>
+                                        <!-- No data-action: this button swaps between START (abxStart via
+                                             dynamic onclick) and STOP (abxReset via dynamic onclick) at
+                                             runtime. The static click_101 handler + capture-phase EventBinding
+                                             delegation fired abxStart on EVERY click, including STOP —
+                                             re-arming a ghost trial that the subsequent abxReset couldn't
+                                             cancel (its guard had already passed the await). -->
+                                        <button id="abx-start-btn" class="bg-indigo-600/15 border-2 border-black text-indigo-400 hover:bg-indigo-600/20 font-bold text-xs px-2.5 h-8 shadow whitespace-nowrap flex-shrink-0">START TEST</button>
                                         <span id="abx-status-lbl" class="text-xs text-zinc-400 font-mono italic text-right truncate min-w-0"></span>
                                     </div>
 
@@ -2128,15 +2134,44 @@
                                         <span id="hearing-test-status">Hearing Test: Idle</span>
                                         <span id="hearing-test-hz" class="text-cyan-400 font-extrabold">--- Hz</span>
                                     </div>
-                                    <div class="flex items-center px-0.5 h-4">
-                                        <input type="range" id="hearing-test-vol" min="0" max="100" value="0" class="w-full accent-cyan-500 cursor-pointer" data-action-input="input_100_TestLab_updateHearingTestVolume">
+
+                                    <div id="hearing-cal-row" class="flex items-center gap-1.5 px-0.5 h-4">
+                                        <span class="text-[9px] font-black text-zinc-500 uppercase tracking-wider w-10 flex-shrink-0">Level</span>
+                                        <input type="range" id="hearing-test-vol" min="0" max="100" value="50" class="flex-1 min-w-0 accent-cyan-500 cursor-pointer" data-action-input="input_100_TestLab_updateHearingTestVolume" aria-label="Hearing test starting level calibration">
+                                        <span id="hearing-cal-val" class="text-[9px] font-mono font-bold text-zinc-500 w-7 text-right flex-shrink-0">50%</span>
                                     </div>
+
+                                    <div class="space-y-1 px-0.5">
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-[9px] font-black text-zinc-500 uppercase tracking-wider">Progress</span>
+                                            <span id="hearing-progress-pct" class="text-[9px] font-mono font-bold text-cyan-400">0%</span>
+                                        </div>
+                                        <!-- Inline-styled on purpose: the segment bar must render
+                                             identically even if the compiled tailwind.output.css is
+                                             stale (grid-cols-8 was missing from the last build and the
+                                             bar collapsed into stacked divider lines). -->
+                                        <div id="hearing-seg-bar" style="display:flex; gap:2px; height:12px; width:100%;">
+                                            <div class="hearing-seg" data-seg="0" style="flex:1 1 0; min-width:0; height:100%; background:#18181b; border:1px solid #000;"></div>
+                                            <div class="hearing-seg" data-seg="1" style="flex:1 1 0; min-width:0; height:100%; background:#18181b; border:1px solid #000;"></div>
+                                            <div class="hearing-seg" data-seg="2" style="flex:1 1 0; min-width:0; height:100%; background:#18181b; border:1px solid #000;"></div>
+                                            <div class="hearing-seg" data-seg="3" style="flex:1 1 0; min-width:0; height:100%; background:#18181b; border:1px solid #000;"></div>
+                                            <div class="hearing-seg" data-seg="4" style="flex:1 1 0; min-width:0; height:100%; background:#18181b; border:1px solid #000;"></div>
+                                            <div class="hearing-seg" data-seg="5" style="flex:1 1 0; min-width:0; height:100%; background:#18181b; border:1px solid #000;"></div>
+                                            <div class="hearing-seg" data-seg="6" style="flex:1 1 0; min-width:0; height:100%; background:#18181b; border:1px solid #000;"></div>
+                                            <div class="hearing-seg" data-seg="7" style="flex:1 1 0; min-width:0; height:100%; background:#18181b; border:1px solid #000;"></div>
+                                        </div>
+                                    </div>
+                                    <p id="hearing-test-instruction" class="text-[9px] text-zinc-500 leading-snug px-0.5">Set the level so the preview tone is comfortable, then Start Test.</p>
                                     <div class="grid grid-cols-2 gap-1.5 pt-0.5">
                                         <button id="hearing-test-btn" data-action="click_17_TestLab_nextHearingStep" class="w-full bg-cyan-500/10 border-2 border-black text-cyan-400 font-bold text-xs h-8">Start Test</button>
                                         <button id="hearing-not-heard-btn" data-action="click_3201_TestLab_hearingNotHeard" class="w-full bg-amber-500/10 border-2 border-black text-amber-400 font-bold text-xs h-8 hidden">Not Heard (−)</button>
                                         <button data-action="click_298_TestLab_resetHearingTest" class="w-full btn-clear text-stone-300 font-bold text-xs h-8">Reset</button>
                                     </div>
-                                    <button id="hearing-eq-generate-btn" data-action="click_205_TestLab_convertHearingToEQ" class="w-full py-1 bg-zinc-800 text-zinc-500 font-bold rounded-none text-xs mt-1 transition-all text-center cursor-not-allowed hidden border-2 border-black" disabled>🪄 Generate EQ Correction</button>
+                                    <button id="hearing-eq-generate-btn" data-action="click_205_TestLab_convertHearingToEQ" class="w-full py-1 bg-zinc-800 text-zinc-500 font-bold rounded-none text-xs mt-1 transition-all text-center cursor-not-allowed hidden border-2 border-black" disabled title="Add the measured correction directly onto the EQ faders">🪄 Bake Correction into Faders</button>
+                                    <div class="p-2.5 bg-zinc-950/40 border-2 border-black rounded-none space-y-1">
+                                        <span class="text-xs font-bold text-cyan-300 uppercase tracking-wider block">💡 How to Test:</span>
+                                        <p class="text-xs text-zinc-400 leading-snug font-semibold">Answer <span class="text-cyan-400 font-bold">Heard (+)</span> or <span class="text-amber-400 font-bold">Not Heard (−)</span> — the tone homes in on your limit per tone. 8 tones total. Result auto-applies and saves until Reset.</p>
+                                    </div>
                                 </div>
 
                                 <div class="border-t-[3px] border-black my-4"></div>
@@ -2147,6 +2182,10 @@
                                         <button data-action="click_27_TestLab_toggleBassLeakTest__left" id="seal-test-l-btn" class="btn-clear text-stone-200 font-bold text-xs h-8">Test Left</button>
                                         <button data-action="click_185_TestLab_toggleBassLeakTest__right" id="seal-test-r-btn" class="btn-clear text-stone-200 font-bold text-xs h-8">Test Right</button>
                                         <button data-action="click_252_TestLab_stopBassLeakTest" class="bg-red-950/60 hover:bg-red-900/80 border-2 border-black text-red-400 font-bold text-xs h-8 cursor-pointer" title="Stop the leak test">Stop</button>
+                                    </div>
+                                    <div class="p-2.5 bg-zinc-950/40 border-2 border-black rounded-none space-y-1">
+                                        <span class="text-xs font-bold text-cyan-300 uppercase tracking-wider block">💡 How to Test:</span>
+                                        <p class="text-xs text-zinc-400 leading-snug font-semibold">Plays <span class="text-white font-bold">50 Hz in one ear</span>, quiet 1 kHz in the other. Bass should sound full — thin or fluttering means a bad seal. Re-seat or swap tips, then test both sides.</p>
                                     </div>
                                 </div>
                             </div>
@@ -2638,7 +2677,7 @@
 
         <canvas id="global-spores-canvas" style="position: fixed; inset: 0; pointer-events: none; z-index: 99999; display: none;"></canvas>
 
-        <script src="app/js/bundle-version.js?v=17f89ad37e58"></script>
+        <script src="app/js/bundle-version.js?v=5d7fe876b7e4"></script>
         <script>
           // Packaged builds serve the minified bundle via ?packaged=1.
           // Cache-bust with the content hash written by scripts/build-bundle.mjs

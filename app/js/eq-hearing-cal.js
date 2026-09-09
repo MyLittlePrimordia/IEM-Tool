@@ -1,4 +1,4 @@
-const EQ_HearingCalMethods = {
+﻿const EQ_HearingCalMethods = {
             hearingCalEnabled: false,
             hearingOffsets: [0, 0, 0, 0, 0, 0, 0, 0], // Map to 250, 500, 1k, 2k, 4k, 8k, 12k, 16k
             // MUST stay in sync with applyHearingCalibrationGains() below and the
@@ -23,11 +23,11 @@ const EQ_HearingCalMethods = {
                     if (this.resonanceCalEnabled) {
                         btn.classList.add('active-btn');
                         lbl.textContent = 'Resonance: ON';
-                        showToast("Ear Resonance Peak (" + PEQDB_Module.resonanceHz + "Hz) Applied!", "🎯");
+                        showToast("Ear Resonance Peak (" + PEQDB_Module.resonanceHz + "Hz) Applied!", "ðŸŽ¯");
                     } else {
                         btn.classList.remove('active-btn');
                         lbl.textContent = 'Resonance: Off';
-                        showToast("Ear Resonance Peak Disabled", "🎯");
+                        showToast("Ear Resonance Peak Disabled", "ðŸŽ¯");
                     }
                 }
                 this.drawCurve();
@@ -41,11 +41,11 @@ const EQ_HearingCalMethods = {
                         btn.classList.add('active-btn');
                         lbl.textContent = 'Hearing: ON';
                         Mascot.triggerTemporaryExpression('cool', 2000);
-                    showToast("Hearing Calibration Profile Applied!", "👂");
+                    showToast("Hearing Calibration Profile Applied!", "ðŸ‘‚");
                     } else {
                         btn.classList.remove('active-btn');
                         lbl.textContent = 'Hearing: Off';
-                        showToast("Hearing Calibration Profile Disabled", "👂");
+                        showToast("Hearing Calibration Profile Disabled", "ðŸ‘‚");
                     }
                 }
                 this.applyHearingCalibrationGains();
@@ -59,11 +59,11 @@ const EQ_HearingCalMethods = {
                     if (this.volumeCompEnabled) {
                         btn.classList.add('active-btn');
                         lbl.textContent = 'Compensator: ON';
-                        showToast("Auto Headroom & Volume Compensation Active", "🔊");
+                        showToast("Auto Headroom & Volume Compensation Active", "ðŸ”Š");
                     } else {
                         btn.classList.remove('active-btn');
                         lbl.textContent = 'Compensator: Off';
-                        showToast("Volume Compensation Disabled", "🔊");
+                        showToast("Volume Compensation Disabled", "ðŸ”Š");
                     }
                 }
                 this.updatePreamp();
@@ -128,8 +128,8 @@ const EQ_HearingCalMethods = {
                     }
                     // Initialize frequency tracker if not set
                     if (!this.deEsserCurrentFreq) this.deEsserCurrentFreq = 6000;
-                    if (!Number.isFinite(this.deEsserSensitivity)) this.deEsserSensitivity = 100;
-                    showToast("De-Esser active. Monitoring vocal sibilance peaks (4k-8kHz)", "🛡️");
+                    if (!Number.isFinite(this.deEsserSensitivity)) this.deEsserSensitivity = 50;
+                    showToast("De-Esser active. Monitoring vocal sibilance peaks (4k-8kHz)", "ðŸ›¡ï¸");
                 } else {
                     if (btn) {
                         btn.className = 'btn-clear text-stone-200 font-bold rounded text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center';
@@ -158,7 +158,7 @@ const EQ_HearingCalMethods = {
                             }]
                         });
                     }
-                    showToast("De-Esser deactivated", "🛡️");
+                    showToast("De-Esser deactivated", "ðŸ›¡ï¸");
                 }
                 this.drawCurve();
             },
@@ -167,7 +167,7 @@ updateDeEsserSens: function(val) {
                 this.deEsserSensitivity = Number.isFinite(parsed) ? parsed : 100;
                 // The per-frame viz tracker owns deEsserReductionDb (dynamic
                 // sibilance gain, up to -15 dB) and posts it to both the
-                // worklet and the drawn curve — do NOT write a static value
+                // worklet and the drawn curve â€” do NOT write a static value
                 // here or it fights the tracker for a frame and spams the
                 // worklet with an immediately-superseded gain.
                 const sensVal = document.getElementById('deesser-sens-val');
@@ -176,7 +176,7 @@ updateDeEsserSens: function(val) {
             },
             updateDeEsserFreq: function(freq) {
                 this.deEsserCurrentFreq = Math.round(freq);
-                if (!Number.isFinite(this.deEsserSensitivity)) this.deEsserSensitivity = 100;
+                if (!Number.isFinite(this.deEsserSensitivity)) this.deEsserSensitivity = 50;
                 // Seed post only; the tracker takes over on the next frame.
                 if (this.deEsserEnabled && SharedAudio.workletNode) {
                     SharedAudio.workletNode.port.postMessage({
