@@ -1076,14 +1076,16 @@
                     });
                 },
 
-                cycleBaseline: function() {
+                cycleBaseline: function(dir) {
 
                     this.clonedTargetInterp = null;
                     if (this.isClonedModeActive) {
                         this.deactivateEQBaseClone();
                     }
 
-                    this.currentBaselineIndex = (this.currentBaselineIndex + 1) % this.baselineOptions.length;
+                    const step = (typeof dir === 'number' && isFinite(dir)) ? (dir >= 0 ? 1 : -1) : 1;
+                    const total = this.baselineOptions.length;
+                    this.currentBaselineIndex = (this.currentBaselineIndex + step + total) % total;
                     const opt = this.baselineOptions[this.currentBaselineIndex];
 
                     const btn = document.getElementById('find-baseline-btn');

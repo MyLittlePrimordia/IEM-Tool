@@ -28620,14 +28620,16 @@ loadSoundLibrary: async function() {
                     });
                 },
 
-                cycleBaseline: function() {
+                cycleBaseline: function(dir) {
 
                     this.clonedTargetInterp = null;
                     if (this.isClonedModeActive) {
                         this.deactivateEQBaseClone();
                     }
 
-                    this.currentBaselineIndex = (this.currentBaselineIndex + 1) % this.baselineOptions.length;
+                    const step = (typeof dir === 'number' && isFinite(dir)) ? (dir >= 0 ? 1 : -1) : 1;
+                    const total = this.baselineOptions.length;
+                    this.currentBaselineIndex = (this.currentBaselineIndex + step + total) % total;
                     const opt = this.baselineOptions[this.currentBaselineIndex];
 
                     const btn = document.getElementById('find-baseline-btn');
@@ -33006,7 +33008,9 @@ const handlers = {
         "click_247_TestLab_abxCycleTrials__1": function(event, element) { TestLab.abxCycleTrials(-1) },
         "click_248_PEQDB_Module_cycleResolutionDirection_1": function(event, element) { PEQDB_Module.cycleResolutionDirection(1) },
         "click_249_EQ_cycleExportFormat__1": function(event, element) { EQ.cycleExportFormat(-1) },
-        "click_24_FindEngine_cycleBaseline": function(event, element) { FindEngine.cycleBaseline() },
+        "click_24_FindEngine_cycleBaseline": function(event, element) { FindEngine.cycleBaseline(1) },
+        "click_310_FindEngine_cycleBaseline__1": function(event, element) { FindEngine.cycleBaseline(-1) },
+        "click_311_FindEngine_cycleBaseline_1": function(event, element) { FindEngine.cycleBaseline(1) },
         "click_250_EQ_calibrateLoudnessFromVolume": function(event, element) { EQ.calibrateLoudnessFromVolume() },
         "click_251_IEM_cycleDacPower_1": function(event, element) { IEM.cycleDacPower(1) },
         "click_252_TestLab_stopBassLeakTest": function(event, element) { TestLab.stopBassLeakTest() },

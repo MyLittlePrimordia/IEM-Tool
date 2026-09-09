@@ -252,8 +252,57 @@
         .theme-parchment #tl-controls-spatial > div.btn-clear:hover,
         .theme-parchment #tl-controls-spatial > button.btn-clear:hover,
         .theme-parchment #tl-controls-graph > div.btn-clear:hover,
-        .theme-parchment #tl-controls-graph > button.btn-clear:hover {
+        .theme-parchment #tl-controls-graph > button.btn-clear:hover,
+        .theme-parchment #btn-expand-active-graph:hover,
+        .theme-parchment #btn-expand-spatial:hover {
             filter: brightness(0.88) !important;
+        }
+
+        /* Parchment is a light theme: any Tailwind dark hover (hover:bg-zinc-800
+           and its opacity variants) would flash near-black. Neutralize to a
+           slight darken so buttons like the baseline stepper, volume, crossover,
+           way and viz controls match the rest of the theme. */
+        .theme-parchment button[class*="hover:bg-zinc-800"]:hover {
+            background-color: var(--bg-input) !important;
+            filter: brightness(0.88) !important;
+        }
+
+        /* Segmented sub-tabs (Database/Similar, Standard/Advanced, Music/Gaming/
+           Film/Audio/Bass/Custom, Coupling/Spatial/Effects/Crossover) are
+           .no-tactile so they skip the darken rule above, falling back to the
+           generic brightness(1.2) lighten which reads as white on parchment.
+           Darken on hover; selected tab stays solid burnt-orange. */
+        .theme-parchment .subtab-seg-btn:hover {
+            filter: brightness(0.88) !important;
+            background-color: var(--bg-input) !important;
+        }
+        .theme-parchment .subtab-seg-btn.active,
+        .theme-parchment .subtab-seg-btn.active:hover {
+            background-color: var(--accent-blue) !important;
+            background: var(--accent-blue) !important;
+            color: #ffffff !important;
+            filter: none !important;
+        }
+        .theme-parchment .subtab-seg-btn.active .subtab-seg-emoji,
+        .theme-parchment .subtab-seg-btn.active:hover .subtab-seg-emoji {
+            background: transparent !important;
+            background-color: transparent !important;
+        }
+
+        /* Pressed buttons flash burnt-orange in parchment (symmetry with
+           selected tabs/arrows) instead of the generic light bg-input which
+           reads as white. Toggles (.retro-switch-btn) and bare icon badges
+           keep their own semantics and are excluded. */
+        .theme-parchment button:not(.no-tactile):not(.retro-switch-btn):not(.find-pick-badge):not(.subtab-seg-btn):active {
+            background-color: var(--accent-blue) !important;
+            background-image: none !important;
+            color: #ffffff !important;
+            filter: none !important;
+        }
+        .theme-parchment button:not(.no-tactile):not(.retro-switch-btn):not(.find-pick-badge):not(.subtab-seg-btn):active span:not(.emoji-font):not(.vibrant-emoji):not(.themed-emoji) {
+            background: transparent !important;
+            background-color: transparent !important;
+            color: #ffffff !important;
         }
 
         .theme-parchment #lbl-tip-sound.text-red-500,
@@ -344,15 +393,40 @@
              color: #ffffff !important;
          }
 
-         .theme-parchment #find-matches-grid button:hover,
-         .theme-parchment #find-matches-grid button:hover span,
-         .theme-parchment #find-col-results button:hover,
-         .theme-parchment #find-col-results button:hover span,
-         .theme-parchment #find-col-tools button:hover,
-         .theme-parchment #find-col-tools button:hover span {
-             background-color: var(--accent-blue) !important;
-             color: #ffffff !important;
-         }
+          /* Result cards highlight burnt-orange on hover. Scoped narrowly:
+             - main CTA gradient buttons (Find Matches/Taste/Gems/Upgrades/Endgame)
+               keep their gradients (darkened by the generic brightness filter);
+             - bare icon badges (.find-pick-badge) keep filter-only gray->color
+               behavior with no background wash;
+             - emoji/icon spans always stay transparent so no orange square is
+               painted around glyphs. */
+          .theme-parchment #find-matches-grid button:hover,
+          .theme-parchment #find-col-results button:hover,
+          .theme-parchment #find-col-tools button:hover:not(.find-pick-badge):not(#find-taste-btn-scan):not(#find-upgrade-btn):not(#find-endgame-btn):not(#find-gk-btn):not([data-action*="scanAndMatch"]) {
+              background-color: var(--accent-blue) !important;
+              color: #ffffff !important;
+          }
+          .theme-parchment #find-matches-grid button:hover span,
+          .theme-parchment #find-col-results button:hover span,
+          .theme-parchment #find-col-tools button:hover span {
+              background: transparent !important;
+              background-color: transparent !important;
+          }
+          .theme-parchment #find-matches-grid button:hover span:not(.emoji-font):not(.vibrant-emoji):not(.themed-emoji),
+          .theme-parchment #find-col-results button:hover span:not(.emoji-font):not(.vibrant-emoji):not(.themed-emoji),
+          .theme-parchment #find-col-tools button:hover span:not(.emoji-font):not(.vibrant-emoji):not(.themed-emoji) {
+              color: #ffffff !important;
+          }
+          .theme-parchment #find-col-tools button.find-pick-badge:hover,
+          .theme-parchment #find-col-tools button.find-pick-badge.on:hover {
+              background: transparent !important;
+              background-color: transparent !important;
+          }
+          .theme-parchment #find-col-tools button.find-pick-badge:hover img,
+          .theme-parchment #find-col-tools button.find-pick-badge:hover span {
+              background: transparent !important;
+              background-color: transparent !important;
+          }
 
          .theme-parchment button[onclick*="removeTasteFavorite"],
          .theme-parchment button[onclick*="clearUpgradeBaseIem"],
@@ -369,6 +443,42 @@
              background-color: #e53e3e !important;
              color: #ffffff !important;
          }
+
+      /* Parchment light-theme corrections: several generic hover rules use a
+         white translucent wash (rgba(255,255,255,0.05-0.08)) or a lighten
+         filter which reads as white on parchment. Remap to a dark wash /
+         darken so EQ console, graph headers, band cards and DB rows match the
+         theme's "slightly darker tint on hover, burnt-orange when selected"
+         language. */
+      .theme-parchment .eq-card-action-btn:hover {
+          background-color: rgba(0, 0, 0, 0.08) !important;
+          border-color: #000000 !important;
+          color: var(--text-main) !important;
+      }
+      .theme-parchment .peqdb-row-item:hover {
+          background-color: var(--bg-input) !important;
+          border-color: #000000 !important;
+          filter: brightness(0.92) !important;
+      }
+      .theme-parchment .db-sig-tag:hover {
+          background: rgba(0, 0, 0, 0.08) !important;
+      }
+      .theme-parchment #tl-controls-spatial > div.btn-clear button:hover {
+          background: rgba(0, 0, 0, 0.08) !important;
+          filter: brightness(0.88) !important;
+      }
+      .theme-parchment .eq-band-card:hover {
+          background: var(--bg-input) !important;
+          border-color: #000000 !important;
+          filter: brightness(0.94) !important;
+          box-shadow: 3px 3px 0px 0px #000000 !important;
+          transform: none !important;
+      }
+      .theme-parchment .tag.active,
+      .theme-parchment .category-pill.active {
+          background-color: var(--accent-blue) !important;
+          color: #ffffff !important;
+      }
 
      .theme-parchment #eq-col-db button {
          color: var(--text-main) !important;

@@ -774,9 +774,13 @@
                             <div id="find-tuning-controls" class="space-y-1 flex flex-col">
                                 <div>
                                     <label class="block text-xs uppercase text-zinc-400 font-black mb-0.5">Starting Baseline Target</label>
-                                    <button id="find-baseline-btn" data-action="click_24_FindEngine_cycleBaseline" class="w-full h-8 bg-[var(--bg-input)] hover:bg-zinc-800 border-2 border-black rounded text-xs font-bold text-stone-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
-                                        🎯 Harman IE 2019
-                                    </button>
+                                    <div class="flex items-center gap-1.5 w-full h-8">
+                                        <button type="button" data-action="click_310_FindEngine_cycleBaseline__1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-[var(--text-main)] font-black text-xs flex items-center justify-center cursor-pointer select-none flex-shrink-0 focus:outline-none" title="Previous baseline target">◀</button>
+                                        <button id="find-baseline-btn" data-action="click_24_FindEngine_cycleBaseline" class="flex-1 h-8 bg-[var(--bg-input)] border-2 border-black rounded-none text-xs font-bold text-stone-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer truncate min-w-0 focus:outline-none">
+                                            🎯 Harman IE 2019
+                                        </button>
+                                        <button type="button" data-action="click_311_FindEngine_cycleBaseline_1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-[var(--text-main)] font-black text-xs flex items-center justify-center cursor-pointer select-none flex-shrink-0 focus:outline-none" title="Next baseline target">▶</button>
+                                    </div>
                                 </div>
 
                                 <div class="space-y-0.5">
@@ -2677,7 +2681,7 @@
 
         <canvas id="global-spores-canvas" style="position: fixed; inset: 0; pointer-events: none; z-index: 99999; display: none;"></canvas>
 
-        <script src="app/js/bundle-version.js?v=5d7fe876b7e4"></script>
+        <script src="app/js/bundle-version.js?v=08369a891983"></script>
         <script>
           // Packaged builds serve the minified bundle via ?packaged=1.
           // Cache-bust with the content hash written by scripts/build-bundle.mjs

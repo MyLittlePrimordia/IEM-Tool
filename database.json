@@ -3573,6 +3573,29 @@
     ]
   },
   {
+    "id": "activo_scoop",
+    "brand": "Activo",
+    "model": "Scoop",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 100,
+    "driver_type": "Hybrid",
+    "driver_config": "3DD+2BA",
+    "impedance": 10,
+    "sensitivity": 105,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Smooth",
+      "Vocal-Focused",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/SOUNDIGNITY/ACTIVO SCOOP.txt"
+    ]
+  },
+  {
     "id": "activo_volcano",
     "brand": "Activo",
     "model": "Volcano",
@@ -20502,6 +20525,30 @@
     ]
   },
   {
+    "id": "bowers_wilkins_px8_s2",
+    "brand": "Bowers & Wilkins",
+    "model": "PX8",
+    "variant": "S2",
+    "year": 2025,
+    "price_usd": 700,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 33,
+    "sensitivity": 103,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Over-Ear Headphones",
+    "tags": [
+      "Detailed",
+      "Resolving",
+      "Warm",
+      "Premium"
+    ],
+    "files": [
+      "data/KUULOKENURKKA/BOWERS & WILKINS PX8 S2 (ANC ON).txt",
+      "data/KUULOKENURKKA/BOWERS & WILKINS PX8 S2 (ANC OFF).txt"
+    ]
+  },
+  {
     "id": "bqeyz_autumn",
     "brand": "BQEYZ",
     "model": "Autumn",
@@ -27033,6 +27080,30 @@
     ]
   },
   {
+    "id": "crinear_nightfall",
+    "brand": "CrinEar",
+    "model": "Nightfall",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 30,
+    "driver_type": "DD",
+    "driver_config": "2DD",
+    "impedance": 16,
+    "sensitivity": 108,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Smooth",
+      "Vocal-Focused",
+      "Budget"
+    ],
+    "files": [
+      "data/SUPER REVIEW/CRINEAR NIGHTFALL.txt",
+      "data/AUDIOAMIGO/CRINEAR NIGHTFALL.txt"
+    ]
+  },
+  {
     "id": "crinear_project_meta",
     "brand": "CrinEar",
     "model": "Project Meta",
@@ -28887,6 +28958,30 @@
     ],
     "files": [
       "data/ORATORY1990/DAN CLARK AUDIO NOIRE X.txt"
+    ]
+  },
+  {
+    "id": "dan_clark_audio_noire_xo",
+    "brand": "Dan Clark Audio",
+    "model": "Noire XO",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 1300,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 23,
+    "sensitivity": 86,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Neutral",
+      "Resolving",
+      "Wide-Stage",
+      "Premium"
+    ],
+    "files": [
+      "data/KR0MKA/DAN CLARK AUDIO NOIRE XO.txt"
     ]
   },
   {
@@ -33045,6 +33140,29 @@
       "data/DHRME/EDIFIER NEOBUDS PRO 2.txt",
       "data/REGAN CIPHER/EDIFIER NEOBUDS PRO 2.txt",
       "data/DUCBLOKE/EDIFIER NEOBUD PRO 2.txt"
+    ]
+  },
+  {
+    "id": "edifier_neobuds_pro_3",
+    "brand": "Edifier",
+    "model": "NeoBuds Pro",
+    "variant": "3",
+    "year": 2026,
+    "price_usd": 130,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+1BA",
+    "impedance": 0,
+    "sensitivity": 0,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Earbuds (TWS)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/FERNANDA GUNSAN/EDIFIER NEOBUDS PRO 3.txt"
     ]
   },
   {
@@ -39692,6 +39810,29 @@
     ]
   },
   {
+    "id": "fiio_jf11",
+    "brand": "FiiO",
+    "model": "JF11",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 10,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 102,
+    "connector": "Fixed Cable",
+    "form_factor": "Earbuds (Wired)",
+    "tags": [
+      "Punchy Bass",
+      "Warm",
+      "Relaxed",
+      "Budget"
+    ],
+    "files": [
+      "data/HADOE/FIIO JF11.txt"
+    ]
+  },
+  {
     "id": "fiio_jh13",
     "brand": "FiiO",
     "model": "JH13",
@@ -39811,6 +39952,30 @@
     ],
     "files": [
       "data/AUDIOAMIGO/FIIO JT7.txt"
+    ]
+  },
+  {
+    "id": "fiio_jt9",
+    "brand": "FiiO",
+    "model": "JT9",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 170,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 20,
+    "sensitivity": 95,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Warm",
+      "Resolving",
+      "Detailed",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/UNHEARD LAB/FIIO JT9.txt"
     ]
   },
   {
@@ -40261,6 +40426,30 @@
     ],
     "files": [
       "data/ORATORY1990/FINAL AUDIO D8000 PRO EDITION.txt"
+    ]
+  },
+  {
+    "id": "final_audio_dx6000",
+    "brand": "Final Audio",
+    "model": "DX6000",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 2000,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 47,
+    "sensitivity": 83,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Resolving",
+      "Smooth",
+      "Warm",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/HU-FI/FINAL DX6000.txt"
     ]
   },
   {
@@ -49300,6 +49489,30 @@
     ],
     "files": [
       "data/ORATORY1990/HIFIMAN HE5XX.txt"
+    ]
+  },
+  {
+    "id": "hifiman_he6_remastered",
+    "brand": "HIFIMAN",
+    "model": "HE6",
+    "variant": "Remastered",
+    "year": 2026,
+    "price_usd": 1900,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 50,
+    "sensitivity": 84,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Reference",
+      "Resolving",
+      "Technical",
+      "Flagship"
+    ],
+    "files": [
+      "data/ADEN/HIFIMAN HE6 REMASTERED.txt"
     ]
   },
   {
@@ -71877,6 +72090,30 @@
     ]
   },
   {
+    "id": "meze_audio_arta",
+    "brand": "Meze Audio",
+    "model": "Arta",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 6000,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 225,
+    "sensitivity": 101,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Resolving",
+      "Warm",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/ADEN/MEZE ARTA.txt"
+    ]
+  },
+  {
     "id": "meze_audio_astru",
     "brand": "Meze Audio",
     "model": "Astru",
@@ -73756,6 +73993,27 @@
     ]
   },
   {
+    "id": "moondrop_edge_ii",
+    "brand": "Moondrop",
+    "model": "Edge",
+    "variant": "II",
+    "year": 2026,
+    "price_usd": 80,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 105,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Over-Ear Headphones",
+    "tags": [
+      "Balanced",
+      "Relaxed",
+      "Smooth",
+      "Budget"
+    ],
+    "files": []
+  },
+  {
     "id": "moondrop_enmusubi_no_kami",
     "brand": "Moondrop",
     "model": "Enmusubi no Kami",
@@ -73777,6 +74035,32 @@
     ],
     "files": [
       "data/EARPHONES ARCHIVE/MOONDROP X ONMYOJI-ENMUSUBI NO KAMI (USB C).txt"
+    ]
+  },
+  {
+    "id": "moondrop_gm_01_pro",
+    "brand": "Moondrop",
+    "model": "GM-01",
+    "variant": "Pro",
+    "year": 2026,
+    "price_usd": 70,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 105,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Over-Ear Headphones",
+    "tags": [
+      "Balanced",
+      "Competitive-Gaming",
+      "Detailed",
+      "Gaming",
+      "Budget"
+    ],
+    "files": [
+      "data/SUPER REVIEW/MOONDROP GM-01 PRO (USB).txt",
+      "data/SUPER REVIEW/MOONDROP GM-01 PRO (BLUETOOTH).txt",
+      "data/SUPER REVIEW/MOONDROP GM-01 PRO (ANALOG).txt"
     ]
   },
   {
@@ -79796,6 +80080,29 @@
     ]
   },
   {
+    "id": "nothing_ear_3",
+    "brand": "Nothing",
+    "model": "Ear",
+    "variant": "(3)",
+    "year": 2026,
+    "price_usd": 150,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 0,
+    "sensitivity": 0,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Earbuds (TWS)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/DHRME/NOTHING EAR (3) (ANC ON).txt"
+    ]
+  },
+  {
     "id": "nothing_ear_a",
     "brand": "Nothing",
     "model": "Ear",
@@ -81009,6 +81316,29 @@
       "data/DHRME/ONEPLUS BUDS 3.txt",
       "data/REGAN CIPHER/ONEPLUS BUDS 3.txt",
       "data/RTINGS/ONEPLUS BUDS 3.txt"
+    ]
+  },
+  {
+    "id": "oneplus_buds_4",
+    "brand": "OnePlus",
+    "model": "Buds",
+    "variant": "4",
+    "year": 2026,
+    "price_usd": 70,
+    "driver_type": "DD",
+    "driver_config": "2DD",
+    "impedance": 0,
+    "sensitivity": 0,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Earbuds (TWS)",
+    "tags": [
+      "Fun",
+      "Punchy Bass",
+      "Warm",
+      "Budget"
+    ],
+    "files": [
+      "data/REGAN CIPHER/ONEPLUS BUDS 4 (ANC ON).txt"
     ]
   },
   {
@@ -86176,6 +86506,30 @@
     ],
     "files": [
       "data/REGAN CIPHER/QCY H3 PRO.txt"
+    ]
+  },
+  {
+    "id": "qcy_h3s",
+    "brand": "QCY",
+    "model": "H3S",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 50,
+    "driver_type": "DD",
+    "driver_config": "2DD",
+    "impedance": 32,
+    "sensitivity": 102,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Over-Ear Headphones",
+    "tags": [
+      "Fun",
+      "Punchy Bass",
+      "Warm",
+      "Budget"
+    ],
+    "files": [
+      "data/EARPHONES ARCHIVE/QCY H3S (ANC OFF).txt",
+      "data/EARPHONES ARCHIVE/QCY H3S (ANC ON).txt"
     ]
   },
   {
@@ -123782,6 +124136,31 @@
     ],
     "files": [
       "data/AUDIOAMIGO/VIDO FLATHEAD VIDO FOAM.txt"
+    ]
+  },
+  {
+    "id": "viking_audioforge_draupnir",
+    "brand": "Viking Audioforge",
+    "model": "Draupnir",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 2000,
+    "driver_type": "DD",
+    "driver_config": "2DD",
+    "impedance": 32,
+    "sensitivity": 102,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Basshead",
+      "Fun",
+      "Punchy Bass",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DUNG LE/VIKING DRAUPNIR (BASS SWITCH ON).txt",
+      "data/DUNG LE/VIKING DRAUPNIR (BASS SWITCH OFF).txt"
     ]
   },
   {
