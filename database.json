@@ -74011,7 +74011,10 @@
       "Smooth",
       "Budget"
     ],
-    "files": []
+    "files": [
+      "data/SUPER REVIEW/MOONDROP EDGE 2 (ANC OFF).txt",
+      "data/SUPER REVIEW/MOONDROP EDGE 2 (ANC ON).txt"
+    ]
   },
   {
     "id": "moondrop_enmusubi_no_kami",
@@ -112227,6 +112230,34 @@
       "data/AUDIOAMIGO/TANGZU XUANWU GATE.txt",
       "data/HAWAII BAY BOY/TANGZU XUAN WU GATE.txt",
       "data/AUDIOAMIGO/TANGZU XUANWU GATE 15ohm.txt"
+    ]
+  },
+  {
+    "id": "tangzu_xuanwu_gate_ii",
+    "brand": "Tangzu",
+    "model": "XuanWu Gate",
+    "variant": "II",
+    "year": 2026,
+    "price_usd": 800,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD+4BA+4EST",
+    "impedance": 16,
+    "sensitivity": 111,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Good-Imaging",
+      "Resolving",
+      "Smooth",
+      "Technical",
+      "Warm",
+      "Wide-Stage",
+      "Premium"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/TANGZU XUANWU GATE 2.txt"
     ]
   },
   {
