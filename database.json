@@ -8461,6 +8461,30 @@
     ]
   },
   {
+    "id": "arisyn_huo_shu_cu",
+    "brand": "Arisyn",
+    "model": "Huo Shu",
+    "variant": "Cu",
+    "year": 2026,
+    "price_usd": 290,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+4BA",
+    "impedance": 22,
+    "sensitivity": 110,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Punchy Bass",
+      "Smooth",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/JAYTISS/ARISYN HUO SHU CU.txt"
+    ]
+  },
+  {
     "id": "aroma_audio_ace",
     "brand": "Aroma Audio",
     "model": "Ace",
@@ -16771,6 +16795,30 @@
       "data/HEADPHONE.COM LEGACY/BEYERDYNAMIC DT 250.txt",
       "data/INNERFIDELITY/BEYERDYNAMIC DT 250.txt",
       "data/ORATORY1990/BEYERDYNAMIC DT 250.txt"
+    ]
+  },
+  {
+    "id": "beyerdynamic_dt_270_pro",
+    "brand": "Beyerdynamic",
+    "model": "DT 270",
+    "variant": "Pro",
+    "year": 2026,
+    "price_usd": 130,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 45,
+    "sensitivity": 96,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Good-Imaging",
+      "Punchy Bass",
+      "Studio-Monitoring",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/DEN-FI/BEYERDYNAMIC DT 270 PRO.txt"
     ]
   },
   {
@@ -30584,6 +30632,30 @@
     ]
   },
   {
+    "id": "dsh_studio_onyx",
+    "brand": "DSH-Studio",
+    "model": "Onyx",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 750,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 32,
+    "sensitivity": 94,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Wide-Stage",
+      "Premium"
+    ],
+    "files": [
+      "data/KUULOKENURKKA/DSH-STUDIO ONYX PLANAR.txt"
+    ]
+  },
+  {
     "id": "dubslabs_bedphones",
     "brand": "Dubslabs",
     "model": "Bedphones",
@@ -31370,6 +31442,30 @@
     ],
     "files": [
       "data/ELRICS/DUNU MORTISE.txt"
+    ]
+  },
+  {
+    "id": "dunu_prs6",
+    "brand": "DUNU",
+    "model": "PRS6",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 250,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD+4BA+1MEMS",
+    "impedance": 43,
+    "sensitivity": 112,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Good-Imaging",
+      "Technical",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/JOYCES REVIEW/DUNU PRS 6.txt"
     ]
   },
   {
@@ -32168,12 +32264,13 @@
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Mid-Tier",
+      "Detailed",
+      "Limited-Edition",
       "Neutral",
-      "Warm",
       "Smooth",
       "Vocal-Focused",
-      "Detailed"
+      "Warm",
+      "Mid-Tier"
     ],
     "files": [
       "data/JOYCES REVIEW/EARACOUSTIC OSHUN LTD.txt"
@@ -52214,6 +52311,30 @@
     ]
   },
   {
+    "id": "ibasso_jr_cookie_ti",
+    "brand": "iBasso",
+    "model": "Jr. Cookie",
+    "variant": "Ti",
+    "year": 2026,
+    "price_usd": 180,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 112,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Good-Imaging",
+      "Vocal-Focused",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/TONEDEAFMONK/IBASSO JR.txt"
+    ]
+  },
+  {
     "id": "ibasso_jr_klee",
     "brand": "iBasso",
     "model": "Jr. Klee",
@@ -60174,6 +60295,30 @@
     ],
     "files": [
       "data/PRACTIPHILE/KBEAR TOURBILLON X.txt"
+    ]
+  },
+  {
+    "id": "kbear_venus_cg01",
+    "brand": "KBEAR",
+    "model": "Venus",
+    "variant": "CG01",
+    "year": 2026,
+    "price_usd": 30,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 106,
+    "connector": "Fixed Cable",
+    "form_factor": "IEM",
+    "tags": [
+      "Gaming",
+      "Punchy Bass",
+      "Smooth",
+      "V-Shaped",
+      "Budget"
+    ],
+    "files": [
+      "data/KUPING SENSI/KBEAR CG01.txt"
     ]
   },
   {
@@ -70787,6 +70932,30 @@
     ]
   },
   {
+    "id": "makinaaudio_t100b",
+    "brand": "MAKINAaudio",
+    "model": "T100B",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 150,
+    "driver_type": "BA",
+    "driver_config": "1BA",
+    "impedance": 23,
+    "sensitivity": 110,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Analytical",
+      "Detailed",
+      "Neutral",
+      "Resolving",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/EARPHONES ARCHIVE/MAKINAAUDIO T-100B.txt"
+    ]
+  },
+  {
     "id": "mark_levinson_no_5909",
     "brand": "Mark Levinson",
     "model": "No. 5909",
@@ -75695,6 +75864,30 @@
     "files": [
       "data/SQUIGLINK/MOONDROP VOYAGER.txt",
       "data/SUPER REVIEW/MOONDROP VOYAGER.txt"
+    ]
+  },
+  {
+    "id": "moritz_aura",
+    "brand": "Moritz",
+    "model": "Aura",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 180,
+    "driver_type": "BA",
+    "driver_config": "4BA",
+    "impedance": 12,
+    "sensitivity": 105,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Good-Imaging",
+      "Smooth",
+      "Vocal-Focused",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/MORITZ AURA.txt"
     ]
   },
   {
@@ -110293,6 +110486,30 @@
     ]
   },
   {
+    "id": "symphonyears_hexad_ii",
+    "brand": "Symphonyears",
+    "model": "Hexad",
+    "variant": "II",
+    "year": 2026,
+    "price_usd": 260,
+    "driver_type": "Hybrid",
+    "driver_config": "2DD+4BA",
+    "impedance": 18,
+    "sensitivity": 109,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Good-Imaging",
+      "Resolving",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/SUPER REVIEW/SYMPHONYEARS HEXAD 2.txt"
+    ]
+  },
+  {
     "id": "symphonyears_prestige",
     "brand": "Symphonyears",
     "model": "Prestige",
@@ -113446,6 +113663,30 @@
     "files": [
       "data/SQUIGLINK/TENHZ P4 PRO.txt",
       "data/SUPER REVIEW/TENHZ P4 PRO.txt"
+    ]
+  },
+  {
+    "id": "tenii_luthier",
+    "brand": "TENii",
+    "model": "Luthier",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 450,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 98,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Wide-Stage",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/UNHEARD LAB/TENii Luthier.txt"
     ]
   },
   {
@@ -124762,6 +125003,30 @@
     ]
   },
   {
+    "id": "volk_audio_stella",
+    "brand": "Volk Audio",
+    "model": "Stella",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 3900,
+    "driver_type": "Tribrid",
+    "driver_config": "2DD+4BA+4EST+1BC",
+    "impedance": 12,
+    "sensitivity": 108,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/VOLK AUDIO STELLA.txt"
+    ]
+  },
+  {
     "id": "vortex_reference",
     "brand": "Vortex",
     "model": "Reference",
@@ -125170,6 +125435,30 @@
     "files": [
       "data/HANGOUT.AUDIO/VSONIC VSD3S.txt",
       "data/INNERFIDELITY/VSONIC VSD3S.txt"
+    ]
+  },
+  {
+    "id": "vzonis_dbb_03",
+    "brand": "Vzonis",
+    "model": "DBB-03",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 40,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD+1BA+1BC",
+    "impedance": 16,
+    "sensitivity": 106,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Good-Imaging",
+      "Punchy Bass",
+      "Budget"
+    ],
+    "files": [
+      "data/BOIZOFF/VZONIS DDB-03.txt"
     ]
   },
   {
@@ -128327,6 +128616,54 @@
     ],
     "files": [
       "data/INNERFIDELITY/YUTAI BAS02.txt"
+    ]
+  },
+  {
+    "id": "zaylli_lyro",
+    "brand": "Zaylli",
+    "model": "LYRO",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 250,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 36,
+    "sensitivity": 110,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Punchy Bass",
+      "Wide-Stage",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/KUULOKENURKKA/ZAYLLI LYRÖ.txt"
+    ]
+  },
+  {
+    "id": "zaylli_lyro_mx",
+    "brand": "Zaylli",
+    "model": "LYRO",
+    "variant": "MX",
+    "year": 2026,
+    "price_usd": 340,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 36,
+    "sensitivity": 108,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Smooth",
+      "Wide-Stage",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/KUULOKENURKKA/ZAYLLI LYRÖ MX.txt"
     ]
   },
   {
