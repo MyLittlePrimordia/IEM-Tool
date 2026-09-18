@@ -1299,6 +1299,31 @@
     ]
   },
   {
+    "id": "64_audio_ocean",
+    "brand": "64 Audio",
+    "model": "Ocean",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 4000,
+    "driver_type": "Hybrid",
+    "driver_config": "2DD+4BA",
+    "impedance": 10,
+    "sensitivity": 104,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Good-Imaging",
+      "Neutral",
+      "Resolving",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/BLOOM AUDIO/64 AUDIO OCEAN (REFERENCE).txt"
+    ]
+  },
+  {
     "id": "64_audio_solo",
     "brand": "64 Audio",
     "model": "Solo",
@@ -6422,6 +6447,31 @@
     ],
     "files": [
       "data/INNERFIDELITY/ALPHA DESIGN LABS H128.txt"
+    ]
+  },
+  {
+    "id": "alpha_omega_fulgrim",
+    "brand": "Alpha Omega",
+    "model": "Fulgrim",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 1600,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD+4BA+2EST+1BC",
+    "impedance": 14,
+    "sensitivity": 104,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Good-Imaging",
+      "Resolving",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/ENIGMAFOTOSREVIEWS/ALPHA & OMEGA FULGRIM.txt"
     ]
   },
   {
@@ -18061,6 +18111,30 @@
     ],
     "files": [
       "data/HANGOUT.AUDIO/BGVP ES12 (000 SETTING).txt"
+    ]
+  },
+  {
+    "id": "bgvp_feather",
+    "brand": "BGVP",
+    "model": "Feather",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 100,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+4BA",
+    "impedance": 16,
+    "sensitivity": 110,
+    "connector": "MMCX",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Smooth",
+      "Vocal-Focused",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/SOUNDCHECK39/BGVP FEATHER.txt"
     ]
   },
   {
@@ -35838,6 +35912,30 @@
     ]
   },
   {
+    "id": "erand_resonance_5_red",
+    "brand": "Erand",
+    "model": "Resonance 5",
+    "variant": "Red",
+    "year": 2026,
+    "price_usd": 150,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+4BA",
+    "impedance": 16,
+    "sensitivity": 108,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Punchy Bass",
+      "Smooth",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/SOUNDCHECK39/ERAND RESONANCE 5 RED.txt"
+    ]
+  },
+  {
     "id": "erzetich_charybdis",
     "brand": "Erzetich",
     "model": "Charybdis",
@@ -43821,6 +43919,29 @@
     ]
   },
   {
+    "id": "fosi_audio_carbon_12",
+    "brand": "Fosi Audio",
+    "model": "Carbon 12",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 130,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 16,
+    "sensitivity": 102,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/JAYTISS/FOSI AUDIO CARBON 12.txt"
+    ]
+  },
+  {
     "id": "fosi_audio_im4",
     "brand": "Fosi Audio",
     "model": "IM4",
@@ -48737,6 +48858,30 @@
     ],
     "files": [
       "data/KUULOKENURKKA/HIFIMAN ARYA UNVEILED.txt"
+    ]
+  },
+  {
+    "id": "hifiman_arya_wifi",
+    "brand": "HIFIMAN",
+    "model": "Arya",
+    "variant": "WiFi",
+    "year": 2026,
+    "price_usd": 1450,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 0,
+    "sensitivity": 0,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Over-Ear Headphones",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Wide-Stage",
+      "Premium"
+    ],
+    "files": [
+      "data/EARPHONES ARCHIVE/HIFIMAN ARYA WIFI.txt"
     ]
   },
   {
@@ -59502,6 +59647,31 @@
     ]
   },
   {
+    "id": "kbear_chrono_tb01",
+    "brand": "KBEAR",
+    "model": "Chrono",
+    "variant": "TB01",
+    "year": 2026,
+    "price_usd": 30,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 29,
+    "sensitivity": 98,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Fun",
+      "Punchy Bass",
+      "Smooth",
+      "V-Shaped",
+      "Warm",
+      "Budget"
+    ],
+    "files": [
+      "data/KUPING SENSI/KBEAR CHRONO.txt"
+    ]
+  },
+  {
     "id": "kbear_diamond",
     "brand": "KBEAR",
     "model": "Diamond",
@@ -65622,6 +65792,30 @@
     ]
   },
   {
+    "id": "kz_edx_pro_2",
+    "brand": "KZ",
+    "model": "EDX",
+    "variant": "Pro 2",
+    "year": 2026,
+    "price_usd": 15,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 23,
+    "sensitivity": 108,
+    "connector": "QDC",
+    "form_factor": "IEM",
+    "tags": [
+      "Fun",
+      "Gaming",
+      "Punchy Bass",
+      "V-Shaped",
+      "Budget"
+    ],
+    "files": [
+      "data/THE AUDIO STORE/KZ EDX PRO 2.txt"
+    ]
+  },
+  {
     "id": "kz_edx_pro_x",
     "brand": "KZ",
     "model": "EDX",
@@ -66468,6 +66662,30 @@
     ],
     "files": [
       "data/DIGAO REVIEWS/KZ SORA.txt"
+    ]
+  },
+  {
+    "id": "kz_starbit",
+    "brand": "KZ",
+    "model": "Starbit",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 60,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+1BA",
+    "impedance": 24,
+    "sensitivity": 106,
+    "connector": "QDC",
+    "form_factor": "IEM",
+    "tags": [
+      "Competitive-Gaming",
+      "Detailed",
+      "Gaming",
+      "U-Shaped",
+      "Budget"
+    ],
+    "files": [
+      "data/TDL/KZ STARBIT.txt"
     ]
   },
   {
@@ -78863,6 +79081,31 @@
     ]
   },
   {
+    "id": "noble_audio_fokus_artemis",
+    "brand": "Noble Audio",
+    "model": "FoKus Artemis",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 900,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+1Planar",
+    "impedance": 0,
+    "sensitivity": 0,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Over-Ear Headphones",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Wide-Stage",
+      "Premium"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/NOBLE AUDIO ARTEMIS WIRELESS (ANALOG).txt",
+      "data/AUDIOAMIGO/NOBLE AUDIO ARTEMIS WIRELESS (USB).txt"
+    ]
+  },
+  {
     "id": "noble_audio_fokus_mystique",
     "brand": "Noble Audio",
     "model": "FoKus Mystique",
@@ -88654,6 +88897,58 @@
     ]
   },
   {
+    "id": "quill_acoustics_karma",
+    "brand": "Quill Acoustics",
+    "model": "Karma",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 900,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD+3BA+1Planar+1BC",
+    "impedance": 16,
+    "sensitivity": 104,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Good-Imaging",
+      "Punchy Bass",
+      "Resolving",
+      "Sub-Bass",
+      "Premium"
+    ],
+    "files": [
+      "data/ADEN/QUILL KARMA.txt"
+    ]
+  },
+  {
+    "id": "quill_acoustics_satin",
+    "brand": "Quill Acoustics",
+    "model": "Satin",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 3300,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD+7BA+1Planar+1BC",
+    "impedance": 36,
+    "sensitivity": 102,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Collab",
+      "Detailed",
+      "Good-Imaging",
+      "Resolving",
+      "Warm",
+      "Flagship"
+    ],
+    "files": [
+      "data/ADEN/QUILL SATIN.txt"
+    ]
+  },
+  {
     "id": "raal_ca1a",
     "brand": "Raal",
     "model": "CA1A",
@@ -90715,6 +91010,31 @@
     ]
   },
   {
+    "id": "rhapsodio_analog",
+    "brand": "Rhapsodio",
+    "model": "Analog",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 4480,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 98,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Basshead",
+      "Detailed",
+      "Punchy Bass",
+      "Sub-Bass",
+      "Warm",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/RHAPSODIO ANALOG.txt"
+    ]
+  },
+  {
     "id": "rhapsodio_clipper",
     "brand": "Rhapsodio",
     "model": "Clipper",
@@ -90739,25 +91059,98 @@
     ]
   },
   {
-    "id": "rhapsodio_infinity",
+    "id": "rhapsodio_darker",
+    "brand": "Rhapsodio",
+    "model": "Darker",
+    "variant": "",
+    "year": 2024,
+    "price_usd": 3200,
+    "driver_type": "Tribrid",
+    "driver_config": "2DD+4BA+4EST",
+    "impedance": 22,
+    "sensitivity": 102,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Basshead",
+      "Detailed",
+      "Resolving",
+      "Sub-Bass",
+      "Warm",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/RHAPSODIO DARKER.txt"
+    ]
+  },
+  {
+    "id": "rhapsodio_enma",
+    "brand": "Rhapsodio",
+    "model": "Enma",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 1800,
+    "driver_type": "DD",
+    "driver_config": "3DD",
+    "impedance": 16,
+    "sensitivity": 105,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Punchy Bass",
+      "Sub-Bass",
+      "Warm",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/RHAPSODIO ENMA.txt"
+    ]
+  },
+  {
+    "id": "rhapsodio_galaxy_v2",
+    "brand": "Rhapsodio",
+    "model": "Galaxy",
+    "variant": "V2",
+    "year": 2017,
+    "price_usd": 1450,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 103,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Bright",
+      "Detailed",
+      "Resolving",
+      "Treblehead",
+      "Premium"
+    ],
+    "files": [
+      "data/EARPHONES ARCHIVE/RHAPSODIO GALAXY V2.txt"
+    ]
+  },
+  {
+    "id": "rhapsodio_infinity_mk1",
     "brand": "Rhapsodio",
     "model": "Infinity",
-    "variant": "",
+    "variant": "MK1",
     "year": 2018,
     "price_usd": 2800,
     "driver_type": "BA",
-    "driver_config": "20BA",
+    "driver_config": "16BA",
     "impedance": 20,
     "sensitivity": 110,
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Flagship",
-      "Good-Imaging",
-      "Wide-Stage",
       "Detailed",
+      "Good-Imaging",
+      "Treblehead",
       "U-Shaped",
-      "Treblehead"
+      "Wide-Stage",
+      "Flagship"
     ],
     "files": [
       "data/HANGOUT.AUDIO/RHAPSODIO INFINITY (MK1) INFINITY MK1.txt"
@@ -90789,6 +91182,180 @@
     ]
   },
   {
+    "id": "rhapsodio_infinity_plus",
+    "brand": "Rhapsodio",
+    "model": "Infinity",
+    "variant": "Plus",
+    "year": 2024,
+    "price_usd": 3800,
+    "driver_type": "BA",
+    "driver_config": "22BA",
+    "impedance": 12,
+    "sensitivity": 112,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Wide-Stage",
+      "Good-Imaging",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/RHAPSODIO INFINITY PLUS.txt"
+    ]
+  },
+  {
+    "id": "rhapsodio_infinity_ultra",
+    "brand": "Rhapsodio",
+    "model": "Infinity",
+    "variant": "Ultra",
+    "year": 2026,
+    "price_usd": 4200,
+    "driver_type": "BA",
+    "driver_config": "16BA",
+    "impedance": 12,
+    "sensitivity": 110,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Good-Imaging",
+      "Resolving",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/RHAPSODIO INFINITY ULTRA.txt"
+    ]
+  },
+  {
+    "id": "rhapsodio_mara",
+    "brand": "Rhapsodio",
+    "model": "Mara",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 7400,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD+8BA+4EST",
+    "impedance": 16,
+    "sensitivity": 108,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Good-Imaging",
+      "Resolving",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/RHAPSODIO MARA.txt"
+    ]
+  },
+  {
+    "id": "rhapsodio_master",
+    "brand": "Rhapsodio",
+    "model": "Master",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 30000,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 96,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/RHAPSODIO MASTER.txt"
+    ]
+  },
+  {
+    "id": "rhapsodio_montage",
+    "brand": "Rhapsodio",
+    "model": "Montage",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 3100,
+    "driver_type": "Tribrid",
+    "driver_config": "3DD+4BA+2EST",
+    "impedance": 28,
+    "sensitivity": 113,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Bright",
+      "Detailed",
+      "Resolving",
+      "Treblehead",
+      "V-Shaped",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/RHAPSODIO MONTAGE.txt"
+    ]
+  },
+  {
+    "id": "rhapsodio_prime_argent",
+    "brand": "Rhapsodio",
+    "model": "Prime",
+    "variant": "Argent",
+    "year": 2026,
+    "price_usd": 15000,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 104,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Good-Imaging",
+      "Limited-Edition",
+      "Neutral",
+      "Resolving",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/RHAPSODIO PRIME ARGENT.txt"
+    ]
+  },
+  {
+    "id": "rhapsodio_prime_ti",
+    "brand": "Rhapsodio",
+    "model": "Prime",
+    "variant": "Ti",
+    "year": 2026,
+    "price_usd": 3500,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 16,
+    "sensitivity": 102,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Good-Imaging",
+      "Neutral",
+      "Resolving",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/RHAPSODIO PRIME TI.txt"
+    ]
+  },
+  {
     "id": "rhapsodio_return",
     "brand": "Rhapsodio",
     "model": "Return",
@@ -90814,6 +91381,79 @@
     ]
   },
   {
+    "id": "rhapsodio_scarlet_beast",
+    "brand": "Rhapsodio",
+    "model": "Scarlet Beast",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 4000,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD+8BA+1PZT",
+    "impedance": 24,
+    "sensitivity": 119,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Good-Imaging",
+      "Resolving",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/RHAPSODIO SCARLET BEAST.txt"
+    ]
+  },
+  {
+    "id": "rhapsodio_supreme_v1",
+    "brand": "Rhapsodio",
+    "model": "Supreme",
+    "variant": "V1",
+    "year": 2019,
+    "price_usd": 4680,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 98,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/RHAPSODIO SUPREME V1.txt"
+    ]
+  },
+  {
+    "id": "rhapsodio_supreme_v2",
+    "brand": "Rhapsodio",
+    "model": "Supreme",
+    "variant": "V2",
+    "year": 2020,
+    "price_usd": 4400,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 98,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/RHAPSODIO SUPREME V2.txt"
+    ]
+  },
+  {
     "id": "rhapsodio_supreme_v3",
     "brand": "Rhapsodio",
     "model": "Supreme",
@@ -90836,6 +91476,104 @@
     ],
     "files": [
       "data/DUCBLOKE/RHAPSODIO SUPREME V3.txt"
+    ]
+  },
+  {
+    "id": "rhapsodio_supreme_legends",
+    "brand": "Rhapsodio",
+    "model": "Supreme Legends",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 10000,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 17,
+    "sensitivity": 97,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Bright",
+      "Detailed",
+      "Resolving",
+      "Treblehead",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/HARUTOHIROKI/RHAPSODIO SUPREME LEGENDS.txt"
+    ]
+  },
+  {
+    "id": "rhapsodio_tranquil",
+    "brand": "Rhapsodio",
+    "model": "Tranquil",
+    "variant": "",
+    "year": 2024,
+    "price_usd": 450,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+2BA",
+    "impedance": 16,
+    "sensitivity": 106,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Relaxed",
+      "Smooth",
+      "Vocal-Focused",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/JAYTISS/RHAPSODIO TRANQUIL.txt"
+    ]
+  },
+  {
+    "id": "rhapsodio_transformer",
+    "brand": "Rhapsodio",
+    "model": "Transformer",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 3500,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+4BA",
+    "impedance": 20,
+    "sensitivity": 110,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Punchy Bass",
+      "Resolving",
+      "V-Shaped",
+      "Flagship"
+    ],
+    "files": [
+      "data/JAYTISS/RHAPSODIO TRANSFORMER.txt"
+    ]
+  },
+  {
+    "id": "rhapsodio_zombie_max",
+    "brand": "Rhapsodio",
+    "model": "Zombie",
+    "variant": "Max",
+    "year": 2018,
+    "price_usd": 1600,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+8BA",
+    "impedance": 6,
+    "sensitivity": 126,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Basshead",
+      "Detailed",
+      "Punchy Bass",
+      "Sub-Bass",
+      "V-Shaped",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/RHAPSODIO ZOMBIE MAX.txt"
     ]
   },
   {
@@ -97819,6 +98557,30 @@
     ],
     "files": [
       "data/HARPO/SHANLING MG100.txt"
+    ]
+  },
+  {
+    "id": "shanling_mg200",
+    "brand": "Shanling",
+    "model": "MG200",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 200,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 108,
+    "connector": "MMCX",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Smooth",
+      "Wide-Stage",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/ADEN/SHANLING MG200.txt"
     ]
   },
   {
@@ -112141,6 +112903,30 @@
     ],
     "files": [
       "data/HU-FI/TANGZU NEZHA.txt"
+    ]
+  },
+  {
+    "id": "tangzu_noirblanc",
+    "brand": "Tangzu",
+    "model": "Noirblanc",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 120,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+2BA",
+    "impedance": 16,
+    "sensitivity": 109,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Collab",
+      "Detailed",
+      "Smooth",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/CSI-ZONE/TANGZU NOIRBLANC.txt"
     ]
   },
   {
@@ -128915,6 +129701,31 @@
     ]
   },
   {
+    "id": "zhulinniao_yingsun_z5",
+    "brand": "Zhulinniao",
+    "model": "Yingsun",
+    "variant": "Z5",
+    "year": 2026,
+    "price_usd": 55,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+2BA",
+    "impedance": 32,
+    "sensitivity": 106,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Gaming",
+      "Resolving",
+      "Budget"
+    ],
+    "files": [
+      "data/DIGAO REVIEWS/ZHULINNIAO YINGSUN Z5 (RED NOZZLE).txt",
+      "data/DIGAO REVIEWS/ZHULINNIAO YINGSUN Z5 (WHITE NOZZLE).txt"
+    ]
+  },
+  {
     "id": "ziigaat_arcadia",
     "brand": "ZiiGaat",
     "model": "Arcadia",
@@ -129530,6 +130341,31 @@
     ]
   },
   {
+    "id": "zisin_imperial_star",
+    "brand": "ZiSin",
+    "model": "Imperial Star",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 820,
+    "driver_type": "Tribrid",
+    "driver_config": "2DD+3BA+2EST",
+    "impedance": 6,
+    "sensitivity": 132,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Good-Imaging",
+      "Resolving",
+      "Wide-Stage",
+      "Premium"
+    ],
+    "files": [
+      "data/ADEN/ZISIN IMPERIAL STAR.txt"
+    ]
+  },
+  {
     "id": "zmf_aeolus",
     "brand": "ZMF",
     "model": "Aeolus",
@@ -129951,6 +130787,30 @@
     ],
     "files": [
       "data/INNERFIDELITY/ZOUKBOX ZDY10 BASS.txt"
+    ]
+  },
+  {
+    "id": "zuo_drumstring_phanta",
+    "brand": "Zuo DrumString",
+    "model": "Phanta",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 175,
+    "driver_type": "DD",
+    "driver_config": "3DD",
+    "impedance": 11,
+    "sensitivity": 101,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Relaxed",
+      "Smooth",
+      "Vocal-Focused",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/TONEDEAFMONK/ZUO DRUMSTRING PHANTA.txt"
     ]
   }
 ]
