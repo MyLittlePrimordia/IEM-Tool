@@ -125174,6 +125174,31 @@
     ]
   },
   {
+    "id": "verum_audio_verum_2",
+    "brand": "Verum Audio",
+    "model": "Verum",
+    "variant": "2",
+    "year": 2026,
+    "price_usd": 500,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 8,
+    "sensitivity": 96,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Punchy Bass",
+      "Smooth",
+      "Warm",
+      "Premium"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/VERUM AUDIO VERUM 2.txt"
+    ]
+  },
+  {
     "id": "vido_flathead",
     "brand": "Vido",
     "model": "Flathead",
