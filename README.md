@@ -9,7 +9,7 @@ No servers, no tracking, and no internet connection required.
 ## ⚡ Key Workspaces
 
 ### 1. 🔍 Find (Recommendations & Clones)
-* **Tuning Search:** find matching sets from the database based on your Tuning Perference.
+* **Tuning Search:** find matching sets from the database based on your Tuning Preference.
 * **Spec Filters:** Filter by price, year, driver configuration, connectors, & tags.
 * **Taste Matcher:** find similar sets based on your favorites.
 * **Gems:** Pick a flagship set to find budget alternatives with matching frequency response curves.
