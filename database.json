@@ -13850,6 +13850,29 @@
     ]
   },
   {
+    "id": "aune_ac55",
+    "brand": "Aune",
+    "model": "AC55",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 220,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 30,
+    "sensitivity": 112,
+    "connector": "2-pin",
+    "form_factor": "Earbuds (Wired)",
+    "tags": [
+      "Punchy Bass",
+      "Smooth",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/LISTENER/AUNE AC55.txt"
+    ]
+  },
+  {
     "id": "aune_ar5000",
     "brand": "Aune",
     "model": "AR5000",
@@ -14406,6 +14429,29 @@
     ],
     "files": [
       "data/INNERFIDELITY/AURISONICS ROCKETS.txt"
+    ]
+  },
+  {
+    "id": "aurorus_audio_australis",
+    "brand": "Aurorus Audio",
+    "model": "Australis",
+    "variant": "",
+    "year": 2020,
+    "price_usd": 900,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 100,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Punchy Bass",
+      "Warm",
+      "Premium"
+    ],
+    "files": [
+      "data/LISTENER/AURORUS AUDIO AUSTRALIS.txt"
     ]
   },
   {
@@ -23135,6 +23181,145 @@
     "files": [
       "data/HAWAII BAY BOY/CANPUR SILVER FLASH.txt",
       "data/SQUIGLINK/CANPUR SILVER FLASH.txt"
+    ]
+  },
+  {
+    "id": "capra_audio_faunus_1",
+    "brand": "Capra Audio",
+    "model": "Faunus",
+    "variant": "1",
+    "year": 2023,
+    "price_usd": 50,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 100,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Fun",
+      "Punchy Bass",
+      "Warm",
+      "Budget"
+    ],
+    "files": [
+      "data/CAPRA AUDIO/CAPRA AUDIO FAUNUS 1.txt"
+    ]
+  },
+  {
+    "id": "capra_audio_ouroboros",
+    "brand": "Capra Audio",
+    "model": "Ouroboros",
+    "variant": "",
+    "year": 2024,
+    "price_usd": 100,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 100,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Dark",
+      "Punchy Bass",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/LISTENER/CAPRA AUDIO OUROBOROS.txt"
+    ]
+  },
+  {
+    "id": "capra_audio_satyr",
+    "brand": "Capra Audio",
+    "model": "Satyr",
+    "variant": "",
+    "year": 2023,
+    "price_usd": 60,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 100,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Warm",
+      "Smooth",
+      "Relaxed",
+      "Budget"
+    ],
+    "files": [
+      "data/CAPRA AUDIO/CAPRA AUDIO SATYR 1.txt"
+    ]
+  },
+  {
+    "id": "capra_audio_satyr_2",
+    "brand": "Capra Audio",
+    "model": "Satyr",
+    "variant": "2",
+    "year": 2024,
+    "price_usd": 80,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 100,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Smooth",
+      "Budget"
+    ],
+    "files": [
+      "data/LISTENER/CAPRA AUDIO SATYR 2.txt",
+      "data/CAPRA AUDIO/CAPRA AUDIO SATYR 2.txt"
+    ]
+  },
+  {
+    "id": "capra_audio_satyr_3",
+    "brand": "Capra Audio",
+    "model": "Satyr",
+    "variant": "3",
+    "year": 2024,
+    "price_usd": 80,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 100,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Vocal-Focused",
+      "Budget"
+    ],
+    "files": [
+      "data/CAPRA AUDIO/CAPRA AUDIO SATYR 3.txt"
+    ]
+  },
+  {
+    "id": "capra_audio_satyr_4",
+    "brand": "Capra Audio",
+    "model": "Satyr",
+    "variant": "4",
+    "year": 2025,
+    "price_usd": 100,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 100,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Resolving",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/CAPRA AUDIO/CAPRA AUDIO SATYR 4.txt"
     ]
   },
   {
@@ -38815,6 +39000,29 @@
     ],
     "files": [
       "data/SUPER REVIEW/FIIO EH13.txt"
+    ]
+  },
+  {
+    "id": "fiio_f1",
+    "brand": "FiiO",
+    "model": "F1",
+    "variant": "",
+    "year": 2017,
+    "price_usd": 15,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 97,
+    "connector": "Fixed Cable",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Relaxed",
+      "Smooth",
+      "Budget"
+    ],
+    "files": [
+      "data/BEDROCK REVIEWS/FIIO F1.txt"
     ]
   },
   {
@@ -113209,9 +113417,9 @@
     ]
   },
   {
-    "id": "tangzu_xuan_wu_gate",
+    "id": "tangzu_xuanwu_gate",
     "brand": "Tangzu",
-    "model": "Xuan Wu Gate",
+    "model": "XuanWu Gate",
     "variant": "",
     "year": 2024,
     "price_usd": 650,
@@ -113223,11 +113431,11 @@
     "form_factor": "IEM",
     "tags": [
       "Balanced",
-      "Premium",
-      "Good-Imaging",
-      "Wide-Stage",
       "Detailed",
-      "Treblehead"
+      "Good-Imaging",
+      "Treblehead",
+      "Wide-Stage",
+      "Premium"
     ],
     "files": [
       "data/AUDIOAMIGO/TANGZU XUANWU GATE.txt",
