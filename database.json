@@ -2031,6 +2031,30 @@
     ]
   },
   {
+    "id": "7hz_sonus_ii",
+    "brand": "7Hz",
+    "model": "Sonus",
+    "variant": "II",
+    "year": 2026,
+    "price_usd": 70,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+1Planar",
+    "impedance": 29,
+    "sensitivity": 108,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Punchy Bass",
+      "Smooth",
+      "U-Shaped",
+      "Budget"
+    ],
+    "files": [
+      "data/JAYTISS/7HZ SONUS 2.txt"
+    ]
+  },
+  {
     "id": "7hz_timeless",
     "brand": "7Hz",
     "model": "Timeless",
@@ -3595,6 +3619,30 @@
       "data/HAWAII BAY BOY/ACOUSTUNE RS ONE.txt",
       "data/SUPER REVIEW/ACOUSTUNE RS ONE.txt",
       "data/HAWAII BAY BOY/ACOUSTINE RS ONE.txt"
+    ]
+  },
+  {
+    "id": "activo_q1",
+    "brand": "Activo",
+    "model": "Q1",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 200,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+1BA",
+    "impedance": 31,
+    "sensitivity": 109,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Collab",
+      "Detailed",
+      "Vocal-Focused",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/ELRICS/ACTIVO Q1.txt"
     ]
   },
   {
@@ -31624,6 +31672,30 @@
     ]
   },
   {
+    "id": "dunu_kima_ii_limited_edition",
+    "brand": "DUNU",
+    "model": "Kima",
+    "variant": "II Limited Edition",
+    "year": 2025,
+    "price_usd": 130,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 20,
+    "sensitivity": 108,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Limited-Edition",
+      "Smooth",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/BASS AUDIO/DUNU KIMA 2 RAVEN TEAL.txt"
+    ]
+  },
+  {
     "id": "dunu_luna",
     "brand": "DUNU",
     "model": "Luna",
@@ -32408,6 +32480,30 @@
     ],
     "files": [
       "data/INNERFIDELITY/E MU WALNUT.txt"
+    ]
+  },
+  {
+    "id": "ear_solution_hoshiakari_iii",
+    "brand": "Ear Solution",
+    "model": "Hoshiakari",
+    "variant": "III",
+    "year": 2026,
+    "price_usd": 1450,
+    "driver_type": "Hybrid",
+    "driver_config": "2DD+3BA",
+    "impedance": 16,
+    "sensitivity": 108,
+    "connector": "Proprietary",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Good-Imaging",
+      "Resolving",
+      "Premium"
+    ],
+    "files": [
+      "data/FAXEPREMIUM/EAR SOLUTION HOSHIAKARI III.txt"
     ]
   },
   {
@@ -61513,6 +61609,30 @@
     ]
   },
   {
+    "id": "kinera_freya_vanir",
+    "brand": "Kinera",
+    "model": "Freya",
+    "variant": "Vanir",
+    "year": 2026,
+    "price_usd": 300,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD+3BA+1MEMS",
+    "impedance": 16,
+    "sensitivity": 106,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Smooth",
+      "Vocal-Focused",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/KINERA FREYA VANIR.txt"
+    ]
+  },
+  {
     "id": "kinera_frigg",
     "brand": "Kinera",
     "model": "Frigg",
@@ -62603,6 +62723,30 @@
     ]
   },
   {
+    "id": "kiwi_ears_ember",
+    "brand": "Kiwi Ears",
+    "model": "Ember",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 135,
+    "driver_type": "Hybrid",
+    "driver_config": "2DD+4BA",
+    "impedance": 19,
+    "sensitivity": 110,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Collab",
+      "Detailed",
+      "Punchy Bass",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/KIWI EARS EMBER.txt"
+    ]
+  },
+  {
     "id": "kiwi_ears_etude",
     "brand": "Kiwi Ears",
     "model": "Etude",
@@ -62721,6 +62865,30 @@
       "data/PAUL WASABII/KIWI EARS KE4.txt",
       "data/SQUIGLINK/KIWI EARS KE4.txt",
       "data/SUPER REVIEW/KIWI EARS KE4.txt"
+    ]
+  },
+  {
+    "id": "kiwi_ears_ke4_mkii",
+    "brand": "Kiwi Ears",
+    "model": "KE4",
+    "variant": "MKII",
+    "year": 2026,
+    "price_usd": 200,
+    "driver_type": "Hybrid",
+    "driver_config": "2DD+2BA",
+    "impedance": 28,
+    "sensitivity": 102,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Reference",
+      "Smooth",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/KIWI EARS KE4 MK2.txt"
     ]
   },
   {
@@ -66726,6 +66894,30 @@
       "data/AUDIOAMIGO/KZ SAGA BALANCED.txt",
       "data/AUDIOAMIGO/KZ SAGA BASS+.txt",
       "data/PAUL WASABII/KZ SAGA BASS.txt"
+    ]
+  },
+  {
+    "id": "kz_sheen",
+    "brand": "KZ",
+    "model": "Sheen",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 25,
+    "driver_type": "DD",
+    "driver_config": "2DD",
+    "impedance": 22,
+    "sensitivity": 104,
+    "connector": "QDC",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Punchy Bass",
+      "Smooth",
+      "Budget"
+    ],
+    "files": [
+      "data/FAXEPREMIUM/KZ SHEEN.txt"
     ]
   },
   {
@@ -72163,6 +72355,31 @@
     ]
   },
   {
+    "id": "melody_wings_uranus",
+    "brand": "Melody Wings",
+    "model": "Uranus",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 380,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD+1BA+1PZT+1BC",
+    "impedance": 19,
+    "sensitivity": 108,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Good-Imaging",
+      "Resolving",
+      "Technical",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/TONEDEAFMONK/MELODY WINGS URANUS (USB DAC).txt",
+      "data/TONEDEAFMONK/MELODY WINGS URANUS (STANDARD CABLE).txt"
+    ]
+  },
+  {
     "id": "melody_wings_venus",
     "brand": "Melody Wings",
     "model": "Venus",
@@ -75569,6 +75786,30 @@
       "data/FILK/MOONDROP QUARK 2.txt",
       "data/AUDIOAMIGO/MOONDROP QUARK 2 MOONDROP QUARKS 2.txt",
       "data/AUDIOAMIGO/MOONDROP QUARK 2 MUSE DASH.txt"
+    ]
+  },
+  {
+    "id": "moondrop_quarks_ii_dsp",
+    "brand": "Moondrop",
+    "model": "Quarks",
+    "variant": "II DSP",
+    "year": 2025,
+    "price_usd": 20,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 34,
+    "sensitivity": 116,
+    "connector": "Fixed Cable",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Gaming",
+      "Neutral",
+      "Smooth",
+      "Budget"
+    ],
+    "files": [
+      "data/THE AUDIO STORE/MOONDROP QUARKS 2 DSP.txt"
     ]
   },
   {
@@ -86991,6 +87232,31 @@
     ]
   },
   {
+    "id": "punch_audio_patada",
+    "brand": "Punch Audio",
+    "model": "Patada",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 100,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+1MEMS",
+    "impedance": 16,
+    "sensitivity": 104,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Basshead",
+      "Collab",
+      "Detailed",
+      "Punchy Bass",
+      "V-Shaped",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/HAWAII BAY BOY/PUNCH AUDIO PATADA.txt"
+    ]
+  },
+  {
     "id": "punch_audio_portazo",
     "brand": "Punch Audio",
     "model": "Portazo",
@@ -93611,6 +93877,30 @@
     ],
     "files": [
       "data/JAYTISS/SEEAUDIO BRAVERY AE.txt"
+    ]
+  },
+  {
+    "id": "seeaudio_bravo",
+    "brand": "SeeAudio",
+    "model": "Bravo",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 130,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+3BA",
+    "impedance": 16,
+    "sensitivity": 108,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Punchy Bass",
+      "Vocal-Focused",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/EARPHONES ARCHIVE/SEEAUDIO BRAVO.txt"
     ]
   },
   {
@@ -112052,6 +112342,30 @@
     ]
   },
   {
+    "id": "tanchjim_bunny_g",
+    "brand": "Tanchjim",
+    "model": "Bunny",
+    "variant": "G",
+    "year": 2026,
+    "price_usd": 30,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 31,
+    "sensitivity": 123,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Competitive-Gaming",
+      "Detailed",
+      "Gaming",
+      "Vocal-Focused",
+      "Budget"
+    ],
+    "files": [
+      "data/FAXEPREMIUM/TANCHJIM BUNNY G.txt"
+    ]
+  },
+  {
     "id": "tanchjim_cora",
     "brand": "Tanchjim",
     "model": "Cora",
@@ -113015,6 +113329,30 @@
     ]
   },
   {
+    "id": "tangzu_guo_jia",
+    "brand": "Tangzu",
+    "model": "Guo Jia",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 120,
+    "driver_type": "DD",
+    "driver_config": "2DD",
+    "impedance": 20,
+    "sensitivity": 114,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Punchy Bass",
+      "Smooth",
+      "Vocal-Focused",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/BASS AUDIO/TANGZU GUO JIA.txt"
+    ]
+  },
+  {
     "id": "tangzu_he_xiao_qiao",
     "brand": "Tangzu",
     "model": "He Xiao Qiao",
@@ -113307,8 +113645,80 @@
       "data/HAWAII BAY BOY/TANGZU WAN'ER 2.txt",
       "data/JAYTISS/TANGZU WAN'ER 2.txt",
       "data/HAWAII BAY BOY/TANGZU WAN'ER 2 SG BASS.txt",
-      "data/PAUL WASABII/TANGZU WAN'ER S.G II.txt",
+      "data/PAUL WASABII/TANGZU WAN'ER S.G II.txt"
+    ]
+  },
+  {
+    "id": "tangzu_wan_er_s_g_ii_amethyst_dragon",
+    "brand": "Tangzu",
+    "model": "Wan'er",
+    "variant": "S.G II Amethyst Dragon",
+    "year": 2026,
+    "price_usd": 50,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 105,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Limited-Edition",
+      "Smooth",
+      "Budget"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/TANGZU WANER SG 2 AMETHYST DRAGON.txt"
+    ]
+  },
+  {
+    "id": "tangzu_wan_er_s_g_ii_jade_dragon",
+    "brand": "Tangzu",
+    "model": "Wan'er",
+    "variant": "S.G II Jade Dragon",
+    "year": 2025,
+    "price_usd": 25,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 19,
+    "sensitivity": 105,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Limited-Edition",
+      "Smooth",
+      "Vocal-Focused",
+      "Budget"
+    ],
+    "files": [
+      "data/BASS AUDIO/TANGZU WANER SG 2 JADE DRAGON EDITION.txt",
       "data/AUDIOAMIGO/TANGZU WAN'ER S.G 2 JADE.txt"
+    ]
+  },
+  {
+    "id": "tangzu_wan_er_s_g_ii_purple_dragon",
+    "brand": "Tangzu",
+    "model": "Wan'er",
+    "variant": "S.G II Purple Dragon",
+    "year": 2026,
+    "price_usd": 25,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 19,
+    "sensitivity": 105,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Limited-Edition",
+      "Punchy Bass",
+      "Smooth",
+      "Budget"
+    ],
+    "files": [
+      "data/JAYTISS/TANGZU PURPLE DRAGON.txt"
     ]
   },
   {
@@ -116341,6 +116751,30 @@
     "files": [
       "data/HANGOUT.AUDIO/THIEAUDIO V16 DIVINITY.txt",
       "data/HAWAII BAY BOY/THIEAUDIO V16 DIVINITY.txt"
+    ]
+  },
+  {
+    "id": "thieaudio_v16_divinity_hk_edition",
+    "brand": "THIEAUDIO",
+    "model": "V16 Divinity",
+    "variant": "HK Edition",
+    "year": 2026,
+    "price_usd": 1500,
+    "driver_type": "BA",
+    "driver_config": "16BA",
+    "impedance": 18,
+    "sensitivity": 112,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Limited-Edition",
+      "Resolving",
+      "Flagship"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/THIEAUDIO V16 DIVINITY HONG KONG LE.txt"
     ]
   },
   {
@@ -123695,6 +124129,30 @@
     ]
   },
   {
+    "id": "unique_melody_from_the_start",
+    "brand": "Unique Melody",
+    "model": "From The Start",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 250,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 24,
+    "sensitivity": 106,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Punchy Bass",
+      "Vocal-Focused",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/ELRICS/UNIQUE MELODY FROM THE START.txt"
+    ]
+  },
+  {
     "id": "unique_melody_legacy",
     "brand": "Unique Melody",
     "model": "Legacy",
@@ -130501,6 +130959,31 @@
     ],
     "files": [
       "data/HAWAII BAY BOY/ZIIGAAT RUMBA.txt"
+    ]
+  },
+  {
+    "id": "ziigaat_thunder",
+    "brand": "ZiiGaat",
+    "model": "Thunder",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 150,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 108,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Basshead",
+      "Collab",
+      "Punchy Bass",
+      "Sub-Bass",
+      "V-Shaped",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/HAWAII BAY BOY/ZIIGAAT THUNDER.txt"
     ]
   },
   {
