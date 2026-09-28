@@ -1,19 +1,28 @@
 # 🎧 IEM Tool
 
-A fast, 100% offline desktop workspace for exploring, tuning, testing, and reviewing In-Ear Monitors (IEMs). 
+**The offline audio playground for exploring, tuning, and testing In-Ear Monitors.**
 
-No servers, no tracking, and no internet connection required.
+Find budget clones of $1,000 flagships, tune any set with 1-click AutoEQ, pinpoint harsh treble peaks, and test your gear—100% offline with zero signups or tracking.
+
+[📥 **Download Latest Release (Windows / macOS / Linux)**](https://github.com/MyLittlePrimordia/IEM-Tool/releases/latest)  
+*100% Free • Portable • Works completely offline*
 
 ---
 
-## ⚡ Key Workspaces
+## ✨ What You Can Do
+
+- 💎 **Find Budget "Gems" & Clones:** Match frequency curves to find cheap budget alternatives that sound just like flagship $1,000+ IEMs.
+- 🎛️ **1-Click AutoEQ:** Instantly tune your IEMs to match target sound signatures or music genres. Export presets straight to **Wavelet**, **Peace EQ**, **Qudelix**, **Poweramp**, and **FxSound**.
+- 🔬 **Acoustic Ear Lab:** Sweep audio frequencies to find your unique ear canal resonance peak, balance uneven left/right channels, and blind test audio tracks.
+- ⚡ **Power & Dongle Calculator:** Find out if your phone, dongle, or desktop DAC/amp has enough power to drive your IEMs.
+- 🎨 **Retro Themes & Visualizers:** 6 live audio visualizers and 9 retro skins with matching pixel fonts.
+
+---
+
+## 📸 Workspaces
 
 ### 1. 🔍 Find (Recommendations & Clones)
-* **Tuning Search:** find matching sets from the database based on your Tuning Perference.
-* **Spec Filters:** Filter by price, year, driver configuration, connectors, & tags.
-* **Taste Matcher:** find similar sets based on your favorites.
-* **Gems:** Pick a flagship set to find budget alternatives with matching frequency response curves.
-* **Upgrade Pathway:** Select a set you own to generate upgrade tiers (*Starter*, *Leap*, *Endgame*).
+Filter by price, driver type, or sound signature. Pick an expensive dream set to instantly find budget twins with matching frequency curves.
 
 <p align="center">
   <img src="screenshots/FIND.png" width="900" alt="Find Workspace">
@@ -22,12 +31,7 @@ No servers, no tracking, and no internet connection required.
 ---
 
 ### 2. 🎚️ EQ (Parametric Equalizer)
-* **Interactive FR Graph:** Drag EQ sliders or draw custom target curves directly onto the graph.
-* **Database & Similar Finder:** Browse the measurement database or use the Similar tab to find matches to the current curve on the graph.
-* **AutoEQ Engine:** 1-click solver supporting up to 50 filter bands with anti-clip & auto-gain.
-* **Genre Target Overlay:** Real-time matching against music and game genre profiles.
-* **Audio Tools:** Crossfeed, Stereo Expander, Loudness Compensation, De-esser, & Reverb Simulator.
-* **Export Presets:** 1-click export to **Peace**, **Wavelet**, **Poweramp**, **Qudelix**, and **FxSound**.
+Draw your own curves or let the AutoEQ engine solve them for you. Includes crossfeed, de-essing, stereo widening, and 1-click exports.
 
 <p align="center">
   <img src="screenshots/EQ.png" width="900" alt="EQ Workspace">
@@ -36,10 +40,7 @@ No servers, no tracking, and no internet connection required.
 ---
 
 ### 3. 🔬 Test (Acoustic Lab)
-* **Resonance Peak Sweeper:** Sweep the Hz ranges to locate your personal ear canal resonance peak & generate an automatic notch filter.
-* **Channel Imbalance & Swap:** Real-time L/R sound meters & 1-click channel swapping.
-* **ABX & Blind A/B Testing:** Compare audio tracks side-by-side with crossfading & test scoring.
-* **Soundstage & Burn-In:** 3D sound positioning pad, hearing threshold test, & noise generators with rest cycles.
+Find personal ear canal resonance peaks, check channel balance, and run blind A/B audio tests to see if you can really tell the difference.
 
 <p align="center">
   <img src="screenshots/TEST.png" width="900" alt="Test Lab Workspace">
@@ -47,11 +48,8 @@ No servers, no tracking, and no internet connection required.
 
 ---
 
-### 4. 📝 Review (IEM Evaluation Suite)
-* **Spec Configurator:** Set driver counts, crossovers, & acoustic types.
-* **Power & DAC Calculator:** Calculate required voltage & power for compatibility across phones, dongles, and desktop amps.
-* **Radar Spider Chart:** visual graph breakdown of bass, mids, treble, soundstage, imaging, and technicalities.
-* **Profile Library:** Attach photos, save notes, & compare reviews side-by-side.
+### 4. 📝 Review & Power Calculator
+Calculate exact voltage and mW requirements for your gear, take notes, and compare IEMs side-by-side with radar charts.
 
 <p align="center">
   <img src="screenshots/REVIEW.png" width="900" alt="Review Workspace">
@@ -59,57 +57,45 @@ No servers, no tracking, and no internet connection required.
 
 ---
 
-### 5. 📊 Visualizers & 🎨 Themes
-* **6 Audio Visualizers:** Neon Stars, Liquid Fiber Wave, Cosmic Vortex, Spectrum Bars, EQ Grid, and Aurora Ribbons.
-* **9 Retro Skins:** Slate *(Default)*, Parchment, Ember, Circuit, Byte, Cartridge, Arcade, Blush, and Bit with matching pixel fonts.
+## 🎨 Themes
 
-| Theme | Preview |
-| :--- | :---: |
-| **Slate** *(Default)* | <img src="screenshots/SLATE.png" width="280" alt="Slate Theme"> |
-| **Parchment** | <img src="screenshots/PARCHMENT.png" width="280" alt="Parchment Theme"> |
-| **Ember** | <img src="screenshots/EMBER.png" width="280" alt="Ember Theme"> |
-| **Circuit** | <img src="screenshots/CIRCUIT.png" width="280" alt="Circuit Theme"> |
-| **Byte** | <img src="screenshots/BYTE.png" width="280" alt="Byte Theme"> |
-| **Cartridge** | <img src="screenshots/CARTRIDGE.png" width="280" alt="Cartridge Theme"> |
-| **Arcade** | <img src="screenshots/ARCADE.png" width="280" alt="Arcade Theme"> |
-| **Blush** | <img src="screenshots/BLUSH.png" width="280" alt="Blush Theme"> |
-| **Bit** | <img src="screenshots/BIT.png" width="280" alt="Bit Theme"> |
+Switch between 9 retro styles anytime from the settings:
+
+| Slate (Default) | Ember | Circuit |
+| :---: | :---: | :---: |
+| <img src="screenshots/SLATE.png" width="260" alt="Slate"> | <img src="screenshots/EMBER.png" width="260" alt="Ember"> | <img src="screenshots/CIRCUIT.png" width="260" alt="Circuit"> |
+| **Arcade** | **Cartridge** | **Byte** |
+| <img src="screenshots/ARCADE.png" width="260" alt="Arcade"> | <img src="screenshots/CARTRIDGE.png" width="260" alt="Cartridge"> | <img src="screenshots/BYTE.png" width="260" alt="Byte"> |
+
+*(Also includes Parchment, Blush, and Bit)*
 
 ---
 
-## 🔄 Updating the Catalog & Measurement Curves
+## 🔄 Updating IEM Data (Without Reinstalling)
 
-You do **not** need to redownload or reinstall the entire application to get newly added IEMs, headphones, and frequency response measurements. You can update your local database and curves independently in seconds:
+You don't need to reinstall the app to get newly measured IEMs:
 
-1. Head over to the **[📦 Official Database Repository](https://github.com/MyLittlePrimordia/Database)**.
-2. Click **Code** → **[Download ZIP](https://github.com/MyLittlePrimordia/Database/archive/refs/heads/main.zip)** (or `git pull` if cloned).
-3. Extract the archive and copy/overwrite the following into your **IEM Tool** directory:
-   * `database.json`
-   * `database.json.gz`
-   * `data/` *(folder containing all raw `.txt` measurement curve files)*
-
-   **Where to place them:**
-   * **Windows:** In the same folder as `IEM Tool.exe` (or inside the `resources/` folder if installed).
-   * **macOS:** Right-click `IEM Tool.app` → *Show Package Contents* → `Contents/Resources/`.
-   * **Linux:** In the same directory alongside the `AppImage` or executable.
-
-4. Relaunch **IEM Tool** — all newly added gear, graph curves, and auto-EQ target profiles will load automatically.
+1. Download the latest data from the **[📦 Database Repo](https://github.com/MyLittlePrimordia/Database/archive/refs/heads/main.zip)**.
+2. Extract and drop `database.json` and the `data/` folder into your app directory:
+   - **Windows:** Drop into the same folder as `IEM Tool.exe`.
+   - **macOS:** Right-click `IEM Tool.app` → *Show Package Contents* → `Contents/Resources/`.
+   - **Linux:** Drop in the same directory as the `AppImage`.
+3. Restart **IEM Tool** to see the new gear and curves.
 
 ---
 
-## 🔗 Ecosystem & Companion Tools
+<details>
+<summary><b>🔗 Companion Tools & Ecosystem</b></summary>
 
 | Repository | Description |
 | :--- | :--- |
 | **[🎧 IEM Tool](https://github.com/MyLittlePrimordia/IEM-Tool)** | The main desktop workspace for finding, tuning, testing, and reviewing IEMs. |
-| **[🛠️ DB Tool](https://github.com/MyLittlePrimordia/Database-Tool)** | A standalone desktop app for editing, auditing, and maintaining the catalog. |
-| **[📦 DB](https://github.com/MyLittlePrimordia/Database)** | The repository hosting `database.json`, `database.json.gz`, and raw measurement curves. |
+| **[🛠️ DB Tool](https://github.com/MyLittlePrimordia/Database-Tool)** | Desktop app for editing and maintaining the IEM measurement catalog. |
+| **[📦 Database](https://github.com/MyLittlePrimordia/Database)** | The raw repository hosting measurement curve files and datasets. |
+</details>
 
----
-
-## 💻 Development & Building
-
-Built as an Electron desktop app with a local HTTP server serving a sandboxed renderer.
+<details>
+<summary><b>💻 Development & Building</b></summary>
 
 ```bash
 # Install dependencies
@@ -118,11 +104,9 @@ npm install
 # Start development app
 npm start
 
-# Rebuild assets after editing
-npm run build:js
-npm run build:css
-
-# Package platform builds
+# Package desktop builds
 npm run dist-win
 npm run dist-mac
 npm run dist-linux
+```
+</details>
