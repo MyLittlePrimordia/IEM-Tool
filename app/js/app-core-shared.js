@@ -130,25 +130,24 @@ window.bootstrapAlphabetIndex = function () {
     if (gkWrap && gkList) makeAlphaRail(gkWrap, gkList, gkCurrentLetter);
 };
 
+// A second, independent global error reporter used to live here and wrote the
+// error message into #find-results-count-text — the Find tab's "N results"
+// counter. Any uncaught error anywhere in the app (a Find scan, a Test Lab
+// oscillator, an EQ preset apply) therefore overwrote an unrelated tab's
+// functional status readout in red and destroyed the result count the user
+// needed to interpret the failure. It also duplicated the #debug-error-banner
+// below, so every error produced two independent UI reactions.
+//
+// The scan functions now report their own failures through
+// FindEngine._handleScanError, which is the correct owner of that widget. This
+// reporter only logs, leaving the UI to whoever caused the error.
 (function wireGlobalErrorReporter() {
-    const report = (msg) => {
-        console.error('[Global Error]', msg);
-        try {
-            const bar = document.getElementById('find-results-count');
-            const txt = document.getElementById('find-results-count-text');
-            if (bar) bar.classList.remove('hidden');
-            if (txt) {
-                txt.textContent = '⚠️ ' + msg;
-                txt.className = 'text-[9.5px] font-black uppercase tracking-wider text-rose-400';
-            }
-        } catch (_) {}
-    };
     window.addEventListener('error', (event) => {
-        report((event.error && event.error.message) || event.message || 'Unknown error');
+        console.error('[Global Error]', (event.error && event.error.message) || event.message || 'Unknown error');
     });
     window.addEventListener('unhandledrejection', (event) => {
         const r = event.reason;
-        report((r && r.message) ? r.message : String(r));
+        console.error('[Global Error]', (r && r.message) ? r.message : String(r));
     });
 })();
 
@@ -255,24 +254,30 @@ function showDebugError(message, source) {
     if (!errDiv) {
         errDiv = document.createElement('div');
         errDiv.id = 'debug-error-banner';
-        errDiv.style = 'position:fixed; bottom:20px; left:20px; right:20px; background:rgba(220,38,38,0.95); color:white; font-family:monospace; font-size:11px; padding:12px; border-radius:6px; z-index:9999; border:1px solid #ef4444; box-shadow:0 10px 30px rgba(0,0,0,0.55); overflow-y:auto; max-height:180px;';
+        errDiv.style = 'position:fixed; bottom:20px; left:20px; right:20px; background:rgba(220,38,38,0.95); color:white; font-family:monospace; font-size:11px; padding:12px; border-radius:6px; z-index:9999; border:1px solid #ef4444; box-shadow:0 10px 30px rgba(0,0,0,0.55); overflow-y:auto; max-height:180px; cursor:pointer;';
+        // Build via DOM text nodes, not innerHTML: message/source derive from
+        // error events (e.message can carry attacker-influenced strings from
+        // parsed imports; e.filename is URL-controlled) and must never hit an
+        // HTML sink. esc() exists in this file but innerHTML with template
+        // interpolation of both fields was an injection sink.
+        errDiv.textContent = '';
+        const strong = document.createElement('strong');
+        strong.textContent = '⚠️ JS Runtime Exception: ' + message;
+        const br = document.createElement('br');
+        const sourceSpan = document.createElement('span');
+        sourceSpan.style.cssText = 'opacity:0.85; font-size:10px; margin-top:4px; display:block;';
+        sourceSpan.textContent = String(source) + '  —  click to dismiss';
+        errDiv.appendChild(strong);
+        errDiv.appendChild(br);
+        errDiv.appendChild(sourceSpan);
         document.body.appendChild(errDiv);
+        // The banner used to have no way to go away: one transient error pinned
+        // a fixed red bar over the bottom of the UI for the rest of the session.
+        errDiv.addEventListener('click', () => errDiv.remove());
     }
-    // Build via DOM text nodes, not innerHTML: message/source derive from
-    // error events (e.message can carry attacker-influenced strings from
-    // parsed imports; e.filename is URL-controlled) and must never hit an
-    // HTML sink. esc() exists in this file but innerHTML with template
-    // interpolation of both fields was an injection sink.
-    errDiv.textContent = '';
-    const strong = document.createElement('strong');
-    strong.textContent = '⚠️ JS Runtime Exception: ' + message;
-    const br = document.createElement('br');
-    const sourceSpan = document.createElement('span');
-    sourceSpan.style.cssText = 'opacity:0.85; font-size:10px; margin-top:4px; display:block;';
-    sourceSpan.textContent = String(source);
-    errDiv.appendChild(strong);
-    errDiv.appendChild(br);
-    errDiv.appendChild(sourceSpan);
+    // Auto-expire. Errors still go to the console, which is the durable record.
+    clearTimeout(errDiv._dismissTimer);
+    errDiv._dismissTimer = setTimeout(() => { if (errDiv && errDiv.parentNode) errDiv.remove(); }, 12000);
 }
 
 window.addEventListener('error', function(e) {

@@ -70,7 +70,7 @@
                     input.type = 'number';
                     input.min = MIN; input.max = MAX; input.step = 1;
                     input.value = currentHz;
-                    input.className = 'w-24 bg-[var(--bg-input)] border border-[var(--border-color)] rounded text-2xl font-black text-[var(--accent-amber)] px-1';
+                    input.className = 'w-24 bg-[var(--bg-input)] border border-[var(--border-color)] text-2xl font-black text-[var(--accent-amber)] px-1';
                     freqDisplay.textContent = '';
                     freqDisplay.appendChild(input);
                     input.focus();

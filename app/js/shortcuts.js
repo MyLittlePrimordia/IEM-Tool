@@ -62,7 +62,7 @@ const Shortcuts = {
             groups[b.group].push(b);
         });
 
-        const keyChip = (b) => `<span class="inline-flex items-center justify-center min-w-[22px] px-1.5 py-0.5 border border-[var(--border-color)] rounded bg-[var(--bg-input)] text-[10px] font-mono font-bold">${b.ctrl ? 'Ctrl+' : ''}${b.displayKey || b.key.toUpperCase()}</span>`;
+        const keyChip = (b) => `<span class="inline-flex items-center justify-center min-w-[22px] px-1.5 py-0.5 border border-[var(--border-color)] bg-[var(--bg-input)] text-[10px] font-mono font-bold">${b.ctrl ? 'Ctrl+' : ''}${b.displayKey || b.key.toUpperCase()}</span>`;
 
         let groupsHtml = '';
         Object.keys(groups).forEach(g => {
@@ -83,7 +83,7 @@ const Shortcuts = {
         // instead of flex and lost its centering until the second open).
         wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden items-center justify-center p-4';
         wrap.innerHTML = `
-            <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none max-h-[85vh] overflow-y-auto">
+            <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm shadow-2xl flex flex-col overflow-hidden p-4 select-none max-h-[85vh] overflow-y-auto">
                 <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
                     <span class="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">⌨️ Keyboard Shortcuts</span>
                     <button id="shortcuts-help-close" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
@@ -109,7 +109,7 @@ const Shortcuts = {
         const btn = document.createElement('button');
         btn.id = 'shortcuts-help-fab';
         btn.title = 'Keyboard shortcuts (?)';
-        btn.className = 'fixed bottom-4 right-4 z-[200] w-8 h-8 rounded-full border-2 border-black bg-[var(--bg-card)] text-[var(--text-main)] shadow-[3px_3px_0_0_#000] text-xs font-black cursor-pointer hover:brightness-110 flex items-center justify-center';
+        btn.className = 'fixed bottom-4 right-4 z-[200] w-8 h-8 border-2 border-black bg-[var(--bg-card)] text-[var(--text-main)] shadow-[3px_3px_0_0_#000] text-xs font-black cursor-pointer hover:brightness-110 flex items-center justify-center';
         btn.textContent = '?';
         btn.onclick = () => Shortcuts.toggleHelp();
         document.body.appendChild(btn);

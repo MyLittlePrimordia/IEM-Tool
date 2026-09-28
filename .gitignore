@@ -1,0 +1,16 @@
+node_modules/
+dist/
+dist-electron/
+*.log
+.DS_Store
+Thumbs.db
+
+# Screenshot working directories produced by the verification tooling.
+# tools/shots-current/ is deliberately NOT ignored: it is the visual baseline
+# that tools/diff-shots.js compares against.
+tools/shots-before/
+tools/shots-after/
+tools/shots-pol001-before/
+tools/shots-pol001-after/
+tools/shots-pol006/
+tools/shots-text/

@@ -4,6 +4,21 @@
             background: transparent !important;
         }
 
+        /*
+         * The UI is intentionally square/pixel-art. This !important rule is the
+         * single source of truth for that, and it beats every Tailwind
+         * `rounded-*` utility, so all such tokens and all non-!important
+         * `border-radius` declarations are dead code and were removed (POL-001).
+         *
+         * Verified with tools/radius-snapshot.js: 1,386,676 elements across all
+         * 5 tabs plus every carousel sub-panel resolve to exactly one distinct
+         * computed radius, 0px.
+         *
+         * Do NOT add `rounded-*` classes or plain `border-radius` declarations
+         * expecting them to show up. To make something genuinely round, add an
+         * `!important` radius on a class/id selector (which wins by specificity),
+         * as the existing .spatial-* and scrollbar-thumb rules already do.
+         */
         *, *::before, *::after, body, button, input, select, textarea, label, option, span, h1, h2, h3, h4, h5, h6 {
             font-family: var(--font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace) !important;
             letter-spacing: var(--font-letter-spacing, normal);
@@ -1144,6 +1159,8 @@
              filter: brightness(1.15) !important;
          }
 
+         /* ERG-006 hit-area change was reverted here too; see the note on the
+            generic range rule above. */
          #pane-testlab input[type="range"] {
              border: 2px solid #000000 !important;
              background: #ffffff !important;
@@ -1159,21 +1176,25 @@
              background: transparent !important;
          }
 
+         /* ERG-006: width 16px -> 20px painted. Height stays at the old painted
+            22px so the handle keeps its exact vertical placement. */
          #pane-testlab input[type="range"]::-webkit-slider-thumb {
              -webkit-appearance: none !important;
              appearance: none !important;
+             box-sizing: border-box !important;
              background: var(--accent-blue) !important;
              border: 2px solid #000000 !important;
-             width: 12px !important;
-             height: 18px !important;
+             width: 20px !important;
+             height: 22px !important;
              box-shadow: 2px 2px 0px 0px #000000 !important;
          }
 
          #pane-testlab input[type="range"]::-moz-range-thumb {
+             box-sizing: border-box !important;
              background: var(--accent-blue) !important;
              border: 2px solid #000000 !important;
-             width: 12px !important;
-             height: 18px !important;
+             width: 20px !important;
+             height: 22px !important;
              box-shadow: 2px 2px 0px 0px #000000 !important;
          }
     .sidebar-no-scrollbar {
@@ -1220,20 +1241,26 @@
                 box-sizing: border-box !important;
             }
 
-            .tab-pane button,
-            .tab-pane label,
-            .tab-pane input,
-            .tab-pane select,
-            .tab-pane textarea,
-            .tab-pane .category-pill,
-            .tab-pane .tag,
-            .tab-pane [class*="text-[7"],
-            .tab-pane [class*="text-[8"],
-            .tab-pane [class*="text-[9"],
-            .tab-pane [class*="text-[10px]"],
-            .tab-pane [class*="text-[11px]"] {
-                font-size: 12px !important;
-            }
+            /* Large-display readability pass.
+               Was: every button/label/input/select/textarea in a tab-pane PLUS
+               every text-[7px]..text-[11px] forced to a flat 12px !important.
+               Measured in the running app: 380 of 380 sampled authored font
+               sizes in the EQ tab were overridden (245x 8.5->12, 117x 10->12,
+               18x 9->12), i.e. the entire 7px-21px type scale collapsed to one
+               size at >=1280px, which is why the UI reads flat. The blanket
+               ELEMENT selectors were the worse half: they overrode any button
+               regardless of the size it asked for, so a control that declared
+               text-sm came out the same size as one that declared text-[8px].
+
+               Now: only the genuinely tiny arbitrary sizes are lifted, each by a
+               fixed small step, so relative hierarchy is preserved, and the
+               element selectors are gone so anything that declares its own size
+               keeps it. */
+            .tab-pane [class*="text-[7"]      { font-size: 9px  !important; }
+            .tab-pane [class*="text-[8"]      { font-size: 10px !important; }
+            .tab-pane [class*="text-[9"]      { font-size: 11px !important; }
+            .tab-pane [class*="text-[10px]"]  { font-size: 11px !important; }
+            .tab-pane [class*="text-[11px]"]  { font-size: 12px !important; }
 
             .responsive-row {
                 flex-direction: row !important;
@@ -1368,7 +1395,24 @@
             padding: 6px 16px !important;
             flex-shrink: 0 !important;
         }
-            .h-14 > div {
+            /*
+             * Scoped to the desktop bar on purpose. This was `.h-14 > div`, which
+             * matched the mobile transport as well and forced it into a row with
+             * justify-content: center and gap: 8px. That was harmless only while
+             * the mobile bar could never render above 768px - the max-width: 767px
+             * and max-width: 768px blocks below re-assert column in that range, and
+             * above 768px the mobile bar was display:none so the row never showed.
+             *
+             * Once the 768-1279px band was handed over to the mobile transport,
+             * this rule crushed its three rows into one line and pushed row 1 to
+             * x = -40.6, clipping the track info on the left and the repeat button
+             * on the right. The rule forces four properties, not just direction.
+             *
+             * #global-footer-bar is the only .h-14 element in the app and its
+             * only children are the two transport bars, so scoping to the desktop
+             * bar is precise.
+             */
+            .h-14 > #footer-bar-desktop {
                 flex-direction: row !important;
                 flex-wrap: nowrap !important;
                 justify-content: center !important;
@@ -1613,10 +1657,18 @@
             }
 
             .tab-pane .section-card {
-                height: 550px !important;
-                min-height: 550px !important;
-                max-height: 550px !important;
-                flex: 0 0 auto !important;
+                /* Was a hard `height: 550px !important`. The workspace pane is
+                   `calc(100dvh - 48px)` with `overflow: hidden !important`, and
+                   the side columns reserve 160px of footer padding, so a fixed
+                   550px card clipped 118px (at 768x640) up to 398px (at the app's
+                   own 360x360 minimum) off the bottom of 8 major panels with no
+                   scrollbar — the steppers and toggle grids at the foot of those
+                   cards were simply unreachable. Clamp against the viewport
+                   instead, and let the card shrink rather than forbid it. */
+                height: min(550px, calc(100dvh - 220px)) !important;
+                min-height: 0 !important;
+                max-height: none !important;
+                flex: 0 1 auto !important;
                 box-sizing: border-box !important;
             }
 
@@ -1645,6 +1697,35 @@
             }
             #global-footer-bar .min-w-\[340px\] {
                 min-width: 0 !important;
+            }
+
+            /*
+             * Hand the transport bar over to the mobile layout for the whole
+             * 768px-1279px band.
+             *
+             * The one-row desktop bar needs ~1056px of flex-shrink-0 content and
+             * was being rendered from 768px, so in that band its groups
+             * overflowed and the volume "50%" readout collided with the "0:00"
+             * time readout. Above the band the desktop bar has room again.
+             *
+             * Done here rather than with `xl:flex` on the markup because
+             * .xl\:flex is not present in the checked-in tailwind.output.css, and
+             * relying on it left #footer-bar-desktop display:none at every
+             * width. Handing over is only safe because #footer-bar-mobile has
+             * its own volume slider (#mobile-music-volume); before that it had
+             * only a mute toggle, so the band would have lost volume entirely.
+             *
+             * Below 768px the Tailwind classes alone are already correct
+             * (`hidden md:flex` and `md:hidden`), so only the middle band needs
+             * overriding.
+             */
+            @media (min-width: 768px) and (max-width: 1279px) {
+                #footer-bar-desktop {
+                    display: none !important;
+                }
+                #footer-bar-mobile {
+                    display: flex !important;
+                }
             }
         }
 
@@ -1683,7 +1764,6 @@
                switch (the perceived switch delay). Cards look identical
                without it. */
             border: 1px solid rgba(255, 255, 255, 0.04);
-            border-radius: 8px;
 
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25), 0 1px 3px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.03);
             transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -1698,7 +1778,6 @@
             background-color: var(--bg-input) !important;
             border: 1px solid rgba(255, 255, 255, 0.05) !important;
             color: var(--text-main) !important;
-            border-radius: 6px;
             transition: all 0.15s ease;
             font-size: 12px;
         }
@@ -1707,11 +1786,34 @@
             box-shadow: 0 0 0 2px var(--accent-blue);
             outline: none !important;
         }
-        button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible {
+        /* [data-file-trigger] covers the four <label>-wrapped file inputs and the
+           Smart Import dropzone, which are role="button" tabindex="0" rather
+           than real <button>s (POL-003). Without this they were reachable by
+           keyboard but had no visible focus indicator, since the rule below only
+           ever covered button/select/input/textarea. Focus-only, so it does not
+           affect any static rendering. */
+        button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible,
+        [data-file-trigger]:focus-visible {
             outline: 2px solid var(--accent-blue) !important;
             outline-offset: 2px !important;
         }
 
+        /*
+         * ERG-006 (sub-24px pointer targets) was attempted here and reverted.
+         *
+         * The obvious fix - a 24px input with -6px margins to hold the 12px
+         * flow footprint, painting the visible 12px track via
+         * ::-webkit-slider-runnable-track - does give a 24px pointer target, but
+         * the negative margins do not hold inside every container. In the Test
+         * Lab tone panel the freed space was absorbed by the flex/grid parent and
+         * the SWEEPS & SIGNALS buttons grew ~8px each, silently re-flowing the
+         * panel. Verified with tools/slider-audit.js + tools/diff-shots.js.
+         *
+         * It also would not have fixed the real ergonomic problem: the *thumb* is
+         * only 12px wide, and a thumb is what users actually grab. Widening a
+         * pseudo-element is free of layout risk; growing the input box is not.
+         * Any future attempt should widen the thumbs, not the input boxes.
+         */
         input[type="range"]:not(.dual-range) {
             -webkit-appearance: none;
             appearance: none;
@@ -1741,11 +1843,31 @@
             background: transparent !important;
         }
 
+        /*
+         * Thumb sizing (ERG-006, the part that is actually worth doing).
+         *
+         * Pseudo-elements default to box-sizing: content-box, so the previous
+         * `width: 12px; height: 20px` + `border: 2px` painted a 16x24 handle -
+         * the declaration understated it. box-sizing is now explicit so the
+         * numbers below are the real painted size and the real hit area.
+         *
+         * Height is deliberately the OLD PAINTED height (24px), so the handle is
+         * vertically pixel-identical to before and margin-top: -8px still centres
+         * it. Only the width grows, 16px -> 20px, which is the axis users actually
+         * struggle to grab.
+         *
+         * Cost: a range input's travel is (track width - thumb width), so this
+         * gives up 4px of travel. On the narrowest slider in the app
+         * (eq-musicVolumeSlider at 110px) that is 94px -> 90px of travel, a 4%
+         * change in pointer resolution - far cheaper than the layout damage the
+         * 24px-input-box approach caused.
+         */
         input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none !important;
             appearance: none !important;
-            width: 12px !important;
-            height: 20px !important;
+            box-sizing: border-box !important;
+            width: 20px !important;
+            height: 24px !important;
             border-radius: 0 !important;
             background: var(--accent-blue) !important;
             border: 2px solid var(--border-color) !important;
@@ -1779,26 +1901,18 @@
             background: transparent !important;
         }
         input[type="range"]::-moz-range-thumb {
-            width: 12px !important;
-            height: 20px !important;
+            box-sizing: border-box !important;
+            width: 20px !important;
+            height: 24px !important;
             background: var(--accent-blue) !important;
             border: 2px solid var(--border-color) !important;
             border-radius: 0 !important;
             box-shadow: 2px 2px 0px 0px var(--border-color) !important;
             cursor: pointer;
         }
-input[type="range"].iem-slider::-moz-range-progress,
+        input[type="range"].iem-slider::-moz-range-progress,
         input[type="range"].eq-slider-vertical::-moz-range-progress {
             background: transparent !important;
-        }
-        input[type="range"]::-moz-range-thumb {
-            width: 12px !important;
-            height: 20px !important;
-            background: var(--accent-blue) !important;
-            border: 2px solid var(--border-color) !important;
-            border-radius: 0 !important;
-            box-shadow: 2px 2px 0px 0px var(--border-color) !important;
-            cursor: pointer;
         }
         input[type="range"]::-moz-range-thumb:hover {
             filter: brightness(1.15);
@@ -1866,6 +1980,12 @@ input[type="range"].iem-slider::-moz-range-progress,
             background: transparent;
             border: none;
         }
+        /* ERG-006 deliberately does NOT widen these two thumbs. A dual range puts
+           two handles on one track, so a wider handle means a larger overlap
+           zone and it becomes harder to grab the specific end you want. Their
+           geometry is also hard-wired to a 12px thumb in four coupled places:
+           the ::after fill calc above, and the min/max left+width below. They
+           are already 16px painted, better than the 14px EQ band handles. */
         .dual-range-wrap input[type="range"].dual-range::-webkit-slider-thumb {
             -webkit-appearance: none !important;
             appearance: none !important;
@@ -2153,7 +2273,6 @@ input[type="range"].iem-slider::-moz-range-progress,
             height: 4px;
             background: rgba(255, 255, 255, 0.08);
             outline: none;
-            border-radius: 999px;
             cursor: pointer;
             margin: 0;
             padding: 0;
@@ -2506,7 +2625,6 @@ input[type="range"].iem-slider::-moz-range-progress,
             z-index: 60;
             background: #0d0d14;
             border: 2px solid var(--border-color, #2a2a35);
-            border-radius: 6px;
             padding: 8px;
 min-width: 200px;
             box-shadow: 0 6px 18px rgba(0,0,0,0.5);
@@ -2885,7 +3003,6 @@ min-width: 200px;
         .fx-play[data-fx="bright"]::before {
             width: calc(var(--pick-emoji,20px) * 2.2); height: calc(var(--pick-emoji,20px) * 2.2);
             background: radial-gradient(circle, rgba(255,255,255,0) 40%, rgba(255,240,160,.9) 46%, rgba(255,255,255,0) 55%);
-            border-radius: 50%;
             animation: fx-bright-star .55s ease-out;
         }
         @keyframes fx-bright { 0% { transform: scale(.6); filter: brightness(1); } 45% { transform: scale(1.25); filter: brightness(1.8); } 100% { transform: scale(1); filter: none; } }
@@ -3005,7 +3122,6 @@ min-width: 200px;
         .fx-play[data-fx="vocal"]::after {
             left: 98%;
             border: 2px solid transparent; border-right-color: rgba(180,120,255,.85);
-            border-radius: 50%;
         }
         .fx-play[data-fx="vocal"]::before { width: calc(var(--pick-emoji,20px) * 1.1); height: calc(var(--pick-emoji,20px) * 1.1); animation: fx-voicewave .5s ease-out; }
         .fx-play[data-fx="vocal"]::after { width: calc(var(--pick-emoji,20px) * 1.9); height: calc(var(--pick-emoji,20px) * 1.9); animation: fx-voicewave .5s ease-out .12s; }
@@ -3017,7 +3133,6 @@ min-width: 200px;
         .fx-play[data-fx="treblehead"]::after {
             width: calc(var(--pick-emoji,20px) * 2); height: calc(var(--pick-emoji,20px) * 2);
             background: radial-gradient(circle, rgba(255,255,150,.9), rgba(150,220,255,.5) 45%, transparent 70%);
-            border-radius: 50%;
             animation: fx-zap-flash .45s ease-out;
         }
         @keyframes fx-treblehead {
@@ -3037,7 +3152,6 @@ min-width: 200px;
         .fx-play[data-fx="ushape"]::after {
             width: calc(var(--pick-emoji,20px) * .35); height: calc(var(--pick-emoji,20px) * .35);
             background: radial-gradient(circle, rgba(255,80,140,.95), transparent 70%);
-            border-radius: 50%;
         }
         .fx-play[data-fx="ushape"]::before { left: -10%; animation: fx-magnet-pull-l .55s ease-in; }
         .fx-play[data-fx="ushape"]::after { left: 110%; animation: fx-magnet-pull-r .55s ease-in; }
@@ -3103,7 +3217,6 @@ min-width: 200px;
         .fx-play[data-fx="disco"] .emoji-font { animation: fx-disco .6s cubic-bezier(.34,1.56,.64,1); }
         .fx-play[data-fx="disco"]::after {
             width: calc(var(--pick-emoji,20px) * 1.9); height: calc(var(--pick-emoji,20px) * 1.9);
-            border-radius: 50%;
             background: repeating-conic-gradient(from 0deg, rgba(255,120,220,.8) 0 10deg, transparent 10deg 20deg, rgba(120,220,255,.8) 20deg 30deg, transparent 30deg 40deg);
             animation: fx-disco-glint .6s ease-out;
         }
@@ -3142,7 +3255,7 @@ min-width: 200px;
         .fx-play[data-fx="world"] .emoji-font { animation: fx-globe .8s cubic-bezier(.45,0,.55,1); }
         .fx-play[data-fx="world"]::after {
             width: calc(var(--pick-emoji,20px) * .5); height: calc(var(--pick-emoji,20px) * .5);
-            border-radius: 50%; background: rgba(120,220,255,.95); box-shadow: 0 0 8px 2px rgba(120,220,255,.5);
+ background: rgba(120,220,255,.95); box-shadow: 0 0 8px 2px rgba(120,220,255,.5);
             animation: fx-satellite .8s linear;
         }
         @keyframes fx-globe { 0% { transform: rotateY(0) scale(1); } 35% { transform: rotateY(200deg) scale(1.06); } 70% { transform: rotateY(340deg) scale(.97); } 100% { transform: rotateY(360deg) scale(1); } }
@@ -3162,7 +3275,7 @@ min-width: 200px;
         .fx-play[data-fx="folk"] .emoji-font { animation: fx-folk .45s ease-in-out; }
         .fx-play[data-fx="folk"]::after {
             width: calc(var(--pick-emoji,20px) * .5); height: calc(var(--pick-emoji,20px) * .5);
-            border-radius: 50%; background: rgba(255,220,120,.9);
+ background: rgba(255,220,120,.9);
             animation: fx-note .6s ease-out;
         }
         @keyframes fx-folk { 0% { transform: translateY(0); } 25% { transform: translateY(-45%) rotate(-6deg); } 45% { transform: translateY(0); } 60% { transform: translateY(-30%); } 100% { transform: translateY(0); } }
@@ -3186,7 +3299,7 @@ min-width: 200px;
         .fx-play[data-fx="asmr"]::before,
         .fx-play[data-fx="asmr"]::after {
             width: calc(var(--pick-emoji,20px) * .55); height: calc(var(--pick-emoji,20px) * .55);
-            border: 1.5px solid rgba(180,240,255,.9); border-radius: 50%;
+            border: 1.5px solid rgba(180,240,255,.9);
         }
         .fx-play[data-fx="asmr"]::before { animation: fx-bubble .7s ease-out .05s; }
         .fx-play[data-fx="asmr"]::after { animation: fx-bubble .7s ease-out .22s; }
@@ -3253,13 +3366,12 @@ min-width: 200px;
         /* Tactical — radar sweep + blip */
         .fx-play[data-fx="tactical"]::after {
             width: calc(var(--pick-emoji,20px) * 2.4); height: calc(var(--pick-emoji,20px) * 2.4);
-            border-radius: 50%;
             background: conic-gradient(from 0deg, rgba(255,120,70,0) 0deg 260deg, rgba(255,120,70,.85) 260deg 280deg, rgba(255,120,70,0) 280deg 360deg);
             animation: fx-radar .7s ease-out;
         }
         .fx-play[data-fx="tactical"]::before {
             width: calc(var(--pick-emoji,20px) * .45); height: calc(var(--pick-emoji,20px) * .45);
-            border-radius: 50%; background: rgba(255,200,120,.95); box-shadow: 0 0 6px 2px rgba(255,200,120,.6);
+ background: rgba(255,200,120,.95); box-shadow: 0 0 6px 2px rgba(255,200,120,.6);
             animation: fx-blip .7s ease-out;
         }
         @keyframes fx-radar { 0% { opacity:0; transform: translate(-50%,-50%) rotate(0) scale(.3); } 25% { opacity:.9; } 55% { opacity:.55; transform: translate(-50%,-50%) rotate(320deg) scale(1); } 100% { opacity:0; transform: translate(-50%,-50%) rotate(720deg) scale(1.05); } }
@@ -3279,7 +3391,7 @@ min-width: 200px;
         .fx-play[data-fx="mmo"] .emoji-font { animation: fx-mmo .7s ease-in-out; }
         .fx-play[data-fx="mmo"]::after {
             width: calc(var(--pick-emoji,20px) * .3); height: calc(var(--pick-emoji,20px) * .3);
-            border-radius: 50%; background: rgba(120,255,180,.95);
+ background: rgba(120,255,180,.95);
             animation: fx-mmo-dot .7s ease-in-out;
         }
         @keyframes fx-mmo { 0% { transform: translateY(0); } 30% { transform: translateY(-20%); } 55% { transform: translateY(0); } 100% { transform: translateY(0); } }
@@ -3297,7 +3409,7 @@ min-width: 200px;
         .fx-play[data-fx="cozy"] .emoji-font { animation: fx-cozy .6s cubic-bezier(.34,1.4,.64,1); }
         .fx-play[data-fx="cozy"]::after {
             width: calc(var(--pick-emoji,20px) * .45); height: calc(var(--pick-emoji,20px) * .45);
-            border-radius: 50%; background: rgba(140,255,170,.9);
+ background: rgba(140,255,170,.9);
             animation: fx-leaf .7s ease-out;
         }
         @keyframes fx-cozy { 0% { transform: scale(.3); opacity:.2; } 55% { transform: scale(1.12); opacity:1; } 75% { transform: scale(.96); } 100% { transform: scale(1); opacity:1; } }
@@ -3383,7 +3495,6 @@ min-width: 200px;
         .fx-play[data-fx="flagship"] { animation: fx-flagship .8s cubic-bezier(.34,1.4,.64,1); }
         .fx-play[data-fx="flagship"]::before {
             width: calc(var(--pick-emoji,20px) * 2.6); height: calc(var(--pick-emoji,20px) * 2.6);
-            border-radius: 50%;
             clip-path: circle(50% at 50% 50%);
             background: repeating-conic-gradient(from 0deg, rgba(255,215,120,.6) 0 10deg, transparent 10deg 26deg);
             -webkit-mask: radial-gradient(circle, transparent 32%, #000 34% 100%);
@@ -3508,7 +3619,6 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             gap: 8px;
             padding: 8px 8px 10px 8px;
             background: rgba(8, 8, 12, 0.5);
-            border-radius: 6px;
             border: 1px solid rgba(255, 255, 255, 0.04);
             min-height: 136px;
             height: 136px;
@@ -3521,11 +3631,9 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
         }
         .active-curve-dock::-webkit-scrollbar-track {
             background: rgba(0, 0, 0, 0.2);
-            border-radius: 999px;
         }
         .active-curve-dock::-webkit-scrollbar-thumb {
             background: var(--accent-blue);
-            border-radius: 999px;
         }
         .active-curve-dock::-webkit-scrollbar-thumb:hover {
             background: var(--text-main);
@@ -3536,7 +3644,6 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             align-items: center;
             gap: 6px;
             padding: 2px 8px;
-            border-radius: 4px;
             background: rgba(18, 18, 24, 0.9);
             border-left: 3px solid var(--accent-blue);
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
@@ -3544,7 +3651,6 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
         }
 
         .peqdb-row-item {
-            border-radius: 8px;
             padding: 8px 10px;
             cursor: pointer;
             transition: all 0.15s ease;
@@ -3564,7 +3670,6 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             justify-content: center;
             width: 22px;
             height: 22px;
-            border-radius: 4px;
             cursor: help;
             font-size: 12px;
         }
@@ -3581,7 +3686,6 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             text-transform: uppercase;
             letter-spacing: 0.05em;
             padding: 3px 8px;
-            border-radius: 4px;
             flex-shrink: 0;
             visibility: hidden;
         }
@@ -3601,7 +3705,6 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             align-items: center;
             gap: 4px;
             padding: 4px 8px;
-            border-radius: 0;
             font-size: 11px;
             font-weight: 700;
             background-color: var(--bg-input);
@@ -3650,7 +3753,6 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
         .gauge-light {
             width: 4.5px;
             height: 4.5px;
-            border-radius: 50%;
             background: #2a2a35;
             margin-top: 3px;
             transition: all .35s ease;
@@ -3716,21 +3818,21 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             position: relative;
         }
 
-        .spatial-pad-container { position: relative; width: 100%; height: 260px; background: radial-gradient(circle at center, rgba(var(--accent-blue-rgb), 0.08) 0%, var(--bg-body) 100%); border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; cursor: none !important; touch-action: none !important;  transition: background var(--transition-speed), border-color var(--transition-speed); }
+        .spatial-pad-container { position: relative; width: 100%; height: 260px; background: radial-gradient(circle at center, rgba(var(--accent-blue-rgb), 0.08) 0%, var(--bg-body) 100%); border: 1px solid var(--border-color); overflow: hidden; cursor: none !important; touch-action: none !important;  transition: background var(--transition-speed), border-color var(--transition-speed); }
         .spatial-grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(var(--accent-blue-rgb), 0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--accent-blue-rgb), 0.14) 1px, transparent 1px); background-size: 12px 12px; }
         .spatial-axis-h { position: absolute; top: calc(50% - 1px); left: 0; right: 0; height: 2px; background: rgba(var(--accent-blue-rgb), 0.35); transition: background var(--transition-speed); }
         .spatial-axis-v { position: absolute; left: calc(50% - 1px); top: 0; bottom: 0; width: 2px; background: rgba(var(--accent-blue-rgb), 0.35); transition: background var(--transition-speed); }
         .spatial-listener { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--text-secondary); font-size: 16px; pointer-events: none; }
         .spatial-source { position: absolute; left: 0; top: 0; width: 24px; height: 24px; transform: translate(-50%, -50%); pointer-events: none; will-change: transform; display: flex; align-items: center; justify-content: center; }
-        .spatial-core { width: 7px; height: 7px; background-color: var(--accent-blue); border-radius: 50%; box-shadow: 0 0 8px var(--accent-blue); position: absolute; z-index: 10; }
-        .spatial-reticle { width: 16px; height: 16px; border: 1px solid var(--accent-blue); opacity: 0.45; border-radius: 50%; position: absolute; z-index: 5; }
+        .spatial-core { width: 7px; height: 7px; background-color: var(--accent-blue); box-shadow: 0 0 8px var(--accent-blue); position: absolute; z-index: 10; }
+        .spatial-reticle { width: 16px; height: 16px; border: 1px solid var(--accent-blue); opacity: 0.45; position: absolute; z-index: 5; }
         .spatial-tick-v { width: 1px; height: 24px; background: linear-gradient(to bottom, var(--accent-blue) 0%, var(--accent-blue) 25%, transparent 25%, transparent 75%, var(--accent-blue) 75%, var(--accent-blue) 100%); position: absolute; opacity: 0.6; }
         .spatial-tick-h { width: 24px; height: 1px; background: linear-gradient(to right, var(--accent-blue) 0%, var(--accent-blue) 25%, transparent 25%, transparent 75%, var(--accent-blue) 75%, var(--accent-blue) 100%); position: absolute; opacity: 0.6; }
         @keyframes spatial-radar-pulse {
             0% { transform: scale(1); opacity: 0.7; }
             100% { transform: scale(3.5); opacity: 0; }
         }
-        .spatial-pulse { width: 8px; height: 8px; border: 1.5px solid var(--accent-blue); border-radius: 50%; position: absolute; animation: spatial-radar-pulse 1s linear infinite; pointer-events: none; }
+        .spatial-pulse { width: 8px; height: 8px; border: 1.5px solid var(--accent-blue); position: absolute; animation: spatial-radar-pulse 1s linear infinite; pointer-events: none; }
 
         @keyframes sound-ripple {
             0% { transform: scale(1); opacity: 0.85; border-color: var(--accent-blue); }
@@ -3740,7 +3842,6 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             position: absolute;
             inset: -4px;
             border: 1.5px solid var(--accent-blue);
-            border-radius: 50%;
             pointer-events: none;
             animation: sound-ripple 3.2s cubic-bezier(0.1, 0.8, 0.3, 1) infinite;
         }
@@ -3757,7 +3858,6 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
         }
         ::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.08);
-            border-radius: 999px;
         }
         ::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.15);
@@ -3839,7 +3939,6 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             align-items: center;
             width: 100%;
             height: 38px;
-            border-radius: 6px;
             padding: 0px 8px !important;
             gap: 12px;
             overflow: hidden;
@@ -3883,10 +3982,14 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             .tab-pane .section-card,
             #spatial-card:not(.is-expanded-card),
             #master-graphs-card:not(.is-expanded-card) {
-                height: 380px !important;
-                min-height: 380px !important;
-                max-height: 380px !important;
-                flex: 0 0 auto !important;
+                /* Same hard-constant clipping problem as the 1279px rule: a
+                   fixed 380px overflowed the pane (100dvh - 48px, minus 160px
+                   of reserved footer padding) by up to 228px at the app's
+                   360x360 minimum, with no scrollbar. Clamp to the viewport. */
+                height: min(380px, calc(100dvh - 220px)) !important;
+                min-height: 0 !important;
+                max-height: none !important;
+                flex: 0 1 auto !important;
                 box-sizing: border-box !important;
             }
 
@@ -4037,7 +4140,6 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             background-color: rgba(0, 0, 0, 0.45) !important;
             border: 1px solid rgba(255, 255, 255, 0.05) !important;
             color: var(--band-color) !important;
-            border-radius: 4px;
             font-family: monospace !important;
             font-size: 10px !important;
             font-weight: 800 !important;
@@ -4059,7 +4161,6 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             color: #f4f4f7 !important;
             font-size: 10px !important;
             font-weight: bold !important;
-            border-radius: 4px;
             height: 20px !important;
             outline: none;
             cursor: pointer;
@@ -4102,11 +4203,15 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             background: transparent !important;
         }
 
+        /* ERG-006: these were the tightest handles in the app at 14x20 painted
+           (declared 10x16 content-box + 2px border). Now 18x20: +4px of grab
+           width, height and margin-top: -6px unchanged. */
         .eq-band-card input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none !important;
             appearance: none !important;
-            width: 10px !important;
-            height: 16px !important;
+            box-sizing: border-box !important;
+            width: 18px !important;
+            height: 20px !important;
             border-radius: 0 !important;
             background: var(--accent-blue) !important;
             border: 2px solid var(--border-color) !important;
@@ -4121,8 +4226,9 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
         }
 
         .eq-band-card input[type="range"]::-moz-range-thumb {
-            width: 10px !important;
-            height: 16px !important;
+            box-sizing: border-box !important;
+            width: 18px !important;
+            height: 20px !important;
             border-radius: 0 !important;
             background: var(--accent-blue) !important;
             border: 2px solid var(--border-color) !important;
@@ -4769,7 +4875,6 @@ select,
     transform: translate(-50%, -50%);
     width: 58px;
     height: 58px;
-    border-radius: 12px;
     background: rgba(0, 0, 0, 0.88);
     border: 2px solid var(--accent-blue);
     color: #ffffff;

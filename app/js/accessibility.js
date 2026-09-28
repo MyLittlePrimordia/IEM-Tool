@@ -50,7 +50,10 @@
                 slider.value = 0;
             }
             this.setBalance(val);
-            if (window.syncGlobalSliders) window.syncGlobalSliders();
+            // Only the balance slider changed. Passing it lets the painter
+            // repaint one element instead of all ~111 range inputs on every
+            // input event of a drag.
+            if (window.syncGlobalSliders) window.syncGlobalSliders(slider);
             Mascot.update();
         }
     };

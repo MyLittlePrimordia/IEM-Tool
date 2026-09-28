@@ -34,7 +34,17 @@ const EQ_LoudnessMethods = {
             this.drawCurve();
         },
         updateLoudnessParam: function(param, val) {
+            // Reject non-numeric input at the writer. Storing NaN used to make
+            // the DSP path fall back to full boost while the label printed
+            // "NaN%", so a bad value could never be recovered from the UI.
             const value = parseFloat(val);
+            if (!Number.isFinite(value)) {
+                console.warn('[EQ] Ignoring non-numeric loudness param:', param, val);
+                return;
+            }
+            const slider = param === 'calibration'
+                ? document.getElementById('loudness-cal-slider')
+                : document.getElementById('loudness-strength-slider');
             if (param === 'calibration') {
                 this.loudnessCalibrationVol = value;
                 const disp = document.getElementById('loudness-cal-val');
@@ -46,7 +56,10 @@ const EQ_LoudnessMethods = {
             }
             this.updateLoudnessDSP();
             this.drawCurve();
-            if (window.syncGlobalSliders) window.syncGlobalSliders();
+            // Only the one slider the user is dragging changed — pass it so the
+            // painter repaints one element, not all ~111 range inputs, on every
+            // input event.
+            if (window.syncGlobalSliders) window.syncGlobalSliders(slider);
         },
         calibrateLoudnessFromVolume: function() {
             const volSlider = document.getElementById("eq-musicVolumeSlider");
@@ -72,9 +85,15 @@ const EQ_LoudnessMethods = {
                 return;
             }
             
-            const currentVol = parseFloat(document.getElementById("eq-musicVolumeSlider")?.value || 50);
-            const calibrationVol = this.loudnessCalibrationVol || 50;
-            const strength = this.loudnessStrength || 100;
+            // Number.isFinite, NOT `||`. The strength slider's minimum is a legal
+            // 0 (index.html loudness-strength-slider min="0"), so `0 || 100`
+            // resolved 0% to 100% and applied the FULL +14 dB low shelf / +8 dB
+            // high shelf while eq-magnitude-engine.js — which reads the field
+            // directly — drew a flat 0.00 dB curve. `||` also swallowed NaN.
+            const volRaw = parseFloat(document.getElementById("eq-musicVolumeSlider")?.value);
+            const currentVol = Number.isFinite(volRaw) ? volRaw : 50;
+            const calibrationVol = Number.isFinite(this.loudnessCalibrationVol) ? this.loudnessCalibrationVol : 50;
+            const strength = Number.isFinite(this.loudnessStrength) ? this.loudnessStrength : 100;
 
             let bassBoost = 0;
             let trebleBoost = 0;

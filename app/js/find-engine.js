@@ -200,7 +200,7 @@
                             const on = isSel(p);
                             const fx = this.pickFx[p.value] || '';
                             const playing = on && p.value === this._lastFx ? ' fx-play' : '';
-                            html += `<button type="button" onclick="FindEngine.togglePick('${p.kind}','${p.value.replace(/'/g, "\\'")}')" data-tooltip="${p.value}" data-value="${p.value}" data-fx="${fx}" class="no-tactile find-pick-badge ${on ? 'on' : ''}${playing}" aria-pressed="${on}">
+                            html += `<button type="button" data-cmd="FindEngine.togglePick" data-arg-0="${esc(p.kind)}" data-arg-1="${esc(p.value)}" data-tooltip="${p.value}" data-value="${p.value}" data-fx="${fx}" class="no-tactile find-pick-badge ${on ? 'on' : ''}${playing}" aria-pressed="${on}">
                                 <span class="emoji-font vibrant-emoji leading-none pointer-events-none">${p.emoji}</span>
                             </button>`;
                         });
@@ -309,7 +309,16 @@
                     'Wireless Over-Ear Headphones': '<img src="app/icons/wireless.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">'
                 },
                 getTagEmoji: function(tagStr) {
-                    if (!tagStr) return '🏷️';
+                    // Tags come straight out of database.json, where only the
+                    // ARRAY-ness is validated (peqdb-module.js buildDataset) —
+                    // never the element type. A numeric tag is truthy, so this
+                    // reached (5).toLowerCase() and threw. That throw happened
+                    // inside renderChunk's setTimeout with no try/catch, so the
+                    // chunk chain died mid-render, the IntersectionObserver was
+                    // never attached, finalizeRender() never ran, and the user
+                    // got a silently truncated results grid with no error.
+                    if (tagStr === null || tagStr === undefined || tagStr === '') return '🏷️';
+                    if (typeof tagStr !== 'string') tagStr = String(tagStr);
                     const emojiMatch = tagStr.match(/^(\p{Extended_Pictographic}|\p{Emoji})/u);
                     if (emojiMatch) return '';
                     const cleanKey = tagStr.toLowerCase().trim().replace(/_/g, '-');
@@ -646,15 +655,63 @@
                     return true;
                 },
 
+                // Memoised so concurrent callers (boot + a scan pressed early)
+                // share one load instead of each starting their own fetch.
+                _dbLoadPromise: null,
+
+                // Memoised search-normalised text for the three Find-tab search
+                // boxes (Flagship / owned-IEM / taste favourites).
+                //
+                // These used PEQDB_Module.matchSearchTokens, which re-runs
+                // normalizeSearchText — ~20 global regex passes, two of which
+                // roughly double the string — on the HAYSTACK for every single
+                // dataset entry on every keystroke. With a ~5,000-entry
+                // catalogue that is 100k regex passes per 160ms debounce tick.
+                // PEQDB_Module already ships the two halves this needs
+                // (getSearchNorm's memo + matchSearchTokensNorm); the Database
+                // list uses them. Memoising onto the item itself keeps the cache
+                // naturally bounded at one string per entry, with no global Map
+                // to grow or evict.
+                _fnSearchNorm: function(item, withFiles) {
+                    if (!item) return '';
+                    if (withFiles) {
+                        if (item._fnSearchNormFull === undefined) {
+                            const filePaths = Array.isArray(item.files) ? item.files.join(' ') : (item.primaryFilePath || '');
+                            item._fnSearchNormFull = PEQDB_Module.normalizeSearchText(
+                                `${item.name || ''} ${item.brand || ''} ${item.model || ''} ${item.variant || ''} ${filePaths} ${item.searchKey || ''}`
+                            );
+                        }
+                        return item._fnSearchNormFull;
+                    }
+                    if (item._fnSearchNorm === undefined) {
+                        item._fnSearchNorm = PEQDB_Module.normalizeSearchText(
+                            `${item.name} ${item.brand || ''} ${item.model || ''}`
+                        );
+                    }
+                    return item._fnSearchNorm;
+                },
+
                 loadDatabase: async function() {
+                    if (this._dbLoadPromise) return this._dbLoadPromise;
+                    this._dbLoadPromise = (async () => {
                     try {
 
                         // typeof, not window.*: CurveIndexer is a top-level
-                        // const (peqdb-module.js), never assigned to window,
-                        // so the old window.CurveIndexer guard was always
-                        // false and this whole function re-fetched and
-                        // re-parsed the 2.77 MB database a second time.
-                        if (typeof CurveIndexer !== 'undefined' && Array.isArray(CurveIndexer.catalog) && CurveIndexer.catalog.length > 0) {
+                        // const (peqdb-module.js), never assigned to window.
+                        //
+                        // Await CurveIndexer's OWN single-flight catalogue load
+                        // rather than re-fetching. PEQDB_Module.init() starts
+                        // that load without awaiting it, so FindEngine.init()
+                        // (the last module in the boot sequence) used to arrive
+                        // while it was still in flight, found `catalog` still
+                        // empty, and downloaded + gunzipped + JSON.parsed the
+                        // same 2.85 MB payload a SECOND time on the main thread.
+                        // It also produced a separate array instance, so the
+                        // ~5,100-entry id/name indexes were built twice and
+                        // could silently diverge from PEQDB's copy.
+                        if (typeof CurveIndexer !== 'undefined' && typeof CurveIndexer.ensureCatalogReady === 'function') {
+                            this.iemDatabase = await CurveIndexer.ensureCatalogReady();
+                        } else if (typeof CurveIndexer !== 'undefined' && Array.isArray(CurveIndexer.catalog) && CurveIndexer.catalog.length > 0) {
                             this.iemDatabase = CurveIndexer.catalog;
                         } else if (typeof DecompressionStream !== 'undefined') {
                             // Prefer the 12x-smaller .gz (0.22MB vs 2.64MB) and
@@ -672,11 +729,26 @@
                             const res = await fetch('database.json');
                             if (res.ok) this.iemDatabase = await res.json();
                         }
+                        // Shape check. The guards above all test `.length === 0`,
+                        // and a non-array (a hand-edited database.json whose root
+                        // became an object) has `length === undefined`, so
+                        // `undefined === 0` is false — every guard would pass and
+                        // the first `.filter()`/`.find()` would throw. Normalise
+                        // to [] here, once, so all consumers see an array.
+                        if (!Array.isArray(this.iemDatabase)) {
+                            console.warn('[FindEngine] database.json is not an array; using an empty metadata list.');
+                            this.iemDatabase = [];
+                        }
                         this.populateCloneSelector();
                         this.populateBrandSuggestions();
                     } catch(e) {
                         console.warn("[FindEngine] Metadata database not found or offline. Filtering fallback in effect.", e);
+                        if (!Array.isArray(this.iemDatabase)) this.iemDatabase = [];
+                        // Do not memoise a failure: let the next call retry.
+                        this._dbLoadPromise = null;
                     }
+                    })();
+                    return this._dbLoadPromise;
                 },
 
                 findModes: [
@@ -969,7 +1041,12 @@
                         setTimeout(() => {
                             if (progressContainer && !progressContainer.classList.contains('hidden')) {
                                 progressContainer.classList.add('hidden');
-                                PEQDB_Module.databaseFullyLoaded = true;
+                                // Do NOT claim the database finished loading here.
+                                // This timer fires purely because the bar was still
+                                // on screen, which is equally true when the load
+                                // failed; setting databaseFullyLoaded = true made a
+                                // failed catalogue load indistinguishable from a
+                                // slow-but-successful one.
                                 console.warn("[FindEngine] Progress bar auto-hidden via safety timer.");
                             }
                         }, 3000);
@@ -1123,7 +1200,7 @@
                         if (baseCurve) {
                             if (!this.isClonedModeActive) {
                                 btn.textContent = `📁 Detected: ${baseCurve.name}`;
-                                btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 rounded text-[9px] font-bold text-stone-300 flex items-center justify-center px-2 truncate shadow-inner";
+                                btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 text-[9px] font-bold text-stone-300 flex items-center justify-center px-2 truncate shadow-inner";
                                 row.classList.remove('hidden');
                             }
                         } else {
@@ -1131,7 +1208,7 @@
                                 this.deactivateEQBaseClone();
                             }
                             btn.textContent = "🔒 EQ Base Slot Empty";
-                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 rounded text-[9px] font-black uppercase text-zinc-555 flex items-center justify-center gap-1.5 shadow-inner cursor-not-allowed";
+                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 text-[9px] font-black uppercase text-zinc-555 flex items-center justify-center gap-1.5 shadow-inner cursor-not-allowed";
                             row.classList.add('hidden');
                         }
                     }, 500);
@@ -1148,7 +1225,7 @@
                     const btn = document.getElementById('find-clone-btn');
                     if (btn) {
                         btn.textContent = `🟢 Active Clone: ${baseCurve.name}`;
-                        btn.className = "w-full h-7 bg-gradient-to-r from-emerald-600 to-teal-600 border border-emerald-500/40 rounded text-[9px] font-black uppercase text-white flex items-center justify-center px-2 truncate shadow-md active-btn";
+                        btn.className = "w-full h-7 bg-gradient-to-r from-emerald-600 to-teal-600 border border-emerald-500/40 text-[9px] font-black uppercase text-white flex items-center justify-center px-2 truncate shadow-md active-btn";
                     }
                     this.drawTargetVisualization();
                     showToast(`Target locked to "${baseCurve.name}"!`, "💾");
@@ -1162,10 +1239,10 @@
                     if (btn) {
                         if (baseCurve) {
                             btn.textContent = `📁 Detected: ${baseCurve.name}`;
-                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 rounded text-[9px] font-bold text-stone-300 flex items-center justify-center px-2 truncate shadow-inner";
+                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 text-[9px] font-bold text-stone-300 flex items-center justify-center px-2 truncate shadow-inner";
                         } else {
                             btn.textContent = "🔒 EQ Base Slot Empty";
-                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 rounded text-[9px] font-black uppercase text-zinc-555 flex items-center justify-center gap-1.5 shadow-inner cursor-not-allowed";
+                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 text-[9px] font-black uppercase text-zinc-555 flex items-center justify-center gap-1.5 shadow-inner cursor-not-allowed";
                         }
                     }
                     this.drawTargetVisualization();
@@ -1204,6 +1281,14 @@
                     if (title) title.textContent = "Synthesizing Taste Profile...";
                     if (subtitle) subtitle.textContent = "Averaging favorite frequency curves...";
 
+                    // Everything between raising isScanning and the setTimeout
+                    // below used to run UNGUARDED, while the flag was already
+                    // true. A throw in the curve loads / interpolation / toast
+                    // left isScanning stuck true and the overlay stuck visible,
+                    // and since all 5 scan entry points early-return on
+                    // `isScanning`, the entire Find tab went dead until restart.
+                    // Same shape as scanEndgameSets' try/finally.
+                    try {
                     const dataset = PEQDB_Module.STATE.dataset;
                     await Promise.all(selected.map(async (id) => {
                         const item = dataset.find(i => i.id === id);
@@ -1331,6 +1416,15 @@
                             this._handleScanError(err);
                         }
                     }, 1000);
+                    } catch (err) {
+                        // Guard for the pre-timeout region above (curve loads,
+                        // interpolation, toast). Without this a throw left
+                        // isScanning stuck true and the overlay stuck visible,
+                        // and — because all 5 scan entry points early-return on
+                        // `isScanning` — the whole Find tab went dead.
+                        console.error("[FindEngine] taste scan setup failed:", err);
+                        this._handleScanError(err);
+                    }
                 },
 
                 loadCachedCanonicalProfiles: function() {
@@ -1752,6 +1846,34 @@
                     return canonicalList;
                 },
 
+                // A Worker that has errored, timed out, or stopped replying is
+                // PERMANENTLY dead: its `error` event only ever fires once, and
+                // a terminated worker never posts again. Leaving it cached meant
+                // every later scan attached listeners that could never fire, its
+                // promise hung forever, `isScanning` stayed true, the scanning
+                // overlay never hid, and — because all 5 scan entry points
+                // early-return on `isScanning` — the entire Find tab went dead
+                // until the app was restarted. Retiring it means the next scan
+                // transparently builds a fresh worker instead.
+                _killFindWorker: function(reason) {
+                    const w = this._findWorker;
+                    this._findWorker = null;
+                    // A fresh worker starts with an empty canonical-profile
+                    // cache, so any signature we believed it held is void.
+                    this._workerCanonicalSig = null;
+                    if (w) { try { w.terminate(); } catch (_) {} }
+                    console.warn('[FindEngine] retired find worker:', reason);
+                },
+
+                // The worker can also die SILENTLY (an OOM or an uncaught throw
+                // inside a scan, a message that fails to deserialize). In that
+                // case no `error` event fires and the request promise would never
+                // settle, so `isScanning` would stay true forever. Cap it: 30s is
+                // far longer than any legitimate pass over the catalogue, and
+                // falling back to the main-thread scan is a perf cost, not a
+                // correctness one.
+                WORKER_TIMEOUT_MS: 30000,
+
                 ensureFindWorker: function() {
                     if (this._findWorker) return this._findWorker;
                     if (typeof Worker === 'undefined') return null;
@@ -1848,6 +1970,28 @@
                     };
                     return new Promise((resolve) => {
                         let retriedWithItems = false;
+                        let settled = false;
+                        let timer = null;
+                        // Resolve EXACTLY once, always after detaching listeners
+                        // and disarming the timeout. The reprime path re-enters
+                        // postMessage, so without a settled latch a late reply
+                        // could resolve an already-resolved promise.
+                        const done = (v) => {
+                            if (settled) return;
+                            settled = true;
+                            if (timer) { clearTimeout(timer); timer = null; }
+                            worker.removeEventListener('message', onMsg);
+                            worker.removeEventListener('error', onErr);
+                            worker.removeEventListener('messageerror', onErr);
+                            resolve(v);
+                        };
+                        const armTimeout = () => {
+                            if (timer) clearTimeout(timer);
+                            timer = setTimeout(() => {
+                                this._killFindWorker('tuning request timed out after ' + this.WORKER_TIMEOUT_MS + 'ms');
+                                done(null);
+                            }, this.WORKER_TIMEOUT_MS);
+                        };
                         const onMsg = (e) => {
                             const d = e.data || {};
                             if (d.type !== 'result') return;
@@ -1863,17 +2007,17 @@
                                 try {
                                     worker.postMessage({ type: 'tuning', reqId: reqId, items: buildSlim(), targetInterp: targetInterp, freqs: freqs, sig: sig });
                                     this._workerCanonicalSig = sig;
+                                    armTimeout();
                                 } catch (postErr) {
-                                    worker.removeEventListener('message', onMsg);
-                                    worker.removeEventListener('error', onErr);
-                                    resolve(null);
+                                    this._killFindWorker('postMessage failed during reprime');
+                                    done(null);
                                 }
                                 return;
                             }
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
-                            if (this._scanToken !== token) return resolve(null);
-                            if (!d.ok) { console.warn("[FindEngine] worker tuning failed:", d.error); return resolve(null); }
+                            if (this._scanToken !== token) return done(null);
+                            // A worker-reported payload failure leaves the worker
+                            // itself healthy, so it is NOT retired here.
+                            if (!d.ok) { console.warn("[FindEngine] worker tuning failed:", d.error); return done(null); }
                             const list = (d.matches || []).slice();
                             // The worker only echoes slim payloads (no curve data),
                             // so reattach each match's data by id on the main thread.
@@ -1885,16 +2029,22 @@
                                 if (it) m.data = it.data || null;
                             });
                             list.sort((a, b) => b.similarity - a.similarity);
-                            resolve(list);
+                            done(list);
                         };
                         const onErr = (e) => {
                             console.warn("[FindEngine] worker error:", e && e.message);
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
-                            resolve(null);
+                            // The worker is dead. Terminate + drop it from the
+                            // cache so the NEXT scan builds a fresh one; leaving
+                            // it cached is what used to wedge the whole tab.
+                            this._killFindWorker('error event: ' + ((e && e.message) || 'unknown'));
+                            done(null);
                         };
                         worker.addEventListener('message', onMsg);
                         worker.addEventListener('error', onErr);
+                        // messageerror = the worker tried to send something that
+                        // could not be deserialized. Also fatal for this worker.
+                        worker.addEventListener('messageerror', onErr);
+                        armTimeout();
                         try {
                             if (workerHasSet) {
                                 // Same item set the worker already memoized:
@@ -1905,9 +2055,8 @@
                                 this._workerCanonicalSig = sig;
                             }
                         } catch (e) {
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
-                            resolve(null);
+                            this._killFindWorker('postMessage threw: ' + e.message);
+                            done(null);
                         }
                     });
                 },
@@ -1991,6 +2140,12 @@
 
                 scanAndMatch: async function() {
                     if (this.isScanning) return;
+                    // Guard the whole pre-timeout region. `await loadDatabase()`
+                    // and the curve/dataset setup below used to run while
+                    // isScanning was already true but outside any try, so a
+                    // throw there left the flag stuck and the overlay visible —
+                    // and all 5 scan entry points early-return on `isScanning`.
+                    try {
                     this.isScanning = true;
 
                     if (!this.iemDatabase || this.iemDatabase.length === 0) {
@@ -2148,6 +2303,10 @@
                                 this._handleScanError(err);
                             }
                         }, 300);
+                    }
+                    } catch (err) {
+                        console.error("[FindEngine] scan setup failed:", err);
+                        this._handleScanError(err);
                     }
                 },
 
@@ -2400,6 +2559,27 @@
                     const reqId = 'e' + ((this._workerReqSeq = (this._workerReqSeq || 0) + 1));
                     return new Promise((resolve) => {
                         let retriedWithItems = false;
+                        let settled = false;
+                        let timer = null;
+                        const cleanup = () => {
+                            if (timer) { clearTimeout(timer); timer = null; }
+                            worker.removeEventListener('message', onMsg);
+                            worker.removeEventListener('error', onErr);
+                            worker.removeEventListener('messageerror', onErr);
+                        };
+                        const done = (v) => {
+                            if (settled) return;
+                            settled = true;
+                            cleanup();
+                            resolve(v);
+                        };
+                        const armTimeout = () => {
+                            if (timer) clearTimeout(timer);
+                            timer = setTimeout(() => {
+                                this._killFindWorker('endgame request timed out after ' + this.WORKER_TIMEOUT_MS + 'ms');
+                                done(null);
+                            }, this.WORKER_TIMEOUT_MS);
+                        };
                         const onMsg = (e) => {
                             const d = e.data || {};
                             if (d.type !== 'result') return;
@@ -2413,27 +2593,27 @@
                                 try {
                                     worker.postMessage({ type: 'endgame', reqId: reqId, items: items, maxPrice: maxPrice, freqs: freqs, sig: sig });
                                     this._workerCanonicalSig = sig;
+                                    armTimeout();
                                 } catch (postErr) {
-                                    cleanup();
-                                    resolve(null);
+                                    this._killFindWorker('postMessage failed during endgame reprime');
+                                    done(null);
                                 }
                                 return;
                             }
-                            cleanup();
-                            if (!d.ok) { console.warn("[FindEngine] worker endgame failed:", d.error); return resolve(null); }
-                            resolve(d.endgame);
+                            // A worker-reported payload failure leaves the worker
+                            // healthy, so it is NOT retired here.
+                            if (!d.ok) { console.warn("[FindEngine] worker endgame failed:", d.error); return done(null); }
+                            done(d.endgame);
                         };
                         const onErr = (e) => {
                             console.warn("[FindEngine] worker error:", e && e.message);
-                            cleanup();
-                            resolve(null);
-                        };
-                        const cleanup = () => {
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
+                            this._killFindWorker('error event: ' + ((e && e.message) || 'unknown'));
+                            done(null);
                         };
                         worker.addEventListener('message', onMsg);
                         worker.addEventListener('error', onErr);
+                        worker.addEventListener('messageerror', onErr);
+                        armTimeout();
                         try {
                             if (workerHasSet) {
                                 worker.postMessage({ type: 'endgame', reqId: reqId, maxPrice: maxPrice, freqs: freqs, sig: sig });
@@ -2442,8 +2622,8 @@
                                 this._workerCanonicalSig = sig;
                             }
                         } catch (e) {
-                            cleanup();
-                            resolve(null);
+                            this._killFindWorker('postMessage threw: ' + e.message);
+                            done(null);
                         }
                     });
                 },
@@ -2616,12 +2796,21 @@
 
                                     <div class="flex justify-between items-center text-xs select-none">
                                         <span class="text-[9px] font-mono text-zinc-400 font-bold uppercase tracking-wider">Option ${curOption} of ${totalOptions}</span>
-                                        ${totalOptions > 1 ? `
-                                            <div class="flex items-center gap-1">
-                                                <button onclick="FindEngine.${isValueStrip ? 'cycleEndgameValue(-1)' : `cycleEndgamePick('${catId}', -1)`}" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
-                                                <button onclick="FindEngine.${isValueStrip ? 'cycleEndgameValue(1)' : `cycleEndgamePick('${catId}', 1)`}" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
-                                            </div>
-                                        ` : ''}
+    ${totalOptions > 1 ? (() => {
+    // The stepper used to pick the whole call inside the attribute:
+    //   onclick="FindEngine.${isValueStrip ? 'cycleEndgameValue(-1)' : `cycleEndgamePick('${catId}', -1)`}"
+    // which cannot be expressed as data attributes. Choose the command and its
+    // args here instead, so the markup stays declarative.
+    const prevCmd = isValueStrip ? 'FindEngine.cycleEndgameValue' : 'FindEngine.cycleEndgamePick';
+    const nextCmd = isValueStrip ? 'FindEngine.cycleEndgameValue' : 'FindEngine.cycleEndgamePick';
+    const prevArgs = isValueStrip ? ' data-arg-0="-1"' : ` data-arg-0="${esc(catId)}" data-arg-1="-1"`;
+    const nextArgs = isValueStrip ? ' data-arg-0="1"' : ` data-arg-0="${esc(catId)}" data-arg-1="1"`;
+    return `
+    <div class="flex items-center gap-1">
+    <button data-cmd="${prevCmd}"${prevArgs} class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
+    <button data-cmd="${nextCmd}"${nextArgs} class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
+    </div>
+    `; })() : ''}
                                     </div>
 
                                     <div class="flex items-center gap-2 mt-1">
@@ -2641,7 +2830,7 @@
 
                                     <div class="space-y-1">
                                         <div class="flex items-center gap-2 w-full mt-1">
-                                            <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0" data-id="${esc(curveIdToLoad)}" data-name="${esc(finalName)}" onclick="event.stopPropagation(); FindEngine.updateFloatingCompareBar();">
+                                            <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0" data-id="${esc(curveIdToLoad)}" data-name="${esc(finalName)}" data-cmd="FindEngine.updateFloatingCompareBar">
                                             <div class="flex-1 overflow-hidden relative flex items-center h-5">
                                                 <span id="${marqId}" class="text-xs font-black text-stone-200 inline-block whitespace-nowrap">${esc(finalName)}</span>
                                             </div>
@@ -2650,12 +2839,12 @@
                                         <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
                                             ${price !== null && price !== undefined ? `<span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>` : ''}
                                             ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
-                                            ${driverType ? `<span class="spec-icon-badge" data-tooltip="${driverTooltip}">${driverEmoji}</span>` : ''}
-                                            ${connector ? `<span class="spec-icon-badge" data-tooltip="${connectorTooltip}">${connectorEmoji}</span>` : ''}
-                                            <span class="spec-icon-badge" data-tooltip="${formTooltip}">${formEmoji}</span>
+                        ${driverType ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
+                        ${connector ? `<span class="spec-icon-badge" data-tooltip="${esc(connectorTooltip)}">${connectorEmoji}</span>` : ''}
+                        <span class="spec-icon-badge" data-tooltip="${esc(formTooltip)}">${formEmoji}</span>
                                         </div>
 
-                                        <div class="h-[42px] w-full rounded-none border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
+                                        <div class="h-[42px] w-full border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
                                             <canvas id="${sparkId}" class="absolute inset-0 w-full h-full block opacity-85"></canvas>
                                         </div>
 
@@ -2673,11 +2862,11 @@
                                 </div>
 
                                 <div class="flex items-center gap-1.5 mt-3 pt-2 border-t-2 border-black ${hasGraph ? '' : 'hidden'}">
-                                    <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole('${cardIdx}', -1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                    <button onclick="event.stopPropagation(); FindEngine.loadCardToGraph('${cardIdx}', '${esc(curveIdToLoad)}')" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none">
+                                    <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${cardIdx}" data-arg-1="-1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
+                                    <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${cardIdx}" data-arg-1="${escJs(curveIdToLoad)}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none">
                                         <span id="label-role-stepper-${cardIdx}" class="flex items-center justify-center gap-1 truncate">${currentRoleOpt.label}</span>
                                     </button>
-                                    <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole('${cardIdx}', 1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
+                                    <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${cardIdx}" data-arg-1="1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
                                 </div>
                             </div>
                         `;
@@ -2787,8 +2976,7 @@
                             const isFlagTag = Array.isArray(item.tags) && item.tags.some(t => String(t).toLowerCase() === 'flagship');
                             return isFlagTag || price >= 1000;
                         }
-                        const searchableText = `${item.name} ${item.brand || ''} ${item.model || ''}`;
-                        return PEQDB_Module.matchSearchTokens(searchableText, query);
+                        return PEQDB_Module.matchSearchTokensNorm(this._fnSearchNorm(item), query);
                     }).sort((a, b) => {
                         return (a.name || '').localeCompare(b.name || '');
                     });
@@ -2811,7 +2999,7 @@
                         const numP = Number.isFinite(parseFloat(rawP)) ? parseFloat(rawP) : 250;
                         const dispP = rawP != null ? rawP : '200+';
                         return `
-                            <div data-letter="${alphaKeyOf(item)}" onclick="FindEngine.setGkFlagship('${escJs(item.id)}', '${escJs(item.name)}', ${numP})" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800 flex justify-between">
+                            <div data-letter="${alphaKeyOf(item)}" data-cmd="FindEngine.setGkFlagship" data-arg-0="${escJs(item.id)}" data-arg-1="${escJs(item.name)}" data-arg-2="${numP}" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800 flex justify-between">
                                 <span>${esc(item.name)}</span>
                                 <span class="text-amber-400 font-mono ml-2">$${dispP}</span>
                             </div>
@@ -2846,7 +3034,7 @@
                                 <span class="emoji-font vibrant-emoji text-sm flex-shrink-0 leading-none">👑</span>
                                 <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(name)} ($${this.selectedGkFlagshipPrice})</span>
                             </div>
-                            <button type="button" onclick="FindEngine.clearGkFlagship()" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the flagship target">✕</button>
+                            <button type="button" data-cmd="FindEngine.clearGkFlagship" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the flagship target">✕</button>
                         `;
                     }
                 },
@@ -2870,12 +3058,15 @@
                         return;
                     }
 
-                    this.isScanning = true;
                     const grid = document.getElementById('find-matches-grid');
                     const emptyState = document.getElementById('find-empty-state');
                     const overlay = document.getElementById('find-scanning-overlay');
 
                     try {
+                        // Raise the flag INSIDE the try so no throw can leave it
+                        // stuck true — all 5 scan entry points early-return on
+                        // `isScanning`, so a stuck flag kills the whole Find tab.
+                        this.isScanning = true;
                         if (grid) grid.innerHTML = '';
                         if (emptyState) emptyState.classList.add('hidden');
                         if (overlay) overlay.classList.remove('hidden');
@@ -3711,8 +3902,7 @@ applyGenreFilters: function(matches) {
                     const dataset = PEQDB_Module.STATE.dataset || [];
                     const matches = dataset.filter(item => {
                         if (!hasQuery) return true;
-                        const searchableText = `${item.name} ${item.brand || ''} ${item.model || ''}`;
-                        return PEQDB_Module.matchSearchTokens(searchableText, query);
+                        return PEQDB_Module.matchSearchTokensNorm(this._fnSearchNorm(item), query);
                     }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
                     if (matches.length === 0) {
@@ -3721,7 +3911,7 @@ applyGenreFilters: function(matches) {
                     }
 
                     container.innerHTML = matches.map(item => `
-                        <div onclick="FindEngine.setUpgradeBaseIem('${escJs(item.id)}', '${escJs(item.name)}')" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
+                        <div data-cmd="FindEngine.setUpgradeBaseIem" data-arg-0="${escJs(item.id)}" data-arg-1="${escJs(item.name)}" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
                             ${esc(item.name)}
                         </div>
                     `).join('');
@@ -3747,9 +3937,9 @@ applyGenreFilters: function(matches) {
                         baseSlot.innerHTML = `
                             <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                                 <span class="emoji-font vibrant-emoji text-sm flex-shrink-0 leading-none">📱</span>
-                                <span class="text-xs font-black text-[var(--text-main)] truncate">${name}</span>
+                                <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(name)}</span>
                             </div>
-                            <button type="button" onclick="FindEngine.clearUpgradeBaseIem()" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the base IEM">✕</button>
+                            <button type="button" data-cmd="FindEngine.clearUpgradeBaseIem" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the base IEM">✕</button>
                         `;
                     }
 
@@ -4111,14 +4301,14 @@ applyGenreFilters: function(matches) {
                                     <span class="text-[9px] font-mono text-zinc-400 font-bold">Option ${curIdx + 1} of ${total}</span>
                                     ${total > 1 ? `
                                         <div class="flex items-center gap-1">
-                                            <button onclick="FindEngine.cycleUpgradeStep(${stepNum}, -1)" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
-<button onclick="FindEngine.cycleUpgradeStep(${stepNum}, 1)" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
+                                            <button data-cmd="FindEngine.cycleUpgradeStep" data-arg-0="${stepNum}" data-arg-1="-1" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
+<button data-cmd="FindEngine.cycleUpgradeStep" data-arg-0="${stepNum}" data-arg-1="1" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
                                         </div>
                                     ` : ''}
                                 </div>
 
                                 <div class="flex items-center gap-2 w-full mt-1">
-                                    <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0" data-id="${esc(curveIdToLoad)}" data-name="${esc(name)}" onclick="event.stopPropagation();">
+                                    <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0" data-id="${esc(curveIdToLoad)}" data-name="${esc(name)}" data-stop-propagation>
                                     <div class="flex-1 overflow-hidden relative flex items-center h-5">
                                         <span id="marquee-ug-${stepNum}" class="text-xs font-black text-stone-200 inline-block whitespace-nowrap">${esc(name)}</span>
                                     </div>
@@ -4147,13 +4337,13 @@ applyGenreFilters: function(matches) {
                                     </div>
                                 </div>
 
-                                <div class="h-[42px] w-full rounded-none border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
+                                <div class="h-[42px] w-full border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
                                     <canvas id="spark-ug-${stepNum}" class="absolute inset-0 w-full h-full block opacity-85"></canvas>
                                 </div>
 
                                 ${isMulti ? `
                                     <div class="flex items-center gap-1 w-full h-7 mt-1.5">
-                                        <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardSource('${cardIdx}', -1)" class="w-6 h-7 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0">◀</button>
+                                        <button type="button" data-cmd="FindEngine.cycleCardSource" data-arg-0="${cardIdx}" data-arg-1="-1" class="w-6 h-7 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0">◀</button>
                                         <div class="flex-1 bg-black/60 border-2 border-black px-1.5 h-7 flex items-center justify-start overflow-hidden text-left relative">
                                             <div id="src-stepper-container-${cardIdx}" class="w-full overflow-hidden text-left flex items-center justify-start">
                                                 <span id="label-src-stepper-${cardIdx}" class="text-[8.5px] font-bold text-left inline-block whitespace-nowrap">
@@ -4161,7 +4351,7 @@ applyGenreFilters: function(matches) {
                                                 </span>
                                             </div>
                                         </div>
-                                        <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardSource('${cardIdx}', 1)" class="w-6 h-7 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0">▶</button>
+                                        <button type="button" data-cmd="FindEngine.cycleCardSource" data-arg-0="${cardIdx}" data-arg-1="1" class="w-6 h-7 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0">▶</button>
                                     </div>
                                 ` : ''}
 
@@ -4176,11 +4366,11 @@ applyGenreFilters: function(matches) {
                             </div>
 
                             <div class="flex items-center gap-1.5 mt-3 pt-2 border-t-2 border-black ${hasGraph ? '' : 'hidden'}">
-                                <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole('${cardIdx}', -1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                <button onclick="event.stopPropagation(); FindEngine.loadCardToGraph('${cardIdx}')" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
+                                <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${cardIdx}" data-arg-1="-1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
+                                <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${cardIdx}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
                                     <span id="label-role-stepper-${cardIdx}" class="flex items-center justify-center gap-1 truncate">${currentRoleOpt.label}</span>
                                 </button>
-                                <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole('${cardIdx}', 1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
+                                <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${cardIdx}" data-arg-1="1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
                             </div>
                         </div>
                     `;
@@ -4199,6 +4389,10 @@ applyGenreFilters: function(matches) {
                     this._upgradeHasRun = true;
                     this.isScanning = true;
 
+                    // Guard the pre-timeout region for the same reason as the
+                    // other scans: nothing may throw while isScanning is true
+                    // but outside a try, or the Find tab is wedged until restart.
+                    try {
                     if (grid) grid.innerHTML = '';
                     if (emptyState) emptyState.classList.add('hidden');
                     if (overlay) overlay.classList.remove('hidden');
@@ -4332,15 +4526,15 @@ applyGenreFilters: function(matches) {
 
                                 if (acousticTest.passed && matchedTag) {
                                     score += 35;
-                                    badgeHtml = `<span class="text-[8.5px] font-black text-emerald-400 bg-emerald-950/40 border border-emerald-800/80 px-1.5 py-0.5 rounded">✅ Confirmed ${goal.toUpperCase()}</span>`;
+                                    badgeHtml = `<span class="text-[8.5px] font-black text-emerald-400 bg-emerald-950/40 border border-emerald-800/80 px-1.5 py-0.5">✅ Confirmed ${goal.toUpperCase()}</span>`;
                                 } else if (acousticTest.passed && !matchedTag) {
                                     score += 20;
-                                    badgeHtml = `<span class="text-[8.5px] font-black text-teal-400 bg-teal-950/40 border border-teal-800/80 px-1.5 py-0.5 rounded">🔬 Measured ${goal.toUpperCase()}</span>`;
+                                    badgeHtml = `<span class="text-[8.5px] font-black text-teal-400 bg-teal-950/40 border border-teal-800/80 px-1.5 py-0.5">🔬 Measured ${goal.toUpperCase()}</span>`;
                                 } else if (!acousticTest.passed && matchedTag) {
                                     score -= 25;
-                                    badgeHtml = `<span class="text-[8.5px] font-black text-rose-400 bg-rose-950/40 border border-rose-800/80 px-1.5 py-0.5 rounded">⚠️ Tag Conflict</span>`;
+                                    badgeHtml = `<span class="text-[8.5px] font-black text-rose-400 bg-rose-950/40 border border-rose-800/80 px-1.5 py-0.5">⚠️ Tag Conflict</span>`;
                                 } else {
-                                    badgeHtml = `<span class="text-[8.5px] font-bold text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">Standard Candidate</span>`;
+                                    badgeHtml = `<span class="text-[8.5px] font-bold text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5">Standard Candidate</span>`;
                                 }
 
                                 if (goal === 'tech') {
@@ -4462,12 +4656,49 @@ applyGenreFilters: function(matches) {
                         this.isScanning = false;
                     }
                 }, 50);
-            },
+                    } catch (err) {
+                        console.error("[FindEngine] upgrade pathway setup failed:", err);
+                        this._handleScanError(err);
+                    }
+                },
+
+                // Bounded LRU for per-card render data. This was a plain object
+                // keyed by database id that was written on every card render and
+                // NEVER cleared or capped, so simply browsing the Find results
+                // grew it to one entry per catalogue row (~5,000) and held it for
+                // the whole session — each entry retaining a 100-point
+                // Float32Array plus an HTML string. (It did not go stale:
+                // candInterp is built with an explicit 500 Hz / 75 dB and never
+                // reads the alignment settings, so only unbounded growth was at
+                // fault, not staleness.)
+                _cardDataCache: null,
+                _cardDataCacheKeys: [],
+                CARD_CACHE_MAX: 400,
+                _cardCacheGet: function(key) {
+                    if (!this._cardDataCache || key == null) return undefined;
+                    return this._cardDataCache[key];
+                },
+                _cardCacheSet: function(key, data) {
+                    if (key == null) return data;
+                    if (!this._cardDataCache) { this._cardDataCache = {}; this._cardDataCacheKeys = []; }
+                    if (this._cardDataCache[key] === undefined) {
+                        this._cardDataCacheKeys.push(key);
+                        // Evict oldest-first. The list is insertion-ordered, so
+                        // shifting off the front is the LRU approximation and
+                        // costs nothing at this size.
+                        while (this._cardDataCacheKeys.length > this.CARD_CACHE_MAX) {
+                            const oldest = this._cardDataCacheKeys.shift();
+                            delete this._cardDataCache[oldest];
+                        }
+                    }
+                    this._cardDataCache[key] = data;
+                    return data;
+                },
 
                 _getCachedCardData: function(item, dbEntry, freqs) {
                     const key = (dbEntry && dbEntry.id != null) ? dbEntry.id : (item.id != null ? item.id : null);
-                    if (!this._cardDataCache) this._cardDataCache = {};
-                    if (key != null && this._cardDataCache[key] !== undefined) return this._cardDataCache[key];
+                    const hit = this._cardCacheGet(key);
+                    if (hit !== undefined) return hit;
 
                     const candInterp = item.interp || (item.data ? CurveUtils.cubicSplineInterpolate(CurveUtils.normalizeTo75dB(item.data, 500, 75), freqs) : null);
 
@@ -4475,7 +4706,7 @@ applyGenreFilters: function(matches) {
                     const uniqueTags = [...new Set(rawTags || [])].slice(0, 4);
                     const tagsHtml = uniqueTags.map(t => {
                         const emoji = FindEngine.getTagEmoji(t);
-                        return `<span class="find-tag-icon" data-tooltip="${t}">${emoji || '🏷️'}</span>`;
+                        return `<span class="find-tag-icon" data-tooltip="${esc(t)}">${emoji || '🏷️'}</span>`;
                     }).join('');
 
                     const genreMatch = FindEngine.determineIemGenreMatch ? FindEngine.determineIemGenreMatch(item, dbEntry) : { emoji: '🎧', name: 'Pop / Dance' };
@@ -4488,7 +4719,7 @@ applyGenreFilters: function(matches) {
                         genreMatch: genreMatch,
                         gameGenreMatch: gameGenreMatch
                     };
-                    if (key != null) this._cardDataCache[key] = data;
+                    if (key != null) return this._cardCacheSet(key, data);
                     return data;
                 },
 
@@ -4759,14 +4990,14 @@ applyGenreFilters: function(matches) {
                                         <span class="text-xs font-black ${badgeColorClass}">${badgeText}</span>
                                     </div>
                                     <div class="space-y-1">
-                                        <h4 id="blind-title-${idx}" class="text-xs font-bold blur-xs select-none">Reveal Required</h4>
+                                        <h4 id="blind-title-${idx}" class="text-xs font-bold select-none" style="filter: blur(5px);">Reveal Required</h4>
                                         <div class="flex flex-wrap gap-1 mt-1.5">
                                             <span class="text-[8.5px] font-bold text-zinc-500">🔐 Profile Locked</span>
                                         </div>
                                     </div>
                                 </div>
                                 <div class="flex gap-2 mt-3 pt-2.5 border-t-2 border-black">
-                                    <button onclick="FindEngine.revealIEM(this, '${finalName.replace(/'/g, "\\'")}', 'blind-title-${idx}')" class="flex-1 py-1.5 btn-clear text-[9px] font-black cursor-pointer">🔓 Reveal IEM</button>
+                                    <button data-cmd="FindEngine.revealIEM" data-arg-0="@self" data-arg-1="${escJs(finalName)}" data-arg-2="blind-title-${idx}" class="flex-1 py-1.5 btn-clear text-[9px] font-black cursor-pointer">🔓 Reveal IEM</button>
                                 </div>
                             `;
                         } else {
@@ -4797,7 +5028,7 @@ applyGenreFilters: function(matches) {
 
                                     <div class="space-y-1">
                                         <div class="flex items-start gap-2 w-full">
-                                            <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0 mt-0.5" data-id="${escCurveId}" data-name="${escFinalName}" onclick="event.stopPropagation(); FindEngine.updateFloatingCompareBar();">
+                                            <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0 mt-0.5" data-id="${escCurveId}" data-name="${escFinalName}" data-cmd="FindEngine.updateFloatingCompareBar">
                                             <div class="flex-1 w-full">
                                                 <span class="text-xs font-black text-stone-200 leading-snug line-clamp-2">${escFinalName}</span>
                                             </div>
@@ -4811,7 +5042,7 @@ applyGenreFilters: function(matches) {
                                             <span class="spec-icon-badge" data-tooltip="${escFormTip}">${formEmoji}</span>
                                         </div>
 
-                                        <div class="h-[42px] w-full rounded-none border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
+                                        <div class="h-[42px] w-full border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
                                             <canvas id="spark-${idx}" class="absolute inset-0 w-full h-full block opacity-85"></canvas>
                                         </div>
 
@@ -4827,11 +5058,11 @@ applyGenreFilters: function(matches) {
                                 </div>
 
                                 <div class="flex items-center gap-1.5 mt-3 pt-2 border-t-2 border-black ${hasGraph ? '' : 'hidden'}">
-                                    <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole(${idx}, -1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                    <button onclick="event.stopPropagation(); FindEngine.loadCardToGraph(${idx})" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
+                                    <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${idx}" data-arg-1="-1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
+                                    <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${idx}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
                                         <span id="label-role-stepper-${idx}" class="flex items-center justify-center gap-1 truncate">${currentRoleOpt.label}</span>
                                     </button>
-                                    <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole(${idx}, 1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
+                                    <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${idx}" data-arg-1="1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
                                 </div>
                             `;
                         }
@@ -4953,7 +5184,12 @@ applyGenreFilters: function(matches) {
                     const titleEl = document.getElementById(titleId);
                     if (titleEl) {
                         titleEl.textContent = realName;
-                        titleEl.classList.remove('blur-xs', 'select-none');
+                        // Undo the blur. The blur is an inline style now because
+                        // Tailwind has no `blur-xs` step (its scale starts at
+                        // `sm`), so the old class never compiled and the blind
+                        // test's answer was fully legible before the reveal.
+                        titleEl.classList.remove('select-none');
+                        titleEl.style.filter = '';
                     }
 
                     const iem = PEQDB_Module.STATE.dataset.find(i => i.name === realName || this.sanitizeName(i.name) === realName);
@@ -4962,7 +5198,7 @@ applyGenreFilters: function(matches) {
 
                         const sigs = PEQDB_Module.analyzeCurveSignature(iem.data);
                         const tagsHtml = sigs.map(t => {
-                            return `<span class="text-[8px] font-black px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.05] text-zinc-400 whitespace-nowrap">${t}</span>`;
+                            return `<span class="text-[8px] font-black px-1.5 py-0.5 bg-white/[0.04] border border-white/[0.05] text-zinc-400 whitespace-nowrap">${t}</span>`;
                         }).join('');
 
                         const cardBody = parent.previousElementSibling;
@@ -4972,8 +5208,8 @@ applyGenreFilters: function(matches) {
                         }
 
                         parent.innerHTML = `
-                            <button onclick="FindEngine.loadToGraph('${iem.id}', 'base')" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-stone-200 rounded font-black text-[9px] cursor-pointer">📈 Base</button>
-                            <button onclick="FindEngine.loadToGraph('${iem.id}', 'reference')" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-750 text-stone-200 rounded font-black text-[9px] cursor-pointer">🆚 Reference</button>
+                            <button data-cmd="FindEngine.loadToGraph" data-arg-0="${escJs(iem.id)}" data-arg-1="base" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-stone-200 font-black text-[9px] cursor-pointer">📈 Base</button>
+                            <button data-cmd="FindEngine.loadToGraph" data-arg-0="${escJs(iem.id)}" data-arg-1="reference" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-750 text-stone-200 font-black text-[9px] cursor-pointer">🆚 Reference</button>
                         `;
                     }
                     showToast("IEM identity unlocked!", "🔓");
@@ -5019,9 +5255,7 @@ applyGenreFilters: function(matches) {
 
                     const matches = candidates.filter(item => {
                         if (!hasQuery) return true;
-                        const filePaths = Array.isArray(item.files) ? item.files.join(' ') : (item.primaryFilePath || '');
-                        const searchableText = `${item.name || ''} ${item.brand || ''} ${item.model || ''} ${item.variant || ''} ${filePaths} ${item.searchKey || ''}`;
-                        return PEQDB_Module.matchSearchTokens(searchableText, query);
+                        return PEQDB_Module.matchSearchTokensNorm(this._fnSearchNorm(item, true), query);
                     }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
                     if (matches.length === 0) {
@@ -5036,7 +5270,7 @@ applyGenreFilters: function(matches) {
                         const isAdded = this.tasteFavorites.some(f => f.id === item.id);
 
                         html += `
-                            <div class="peqdb-row-item flex items-center justify-between p-1.5 cursor-pointer hover:bg-[var(--bg-card)] mb-1 transition-all select-none" onclick="FindEngine.addTasteFavorite('${escJs(item.id)}')">
+                            <div class="peqdb-row-item flex items-center justify-between p-1.5 cursor-pointer hover:bg-[var(--bg-card)] mb-1 transition-all select-none" data-cmd="FindEngine.addTasteFavorite" data-arg-0="${escJs(item.id)}">
                                 <span class="text-xs text-stone-200 font-bold truncate flex-1 pr-2">${esc(item.name)}</span>
                                 ${isAdded ? '<span class="text-[9px] text-rose-400 font-black flex-shrink-0 ml-1">✓ Added</span>' : '<span class="text-[9px] text-[var(--accent-blue)] font-black flex-shrink-0 ml-1">+ Add</span>'}
                             </div>
@@ -5194,12 +5428,12 @@ applyGenreFilters: function(matches) {
                                     <span class="emoji-font vibrant-emoji text-lg flex-shrink-0 overflow-visible" style="line-height: 1.25;">❤️</span>
                                     <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(f.name)}</span>
                                 </div>
-                                <button type="button" onclick="event.stopPropagation(); FindEngine.removeTasteFavorite('${escJs(f.id)}')" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${esc(f.name)}">✕</button>
+                                <button type="button" data-cmd="FindEngine.removeTasteFavorite" data-arg-0="${escJs(f.id)}" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${esc(f.name)}">✕</button>
                             `;
                             container.appendChild(div);
                         } else {
                             const div = document.createElement('div');
-                            div.className = 'border-2 border-dashed border-black rounded-none h-9 flex items-center justify-center select-none w-full bg-black/10';
+                            div.className = 'border-2 border-dashed border-black h-9 flex items-center justify-center select-none w-full bg-black/10';
                             div.innerHTML = `<span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Favorite ${i + 1}</span>`;
                             container.appendChild(div);
                         }

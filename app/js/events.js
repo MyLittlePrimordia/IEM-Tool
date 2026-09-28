@@ -108,6 +108,159 @@ const EventBinding = {
             }
         }, true);
 
+        // Focus delegation. `focus` does not bubble, so this relies on the
+        // capture flag exactly like the blur delegation above. Migrated from
+        // four inline onfocus="..." attributes, which were part of why
+        // script-src needed 'unsafe-inline'.
+        document.addEventListener('focus', function(event) {
+            const target = getEventTarget(event).closest('[data-action-focus]');
+            if (target) {
+                const action = target.getAttribute('data-action-focus');
+                if (action) {
+                    EventBinding.execute(action, event, target);
+                }
+            }
+        }, true);
+
+        // Drag-and-drop delegation for the three EQ slot drop targets. Also
+        // migrated from inline ondragover/ondragleave/ondrop.
+        ['dragover', 'dragleave', 'drop'].forEach(function(name) {
+            document.addEventListener(name, function(event) {
+                const target = getEventTarget(event).closest('[data-action-' + name + ']');
+                if (target) {
+                    const action = target.getAttribute('data-action-' + name);
+                    if (action) {
+                        EventBinding.execute(action, event, target);
+                    }
+                }
+            }, true);
+        });
+
+        // Keyboard activation for controls that are only wired to `click` but
+        // are not real <button>s: the four <label> wrappers around hidden file
+        // inputs, and the Smart Import dropzone div. None of them were focusable
+        // or reachable by keyboard (POL-003).
+        //
+        // Clicking a <label> programmatically does forward activation to the
+        // control it wraps, so one code path covers both shapes. Space is
+        // preventDefault'd because it would otherwise scroll the page.
+        document.addEventListener('keydown', function(event) {
+            if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return;
+            const target = getEventTarget(event);
+            const trigger = target.closest && target.closest('[data-file-trigger]');
+            if (!trigger) return;
+            event.preventDefault();
+            trigger.click();
+        }, true);
+
+        // Generic command dispatch, used by markup that JS builds at runtime.
+        //
+        // The EQ band cards, the Find pick chips and the PEQdb rows used to be
+        // emitted as onclick="EQ.cycleBandType(3)" inside template strings.
+        // Attribute-form handlers are exactly what forces
+        // script-src 'unsafe-inline', and there are far too many combinations to
+        // give each one a key in handlers.js, so the call is expressed as data:
+        //
+        //   <button data-cmd="EQ.cycleBandType" data-arg-0="3">
+        //   <input  data-cmd-input="EQ.handleFreqNumInput" data-arg-0="3" data-arg-1="@value">
+        //
+        // `@value` reads the element's own value, which is what the old handlers
+        // got from `this.value`. Args are coerced (numeric strings to numbers,
+        // true/false/null literals) because the target functions compare against
+        // numbers.
+        //
+        // Deliberately no eval: resolving through a string would need
+        // 'unsafe-eval', trading one CSP hole for another.
+        function coerceArg(raw, el) {
+            if (raw === '@value') return el.value;
+            if (raw === '@checked') return el.checked;
+            if (raw === '@self') return el;
+            // @from:<key> reads <key> from the nearest ancestor carrying
+            // data-<key>. Replaces the common
+            // `this.closest('[data-uid]').dataset.uid` argument.
+            if (raw.startsWith('@from:')) {
+                const key = raw.slice(6);
+                const host = el.closest('[data-' + key + ']');
+                return host ? host.dataset[key] : undefined;
+            }
+            if (raw === 'true') return true;
+            if (raw === 'false') return false;
+            if (raw === 'null') return null;
+            if (raw !== '' && /^-?\d*\.?\d+$/.test(raw)) return Number(raw);
+            return raw;
+        }
+
+        const CMD_MODULE_ALIASES = { PEQDB_Module: 'PEQDB' };
+
+        function runCommand(el, attrName) {
+            const cmd = el.getAttribute(attrName);
+            if (!cmd) return;
+            const dot = cmd.indexOf('.');
+            if (dot < 0) {
+                console.warn('[EventBinding] data-cmd must look like Module.method, got: ' + cmd);
+                return;
+            }
+            // Top-level `const` bindings in classic scripts are NOT properties of
+            // window. iem-module.js init() exposes the PEQDB module as
+            // `window.PEQDB`, but the markup names it `PEQDB_Module`, so map the
+            // name here rather than putting PEQDB_Module on window (several
+            // `window.PEQDB_Module && ...` guards elsewhere would change meaning).
+            const modName = cmd.slice(0, dot);
+            const mod = window[modName] || window[CMD_MODULE_ALIASES[modName]];
+            const fn = mod && mod[cmd.slice(dot + 1)];
+            if (typeof fn !== 'function') {
+                console.warn('[EventBinding] data-cmd target is not a function: ' + cmd);
+                return;
+            }
+            const args = [];
+            for (let i = 0; ; i++) {
+                const v = el.getAttribute('data-arg-' + i);
+                if (v === null) break;
+                args.push(coerceArg(v, el));
+            }
+            try {
+                // `this` must be the MODULE, not the element. The inline form this
+                // replaces was `onclick="EQ.toggleBandBypass(3)"` - a method call on
+                // EQ, so `this` inside the function was the module. Binding the
+                // element here made those functions fail on `this.updateSlider`
+                // and friends. The element is still available for `@value`,
+                // which coerceArg reads directly.
+                fn.apply(mod, args);
+            } catch (e) {
+                console.error('[EventBinding] data-cmd "' + cmd + '" threw:', e);
+            }
+        }
+
+        ['click', 'input', 'change'].forEach(function(name) {
+            const attr = 'data-cmd-' + name;
+            document.addEventListener(name, function(event) {
+                const target = getEventTarget(event);
+                if (!target || !target.closest) return;
+                const el = target.closest('[' + attr + ']');
+                if (el) { runCommand(el, attr); return; }
+                if (name === 'click') {
+                    // Plain data-cmd is the click shorthand.
+                    const plain = target.closest('[data-cmd]');
+                    if (plain) {
+                        if (plain.hasAttribute('data-action')) {
+                            console.warn('[EventBinding] element has both data-cmd and data-action; both would run: #' + (plain.id || '?'));
+                        }
+                        runCommand(plain, 'data-cmd');
+                    }
+                }
+            }, true);
+        });
+
+        // A click that must not bubble, with no call attached. Replaces
+        // onclick="event.stopPropagation();" on rows where a child control owns
+        // the click but the row itself must not react.
+        document.addEventListener('click', function(event) {
+            const target = getEventTarget(event);
+            if (target && target.closest && target.closest('[data-stop-propagation]')) {
+                event.stopPropagation();
+            }
+        }, true);
+
         console.log('[EventBinding] Initialized with ' + Object.keys(this.handlers).length + ' handlers');
     }
 };

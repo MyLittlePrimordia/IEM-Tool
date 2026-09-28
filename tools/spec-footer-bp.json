@@ -1,0 +1,6 @@
+[
+  { "name": "band-800", "w": 800, "h": 700, "js": "App.switchTab('find')" },
+  { "name": "band-1023", "w": 1023, "h": 700, "js": "App.switchTab('find')" },
+  { "name": "band-1266", "w": 1266, "h": 700, "js": "App.switchTab('find')" },
+  { "name": "desktop-1310", "w": 1310, "h": 700, "js": "App.switchTab('find')" }
+]

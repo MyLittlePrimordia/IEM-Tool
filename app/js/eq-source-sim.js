@@ -325,7 +325,7 @@ const EQ_SourceSimMethods = {
 
             this.applyGearSimDSP();
             this.drawCurve();
-            if (window.Mascot) Mascot.triggerTemporaryExpression('cool', 1200);
+            if (typeof Mascot !== 'undefined') Mascot.triggerTemporaryExpression('cool', 1200);
             if (gear.id === 'off') {
                 showToast("Gear Simulator: Off", "📻");
             } else {

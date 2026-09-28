@@ -1,11 +1,40 @@
 const EQ_DynamicsMethods = {
     togglePreventClipping: function() {
-        this.preventClipping = !this.preventClipping; 
-        this.updatePreventClippingUI(); 
+        this.preventClipping = !this.preventClipping;
+        this.updatePreventClippingUI();
         this.drawCurve();
         if (this.preventClipping) {
+            // Forget any previous session's auto-reduction so the watchdog
+            // re-baselines against the user's current setting.
+            this._agcUserPreamp = undefined;
+            this._agcAutoDb = 0;
+            this._agcNotified = false;
             showToast("Anti-Clip Headroom Limiter Enabled", "🛡️");
         } else {
+            // Restore the user's own preamp. The watchdog lowers the slider to
+            // stop clipping but must never permanently rewrite the user's mix
+            // setting — previously a single transient peak ratcheted their
+            // preamp down and turning CLIP off never gave it back.
+            const autoDb = this._agcAutoDb || 0;
+            if (autoDb > 0.01) {
+                const slider = document.getElementById('eq-preampSlider');
+                const restore = Number.isFinite(this._agcUserPreamp) ? this._agcUserPreamp : null;
+                if (slider && restore !== null) {
+                    slider.value = restore.toFixed(1);
+                    try {
+                        window.isProgrammaticPreampUpdate = true;
+                        this.updatePreamp();
+                    } catch (e) {
+                        console.warn('[Dynamics] preamp restore failed:', e && e.message);
+                    } finally {
+                        window.isProgrammaticPreampUpdate = false;
+                    }
+                    showToast('Preamp restored to ' + restore.toFixed(1) + ' dB (Anti-Clip released ' + autoDb.toFixed(1) + ' dB).', '🛡️');
+                }
+            }
+            this._agcUserPreamp = undefined;
+            this._agcAutoDb = 0;
+            this._agcNotified = false;
             showToast("Anti-Clip Headroom Limiter Disabled", "🛡️");
         }
     },

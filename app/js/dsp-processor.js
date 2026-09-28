@@ -311,6 +311,7 @@ class LookaheadLimiter {
 
         this.envelope = 0;          // smoothed peak envelope (linear)
         this.gain = 1;              // current applied gain (linear)
+        this.bypass = false;        // delay stays in path, gain forced to unity
         this.releaseCoef = Math.exp(-1 / (0.08 * sampleRate)); // 80ms release
         this.grDb = 0;              // last gain reduction, for the meter
         this._grPostCounter = 0;
@@ -329,16 +330,23 @@ class LookaheadLimiter {
     processSample(inL, inR, out, outIdx) {
         const ls = this.lookaheadSamples;
 
-        // 1. Envelope on the future (undelayed) input.
-        const aL = inL < 0 ? -inL : inL;
-        const aR = inR < 0 ? -inR : inR;
-        const peak = aL > aR ? aL : aR;
-        this.envelope = peak > this.envelope ? peak : this.envelope * this.releaseCoef;
-
-        // 2. Target gain for that envelope (hard ceiling).
+        // 1. Envelope on the future (undelayed) input. While bypassed the
+        //    envelope is held at 0 so the target gain is unity: the delay line
+        //    stays in the path but nothing is limited, and the gain eases back
+        //    to 1 through the normal release ramp (no click).
         let targetGain = 1;
-        if (this.envelope > this.thresholdLin) {
-            targetGain = this.thresholdLin / this.envelope;
+        if (this.bypass) {
+            this.envelope = 0;
+        } else {
+            const aL = inL < 0 ? -inL : inL;
+            const aR = inR < 0 ? -inR : inR;
+            const peak = aL > aR ? aL : aR;
+            this.envelope = peak > this.envelope ? peak : this.envelope * this.releaseCoef;
+
+            // 2. Target gain for that envelope (hard ceiling).
+            if (this.envelope > this.thresholdLin) {
+                targetGain = this.thresholdLin / this.envelope;
+            }
         }
 
         // 3. Gain smoothing: near-instant attack (the envelope already
@@ -360,6 +368,25 @@ class LookaheadLimiter {
 
         out[outIdx] = dL * this.gain;
         if (out.length > outIdx + 1) out[outIdx + 1] = dR * this.gain;
+    }
+
+    // Bypass keeps the delay line in the signal path at unity gain instead of
+    // removing the limiter from the chain entirely.
+    //
+    // The lookahead adds 5ms of latency, so the old all-or-nothing bypass moved
+    // the output 5ms in time the instant the user pressed the button: a step
+    // discontinuity, i.e. an audible click on EVERY toggle. Worse, OFF->ON
+    // replayed the ~5ms of audio still sitting in the delay buffer from before
+    // the bypass, on top of live audio. Routing bypass through the delay line
+    // makes ON<->OFF a pure gain change, which the existing 80ms release ramp
+    // already smooths.
+    setBypass(on) {
+        if (this.bypass === on) return;
+        this.bypass = on;
+        // Do not snap this.gain to 1 here: that would be a step in the output.
+        // processSample() releases it smoothly while bypassed.
+        this.envelope = 0;
+        this.grDb = 0;
     }
 
     // Gain reduction in dB for metering (positive number = reduction).
@@ -394,6 +421,10 @@ class DspProcessor extends AudioWorkletProcessor {
         // mirroring the renderer's mergerLimiterEnabled default).
         this.lookaheadLimiter = new LookaheadLimiter(this.sampleRate);
         this.lookaheadEnabled = true;
+        // Set the first time the renderer sends a state CHANGE (not the initial
+        // routing push). From then on the limiter's delay line is never removed
+        // from the signal path, so toggling it cannot click.
+        this.limiterHasToggled = false;
 
         this.xoEnabled = false;
         this.xoType = '3way';
@@ -508,7 +539,16 @@ class DspProcessor extends AudioWorkletProcessor {
         else if (data.type === 'updateLimiter') {
             // F-6: renderer-controlled threshold + on/off for the lookahead
             // limiter. The GR meter polls via 'getGainReduction' messages.
-            if (data.enabled !== undefined) this.lookaheadEnabled = !!data.enabled;
+            if (data.enabled !== undefined) {
+                const next = !!data.enabled;
+                // A genuine state change (not the initial routing push that
+                // _buildDSPGraph always sends). From the first real toggle the
+                // delay line stays permanently in the signal path so the
+                // transition cannot step the waveform and click. Users who
+                // never touch the button keep zero added latency.
+                if (next !== this.lookaheadEnabled) this.limiterHasToggled = true;
+                this.lookaheadEnabled = next;
+            }
             if (Number.isFinite(data.thresholdDb)) this.lookaheadLimiter.setThreshold(data.thresholdDb);
         }
         else if (data.type === 'getGainReduction') {
@@ -533,7 +573,47 @@ class DspProcessor extends AudioWorkletProcessor {
         return (index < this.xoGains.length && Number.isFinite(this.xoGains[index])) ? this.xoGains[index] : 1.0;
     }
 
+    // The real-time callback. Per the Web Audio spec, an exception that escapes
+    // process() fires `onprocessorerror` and PERMANENTLY disables the node — the
+    // graph goes silent with no recovery path, and nothing in this file was
+    // listening for that event. Wrapping the body means a fault degrades to
+    // pass-through (or silence) for one block instead of bricking audio for the
+    // session, and reports itself once so the renderer can surface it.
     process(inputs, outputs) {
+        try {
+            return this._processInner(inputs, outputs);
+        } catch (err) {
+            this._reportProcessorError(err);
+            // Keep the node alive. Zeroing the output is safer than passing
+            // through whatever half-computed state the throw left behind.
+            const output = outputs && outputs[0];
+            if (output) {
+                for (let c = 0; c < output.length; c++) {
+                    const ch = output[c];
+                    if (ch) ch.fill(0);
+                }
+            }
+            return true;
+        }
+    }
+
+    // Report at most once per fault streak so a persistent problem cannot flood
+    // the port with messages from the audio thread.
+    _reportProcessorError(err) {
+        this._procErrorCount = (this._procErrorCount || 0) + 1;
+        if (this._procErrorCount > 1 && this._procErrorCount <= 5) return;
+        if (this._procErrorCount > 20) { this._procErrorCount = 0; return; }  // report again later
+        try {
+            this.port.postMessage({
+                type: 'processorError',
+                message: (err && err.message) ? err.message : String(err),
+                count: this._procErrorCount
+            });
+        } catch (_) {}
+        this._procErrorCount = 0;
+    }
+
+    _processInner(inputs, outputs) {
         const input = inputs[0];
         const output = outputs[0];
 
@@ -565,6 +645,11 @@ class DspProcessor extends AudioWorkletProcessor {
         const sRate = this.sampleRate;
         // F-6: hoisted limiter locals for the per-sample loop.
         const useLimiter = this.lookaheadEnabled;
+        // The delay line stays in the path after the first user toggle even
+        // while bypassed, so ON<->OFF is a gain change and not a 5ms step.
+        const keepDelay = useLimiter || this.limiterHasToggled;
+        if (keepDelay && !useLimiter) this.lookaheadLimiter.setBypass(true);
+        else if (useLimiter) this.lookaheadLimiter.setBypass(false);
         const limiter = this.lookaheadLimiter;
         // Reused stereo out pair for the limiter call (no per-sample alloc).
         if (useLimiter && (!this._limOut || this._limOut.length < 2)) this._limOut = new Float32Array(2);
@@ -680,10 +765,13 @@ class DspProcessor extends AudioWorkletProcessor {
 
             // F-6: final-stage lookahead limiter — runs INSIDE the same
             // per-sample loop, writing back the limited (delayed) samples.
-            // When enabled it replaces the direct write above with the
-            // delayed+gain-reduced version. (The 5ms latency is inaudible
-            // for music playback and gives zero-overshoot ceiling tracking.)
-            if (useLimiter) {
+            // (The 5ms latency is inaudible for music playback and gives
+            // zero-overshoot ceiling tracking.)
+            //
+            // Once the user has toggled the limiter, `keepDelay` stays true even
+            // while bypassed so the 5ms delay never leaves the signal path —
+            // see LookaheadLimiter.setBypass for why that matters.
+            if (keepDelay) {
                 const limOut = this._limOut;
                 limOut[0] = outputChannelL[i];
                 limOut[1] = isStereo ? outputChannelR[i] : outputChannelL[i];
@@ -695,7 +783,7 @@ class DspProcessor extends AudioWorkletProcessor {
 
         // Throttled GR post: at most one meter message per ~512 samples so
         // idle sessions don't spam the port; the renderer's meter loop
-        // consumes these at its own pace (latest value wins).
+        // consumes these at their own pace (latest value wins).
         if (useLimiter) {
             this._grPostCounter += bufferSize;
             if (this._grPostCounter >= 512) {

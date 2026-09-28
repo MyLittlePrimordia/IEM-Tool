@@ -61,14 +61,14 @@ function getBandEnergy(dataArray, startBin, endBin) {
         }
 
         const item = document.createElement('div');
-        item.className = 'toast-item pointer-events-auto flex items-start gap-2.5 px-3 py-2.5 rounded-md border-2 border-black bg-[var(--bg-card)] text-[var(--text-main)] shadow-[4px_4px_0_0_#000] text-xs font-bold select-none';
+        item.className = 'toast-item pointer-events-auto flex items-start gap-2.5 px-3 py-2.5 border-2 border-black bg-[var(--bg-card)] text-[var(--text-main)] shadow-[4px_4px_0_0_#000] text-xs font-bold select-none';
         item.style.animation = 'toast-in .18s ease-out';
 
         const action = opts.action;
         let html = '<span class="toast-icon flex-shrink-0 leading-none">' + esc(icon || 'ℹ️') + '</span>';
         html += '<div class="min-w-0 flex-1 leading-snug break-words">' + esc(String(message == null ? '' : message)) + '</div>';
         if (action && action.label) {
-            html += '<button class="toast-act flex-shrink-0 px-2 py-1 border-2 border-black bg-[var(--accent-blue)] text-white text-[10px] font-black rounded-sm cursor-pointer hover:brightness-110">' + esc(action.label) + '</button>';
+            html += '<button class="toast-act flex-shrink-0 px-2 py-1 border-2 border-black bg-[var(--accent-blue)] text-white text-[10px] font-black cursor-pointer hover:brightness-110">' + esc(action.label) + '</button>';
         }
         html += '<button class="toast-x flex-shrink-0 text-zinc-500 hover:text-red-400 text-[10px] leading-none cursor-pointer">✕</button>';
         item.innerHTML = html;
@@ -489,7 +489,10 @@ window.updateExpandedAutoHide = function() {
                 }, 100);
             }
                 if (tabId === 'visualizer' && EQ_Module) {
-                    if (window.SharedAudio && SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
+                    // `window.SharedAudio` was always undefined (SharedAudio is
+                    // a top-level const, never a window property), so switching
+                    // to the Visualizer tab never resumed a suspended context.
+                    if (typeof SharedAudio !== 'undefined' && SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
                         SharedAudio.ctx.resume().catch(()=>{});
                     }
                     // Fix frozen-every-other-switch: App previously forced
@@ -564,7 +567,7 @@ window.updateExpandedAutoHide = function() {
                     const isReady = !!(this.themeMap && this.themeMap[theme.id]);
                     const btn = document.createElement('button');
                     btn.id = 'theme-btn-' + theme.id;
-                    btn.className = 'theme-toggle-btn px-2.5 py-1.5 rounded text-[10px] font-bold text-[var(--text-secondary)] hover:text-white border border-transparent transition-all duration-200 flex items-center justify-center gap-1.5 bg-zinc-950/40 hover:scale-[1.03] cursor-pointer';
+                    btn.className = 'theme-toggle-btn px-2.5 py-1.5 text-[10px] font-bold text-[var(--text-secondary)] hover:text-white border border-transparent transition-all duration-200 flex items-center justify-center gap-1.5 bg-zinc-950/40 hover:scale-[1.03] cursor-pointer';
                     btn.innerHTML = `<span>${theme.emoji}</span> <span class="truncate">${theme.label.split(' ')[1]}</span>`;
 
                     if (isReady) {
@@ -1433,7 +1436,21 @@ setGlobalFont: function(fontId) {
                     }, { passive: false });
                 });
 
-                window.syncGlobalSliders = () => {
+                // Accepts an optional element. Five call sites pass one
+                // (eq-playlist.js after track swaps, accessibility.js on every
+                // balance-slider input, eq-loudness.js on every strength input)
+                // believing it is a scoped single-slider repaint. This used to
+                // ignore the argument and repaint ALL ~111 range inputs in the
+                // document every time — roughly 26,000 style writes/second while
+                // dragging the balance or loudness slider. The `paintSliderTrack`
+                // escape hatch above already existed for exactly this reason but
+                // was only used in 2 places.
+                window.syncGlobalSliders = (el) => {
+                    if (el && el.tagName === 'INPUT' && el.type === 'range') {
+                        el.lastDragVal = parseFloat(el.value) || 0;
+                        updateTrack(el);
+                        return;
+                    }
                     document.querySelectorAll('input[type="range"]').forEach(input => {
                         input.lastDragVal = parseFloat(input.value) || 0;
                         updateTrack(input);
@@ -1585,25 +1602,36 @@ setGlobalFont: function(fontId) {
         },
         init: function() {
             try {
+                // Exposed so the data-cmd dispatcher in events.js can reach these
+                // by name. FindEngine was previously unreachable this way, which
+                // is why the Find tab's runtime-built controls were still stuck
+                // with inline onclick attributes.
                 window.App = App; window.IEM = IEM_Module; window.EQ = EQ_Module; window.Tone = Tone_Module; window.TestLab = TestLab_Module; window.PEQDB = PEQDB_Module;
+                if (typeof FindEngine !== 'undefined') window.FindEngine = FindEngine;
 
                 ['mousedown', 'mousemove', 'keydown', 'touchstart', 'wheel'].forEach(evt => {
                     window.addEventListener(evt, () => {
-                        if (window.Mascot && Mascot.handleUserActivity) {
+                        if (typeof Mascot !== 'undefined' && Mascot.handleUserActivity) {
                             Mascot.handleUserActivity();
                         }
                     }, { passive: true });
                 });
 
                 document.addEventListener('touchstart', function() {
-                    if (window.SharedAudio && SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
-                        SharedAudio.ctx.resume();
+                    // Same dead `window.SharedAudio` guard as above: the first
+                    // touch never resumed a suspended context on touch devices.
+                    if (typeof SharedAudio !== 'undefined' && SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
+                        SharedAudio.ctx.resume().catch(()=>{});
                     }
                 }, { once: true, passive: true });
 
+                // Mascot's idle animation tick. `window.Mascot` was always
+                // undefined (Mascot is a top-level `var`/`const`, never a window
+                // property), so this interval woke up once a second for the whole
+                // session and did nothing at all.
                 setInterval(() => {
                     if (document.visibilityState !== 'visible') return;
-                    if (window.Mascot && window.EQ && !EQ.vizLoopRunning) {
+                    if (typeof Mascot !== 'undefined' && typeof EQ_Module !== 'undefined' && !EQ_Module.vizLoopRunning) {
                         Mascot.update();
                     }
                 }, 1000);
@@ -1640,7 +1668,7 @@ setGlobalFont: function(fontId) {
 
                 const brandMushroom = document.querySelector('.sidebar-label span');
                 if (brandMushroom) {
-                    brandMushroom.className = "cursor-pointer inline-block ml-1 hover:brightness-125 select-none transition-all duration-300 rounded-full px-1";
+                    brandMushroom.className = "cursor-pointer inline-block ml-1 hover:brightness-125 select-none transition-all duration-300 px-1";
                     brandMushroom.addEventListener('mouseenter', () => {
                         brandMushroom.style.textShadow = '0 0 10px var(--accent-blue)';
                         brandMushroom.style.transform = 'scale(1.1)';
@@ -1857,11 +1885,11 @@ setGlobalFont: function(fontId) {
             const isValid = this.exportGrade && this.exportTheme && this.exportFont;
             if (isValid) {
                 btn.disabled = false;
-                btn.className = "w-full py-2 bg-[var(--accent-blue)] text-white hover:brightness-110 font-bold rounded-md text-xs shadow-lg transition-all text-center mb-3 cursor-pointer";
+                btn.className = "w-full py-2 bg-[var(--accent-blue)] text-white hover:brightness-110 font-bold text-xs shadow-lg transition-all text-center mb-3 cursor-pointer";
                 btn.style.opacity = "1";
             } else {
                 btn.disabled = true;
-                btn.className = "w-full py-2 bg-zinc-800 text-zinc-500 font-bold rounded-md text-xs transition-all text-center mb-3 cursor-not-allowed";
+                btn.className = "w-full py-2 bg-zinc-800 text-zinc-500 font-bold text-xs transition-all text-center mb-3 cursor-not-allowed";
                 btn.style.opacity = "0.5";
             }
         },
@@ -2083,7 +2111,7 @@ onDbSearchInput: function(value) {
                 groupEl.setAttribute('data-iem-brand', brandName);
                 groupEl.setAttribute('data-letter', alphaKeyOf({ brand: brandName }));
                 groupEl.innerHTML = `
-                    <div class="flex items-center justify-between p-2 cursor-pointer select-none border-2 border-black rounded flex-shrink-0 w-full min-w-0" style="background: var(--bg-input);" onclick="IEM.toggleIemDbBrand('${escJs(brandName)}')">
+                    <div class="flex items-center justify-between p-2 cursor-pointer select-none border-2 border-black flex-shrink-0 w-full min-w-0" style="background: var(--bg-input);" data-cmd="IEM.toggleIemDbBrand" data-arg-0="${escJs(brandName)}">
                         <span class="text-xs font-black uppercase tracking-wider text-[var(--accent-blue)] truncate min-w-0">${escSafe(brandName)}</span>
                         <span class="flex items-center gap-1.5 flex-shrink-0">
                             <span class="text-[9px] font-black text-zinc-500">${items.length}</span>
@@ -2157,16 +2185,16 @@ onDbSearchInput: function(value) {
             if (isMulti) {
                 fileRowHtml = `
                     <div class="flex items-center gap-1.5 mt-1">
-                        <button onclick="event.stopPropagation(); IEM.cycleIemDbFile('${escJs(item.id)}', -1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isActive ? '#fff' : 'var(--text-secondary)'};">◀</button>
-                        <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
+                        <button data-cmd="IEM.cycleIemDbFile" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isActive ? '#fff' : 'var(--text-secondary)'};">◀</button>
+                        <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                             <span class="iem-db-file-marquee text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isActive ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
                         </div>
-                        <button onclick="event.stopPropagation(); IEM.cycleIemDbFile('${escJs(item.id)}', 1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isActive ? '#fff' : 'var(--text-secondary)'};">▶</button>
+                        <button data-cmd="IEM.cycleIemDbFile" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isActive ? '#fff' : 'var(--text-secondary)'};">▶</button>
                     </div>
                 `;
             } else {
                 fileRowHtml = `
-                    <div class="mt-1 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
+                    <div class="mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                         <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isActive ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
                     </div>
                 `;
@@ -2545,9 +2573,9 @@ onDbSearchInput: function(value) {
             };
             btn.textContent = labels[this.currentCrossover] || '🔀 Crossover: Unknown';
             if (this.currentCrossover === 'UNK') {
-                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border border-[var(--border-color)] rounded text-[9px] font-bold text-zinc-400 transition-all flex items-center justify-center gap-1 cursor-pointer";
+                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border border-[var(--border-color)] text-[9px] font-bold text-zinc-400 transition-all flex items-center justify-center gap-1 cursor-pointer";
             } else {
-                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[var(--accent-blue)] rounded text-[9px] font-bold text-[var(--accent-blue)] transition-all flex items-center justify-center gap-1 cursor-pointer";
+                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[var(--accent-blue)] text-[9px] font-bold text-[var(--accent-blue)] transition-all flex items-center justify-center gap-1 cursor-pointer";
             }
         },
         updateWayButtonsUI: function() {
@@ -2564,9 +2592,9 @@ onDbSearchInput: function(value) {
             };
             btn.textContent = labels[this.currentWay] || '🧩 Way: Unknown';
             if (this.currentWay === 'UNK') {
-                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border border-[var(--border-color)] rounded text-[9px] font-bold text-zinc-400 transition-all flex items-center justify-center gap-1 cursor-pointer";
+                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border border-[var(--border-color)] text-[9px] font-bold text-zinc-400 transition-all flex items-center justify-center gap-1 cursor-pointer";
             } else {
-                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[var(--accent-blue)] rounded text-[9px] font-bold text-[var(--accent-blue)] transition-all flex items-center justify-center gap-1 cursor-pointer";
+                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[var(--accent-blue)] text-[9px] font-bold text-[var(--accent-blue)] transition-all flex items-center justify-center gap-1 cursor-pointer";
             }
         },
         imgScale: 1.0,
@@ -3044,7 +3072,7 @@ onDbSearchInput: function(value) {
                     container.appendChild(div);
                 } else {
                     const div = document.createElement('div');
-                    div.className = 'border-2 border-dashed border-black rounded-none p-1 flex items-center justify-center select-none w-full h-full bg-black/10';
+                    div.className = 'border-2 border-dashed border-black p-1 flex items-center justify-center select-none w-full h-full bg-black/10';
                     div.innerHTML = `<span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Slot ${i+1}</span>`;
                     container.appendChild(div);
                 }
@@ -3356,8 +3384,8 @@ onDbSearchInput: function(value) {
                     </div>
 
                     <div class="flex items-center justify-center gap-1 w-full max-w-[64px] mt-1">
-                        <button type="button" onclick="IEM.decrementDriver('${d.type}')" class="w-7 h-6 flex items-center justify-center text-xs font-black text-red-400 bg-[var(--bg-card)] border-2 border-black active:translate-y-[1px] select-none cursor-pointer ${!isActive ? 'opacity-20 pointer-events-none' : ''}" style="box-shadow: 2px 2px 0px 0px #000000 !important;">−</button>
-                        <button type="button" onclick="IEM.incrementDriver('${d.type}')" class="w-7 h-6 flex items-center justify-center text-xs font-black text-emerald-400 bg-[var(--bg-card)] border-2 border-black active:translate-y-[1px] select-none cursor-pointer" style="box-shadow: 2px 2px 0px 0px #000000 !important;">+</button>
+                        <button type="button" data-cmd="IEM.decrementDriver" data-arg-0="${d.type}" class="w-7 h-6 flex items-center justify-center text-xs font-black text-red-400 bg-[var(--bg-card)] border-2 border-black active:translate-y-[1px] select-none cursor-pointer ${!isActive ? 'opacity-20 pointer-events-none' : ''}" style="box-shadow: 2px 2px 0px 0px #000000 !important;">−</button>
+                        <button type="button" data-cmd="IEM.incrementDriver" data-arg-0="${d.type}" class="w-7 h-6 flex items-center justify-center text-xs font-black text-emerald-400 bg-[var(--bg-card)] border-2 border-black active:translate-y-[1px] select-none cursor-pointer" style="box-shadow: 2px 2px 0px 0px #000000 !important;">+</button>
                     </div>
                 `;
                 container.appendChild(div);
@@ -4081,7 +4109,7 @@ onDbSearchInput: function(value) {
             const badge = document.getElementById('bias-badge');
             let biasStr, biasClass;
 
-            const unifiedBiasClass = 'text-xs uppercase tracking-wider font-black px-3 py-1 rounded-none bg-[var(--bg-input)] border-2 border-black text-[var(--text-main)] w-full text-center transition-all shadow-[2px_2px_0px_0px_#000]';
+            const unifiedBiasClass = 'text-xs uppercase tracking-wider font-black px-3 py-1 bg-[var(--bg-input)] border-2 border-black text-[var(--text-main)] w-full text-center transition-all shadow-[2px_2px_0px_0px_#000]';
 
             if (bassScore > toneScore + 1.2 && bassScore > techScore + 1.2) {
                 biasStr = '💥 Basshead & Warm Bias';
@@ -4238,19 +4266,19 @@ if(this.radarChart) {
                     <td class="px-4 py-3"><input type="checkbox" class="compare-cb accent-blue-500 w-4 h-4 cursor-pointer" value="${safeId}"></td>
                     <td class="px-4 py-3 font-semibold text-[var(--text-main)] flex items-center gap-3">
                         <span class="text-[var(--text-secondary)] font-mono text-xs w-4">#${idx+1}</span>
-                        ${imgPath ? `<img src="${safeImg}" class="w-8 h-8 object-cover rounded border border-[var(--border-color)] bg-[#111]">` : '<div class="w-8 h-8 rounded border border-[var(--border-color)] bg-[#111] flex items-center justify-center text-zinc-650">🎧</div>'}
+                        ${imgPath ? `<img src="${safeImg}" class="w-8 h-8 object-cover border border-[var(--border-color)] bg-[#111]">` : '<div class="w-8 h-8 border border-[var(--border-color)] bg-[#111] flex items-center justify-center text-zinc-650">🎧</div>'}
                         <div>
                             <div class="text-xs">${safeBrand} <span class="text-[var(--accent-blue)]">${safeModel}</span></div>
                             <div class="text-xs text-[var(--text-secondary)] font-normal mt-0.5">$${safePrice} • Vol: ${safeVol}</div>
                         </div>
                     </td>
-                    <td class="px-4 py-3 font-black text-md text-center text-[var(--accent-blue)]">${safeScore}</td>
+                    <td class="px-4 py-3 font-black text-sm text-center text-[var(--accent-blue)]">${safeScore}</td>
                     <td class="px-4 py-3 text-right"></td>`;
                 // Load/Delete buttons are DOM-built with real listeners (no
                 // onclick string literals) — imported ids can contain quotes
                 // that previously broke out of the inline handler string.
                 const loadBtn = document.createElement('button');
-                loadBtn.className = 'px-3 py-1 bg-zinc-800 text-stone-200 rounded text-xs font-bold hover:bg-zinc-700 transition-colors shadow-sm';
+                loadBtn.className = 'px-3 py-1 bg-zinc-800 text-stone-200 text-xs font-bold hover:bg-zinc-700 transition-colors shadow-sm';
                 loadBtn.textContent = 'Load';
                 loadBtn.addEventListener('click', () => IEM_Module.loadFromLibrary(item.id));
                 const delBtn = document.createElement('button');
@@ -4316,7 +4344,20 @@ if (profile.eqData && typeof EQ_Module !== 'undefined' && EQ_Module.loadValues) 
 else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.applyPreset('balanced');
             this.updateAll(); this.toggleLibraryModal();
         },
-        deleteFromLibrary: async function(id) { if(!confirm("Are you sure you want to delete this profile?")) return; await DBCache.deleteReview(id); await this.renderLibrary(); },
+        // Was a native confirm(), which blocks the whole renderer on a modal the
+        // app cannot style - and froze the window until a human answered, which
+        // also made it impossible to exercise from a test. Every other
+        // destructive action in the app already uses UIKit.confirm.
+        deleteFromLibrary: async function(id) {
+            const ok = await UIKit.confirm({
+                title: "Delete this profile?",
+                confirmLabel: "Delete",
+                danger: true
+            });
+            if (!ok) return;
+            await DBCache.deleteReview(id);
+            await this.renderLibrary();
+        },
         compareSelected: async function() {
             const checkboxes = document.querySelectorAll('.compare-cb:checked'); if(checkboxes.length < 2 || checkboxes.length > 4) { alert("Please select between 2 and 4 IEMs to compare."); return; }
             const library = await this.getLibrary(); const selected = Array.from(checkboxes).map(cb => library.find(i => i.id === cb.value));
@@ -4345,14 +4386,23 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
                 const brandEsc = esc(item.brand); const modelEsc = esc(item.model);
                 const axes = [['Bass',0],['Mids',1],['Treble',2],['Detail',3],['Stage',4],['Imaging',5],['Dynamics',6],['Tonality',7],['Tech',8]];
                 const axisRows = axes.map(([label, i]) => `<div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">${label}</span><span class="text-[var(--text-main)]">${rd(i)}</span></div>`).join('');
-                _compHtml += `<div class="bg-[var(--bg-input)] border border-[var(--border-color)] rounded p-4 flex flex-col items-center shadow relative"><div class="absolute top-2 left-2 text-xs text-[var(--text-secondary)] font-mono border border-[var(--border-color)] px-1.5 rounded">$${esc(item.price || '--')}</div>${imgPath ? `<img src="${safeImg}" class="h-20 object-contain mb-3 rounded bg-[#111] p-1 border border-[var(--border-color)]">` : `<div class="h-20 w-20 bg-[#111] rounded flex items-center justify-center mb-3 text-zinc-650 border border-[var(--border-color)]">🎧</div>`}<h3 class="font-bold text-xs text-center leading-tight">${brandEsc}<br><span class="text-[var(--accent-blue)] text-sm">${modelEsc}</span></h3><div class="text-3xl font-black mt-2 text-[var(--text-main)] tracking-tighter">${scoreVal}</div><div class="w-full mt-4 space-y-1 text-xs font-semibold">${axisRows}</div></div>`;
+                _compHtml += `<div class="bg-[var(--bg-input)] border border-[var(--border-color)] p-4 flex flex-col items-center shadow relative"><div class="absolute top-2 left-2 text-xs text-[var(--text-secondary)] font-mono border border-[var(--border-color)] px-1.5">$${esc(item.price || '--')}</div>${imgPath ? `<img src="${safeImg}" class="h-20 object-contain mb-3 bg-[#111] p-1 border border-[var(--border-color)]">` : `<div class="h-20 w-20 bg-[#111] flex items-center justify-center mb-3 text-zinc-650 border border-[var(--border-color)]">🎧</div>`}<h3 class="font-bold text-xs text-center leading-tight">${brandEsc}<br><span class="text-[var(--accent-blue)] text-sm">${modelEsc}</span></h3><div class="text-3xl font-black mt-2 text-[var(--text-main)] tracking-tighter">${scoreVal}</div><div class="w-full mt-4 space-y-1 text-xs font-semibold">${axisRows}</div></div>`;
             });
             compGrid.innerHTML = _compHtml;
             compView.classList.remove('hidden'); compView.classList.add('flex');
         },
         closeCompare: function() { document.getElementById('library-table').classList.remove('hidden'); document.getElementById('compare-view').classList.add('hidden'); document.getElementById('compare-view').classList.remove('flex'); },
-        resetAll: function() {
-            if(!confirm("Clear all current workspace data?")) return;
+        // Was a native confirm(), which blocks the renderer on an unstyleable
+        // modal and froze the window until a human answered. Now async because
+        // UIKit.confirm is a promise; the only caller is the reset button, which
+        // never depended on the wipe happening synchronously.
+        resetAll: async function() {
+            const ok = await UIKit.confirm({
+                title: "Clear all current workspace data?",
+                confirmLabel: "Clear all",
+                danger: true
+            });
+            if (!ok) return;
 
             // Preserve user preferences that are NOT workspace review data.
             // The old 5-key list let the wipe destroy the Find tab's curated

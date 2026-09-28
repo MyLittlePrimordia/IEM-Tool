@@ -75,6 +75,36 @@ const EQ_DspGraphMethods = {        _dspBuildPromise: null,
                 outputChannelCount: [2]
             });
 
+            // onprocessorerror was never assigned anywhere in the project. Per
+            // the Web Audio spec the node is PERMANENTLY disabled once it fires,
+            // so an unhandled fault meant the graph went silently dead with no
+            // error and no recovery. Surface it instead of swallowing it.
+            SharedAudio.workletNode.onprocessorerror = () => {
+                console.error('[AudioEngine] dsp-processor faulted and was disabled. Audio is silent until the graph is rebuilt.');
+                try {
+                    if (typeof showToast === 'function') {
+                        showToast('Audio engine fault — output is silent. Press play again or restart to recover.', '⚠️');
+                    }
+                } catch (_) {}
+                // Allow the next ensureDSPGraph() to rebuild instead of being
+                // blocked by a stale graphBuilt flag pointing at a dead node.
+                this.graphBuilt = false;
+            };
+
+            // The worklet also reports faults it caught itself (dsp-processor.js
+            // wraps process() so a throw degrades one block instead of killing
+            // the node). That is a warning, not a death.
+            SharedAudio.workletNode.port.addEventListener('message', (e) => {
+                const d = e.data;
+                if (d && d.type === 'processorError') {
+                    console.error('[AudioEngine] dsp-processor recovered from: ' + d.message);
+                }
+            });
+            // A MessagePort only dispatches to addEventListener('message')
+            // listeners after start(); assigning onmessage would start it
+            // implicitly, but these listeners use addEventListener.
+            try { SharedAudio.workletNode.port.start(); } catch (_) {}
+
             SharedAudio.workletNode.port.postMessage({
                 type: 'init',
                 sampleRate: ctx.sampleRate
@@ -311,29 +341,45 @@ const EQ_DspGraphMethods = {        _dspBuildPromise: null,
         // posts and paints the meter bar in the output panel. Runs only while
         // the limiter is enabled AND audio is flowing; started from the DSP
         // graph build and stopped on disable.
-        _grMeterRunning: false,
+        //
+        // The listener is bound to a PER-BUILD port, but the guard used to be
+        // plain module state that was never reset. After the first successful
+        // build set it true, any rebuild returned early here and the NEW
+        // node's port never got a listener — so the meter froze at its last
+        // value for the rest of the session while still looking live. Track the
+        // port we actually subscribed to and re-subscribe when it changes.
+        _grMeterPort: null,
         startGrMeter: function() {
-            if (this._grMeterRunning || !SharedAudio.workletNode) return;
-            this._grMeterRunning = true;
-            SharedAudio.workletNode.port.addEventListener('message', (e) => {
-                const d = e.data;
-                if (d && d.type === 'gainReduction') {
-                    const bar = document.getElementById('gr-meter-bar');
-                    const lbl = document.getElementById('gr-meter-label');
-                    if (bar || lbl) {
-                        const gr = Math.max(0, Math.min(24, d.grDb || 0));
-                        // Scale: 0..12dB maps to 0..100% width.
-                        const pct = (gr / 12) * 100;
-                        if (bar) bar.style.width = pct + '%';
-                        if (lbl) {
-                            if (gr < 0.1) { lbl.textContent = '0.0 dB'; lbl.style.color = ''; }
-                            else if (gr < 3) { lbl.textContent = '-' + gr.toFixed(1) + ' dB'; lbl.style.color = 'var(--accent-green)'; }
-                            else if (gr < 8) { lbl.textContent = '-' + gr.toFixed(1) + ' dB'; lbl.style.color = 'var(--accent-amber)'; }
-                            else { lbl.textContent = '-' + gr.toFixed(1) + ' dB'; lbl.style.color = 'var(--accent-red, #f87171)'; }
+            const node = SharedAudio.workletNode;
+            if (!node) return;
+            if (this._grMeterPort === node.port) return;   // already subscribed
+            if (this._grMeterPort) {
+                try { this._grMeterPort.removeEventListener('message', this._grMeterHandler); } catch (_) {}
+            }
+            this._grMeterPort = node.port;
+            if (!this._grMeterHandler) {
+                this._grMeterHandler = (e) => {
+                    const d = e.data;
+                    if (d && d.type === 'gainReduction') {
+                        const bar = document.getElementById('gr-meter-bar');
+                        const lbl = document.getElementById('gr-meter-label');
+                        if (bar || lbl) {
+                            const gr = Math.max(0, Math.min(24, d.grDb || 0));
+                            // Scale: 0..12dB maps to 0..100% width.
+                            const pct = (gr / 12) * 100;
+                            if (bar) bar.style.width = pct + '%';
+                            if (lbl) {
+                                if (gr < 0.1) { lbl.textContent = '0.0 dB'; lbl.style.color = ''; }
+                                else if (gr < 3) { lbl.textContent = '-' + gr.toFixed(1) + ' dB'; lbl.style.color = 'var(--accent-green)'; }
+                                else if (gr < 8) { lbl.textContent = '-' + gr.toFixed(1) + ' dB'; lbl.style.color = 'var(--accent-amber)'; }
+                                else { lbl.textContent = '-' + gr.toFixed(1) + ' dB'; lbl.style.color = 'var(--accent-red, #f87171)'; }
+                            }
                         }
                     }
-                }
-            });
+                };
+            }
+            node.port.addEventListener('message', this._grMeterHandler);
+            try { node.port.start(); } catch (_) {}   // required for addEventListener delivery
         },
         // rAF-coalesced updateAudioConnections: slider drags fire `input`
         // many times per frame (pointermove rate, up to ~240Hz) and each call

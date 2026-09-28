@@ -105,11 +105,11 @@ const EQ_Module = {
         const btnAdvanced = document.getElementById('btn-sculpt-advanced');
         if (btnSimple && btnAdvanced) {
             if (mode === 'simple') {
-                btnSimple.className = "px-2 py-1 rounded bg-pink-500 text-white transition-all cursor-pointer";
-                btnAdvanced.className = "px-2 py-1 rounded text-zinc-500 hover:text-stone-300 transition-all cursor-pointer";
+                btnSimple.className = "px-2 py-1 bg-pink-500 text-white transition-all cursor-pointer";
+                btnAdvanced.className = "px-2 py-1 text-zinc-500 hover:text-stone-300 transition-all cursor-pointer";
             } else {
-                btnAdvanced.className = "px-2 py-1 rounded bg-pink-500 text-white transition-all cursor-pointer";
-                btnSimple.className = "px-2 py-1 rounded text-zinc-500 hover:text-stone-300 transition-all cursor-pointer";
+                btnAdvanced.className = "px-2 py-1 bg-pink-500 text-white transition-all cursor-pointer";
+                btnSimple.className = "px-2 py-1 text-zinc-500 hover:text-stone-300 transition-all cursor-pointer";
             }
         }
 
@@ -141,7 +141,7 @@ const EQ_Module = {
         executeCurrentExportFormat: function() {
             const current = this.exportFormats[this.selectedExportFormatIdx];
             if (current && current.fn) {
-                if (window.Mascot) Mascot.triggerTemporaryExpression('grin', 1500);
+                if (typeof Mascot !== 'undefined') Mascot.triggerTemporaryExpression('grin', 1500);
                 current.fn();
             }
         },
@@ -649,7 +649,7 @@ vizModalActive: false,
 
             const editBtn = document.getElementById('target-edit-btn');
             if (editBtn) {
-                editBtn.classList.add('active-btn', 'active-yellow');
+                editBtn.classList.add('active-btn', 'is-on');
                 editBtn.innerHTML = '🔒';
                 editBtn.title = "Lock and Apply Target Changes";
             }
@@ -682,7 +682,7 @@ vizModalActive: false,
 
             const editBtn = document.getElementById('target-edit-btn');
             if (editBtn) {
-                editBtn.classList.remove('active-btn', 'active-yellow');
+                editBtn.classList.remove('active-btn', 'is-on');
                 editBtn.innerHTML = '✏️';
                 editBtn.title = "Open Target Sculptor Lab";
             }
@@ -736,7 +736,7 @@ vizModalActive: false,
                 card.innerHTML = `
                     <div class="flex items-center justify-between text-[10px] select-none font-bold" draggable="false">
                         <div class="flex items-center gap-1.5" draggable="false">
-                            <span class="w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] font-black text-white" style="background-color: var(--band-color);">${i + 1}</span>
+                            <span class="w-3.5 h-3.5 flex items-center justify-center text-[8px] font-black text-white" style="background-color: var(--band-color);">${i + 1}</span>
                             <span class="text-zinc-350 text-[10px]">${b.emoji} ${b.name}</span>
                         </div>
                         <div class="flex items-center gap-1.5 font-mono text-zinc-400" draggable="false">
@@ -745,7 +745,7 @@ vizModalActive: false,
                         </div>
                     </div>
                     <div class="flex items-center h-4 mt-1" draggable="false">
-                        <input type="range" id="eq-s${i}-std" min="-20" max="20" step="0.1" value="0" class="w-full" oninput="EQ.handleStandardSlider(${i}, this.value)" draggable="false">
+                        <input type="range" id="eq-s${i}-std" min="-20" max="20" step="0.1" value="0" class="w-full" data-cmd-input="EQ.handleStandardSlider" data-arg-0="${i}" data-arg-1="@value" draggable="false">
                     </div>
                 `;
                 container.appendChild(card);
@@ -791,15 +791,15 @@ vizModalActive: false,
                 bandDiv.innerHTML = `
                     <div class="flex items-center justify-between w-full h-5 select-none" draggable="false">
                         <div class="flex items-center gap-1" draggable="false">
-                            <span class="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black text-white flex-shrink-0" style="background-color: var(--band-color);">${i + 1}</span>
-                            <button onclick="EQ.cycleBandType(${i})" id="eq-t_m${i}" class="eq-card-select px-2" style="color: var(--band-color);" draggable="false">${currentLabel}</button>
-                            <button onclick="EQ.cycleBandSlope(${i})" id="eq-sl_m${i}" class="eq-card-select px-1.5 ml-1 ${isSlopeVisible ? '' : 'hidden'}" style="color: var(--text-secondary); border-color: rgba(255,255,255,0.04);" title="Filter steepness (12—48 dB/octave)" draggable="false">${currentSlope}dB</button>
+                            <span class="w-4 h-4 flex items-center justify-center text-[9px] font-black text-white flex-shrink-0" style="background-color: var(--band-color);">${i + 1}</span>
+                            <button data-cmd="EQ.cycleBandType" data-arg-0="${i}" id="eq-t_m${i}" class="eq-card-select px-2" style="color: var(--band-color);" draggable="false">${currentLabel}</button>
+                            <button data-cmd="EQ.cycleBandSlope" data-arg-0="${i}" id="eq-sl_m${i}" class="eq-card-select px-1.5 ml-1 ${isSlopeVisible ? '' : 'hidden'}" style="color: var(--text-secondary); border-color: rgba(255,255,255,0.04);" title="Filter steepness (12—48 dB/octave)" draggable="false">${currentSlope}dB</button>
                         </div>
 
                         <div class="flex items-center gap-1" draggable="false">
-                            <button onclick="EQ.copyBand(${i})" class="eq-card-action-btn" draggable="false">Copy</button>
-                            <button onclick="EQ.resetBand(${i})" class="eq-card-action-btn" draggable="false">Reset</button>
-                            <button onclick="EQ.toggleBandBypass(${i})" id="eq-bp_m${i}" class="text-[8px] font-black cursor-pointer focus:outline-none ml-1" style="color: ${isBypassed ? 'var(--accent-red)' : 'var(--accent-green)'}" draggable="false">
+                            <button data-cmd="EQ.copyBand" data-arg-0="${i}" class="eq-card-action-btn" draggable="false">Copy</button>
+                            <button data-cmd="EQ.resetBand" data-arg-0="${i}" class="eq-card-action-btn" draggable="false">Reset</button>
+                            <button data-cmd="EQ.toggleBandBypass" data-arg-0="${i}" id="eq-bp_m${i}" class="text-[8px] font-black cursor-pointer focus:outline-none ml-1" style="color: ${isBypassed ? 'var(--accent-red)' : 'var(--accent-green)'}" draggable="false">
                                 ${isBypassed ? '🔴' : '🟢'}
                             </button>
                         </div>
@@ -808,20 +808,20 @@ vizModalActive: false,
                     <div class="grid grid-cols-1 gap-1.5 pt-1 border-t border-white/[0.03]" draggable="false">
                         <div class="flex items-center justify-between gap-2 h-5" id="row-tune_m${i}" draggable="false">
                             <span class="eq-card-label w-7">Tune</span>
-                            <input type="number" id="eq-f${i}" value="${b.hz}" min="20" max="20000" class="eq-card-input w-16" onchange="EQ.handleFreqNumInput(${i}, this.value)" draggable="false">
-                            <input type="range" id="eq-fs_m${i}" min="0" max="1000" value="${this.logHzToSlider(b.hz)}" class="flex-grow flex-1" oninput="EQ.handleFreqSlider(${i}, this.value)" draggable="false">
+                            <input type="number" id="eq-f${i}" value="${b.hz}" min="20" max="20000" class="eq-card-input w-16" data-cmd-change="EQ.handleFreqNumInput" data-arg-0="${i}" data-arg-1="@value" draggable="false">
+                            <input type="range" id="eq-fs_m${i}" min="0" max="1000" value="${this.logHzToSlider(b.hz)}" class="flex-grow flex-1" data-cmd-input="EQ.handleFreqSlider" data-arg-0="${i}" data-arg-1="@value" draggable="false">
                         </div>
 
                         <div class="flex items-center justify-between gap-2 h-5" id="row-gain_m${i}" draggable="false">
                             <span class="eq-card-label w-7">Gain</span>
-                            <input type="number" id="eq-s${i}_num" value="0.0" step="0.1" class="eq-card-input w-16" onchange="EQ.handleGainNumInput(${i}, this.value)" draggable="false">
-                            <input type="range" id="eq-s${i}" min="-20" max="20" step="0.1" value="0" class="flex-grow flex-1" oninput="EQ.updateSlider(${i})" draggable="false">
+                            <input type="number" id="eq-s${i}_num" value="0.0" step="0.1" class="eq-card-input w-16" data-cmd-change="EQ.handleGainNumInput" data-arg-0="${i}" data-arg-1="@value" draggable="false">
+                            <input type="range" id="eq-s${i}" min="-20" max="20" step="0.1" value="0" class="flex-grow flex-1" data-cmd-input="EQ.updateSlider" data-arg-0="${i}" draggable="false">
                         </div>
 
                         <div class="flex items-center justify-between gap-2 h-5" id="row-q_m${i}" draggable="false">
                             <span class="eq-card-label w-7">Q</span>
-                            <input type="number" id="eq-q_m${i}_num" value="${b.defaultQ}" step="0.05" class="eq-card-input w-16" onchange="EQ.handleQNumInput(${i}, this.value)" draggable="false">
-                            <input type="range" id="eq-q_m${i}" min="0.1" max="10" step="0.1" value="${b.defaultQ}" class="flex-grow flex-1" oninput="EQ.updateSlider(${i})" draggable="false">
+                            <input type="number" id="eq-q_m${i}_num" value="${b.defaultQ}" step="0.05" class="eq-card-input w-16" data-cmd-change="EQ.handleQNumInput" data-arg-0="${i}" data-arg-1="@value" draggable="false">
+                            <input type="range" id="eq-q_m${i}" min="0.1" max="10" step="0.1" value="${b.defaultQ}" class="flex-grow flex-1" data-cmd-input="EQ.updateSlider" data-arg-0="${i}" draggable="false">
                         </div>
                     </div>
                 `;
@@ -1005,6 +1005,12 @@ vizModalActive: false,
                 }
 
                 if (!window.isProgrammaticPreampUpdate && prevPreampVal !== null && prevPreampVal !== val) {
+                    // The user moved the preamp themselves: forget the Anti-Clip
+                    // baseline so it neither restores a stale value later nor
+                    // pushes the slider back up against their new setting.
+                    this._agcUserPreamp = undefined;
+                    this._agcAutoDb = 0;
+                    this._agcNotified = false;
                     PEQDB_Module._similarTargetEverModified = true;
                     if (PEQDB_Module.searchMode === 'similar' && PEQDB_Module.debouncedFindSimilarCurves) {
                         PEQDB_Module.debouncedFindSimilarCurves();
@@ -1224,7 +1230,7 @@ switchCategory: function(catId) {
                     const btn = document.createElement('button');
                     btn.id = 'preset-btn-' + p.id;
 
-                    btn.className = 'w-full text-center text-[10px] h-8 px-1 py-1 rounded bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate flex items-center justify-center gap-1 cursor-pointer';
+                    btn.className = 'w-full text-center text-[10px] h-8 px-1 py-1 bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate flex items-center justify-center gap-1 cursor-pointer';
                     btn.innerHTML = `<span>${p.name}</span>`;
                     btn.onclick = () => { this.applyPreset(p.id); };
                     grid.appendChild(btn);
@@ -1244,6 +1250,10 @@ switchCategory: function(catId) {
         applyGeneratedPEQ: function(bands) {
             EQ_Module.isProgrammaticSliderUpdate = true;
 
+            // ALWAYS release the programmatic flag. b.gain.toFixed(1) below
+            // throws on a non-numeric member, and a stuck true flag silently
+            // disables every later manual audio update for the whole session.
+            try {
             this.bands.forEach((b, i) => {
                 const sSlider = document.getElementById("eq-s" + i);
                 const fInput = document.getElementById("eq-f" + i);
@@ -1326,7 +1336,9 @@ switchCategory: function(catId) {
                 }
             });
 
-            EQ_Module.isProgrammaticSliderUpdate = false;
+            } finally {
+                EQ_Module.isProgrammaticSliderUpdate = false;
+            }
 
             if (EQ_Module.graphBuilt) {
                 EQ_Module.updateAudioConnections();
@@ -1351,6 +1363,13 @@ switchCategory: function(catId) {
             const _prevSuppress = this._suppressDraw;
             if (skipDraw) this._suppressDraw = true;
 
+            // ALWAYS release the programmatic flag, even if a band throws
+            // mid-loop. A stuck true flag silently disabled every subsequent
+            // manual audio update for the whole session: sliders would move and
+            // the drawn curve would change, but the sound would not
+            // (updateSlider's worklet push is gated on !isProgrammaticSliderUpdate).
+            // This is the path the one-click "Clear" button runs.
+            try {
             this.bands.forEach((b, i) => {
                 const fInput = document.getElementById("eq-f" + i);
                 if (fInput) fInput.value = b.hz;
@@ -1412,7 +1431,9 @@ switchCategory: function(catId) {
 
             this.updatePreamp();
 
-            EQ_Module.isProgrammaticSliderUpdate = false;
+            } finally {
+                EQ_Module.isProgrammaticSliderUpdate = false;
+            }
 
             const sliderDefaults = {
                 'comp-attack-slider': { val: 15, param: 'attack', text: '15.0 ms' },

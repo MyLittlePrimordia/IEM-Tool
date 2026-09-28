@@ -937,8 +937,8 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             const mobBtn = document.getElementById('mobile-shuffle-btn');
             [btn, mobBtn].forEach(el => {
                 if (el) {
-                    if (this.shuffleActive) el.classList.add('active-yellow');
-                    else el.classList.remove('active-yellow');
+                    if (this.shuffleActive) el.classList.add('is-on');
+                    else el.classList.remove('is-on');
                 }
             });
 
@@ -960,8 +960,8 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             const mobBtn = document.getElementById('mobile-repeat-btn');
             [btn, mobBtn].forEach(el => {
                 if (el) {
-                    if (this.repeatActive) el.classList.add('active-yellow');
-                    else el.classList.remove('active-yellow');
+                    if (this.repeatActive) el.classList.add('is-on');
+                    else el.classList.remove('is-on');
                 }
             });
             showToast(this.repeatActive ? "Repeat Mode: ON" : "Repeat Mode: Off", "🔁");
@@ -1039,13 +1039,27 @@ if (this.playlist.length === 0) {
 showToast("Load audio tracks first using the '📂 Upload' button.", "⚠️");
 return;
 }
-if (!this.graphBuilt) await this.ensureDSPGraph();
-if (window.SharedAudio) {
-const ctx = SharedAudio.init();
-if (ctx.state === 'suspended') {
-await ctx.resume();
-}
-}
+            if (!this.graphBuilt) await this.ensureDSPGraph();
+            // `window.SharedAudio` was always undefined — SharedAudio is a
+            // top-level `const` in a classic script, so it is never a window
+            // property — which meant the Play button NEVER resumed a suspended
+            // AudioContext. Playback only worked because Chromium implicitly
+            // unlocks a media element on user gesture, which is not guaranteed
+            // for the WebAudio graph. ensureDSPGraph() above has already created
+            // the context, so resume() is now called on a live one.
+            // Guarded: resume() rejects with NotAllowedError under autoplay
+            // policy, and a rejection here would abort the rest of this handler
+            // and leave the UI showing "paused" while audio plays.
+            try {
+                const ctx = SharedAudio.ctx || SharedAudio.init();
+                if (ctx && ctx.state === 'suspended') {
+                    ctx.resume().catch((err) => {
+                        console.warn('[Playlist] AudioContext resume rejected:', err && err.message);
+                    });
+                }
+            } catch (err) {
+                console.warn('[Playlist] AudioContext resume failed:', err && err.message);
+            }
             const btn = document.getElementById("playlist-play-btn");
             const modalPlayBtn = document.getElementById('modal-play-btn');
             
@@ -1215,11 +1229,23 @@ this.fadeMusicVolume(vol, 0.015);
                 else mobIcon.textContent = "🔊";
             }
 
+            // Keep every volume SURFACE in step, not just the readouts. There are
+            // now three independent volume sliders (footer, mobile footer, modal)
+            // and this function is the single funnel for all of them - slider
+            // input, toggleMute, preset load - so syncing here is what stops the
+            // thumbs from drifting apart. Assigning .value does not re-fire an
+            // input event, so this cannot feed back into updateMusicVolume.
+            const strVal = String(val);
+            for (const id of ["eq-musicVolumeSlider", "mobile-music-volume", "modal-volume-slider"]) {
+                const s = document.getElementById(id);
+                if (s && s.value !== strVal) s.value = strVal;
+            }
+            const mobDisplay = document.getElementById("mobile-vol-display");
+            if (mobDisplay) mobDisplay.textContent = `${val}%`;
+
             // Sync visualizer pop-up controls immediately
             const modalVolDisplay = document.getElementById("modal-vol-display");
             if (modalVolDisplay) modalVolDisplay.textContent = `${val}%`;
-            const modalVolSlider = document.getElementById("modal-volume-slider");
-            if (modalVolSlider) modalVolSlider.value = val;
             const modalIcon = document.getElementById("modal-vol-icon");
             if (modalIcon) {
                 if (vol === 0) modalIcon.textContent = "🔇";
@@ -1230,18 +1256,19 @@ this.fadeMusicVolume(vol, 0.015);
 
                 toggleMute: function() {
             Mascot.triggerTemporaryExpression('mute', 2000);
-            const slider = App.getEl("eq-musicVolumeSlider");
-            if (!slider) return;
-            const currentVol = parseFloat(slider.value);
+            // Read from whichever surface is showing, but let updateMusicVolume
+            // do the writing - it syncs the footer, mobile and modal sliders
+            // together, so the explicit .value sets this used to do are gone.
+            const anySlider = App.getEl("eq-musicVolumeSlider") || App.getEl("mobile-music-volume");
+            if (!anySlider) return;
+            const currentVol = parseFloat(anySlider.value);
             try {
                 if (currentVol > 0) {
                     this.lastVolume = currentVol / 100;
                     this.updateMusicVolume(0);
-                    slider.value = 0;
                 } else {
                     const restoreVol = this.lastVolume !== undefined ? Math.max(0, Math.min(1, this.lastVolume)) * 100 : 50;
                     this.updateMusicVolume(restoreVol);
-                    slider.value = restoreVol;
                 }
                 if (window.syncGlobalSliders) window.syncGlobalSliders();
             } catch (error) {

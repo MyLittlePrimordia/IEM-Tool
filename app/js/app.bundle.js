@@ -1277,7 +1277,10 @@ Object.defineProperty(window, 'localStorage', {
                 slider.value = 0;
             }
             this.setBalance(val);
-            if (window.syncGlobalSliders) window.syncGlobalSliders();
+            // Only the balance slider changed. Passing it lets the painter
+            // repaint one element instead of all ~111 range inputs on every
+            // input event of a drag.
+            if (window.syncGlobalSliders) window.syncGlobalSliders(slider);
             Mascot.update();
         }
     };
@@ -1309,15 +1312,15 @@ const UIKit = {
         wrap.id = 'uikit-confirm-modal';
         wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden flex items-center justify-center p-4';
         wrap.innerHTML = `
-            <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
+            <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm shadow-2xl flex flex-col overflow-hidden p-4 select-none">
                 <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
                     <span id="uikit-confirm-title" class="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">⚠️ Confirm</span>
                     <button id="uikit-confirm-x" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
                 </div>
                 <p id="uikit-confirm-msg" class="text-[10px] text-zinc-500 mb-4 leading-normal"></p>
                 <div class="grid grid-cols-2 gap-2">
-                    <button id="uikit-confirm-cancel" class="py-2 text-xs font-bold rounded btn-clear cursor-pointer">Cancel</button>
-                    <button id="uikit-confirm-ok" class="py-2 text-xs font-bold rounded hover:brightness-110 text-white transition-all cursor-pointer text-center"></button>
+                    <button id="uikit-confirm-cancel" class="py-2 text-xs font-bold btn-clear cursor-pointer">Cancel</button>
+                    <button id="uikit-confirm-ok" class="py-2 text-xs font-bold hover:brightness-110 text-white transition-all cursor-pointer text-center"></button>
                 </div>
             </div>`;
         document.body.appendChild(wrap);
@@ -1381,7 +1384,7 @@ const UIKit = {
         wrap.querySelector('#uikit-confirm-msg').textContent = opts.message || '';
         const okBtn = wrap.querySelector('#uikit-confirm-ok');
         okBtn.textContent = opts.confirmLabel || 'Confirm';
-        okBtn.className = 'py-2 text-xs font-bold rounded hover:brightness-110 text-white transition-all cursor-pointer text-center ' +
+        okBtn.className = 'py-2 text-xs font-bold hover:brightness-110 text-white transition-all cursor-pointer text-center' +
             (opts.danger ? 'bg-red-600' : 'bg-[var(--accent-blue)]');
 
         wrap.classList.remove('hidden');
@@ -1464,7 +1467,7 @@ const Shortcuts = {
             groups[b.group].push(b);
         });
 
-        const keyChip = (b) => `<span class="inline-flex items-center justify-center min-w-[22px] px-1.5 py-0.5 border border-[var(--border-color)] rounded bg-[var(--bg-input)] text-[10px] font-mono font-bold">${b.ctrl ? 'Ctrl+' : ''}${b.displayKey || b.key.toUpperCase()}</span>`;
+        const keyChip = (b) => `<span class="inline-flex items-center justify-center min-w-[22px] px-1.5 py-0.5 border border-[var(--border-color)] bg-[var(--bg-input)] text-[10px] font-mono font-bold">${b.ctrl ? 'Ctrl+' : ''}${b.displayKey || b.key.toUpperCase()}</span>`;
 
         let groupsHtml = '';
         Object.keys(groups).forEach(g => {
@@ -1485,7 +1488,7 @@ const Shortcuts = {
         // instead of flex and lost its centering until the second open).
         wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden items-center justify-center p-4';
         wrap.innerHTML = `
-            <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none max-h-[85vh] overflow-y-auto">
+            <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm shadow-2xl flex flex-col overflow-hidden p-4 select-none max-h-[85vh] overflow-y-auto">
                 <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
                     <span class="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">⌨️ Keyboard Shortcuts</span>
                     <button id="shortcuts-help-close" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
@@ -1511,7 +1514,7 @@ const Shortcuts = {
         const btn = document.createElement('button');
         btn.id = 'shortcuts-help-fab';
         btn.title = 'Keyboard shortcuts (?)';
-        btn.className = 'fixed bottom-4 right-4 z-[200] w-8 h-8 rounded-full border-2 border-black bg-[var(--bg-card)] text-[var(--text-main)] shadow-[3px_3px_0_0_#000] text-xs font-black cursor-pointer hover:brightness-110 flex items-center justify-center';
+        btn.className = 'fixed bottom-4 right-4 z-[200] w-8 h-8 border-2 border-black bg-[var(--bg-card)] text-[var(--text-main)] shadow-[3px_3px_0_0_#000] text-xs font-black cursor-pointer hover:brightness-110 flex items-center justify-center';
         btn.textContent = '?';
         btn.onclick = () => Shortcuts.toggleHelp();
         document.body.appendChild(btn);
@@ -3202,8 +3205,8 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             const mobBtn = document.getElementById('mobile-shuffle-btn');
             [btn, mobBtn].forEach(el => {
                 if (el) {
-                    if (this.shuffleActive) el.classList.add('active-yellow');
-                    else el.classList.remove('active-yellow');
+                    if (this.shuffleActive) el.classList.add('is-on');
+                    else el.classList.remove('is-on');
                 }
             });
 
@@ -3225,8 +3228,8 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             const mobBtn = document.getElementById('mobile-repeat-btn');
             [btn, mobBtn].forEach(el => {
                 if (el) {
-                    if (this.repeatActive) el.classList.add('active-yellow');
-                    else el.classList.remove('active-yellow');
+                    if (this.repeatActive) el.classList.add('is-on');
+                    else el.classList.remove('is-on');
                 }
             });
             showToast(this.repeatActive ? "Repeat Mode: ON" : "Repeat Mode: Off", "🔁");
@@ -3304,13 +3307,27 @@ if (this.playlist.length === 0) {
 showToast("Load audio tracks first using the '📂 Upload' button.", "⚠️");
 return;
 }
-if (!this.graphBuilt) await this.ensureDSPGraph();
-if (window.SharedAudio) {
-const ctx = SharedAudio.init();
-if (ctx.state === 'suspended') {
-await ctx.resume();
-}
-}
+            if (!this.graphBuilt) await this.ensureDSPGraph();
+            // `window.SharedAudio` was always undefined — SharedAudio is a
+            // top-level `const` in a classic script, so it is never a window
+            // property — which meant the Play button NEVER resumed a suspended
+            // AudioContext. Playback only worked because Chromium implicitly
+            // unlocks a media element on user gesture, which is not guaranteed
+            // for the WebAudio graph. ensureDSPGraph() above has already created
+            // the context, so resume() is now called on a live one.
+            // Guarded: resume() rejects with NotAllowedError under autoplay
+            // policy, and a rejection here would abort the rest of this handler
+            // and leave the UI showing "paused" while audio plays.
+            try {
+                const ctx = SharedAudio.ctx || SharedAudio.init();
+                if (ctx && ctx.state === 'suspended') {
+                    ctx.resume().catch((err) => {
+                        console.warn('[Playlist] AudioContext resume rejected:', err && err.message);
+                    });
+                }
+            } catch (err) {
+                console.warn('[Playlist] AudioContext resume failed:', err && err.message);
+            }
             const btn = document.getElementById("playlist-play-btn");
             const modalPlayBtn = document.getElementById('modal-play-btn');
             
@@ -3480,11 +3497,23 @@ this.fadeMusicVolume(vol, 0.015);
                 else mobIcon.textContent = "🔊";
             }
 
+            // Keep every volume SURFACE in step, not just the readouts. There are
+            // now three independent volume sliders (footer, mobile footer, modal)
+            // and this function is the single funnel for all of them - slider
+            // input, toggleMute, preset load - so syncing here is what stops the
+            // thumbs from drifting apart. Assigning .value does not re-fire an
+            // input event, so this cannot feed back into updateMusicVolume.
+            const strVal = String(val);
+            for (const id of ["eq-musicVolumeSlider", "mobile-music-volume", "modal-volume-slider"]) {
+                const s = document.getElementById(id);
+                if (s && s.value !== strVal) s.value = strVal;
+            }
+            const mobDisplay = document.getElementById("mobile-vol-display");
+            if (mobDisplay) mobDisplay.textContent = `${val}%`;
+
             // Sync visualizer pop-up controls immediately
             const modalVolDisplay = document.getElementById("modal-vol-display");
             if (modalVolDisplay) modalVolDisplay.textContent = `${val}%`;
-            const modalVolSlider = document.getElementById("modal-volume-slider");
-            if (modalVolSlider) modalVolSlider.value = val;
             const modalIcon = document.getElementById("modal-vol-icon");
             if (modalIcon) {
                 if (vol === 0) modalIcon.textContent = "🔇";
@@ -3495,18 +3524,19 @@ this.fadeMusicVolume(vol, 0.015);
 
                 toggleMute: function() {
             Mascot.triggerTemporaryExpression('mute', 2000);
-            const slider = App.getEl("eq-musicVolumeSlider");
-            if (!slider) return;
-            const currentVol = parseFloat(slider.value);
+            // Read from whichever surface is showing, but let updateMusicVolume
+            // do the writing - it syncs the footer, mobile and modal sliders
+            // together, so the explicit .value sets this used to do are gone.
+            const anySlider = App.getEl("eq-musicVolumeSlider") || App.getEl("mobile-music-volume");
+            if (!anySlider) return;
+            const currentVol = parseFloat(anySlider.value);
             try {
                 if (currentVol > 0) {
                     this.lastVolume = currentVol / 100;
                     this.updateMusicVolume(0);
-                    slider.value = 0;
                 } else {
                     const restoreVol = this.lastVolume !== undefined ? Math.max(0, Math.min(1, this.lastVolume)) * 100 : 50;
                     this.updateMusicVolume(restoreVol);
-                    slider.value = restoreVol;
                 }
                 if (window.syncGlobalSliders) window.syncGlobalSliders();
             } catch (error) {
@@ -3572,34 +3602,42 @@ const EQ_ReverbMethods = {
         const presetBtn = document.getElementById('reverb-preset-btn');
         if (presetBtn) presetBtn.textContent = preset.label || '🚪 Small Room';
 
-        this.reverbParams.mix = preset.wet;
-        this.reverbParams.size = preset.size;
-        this.reverbParams.damp = preset.damp;
-        this.reverbParams.filter = preset.filter;
-        this.reverbParams.fade = preset.fade;
-        this.reverbParams.predelay = preset.predelay;
-        this.reverbParams.predelaymix = preset.predelaymix;
+        // Preset fields are only trusted to be numbers. `mix` has a read-side
+        // guard, but size/damp/fade/predelay feed createImpulseResponse(), where
+        // Math.max(0.1, NaN) is NaN and ctx.createBuffer(2, NaN, sr) throws
+        // NotSupportedError inside an unguarded setTimeout — stranding the
+        // reverb with its dry/wet gains frozen.
+        const num = (v, dflt) => { const n = parseFloat(v); return Number.isFinite(n) ? n : dflt; };
+        this.reverbParams.mix = num(preset.wet, 0.3);
+        this.reverbParams.size = num(preset.size, 0.4);
+        this.reverbParams.damp = num(preset.damp, 0.5);
+        this.reverbParams.filter = num(preset.filter, 1);
+        this.reverbParams.fade = num(preset.fade, 0.2);
+        this.reverbParams.predelay = num(preset.predelay, 0);
+        this.reverbParams.predelaymix = num(preset.predelaymix, 0);
 
-        document.getElementById('rev-mix-slider').value = Math.round(preset.wet * 100);
-        document.getElementById('rev-mix-val').textContent = preset.wet.toFixed(2);
-        
-        document.getElementById('rev-size-slider').value = Math.round(preset.size * 100);
-        document.getElementById('rev-size-val').textContent = preset.size.toFixed(2);
-        
-        document.getElementById('rev-damp-slider').value = Math.round(preset.damp * 100);
-        document.getElementById('rev-damp-val').textContent = preset.damp.toFixed(2);
-        
-        document.getElementById('rev-filter-slider').value = Math.round(preset.filter * 100);
-        document.getElementById('rev-filter-val').textContent = preset.filter.toFixed(2);
-
-        document.getElementById('rev-fade-slider').value = Math.round(preset.fade * 100);
-        document.getElementById('rev-fade-val').textContent = preset.fade.toFixed(2);
-        
-        document.getElementById('rev-predelay-slider').value = Math.round(preset.predelay * 1000);
-        document.getElementById('rev-predelay-val').textContent = preset.predelay.toFixed(3);
-
-        document.getElementById('rev-predelaymix-slider').value = Math.round(preset.predelaymix * 100);
-        document.getElementById('rev-predelaymix-val').textContent = preset.predelaymix.toFixed(2);
+        // These 16 writes were the only unguarded DOM accesses in this file, so
+        // if the reverb panel is ever absent, collapsed to a mobile variant, or
+        // mid-DOM-rebuild, the FIRST missing slider threw a TypeError and aborted
+        // the whole preset application — before scheduleImpulseRebuild() and
+        // updateReverbDSP() ran, so reverb silently stopped responding to preset
+        // changes with no error shown.
+        // scale: value multiplier for the slider; dp: decimal places for the label.
+        const applyField = (sliderId, labelId, value, scale, dp) => {
+            const num = parseFloat(value);
+            if (!Number.isFinite(num)) return;
+            const s = document.getElementById(sliderId);
+            if (s) s.value = String(Math.round(num * scale));
+            const l = document.getElementById(labelId);
+            if (l) l.textContent = num.toFixed(dp);
+        };
+        applyField('rev-mix-slider',        'rev-mix-val',        preset.wet,        100, 2);
+        applyField('rev-size-slider',       'rev-size-val',       preset.size,       100, 2);
+        applyField('rev-damp-slider',       'rev-damp-val',       preset.damp,       100, 2);
+        applyField('rev-filter-slider',     'rev-filter-val',     preset.filter,     100, 2);
+        applyField('rev-fade-slider',       'rev-fade-val',       preset.fade,       100, 2);
+        applyField('rev-predelay-slider',   'rev-predelay-val',   preset.predelay,  1000, 3);
+        applyField('rev-predelaymix-slider','rev-predelaymix-val',preset.predelaymix,100, 2);
 
         // Update Convolver Buffer seamlessly (debounced - slider drags during
         // preset cycles coalesce into a single rebuild)
@@ -3610,7 +3648,15 @@ const EQ_ReverbMethods = {
         },
 
     updateReverbParam: function(param, val) {
-        this.reverbParams[param] = parseFloat(val);
+        // Reject non-numeric input at the writer so a bad value can never be
+        // stored. `filter` already had a read-side guard; `mix` did not, and a
+        // NaN there used to throw out of updateReverbDSP and strand the slider.
+        const parsed = parseFloat(val);
+        if (!Number.isFinite(parsed)) {
+            console.warn('[Reverb] Ignoring non-numeric param:', param, val);
+            return;
+        }
+        this.reverbParams[param] = parsed;
         const valEl = document.getElementById(`rev-${param}-val`);
         if (valEl) {
             // predelay is a seconds value entered in ms-scale steps — keep the
@@ -3806,10 +3852,24 @@ const EQ_ReverbMethods = {
             // Keep the wet gain at the user's mix while paused so the reverb
             // tail rings out naturally instead of snapping to silence on every
             // pause/seek (with the source muted the finite IR fades on its own).
-            const mix = this.reverbActive ? this.reverbParams.mix : 0;
-            // Equal-power crossfade so dry+wet stays unity and never clips (previous 1 - mix*0.35 + mix = 1.65 at mix=1).
-            const dryGain = Math.cos(mix * 0.5 * Math.PI);
-            const wetGain = Math.sin(mix * 0.5 * Math.PI);
+            const mixRaw = this.reverbActive ? this.reverbParams.mix : 0;
+            // Guard: `mix` came from parseFloat(val) with no finite check, and a
+            // NaN here propagated straight into cos()/sin() and then into
+            // setAudioParamSmooth, which throws on a non-finite AudioParam value.
+            const mix = Number.isFinite(mixRaw) ? Math.max(0, Math.min(1, mixRaw)) : 0;
+            // Equal-power SHAPE, amplitude-limited so the claim in the old
+            // comment actually holds. cos(t)+sin(t) peaks at sqrt(2) = +3.01 dB
+            // at mix=0.5, so a plain equal-power crossfade made reverb LOUDER
+            // mid-mix and pushed an already limiter-bound signal into continuous
+            // gain reduction. Dividing both terms by max(1, c+s) keeps the smooth
+            // equal-power blend while guaranteeing dry+wet <= 1 (0 dB, never
+            // clipping). At mix=0 and mix=1 max(1,...) is 1, so the endpoints
+            // are bit-for-bit unchanged.
+            const c = Math.cos(mix * 0.5 * Math.PI);
+            const s = Math.sin(mix * 0.5 * Math.PI);
+            const ampNorm = Math.max(1, c + s);
+            const dryGain = c / ampNorm;
+            const wetGain = s / ampNorm;
             setAudioParamSmooth(SharedAudio.dryGainNode.gain, dryGain, 0.015);
             setAudioParamSmooth(SharedAudio.wetGainNode.gain, wetGain, 0.015);
             
@@ -3845,11 +3905,11 @@ const EQ_CrossfeedMethods = {
         if (btn) {
             if (this.crossfeedState === 'off') {
                 btn.textContent = "Feed: Off";
-                btn.className = 'btn-clear text-stone-200 font-bold rounded text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center';
+                btn.className = 'btn-clear text-stone-200 font-bold text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center';
                 if (container) container.classList.add('opacity-40', 'pointer-events-none');
             } else {
                 btn.textContent = "Feed: ON";
-                btn.className = 'btn-clear text-emerald-400 border-emerald-500/50 bg-emerald-950/15 font-bold rounded text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center active-btn';
+                btn.className = 'btn-clear text-emerald-400 border-emerald-500/50 bg-emerald-950/15 font-bold text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center active-btn';
                 if (container) container.classList.remove('opacity-40', 'pointer-events-none');
             }
         }
@@ -4185,12 +4245,41 @@ const order = ['crossoverFreq1', 'crossoverFreq2', 'crossoverFreq3', 'crossoverF
 /* ===== app/js/eq-dynamics.js ===== */
 const EQ_DynamicsMethods = {
     togglePreventClipping: function() {
-        this.preventClipping = !this.preventClipping; 
-        this.updatePreventClippingUI(); 
+        this.preventClipping = !this.preventClipping;
+        this.updatePreventClippingUI();
         this.drawCurve();
         if (this.preventClipping) {
+            // Forget any previous session's auto-reduction so the watchdog
+            // re-baselines against the user's current setting.
+            this._agcUserPreamp = undefined;
+            this._agcAutoDb = 0;
+            this._agcNotified = false;
             showToast("Anti-Clip Headroom Limiter Enabled", "🛡️");
         } else {
+            // Restore the user's own preamp. The watchdog lowers the slider to
+            // stop clipping but must never permanently rewrite the user's mix
+            // setting — previously a single transient peak ratcheted their
+            // preamp down and turning CLIP off never gave it back.
+            const autoDb = this._agcAutoDb || 0;
+            if (autoDb > 0.01) {
+                const slider = document.getElementById('eq-preampSlider');
+                const restore = Number.isFinite(this._agcUserPreamp) ? this._agcUserPreamp : null;
+                if (slider && restore !== null) {
+                    slider.value = restore.toFixed(1);
+                    try {
+                        window.isProgrammaticPreampUpdate = true;
+                        this.updatePreamp();
+                    } catch (e) {
+                        console.warn('[Dynamics] preamp restore failed:', e && e.message);
+                    } finally {
+                        window.isProgrammaticPreampUpdate = false;
+                    }
+                    showToast('Preamp restored to ' + restore.toFixed(1) + ' dB (Anti-Clip released ' + autoDb.toFixed(1) + ' dB).', '🛡️');
+                }
+            }
+            this._agcUserPreamp = undefined;
+            this._agcAutoDb = 0;
+            this._agcNotified = false;
             showToast("Anti-Clip Headroom Limiter Disabled", "🛡️");
         }
     },
@@ -4351,7 +4440,17 @@ const EQ_LoudnessMethods = {
             this.drawCurve();
         },
         updateLoudnessParam: function(param, val) {
+            // Reject non-numeric input at the writer. Storing NaN used to make
+            // the DSP path fall back to full boost while the label printed
+            // "NaN%", so a bad value could never be recovered from the UI.
             const value = parseFloat(val);
+            if (!Number.isFinite(value)) {
+                console.warn('[EQ] Ignoring non-numeric loudness param:', param, val);
+                return;
+            }
+            const slider = param === 'calibration'
+                ? document.getElementById('loudness-cal-slider')
+                : document.getElementById('loudness-strength-slider');
             if (param === 'calibration') {
                 this.loudnessCalibrationVol = value;
                 const disp = document.getElementById('loudness-cal-val');
@@ -4363,7 +4462,10 @@ const EQ_LoudnessMethods = {
             }
             this.updateLoudnessDSP();
             this.drawCurve();
-            if (window.syncGlobalSliders) window.syncGlobalSliders();
+            // Only the one slider the user is dragging changed — pass it so the
+            // painter repaints one element, not all ~111 range inputs, on every
+            // input event.
+            if (window.syncGlobalSliders) window.syncGlobalSliders(slider);
         },
         calibrateLoudnessFromVolume: function() {
             const volSlider = document.getElementById("eq-musicVolumeSlider");
@@ -4389,9 +4491,15 @@ const EQ_LoudnessMethods = {
                 return;
             }
             
-            const currentVol = parseFloat(document.getElementById("eq-musicVolumeSlider")?.value || 50);
-            const calibrationVol = this.loudnessCalibrationVol || 50;
-            const strength = this.loudnessStrength || 100;
+            // Number.isFinite, NOT `||`. The strength slider's minimum is a legal
+            // 0 (index.html loudness-strength-slider min="0"), so `0 || 100`
+            // resolved 0% to 100% and applied the FULL +14 dB low shelf / +8 dB
+            // high shelf while eq-magnitude-engine.js — which reads the field
+            // directly — drew a flat 0.00 dB curve. `||` also swallowed NaN.
+            const volRaw = parseFloat(document.getElementById("eq-musicVolumeSlider")?.value);
+            const currentVol = Number.isFinite(volRaw) ? volRaw : 50;
+            const calibrationVol = Number.isFinite(this.loudnessCalibrationVol) ? this.loudnessCalibrationVol : 50;
+            const strength = Number.isFinite(this.loudnessStrength) ? this.loudnessStrength : 100;
 
             let bassBoost = 0;
             let trebleBoost = 0;
@@ -4902,7 +5010,7 @@ const EQ_SmartImportMethods = {
                 
                 if (this.deEsserEnabled) {
                     if (btn) {
-                        btn.className = 'btn-clear text-rose-400 font-bold rounded text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center';
+                        btn.className = 'btn-clear text-rose-400 font-bold text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center';
                         btn.classList.add('active-btn');
                     }
                     if (lbl) {
@@ -4918,7 +5026,7 @@ const EQ_SmartImportMethods = {
                     showToast("De-Esser active. Monitoring vocal sibilance peaks (4k-8kHz)", "ðŸ›¡ï¸");
                 } else {
                     if (btn) {
-                        btn.className = 'btn-clear text-stone-200 font-bold rounded text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center';
+                        btn.className = 'btn-clear text-stone-200 font-bold text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center';
                         btn.classList.remove('active-btn');
                     }
                     if (lbl) {
@@ -5489,7 +5597,7 @@ const EQ_SourceSimMethods = {
 
             this.applyGearSimDSP();
             this.drawCurve();
-            if (window.Mascot) Mascot.triggerTemporaryExpression('cool', 1200);
+            if (typeof Mascot !== 'undefined') Mascot.triggerTemporaryExpression('cool', 1200);
             if (gear.id === 'off') {
                 showToast("Gear Simulator: Off", "📻");
             } else {
@@ -5524,14 +5632,48 @@ const EQ_SourceSimMethods = {
 
 /* ===== app/js/eq-presets.js ===== */
 const EQ_PresetMethods = {
+        // Unique quarantine key. A bare Date.now() collides when two corruptions
+        // land in the same millisecond, which would silently overwrite the first
+        // backup — the exact data loss this is meant to prevent.
+        _quarantinePresets: function(raw) {
+            const KEY = 'iem_custom_eq_presets';
+            const base = KEY + '.corrupt.' + Date.now();
+            let key = base, n = 1;
+            while (SafeStorage.getItem(key) !== null) { key = base + '-' + (n++); }
+            try { SafeStorage.setItem(key, raw); } catch (_) {}
+            try { SafeStorage.removeItem(KEY); } catch (_) {}
+            return key;
+        },
+
         getCustomPresets: function() {
+            const KEY = 'iem_custom_eq_presets';
+            let raw;
+            try { raw = SafeStorage.getItem(KEY); } catch (_) { return {}; }
+            if (!raw) return {};
+            let parsed;
             try {
-                return JSON.parse(SafeStorage.getItem('iem_custom_eq_presets') || '{}');
+                parsed = JSON.parse(raw);
             } catch (e) {
-                console.warn('[EQ] Corrupted custom preset data, resetting.', e);
-                try { SafeStorage.removeItem('iem_custom_eq_presets'); } catch (_) {}
+                // Do NOT delete the key. This is the user's hand-built preset
+                // library; the old code called removeItem() here, so a single
+                // truncated write (exactly the QuotaExceededError-mid-write case
+                // SafeStorage exists to absorb) destroyed every preset with only
+                // a console.warn. Quarantine it instead so it can be recovered.
+                const qk = this._quarantinePresets(raw);
+                console.error('[EQ] Corrupted custom preset data. Original preserved at "' + qk + '".', e);
+                showToast('Custom presets were corrupted. A backup was kept — please report this.', '⚠️');
                 return {};
             }
+            // Shape check: JSON.parse can succeed on something that is not a
+            // preset map (an array, a number, null). Downstream code does
+            // `presets[id]`, so anything non-object must not leak through.
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                const qk = this._quarantinePresets(raw);
+                console.error('[EQ] Custom preset data is not a preset map. Original preserved at "' + qk + '".');
+                showToast('Custom presets were corrupt. A backup was kept — please report this.', '⚠️');
+                return {};
+            }
+            return parsed;
         },
         saveCurrentAsCustomPreset: function() {
             const modal = document.getElementById('save-preset-modal');
@@ -5594,12 +5736,12 @@ const EQ_PresetMethods = {
 
                 const btn = document.createElement('button');
                 btn.id = 'preset-btn-' + id;
-                btn.className = 'w-full text-center text-[10px] px-1 py-1 rounded bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate h-7 flex items-center justify-center gap-1';
+                btn.className = 'w-full text-center text-[10px] px-1 py-1 bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate h-7 flex items-center justify-center gap-1';
                 btn.textContent = '🧪 ' + (p.name || 'Preset');
                 btn.onclick = () => { this.applyCustomPreset(id); };
 
                 const delBtn = document.createElement('button');
-                delBtn.className = 'absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-950/90 border border-red-900/40 text-red-400 text-[8px] font-bold rounded-full flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-20 cursor-pointer';
+                delBtn.className = 'absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-950/90 border border-red-900/40 text-red-400 text-[8px] font-bold flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-20 cursor-pointer';
                 delBtn.innerHTML = '❌';
                 delBtn.title = 'Delete Preset';
                 delBtn.onclick = (e) => {
@@ -5617,6 +5759,49 @@ const EQ_PresetMethods = {
                 }
             });
         },
+        // Presets are untrusted input: they come from localStorage, which is
+        // writable by any import path, and advanced bands have NO UI at all
+        // (#eq-panel-advanced is an empty container), so the model is the ONLY
+        // source for their hz/g/q. A non-numeric or out-of-range value flowed
+        // straight to updateAudioConnections -> worklet, where
+        // w0 = 2*PI*freq/sampleRate became NaN and the biquad produced NaN for
+        // the rest of the session: permanent total silence, no error shown.
+        // The worklet's own Number.isFinite(a0) guard only prevented a
+        // divide-by-zero; it happily propagated the NaN coefficients.
+        //
+        // Same defensive shape as eq-genre-targets.js loadValues(), which
+        // already documents the same data as untrusted.
+        _sanitizePresetBand: function(raw, fallback) {
+            const fb = fallback || {};
+            const src = (raw && typeof raw === 'object') ? raw : { g: raw };
+            const num = (v, lo, hi, dflt) => {
+                if (v === undefined || v === null) return dflt;
+                const n = parseFloat(v);
+                if (!Number.isFinite(n)) return dflt;
+                if (n < lo || n > hi) return dflt;
+                return n;
+            };
+            const VALID_TYPES = ['peaking', 'lowshelf', 'highshelf', 'highpass', 'lowpass', 'notch'];
+            const out = {
+                hz: num(src.hz, 10, 24000, Number.isFinite(fb.hz) ? fb.hz : 1000),
+                g: num(src.g, -60, 60, Number.isFinite(fb.g) ? fb.g : 0),
+                q: num(src.q, 0.01, 50, Number.isFinite(fb.q) ? fb.q : 1.0),
+                type: VALID_TYPES.includes(src.type) ? src.type : (VALID_TYPES.includes(fb.type) ? fb.type : 'peaking'),
+            };
+            if (src.s !== undefined && src.s !== null) {
+                const s = parseFloat(src.s);
+                out.s = (Number.isFinite(s) && s >= 1 && s <= 60) ? s : 12;
+            }
+            // Track whether anything had to be replaced so the user is told.
+            out.__repaired =
+                (src.hz !== undefined && out.hz !== parseFloat(src.hz)) ||
+                (src.g !== undefined && out.g !== parseFloat(src.g)) ||
+                (src.q !== undefined && out.q !== parseFloat(src.q)) ||
+                (src.type !== undefined && !VALID_TYPES.includes(src.type)) ||
+                (out.s !== undefined && out.s !== parseFloat(src.s));
+            return out;
+        },
+
         applyCustomPreset: function(id) {
             const presets = this.getCustomPresets();
             const p = presets[id];
@@ -5624,23 +5809,31 @@ const EQ_PresetMethods = {
 
             this.activePreset = id;
             EQ_Module.isProgrammaticSliderUpdate = true; // Lock UI updates during load
+            let repairedBands = 0;
 
             try {
             // Map values cleanly to UI faders
             const preSlider = document.getElementById("eq-preampSlider");
             if (preSlider && p.p !== undefined) {
-                preSlider.value = p.p;
+                const pNum = parseFloat(p.p);
+                // A range input silently self-heals an invalid assignment (it
+                // snaps to the midpoint), so clamp explicitly instead of letting
+                // a corrupt preamp land halfway up the slider.
+                preSlider.value = (Number.isFinite(pNum) && pNum >= -20 && pNum <= 20) ? pNum : 0;
                 this.updatePreamp();
             }
 
             if (p.m) {
                 p.m.forEach((val, i) => {
-                    const isObject = (val && typeof val === 'object');
-                    const gainVal = isObject ? val.g : val;
-                    const hzVal = isObject ? val.hz : undefined;
-                    const qVal = isObject ? val.q : undefined;
-                    const typeVal = isObject ? val.type : undefined;
-                    const slopeVal = isObject ? val.s : undefined;
+                    const band = this.bands[i];
+                    if (!band) return;   // more bands than the UI has slots
+                    const clean = this._sanitizePresetBand(val, { hz: band.hz, g: 0, q: Number.isFinite(band.q) ? band.q : band.defaultQ, type: band.type });
+                    if (clean.__repaired) repairedBands++;
+                    const gainVal = clean.g;
+                    const hzVal = clean.hz;
+                    const qVal = clean.q;
+                    const typeVal = clean.type;
+                    const slopeVal = clean.s;
 
                     const slider = document.getElementById("eq-s" + i);
                     if (slider) slider.value = gainVal;
@@ -5696,19 +5889,22 @@ const EQ_PresetMethods = {
 
             if (p.a) {
                 p.a.forEach((val, i) => {
-                    const isObject = (val && typeof val === 'object');
-                    const gainVal = isObject ? val.g : val;
-                    const hzVal = isObject ? val.hz : undefined;
-                    const qVal = isObject ? val.q : undefined;
-                    const typeVal = isObject ? val.type : undefined;
-
                     const b = this.advancedBands[i];
-                    if (b) {
-                        b.g = gainVal;
-                        if (hzVal !== undefined) b.hz = hzVal;
-                        if (qVal !== undefined) b.q = qVal;
-                        if (typeVal) b.type = typeVal;
-                    }
+                    if (!b) return;
+                    // Advanced bands have no UI, so this model write is the ONLY
+                    // place the value can be rejected before it reaches the
+                    // worklet. Validate here or not at all.
+                    const clean = this._sanitizePresetBand(val, { hz: b.hz, g: 0, q: b.q, type: b.type });
+                    if (clean.__repaired) repairedBands++;
+                    const gainVal = clean.g;
+                    const hzVal = clean.hz;
+                    const qVal = clean.q;
+                    const typeVal = clean.type;
+
+                    b.g = gainVal;
+                    b.hz = hzVal;
+                    b.q = qVal;
+                    b.type = typeVal;
 
                     if (typeVal && this.advancedBands[i]) {
                         // Mirror the main-band card sync (handleTypeChange):
@@ -5740,10 +5936,15 @@ const EQ_PresetMethods = {
                     const aSlider = document.getElementById("eq-a" + i);
                     if (aSlider) aSlider.value = gainVal;
 
-                    if (hzVal !== undefined) {
-                        const afInput = document.getElementById("eq-af" + i);
-                        if (afInput) afInput.value = hzVal;
-                    }
+                    // NOTE: there is no `eq-af${i}` element anywhere in
+                    // index.html — advanced bands have no frequency control
+                    // (in fact #eq-panel-advanced is an empty container, so
+                    // advancedBands is a model-only concept reachable solely
+                    // through custom presets). The model write above is
+                    // therefore the only place the value lands, which is why
+                    // it is validated rather than mirrored. Do not add a
+                    // read here expecting it to do something.
+
                     if (qVal !== undefined) {
                         const qSlider = document.getElementById("eq-q_a" + i);
                         if (qSlider) qSlider.value = qVal;
@@ -5754,9 +5955,13 @@ const EQ_PresetMethods = {
             }
 
                 if (p.v && Array.isArray(p.v)) {
-                    this.virtualBands = p.v.map(v => ({
-                        hz: v.hz, g: v.g, q: v.q != null ? v.q : 1.0, type: v.type || 'peaking'
-                    }));
+                    // Virtual bands feed worklet slots 50+ directly from
+                    // eq-dsp-graph.js, so they need the same validation.
+                    this.virtualBands = p.v.map(v => {
+                        const clean = this._sanitizePresetBand(v, { hz: 1000, g: 0, q: 1.0, type: 'peaking' });
+                        if (clean.__repaired) repairedBands++;
+                        return { hz: clean.hz, g: clean.g, q: clean.q, type: clean.type };
+                    });
                 } else if (p.v === undefined) {
                     // Backward compat: old presets without virtual still clear any
                     // previous virtual solve so the old 10/20-band preset does not
@@ -5765,6 +5970,15 @@ const EQ_PresetMethods = {
                 }
             } finally {
                 EQ_Module.isProgrammaticSliderUpdate = false; // Release UI lock even if a band throws
+            }
+
+            // Never silently alter a user's saved EQ. If anything had to be
+            // replaced because it was missing, non-numeric, or outside the
+            // range the DSP can represent, say so.
+            if (repairedBands > 0) {
+                console.warn('[EQ] Preset "' + id + '": repaired ' + repairedBands +
+                    ' band(s) with missing or out-of-range values.');
+                showToast('Preset loaded with ' + repairedBands + ' band value(s) reset to safe defaults.', '⚠️');
             }
 
             if (this.graphBuilt) {
@@ -5892,10 +6106,11 @@ const EQ_PresetMethods = {
                                 const gainRow = document.getElementById(`row-gain_a${i}`);
                                 if (gainRow) { gainRow.style.opacity = '1'; gainRow.style.pointerEvents = 'auto'; }
                             }
-                            b.hz = b.defaultHz || b.hz;
+                            // `b.defaultHz` never existed on an advancedBands
+                            // entry (they carry `hz`, not `defaultHz`), so this
+                            // was a no-op that only survived on `undefined || b.hz`.
+                            b.hz = b.hz;
                             b.q = b.defaultQ;
-                            const afInput = document.getElementById("eq-af" + i);
-                            if (afInput) afInput.value = b.hz;
                             const aqSlider = document.getElementById("eq-q_a" + i);
                             if (aqSlider) aqSlider.value = b.defaultQ;
                             const bypassBtnA = document.getElementById(`eq-bp_a${i}`);
@@ -8213,6 +8428,159 @@ const EventBinding = {
             }
         }, true);
 
+        // Focus delegation. `focus` does not bubble, so this relies on the
+        // capture flag exactly like the blur delegation above. Migrated from
+        // four inline onfocus="..." attributes, which were part of why
+        // script-src needed 'unsafe-inline'.
+        document.addEventListener('focus', function(event) {
+            const target = getEventTarget(event).closest('[data-action-focus]');
+            if (target) {
+                const action = target.getAttribute('data-action-focus');
+                if (action) {
+                    EventBinding.execute(action, event, target);
+                }
+            }
+        }, true);
+
+        // Drag-and-drop delegation for the three EQ slot drop targets. Also
+        // migrated from inline ondragover/ondragleave/ondrop.
+        ['dragover', 'dragleave', 'drop'].forEach(function(name) {
+            document.addEventListener(name, function(event) {
+                const target = getEventTarget(event).closest('[data-action-' + name + ']');
+                if (target) {
+                    const action = target.getAttribute('data-action-' + name);
+                    if (action) {
+                        EventBinding.execute(action, event, target);
+                    }
+                }
+            }, true);
+        });
+
+        // Keyboard activation for controls that are only wired to `click` but
+        // are not real <button>s: the four <label> wrappers around hidden file
+        // inputs, and the Smart Import dropzone div. None of them were focusable
+        // or reachable by keyboard (POL-003).
+        //
+        // Clicking a <label> programmatically does forward activation to the
+        // control it wraps, so one code path covers both shapes. Space is
+        // preventDefault'd because it would otherwise scroll the page.
+        document.addEventListener('keydown', function(event) {
+            if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return;
+            const target = getEventTarget(event);
+            const trigger = target.closest && target.closest('[data-file-trigger]');
+            if (!trigger) return;
+            event.preventDefault();
+            trigger.click();
+        }, true);
+
+        // Generic command dispatch, used by markup that JS builds at runtime.
+        //
+        // The EQ band cards, the Find pick chips and the PEQdb rows used to be
+        // emitted as onclick="EQ.cycleBandType(3)" inside template strings.
+        // Attribute-form handlers are exactly what forces
+        // script-src 'unsafe-inline', and there are far too many combinations to
+        // give each one a key in handlers.js, so the call is expressed as data:
+        //
+        //   <button data-cmd="EQ.cycleBandType" data-arg-0="3">
+        //   <input  data-cmd-input="EQ.handleFreqNumInput" data-arg-0="3" data-arg-1="@value">
+        //
+        // `@value` reads the element's own value, which is what the old handlers
+        // got from `this.value`. Args are coerced (numeric strings to numbers,
+        // true/false/null literals) because the target functions compare against
+        // numbers.
+        //
+        // Deliberately no eval: resolving through a string would need
+        // 'unsafe-eval', trading one CSP hole for another.
+        function coerceArg(raw, el) {
+            if (raw === '@value') return el.value;
+            if (raw === '@checked') return el.checked;
+            if (raw === '@self') return el;
+            // @from:<key> reads <key> from the nearest ancestor carrying
+            // data-<key>. Replaces the common
+            // `this.closest('[data-uid]').dataset.uid` argument.
+            if (raw.startsWith('@from:')) {
+                const key = raw.slice(6);
+                const host = el.closest('[data-' + key + ']');
+                return host ? host.dataset[key] : undefined;
+            }
+            if (raw === 'true') return true;
+            if (raw === 'false') return false;
+            if (raw === 'null') return null;
+            if (raw !== '' && /^-?\d*\.?\d+$/.test(raw)) return Number(raw);
+            return raw;
+        }
+
+        const CMD_MODULE_ALIASES = { PEQDB_Module: 'PEQDB' };
+
+        function runCommand(el, attrName) {
+            const cmd = el.getAttribute(attrName);
+            if (!cmd) return;
+            const dot = cmd.indexOf('.');
+            if (dot < 0) {
+                console.warn('[EventBinding] data-cmd must look like Module.method, got: ' + cmd);
+                return;
+            }
+            // Top-level `const` bindings in classic scripts are NOT properties of
+            // window. iem-module.js init() exposes the PEQDB module as
+            // `window.PEQDB`, but the markup names it `PEQDB_Module`, so map the
+            // name here rather than putting PEQDB_Module on window (several
+            // `window.PEQDB_Module && ...` guards elsewhere would change meaning).
+            const modName = cmd.slice(0, dot);
+            const mod = window[modName] || window[CMD_MODULE_ALIASES[modName]];
+            const fn = mod && mod[cmd.slice(dot + 1)];
+            if (typeof fn !== 'function') {
+                console.warn('[EventBinding] data-cmd target is not a function: ' + cmd);
+                return;
+            }
+            const args = [];
+            for (let i = 0; ; i++) {
+                const v = el.getAttribute('data-arg-' + i);
+                if (v === null) break;
+                args.push(coerceArg(v, el));
+            }
+            try {
+                // `this` must be the MODULE, not the element. The inline form this
+                // replaces was `onclick="EQ.toggleBandBypass(3)"` - a method call on
+                // EQ, so `this` inside the function was the module. Binding the
+                // element here made those functions fail on `this.updateSlider`
+                // and friends. The element is still available for `@value`,
+                // which coerceArg reads directly.
+                fn.apply(mod, args);
+            } catch (e) {
+                console.error('[EventBinding] data-cmd "' + cmd + '" threw:', e);
+            }
+        }
+
+        ['click', 'input', 'change'].forEach(function(name) {
+            const attr = 'data-cmd-' + name;
+            document.addEventListener(name, function(event) {
+                const target = getEventTarget(event);
+                if (!target || !target.closest) return;
+                const el = target.closest('[' + attr + ']');
+                if (el) { runCommand(el, attr); return; }
+                if (name === 'click') {
+                    // Plain data-cmd is the click shorthand.
+                    const plain = target.closest('[data-cmd]');
+                    if (plain) {
+                        if (plain.hasAttribute('data-action')) {
+                            console.warn('[EventBinding] element has both data-cmd and data-action; both would run: #' + (plain.id || '?'));
+                        }
+                        runCommand(plain, 'data-cmd');
+                    }
+                }
+            }, true);
+        });
+
+        // A click that must not bubble, with no call attached. Replaces
+        // onclick="event.stopPropagation();" on rows where a child control owns
+        // the click but the row itself must not react.
+        document.addEventListener('click', function(event) {
+            const target = getEventTarget(event);
+            if (target && target.closest && target.closest('[data-stop-propagation]')) {
+                event.stopPropagation();
+            }
+        }, true);
+
         console.log('[EventBinding] Initialized with ' + Object.keys(this.handlers).length + ' handlers');
     }
 };
@@ -8365,25 +8733,24 @@ window.bootstrapAlphabetIndex = function () {
     if (gkWrap && gkList) makeAlphaRail(gkWrap, gkList, gkCurrentLetter);
 };
 
+// A second, independent global error reporter used to live here and wrote the
+// error message into #find-results-count-text — the Find tab's "N results"
+// counter. Any uncaught error anywhere in the app (a Find scan, a Test Lab
+// oscillator, an EQ preset apply) therefore overwrote an unrelated tab's
+// functional status readout in red and destroyed the result count the user
+// needed to interpret the failure. It also duplicated the #debug-error-banner
+// below, so every error produced two independent UI reactions.
+//
+// The scan functions now report their own failures through
+// FindEngine._handleScanError, which is the correct owner of that widget. This
+// reporter only logs, leaving the UI to whoever caused the error.
 (function wireGlobalErrorReporter() {
-    const report = (msg) => {
-        console.error('[Global Error]', msg);
-        try {
-            const bar = document.getElementById('find-results-count');
-            const txt = document.getElementById('find-results-count-text');
-            if (bar) bar.classList.remove('hidden');
-            if (txt) {
-                txt.textContent = '⚠️ ' + msg;
-                txt.className = 'text-[9.5px] font-black uppercase tracking-wider text-rose-400';
-            }
-        } catch (_) {}
-    };
     window.addEventListener('error', (event) => {
-        report((event.error && event.error.message) || event.message || 'Unknown error');
+        console.error('[Global Error]', (event.error && event.error.message) || event.message || 'Unknown error');
     });
     window.addEventListener('unhandledrejection', (event) => {
         const r = event.reason;
-        report((r && r.message) ? r.message : String(r));
+        console.error('[Global Error]', (r && r.message) ? r.message : String(r));
     });
 })();
 
@@ -8490,24 +8857,30 @@ function showDebugError(message, source) {
     if (!errDiv) {
         errDiv = document.createElement('div');
         errDiv.id = 'debug-error-banner';
-        errDiv.style = 'position:fixed; bottom:20px; left:20px; right:20px; background:rgba(220,38,38,0.95); color:white; font-family:monospace; font-size:11px; padding:12px; border-radius:6px; z-index:9999; border:1px solid #ef4444; box-shadow:0 10px 30px rgba(0,0,0,0.55); overflow-y:auto; max-height:180px;';
+        errDiv.style = 'position:fixed; bottom:20px; left:20px; right:20px; background:rgba(220,38,38,0.95); color:white; font-family:monospace; font-size:11px; padding:12px; border-radius:6px; z-index:9999; border:1px solid #ef4444; box-shadow:0 10px 30px rgba(0,0,0,0.55); overflow-y:auto; max-height:180px; cursor:pointer;';
+        // Build via DOM text nodes, not innerHTML: message/source derive from
+        // error events (e.message can carry attacker-influenced strings from
+        // parsed imports; e.filename is URL-controlled) and must never hit an
+        // HTML sink. esc() exists in this file but innerHTML with template
+        // interpolation of both fields was an injection sink.
+        errDiv.textContent = '';
+        const strong = document.createElement('strong');
+        strong.textContent = '⚠️ JS Runtime Exception: ' + message;
+        const br = document.createElement('br');
+        const sourceSpan = document.createElement('span');
+        sourceSpan.style.cssText = 'opacity:0.85; font-size:10px; margin-top:4px; display:block;';
+        sourceSpan.textContent = String(source) + '  —  click to dismiss';
+        errDiv.appendChild(strong);
+        errDiv.appendChild(br);
+        errDiv.appendChild(sourceSpan);
         document.body.appendChild(errDiv);
+        // The banner used to have no way to go away: one transient error pinned
+        // a fixed red bar over the bottom of the UI for the rest of the session.
+        errDiv.addEventListener('click', () => errDiv.remove());
     }
-    // Build via DOM text nodes, not innerHTML: message/source derive from
-    // error events (e.message can carry attacker-influenced strings from
-    // parsed imports; e.filename is URL-controlled) and must never hit an
-    // HTML sink. esc() exists in this file but innerHTML with template
-    // interpolation of both fields was an injection sink.
-    errDiv.textContent = '';
-    const strong = document.createElement('strong');
-    strong.textContent = '⚠️ JS Runtime Exception: ' + message;
-    const br = document.createElement('br');
-    const sourceSpan = document.createElement('span');
-    sourceSpan.style.cssText = 'opacity:0.85; font-size:10px; margin-top:4px; display:block;';
-    sourceSpan.textContent = String(source);
-    errDiv.appendChild(strong);
-    errDiv.appendChild(br);
-    errDiv.appendChild(sourceSpan);
+    // Auto-expire. Errors still go to the console, which is the durable record.
+    clearTimeout(errDiv._dismissTimer);
+    errDiv._dismissTimer = setTimeout(() => { if (errDiv && errDiv.parentNode) errDiv.remove(); }, 12000);
 }
 
 window.addEventListener('error', function(e) {
@@ -9160,14 +9533,14 @@ function getBandEnergy(dataArray, startBin, endBin) {
         }
 
         const item = document.createElement('div');
-        item.className = 'toast-item pointer-events-auto flex items-start gap-2.5 px-3 py-2.5 rounded-md border-2 border-black bg-[var(--bg-card)] text-[var(--text-main)] shadow-[4px_4px_0_0_#000] text-xs font-bold select-none';
+        item.className = 'toast-item pointer-events-auto flex items-start gap-2.5 px-3 py-2.5 border-2 border-black bg-[var(--bg-card)] text-[var(--text-main)] shadow-[4px_4px_0_0_#000] text-xs font-bold select-none';
         item.style.animation = 'toast-in .18s ease-out';
 
         const action = opts.action;
         let html = '<span class="toast-icon flex-shrink-0 leading-none">' + esc(icon || 'ℹ️') + '</span>';
         html += '<div class="min-w-0 flex-1 leading-snug break-words">' + esc(String(message == null ? '' : message)) + '</div>';
         if (action && action.label) {
-            html += '<button class="toast-act flex-shrink-0 px-2 py-1 border-2 border-black bg-[var(--accent-blue)] text-white text-[10px] font-black rounded-sm cursor-pointer hover:brightness-110">' + esc(action.label) + '</button>';
+            html += '<button class="toast-act flex-shrink-0 px-2 py-1 border-2 border-black bg-[var(--accent-blue)] text-white text-[10px] font-black cursor-pointer hover:brightness-110">' + esc(action.label) + '</button>';
         }
         html += '<button class="toast-x flex-shrink-0 text-zinc-500 hover:text-red-400 text-[10px] leading-none cursor-pointer">✕</button>';
         item.innerHTML = html;
@@ -9588,7 +9961,10 @@ window.updateExpandedAutoHide = function() {
                 }, 100);
             }
                 if (tabId === 'visualizer' && EQ_Module) {
-                    if (window.SharedAudio && SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
+                    // `window.SharedAudio` was always undefined (SharedAudio is
+                    // a top-level const, never a window property), so switching
+                    // to the Visualizer tab never resumed a suspended context.
+                    if (typeof SharedAudio !== 'undefined' && SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
                         SharedAudio.ctx.resume().catch(()=>{});
                     }
                     // Fix frozen-every-other-switch: App previously forced
@@ -9663,7 +10039,7 @@ window.updateExpandedAutoHide = function() {
                     const isReady = !!(this.themeMap && this.themeMap[theme.id]);
                     const btn = document.createElement('button');
                     btn.id = 'theme-btn-' + theme.id;
-                    btn.className = 'theme-toggle-btn px-2.5 py-1.5 rounded text-[10px] font-bold text-[var(--text-secondary)] hover:text-white border border-transparent transition-all duration-200 flex items-center justify-center gap-1.5 bg-zinc-950/40 hover:scale-[1.03] cursor-pointer';
+                    btn.className = 'theme-toggle-btn px-2.5 py-1.5 text-[10px] font-bold text-[var(--text-secondary)] hover:text-white border border-transparent transition-all duration-200 flex items-center justify-center gap-1.5 bg-zinc-950/40 hover:scale-[1.03] cursor-pointer';
                     btn.innerHTML = `<span>${theme.emoji}</span> <span class="truncate">${theme.label.split(' ')[1]}</span>`;
 
                     if (isReady) {
@@ -10532,7 +10908,21 @@ setGlobalFont: function(fontId) {
                     }, { passive: false });
                 });
 
-                window.syncGlobalSliders = () => {
+                // Accepts an optional element. Five call sites pass one
+                // (eq-playlist.js after track swaps, accessibility.js on every
+                // balance-slider input, eq-loudness.js on every strength input)
+                // believing it is a scoped single-slider repaint. This used to
+                // ignore the argument and repaint ALL ~111 range inputs in the
+                // document every time — roughly 26,000 style writes/second while
+                // dragging the balance or loudness slider. The `paintSliderTrack`
+                // escape hatch above already existed for exactly this reason but
+                // was only used in 2 places.
+                window.syncGlobalSliders = (el) => {
+                    if (el && el.tagName === 'INPUT' && el.type === 'range') {
+                        el.lastDragVal = parseFloat(el.value) || 0;
+                        updateTrack(el);
+                        return;
+                    }
                     document.querySelectorAll('input[type="range"]').forEach(input => {
                         input.lastDragVal = parseFloat(input.value) || 0;
                         updateTrack(input);
@@ -10684,25 +11074,36 @@ setGlobalFont: function(fontId) {
         },
         init: function() {
             try {
+                // Exposed so the data-cmd dispatcher in events.js can reach these
+                // by name. FindEngine was previously unreachable this way, which
+                // is why the Find tab's runtime-built controls were still stuck
+                // with inline onclick attributes.
                 window.App = App; window.IEM = IEM_Module; window.EQ = EQ_Module; window.Tone = Tone_Module; window.TestLab = TestLab_Module; window.PEQDB = PEQDB_Module;
+                if (typeof FindEngine !== 'undefined') window.FindEngine = FindEngine;
 
                 ['mousedown', 'mousemove', 'keydown', 'touchstart', 'wheel'].forEach(evt => {
                     window.addEventListener(evt, () => {
-                        if (window.Mascot && Mascot.handleUserActivity) {
+                        if (typeof Mascot !== 'undefined' && Mascot.handleUserActivity) {
                             Mascot.handleUserActivity();
                         }
                     }, { passive: true });
                 });
 
                 document.addEventListener('touchstart', function() {
-                    if (window.SharedAudio && SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
-                        SharedAudio.ctx.resume();
+                    // Same dead `window.SharedAudio` guard as above: the first
+                    // touch never resumed a suspended context on touch devices.
+                    if (typeof SharedAudio !== 'undefined' && SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
+                        SharedAudio.ctx.resume().catch(()=>{});
                     }
                 }, { once: true, passive: true });
 
+                // Mascot's idle animation tick. `window.Mascot` was always
+                // undefined (Mascot is a top-level `var`/`const`, never a window
+                // property), so this interval woke up once a second for the whole
+                // session and did nothing at all.
                 setInterval(() => {
                     if (document.visibilityState !== 'visible') return;
-                    if (window.Mascot && window.EQ && !EQ.vizLoopRunning) {
+                    if (typeof Mascot !== 'undefined' && typeof EQ_Module !== 'undefined' && !EQ_Module.vizLoopRunning) {
                         Mascot.update();
                     }
                 }, 1000);
@@ -10739,7 +11140,7 @@ setGlobalFont: function(fontId) {
 
                 const brandMushroom = document.querySelector('.sidebar-label span');
                 if (brandMushroom) {
-                    brandMushroom.className = "cursor-pointer inline-block ml-1 hover:brightness-125 select-none transition-all duration-300 rounded-full px-1";
+                    brandMushroom.className = "cursor-pointer inline-block ml-1 hover:brightness-125 select-none transition-all duration-300 px-1";
                     brandMushroom.addEventListener('mouseenter', () => {
                         brandMushroom.style.textShadow = '0 0 10px var(--accent-blue)';
                         brandMushroom.style.transform = 'scale(1.1)';
@@ -10956,11 +11357,11 @@ setGlobalFont: function(fontId) {
             const isValid = this.exportGrade && this.exportTheme && this.exportFont;
             if (isValid) {
                 btn.disabled = false;
-                btn.className = "w-full py-2 bg-[var(--accent-blue)] text-white hover:brightness-110 font-bold rounded-md text-xs shadow-lg transition-all text-center mb-3 cursor-pointer";
+                btn.className = "w-full py-2 bg-[var(--accent-blue)] text-white hover:brightness-110 font-bold text-xs shadow-lg transition-all text-center mb-3 cursor-pointer";
                 btn.style.opacity = "1";
             } else {
                 btn.disabled = true;
-                btn.className = "w-full py-2 bg-zinc-800 text-zinc-500 font-bold rounded-md text-xs transition-all text-center mb-3 cursor-not-allowed";
+                btn.className = "w-full py-2 bg-zinc-800 text-zinc-500 font-bold text-xs transition-all text-center mb-3 cursor-not-allowed";
                 btn.style.opacity = "0.5";
             }
         },
@@ -11182,7 +11583,7 @@ onDbSearchInput: function(value) {
                 groupEl.setAttribute('data-iem-brand', brandName);
                 groupEl.setAttribute('data-letter', alphaKeyOf({ brand: brandName }));
                 groupEl.innerHTML = `
-                    <div class="flex items-center justify-between p-2 cursor-pointer select-none border-2 border-black rounded flex-shrink-0 w-full min-w-0" style="background: var(--bg-input);" onclick="IEM.toggleIemDbBrand('${escJs(brandName)}')">
+                    <div class="flex items-center justify-between p-2 cursor-pointer select-none border-2 border-black flex-shrink-0 w-full min-w-0" style="background: var(--bg-input);" data-cmd="IEM.toggleIemDbBrand" data-arg-0="${escJs(brandName)}">
                         <span class="text-xs font-black uppercase tracking-wider text-[var(--accent-blue)] truncate min-w-0">${escSafe(brandName)}</span>
                         <span class="flex items-center gap-1.5 flex-shrink-0">
                             <span class="text-[9px] font-black text-zinc-500">${items.length}</span>
@@ -11256,16 +11657,16 @@ onDbSearchInput: function(value) {
             if (isMulti) {
                 fileRowHtml = `
                     <div class="flex items-center gap-1.5 mt-1">
-                        <button onclick="event.stopPropagation(); IEM.cycleIemDbFile('${escJs(item.id)}', -1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isActive ? '#fff' : 'var(--text-secondary)'};">◀</button>
-                        <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
+                        <button data-cmd="IEM.cycleIemDbFile" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isActive ? '#fff' : 'var(--text-secondary)'};">◀</button>
+                        <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                             <span class="iem-db-file-marquee text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isActive ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
                         </div>
-                        <button onclick="event.stopPropagation(); IEM.cycleIemDbFile('${escJs(item.id)}', 1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isActive ? '#fff' : 'var(--text-secondary)'};">▶</button>
+                        <button data-cmd="IEM.cycleIemDbFile" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isActive ? '#fff' : 'var(--text-secondary)'};">▶</button>
                     </div>
                 `;
             } else {
                 fileRowHtml = `
-                    <div class="mt-1 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
+                    <div class="mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                         <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isActive ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
                     </div>
                 `;
@@ -11644,9 +12045,9 @@ onDbSearchInput: function(value) {
             };
             btn.textContent = labels[this.currentCrossover] || '🔀 Crossover: Unknown';
             if (this.currentCrossover === 'UNK') {
-                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border border-[var(--border-color)] rounded text-[9px] font-bold text-zinc-400 transition-all flex items-center justify-center gap-1 cursor-pointer";
+                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border border-[var(--border-color)] text-[9px] font-bold text-zinc-400 transition-all flex items-center justify-center gap-1 cursor-pointer";
             } else {
-                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[var(--accent-blue)] rounded text-[9px] font-bold text-[var(--accent-blue)] transition-all flex items-center justify-center gap-1 cursor-pointer";
+                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[var(--accent-blue)] text-[9px] font-bold text-[var(--accent-blue)] transition-all flex items-center justify-center gap-1 cursor-pointer";
             }
         },
         updateWayButtonsUI: function() {
@@ -11663,9 +12064,9 @@ onDbSearchInput: function(value) {
             };
             btn.textContent = labels[this.currentWay] || '🧩 Way: Unknown';
             if (this.currentWay === 'UNK') {
-                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border border-[var(--border-color)] rounded text-[9px] font-bold text-zinc-400 transition-all flex items-center justify-center gap-1 cursor-pointer";
+                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border border-[var(--border-color)] text-[9px] font-bold text-zinc-400 transition-all flex items-center justify-center gap-1 cursor-pointer";
             } else {
-                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[var(--accent-blue)] rounded text-[9px] font-bold text-[var(--accent-blue)] transition-all flex items-center justify-center gap-1 cursor-pointer";
+                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[var(--accent-blue)] text-[9px] font-bold text-[var(--accent-blue)] transition-all flex items-center justify-center gap-1 cursor-pointer";
             }
         },
         imgScale: 1.0,
@@ -12143,7 +12544,7 @@ onDbSearchInput: function(value) {
                     container.appendChild(div);
                 } else {
                     const div = document.createElement('div');
-                    div.className = 'border-2 border-dashed border-black rounded-none p-1 flex items-center justify-center select-none w-full h-full bg-black/10';
+                    div.className = 'border-2 border-dashed border-black p-1 flex items-center justify-center select-none w-full h-full bg-black/10';
                     div.innerHTML = `<span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Slot ${i+1}</span>`;
                     container.appendChild(div);
                 }
@@ -12455,8 +12856,8 @@ onDbSearchInput: function(value) {
                     </div>
 
                     <div class="flex items-center justify-center gap-1 w-full max-w-[64px] mt-1">
-                        <button type="button" onclick="IEM.decrementDriver('${d.type}')" class="w-7 h-6 flex items-center justify-center text-xs font-black text-red-400 bg-[var(--bg-card)] border-2 border-black active:translate-y-[1px] select-none cursor-pointer ${!isActive ? 'opacity-20 pointer-events-none' : ''}" style="box-shadow: 2px 2px 0px 0px #000000 !important;">−</button>
-                        <button type="button" onclick="IEM.incrementDriver('${d.type}')" class="w-7 h-6 flex items-center justify-center text-xs font-black text-emerald-400 bg-[var(--bg-card)] border-2 border-black active:translate-y-[1px] select-none cursor-pointer" style="box-shadow: 2px 2px 0px 0px #000000 !important;">+</button>
+                        <button type="button" data-cmd="IEM.decrementDriver" data-arg-0="${d.type}" class="w-7 h-6 flex items-center justify-center text-xs font-black text-red-400 bg-[var(--bg-card)] border-2 border-black active:translate-y-[1px] select-none cursor-pointer ${!isActive ? 'opacity-20 pointer-events-none' : ''}" style="box-shadow: 2px 2px 0px 0px #000000 !important;">−</button>
+                        <button type="button" data-cmd="IEM.incrementDriver" data-arg-0="${d.type}" class="w-7 h-6 flex items-center justify-center text-xs font-black text-emerald-400 bg-[var(--bg-card)] border-2 border-black active:translate-y-[1px] select-none cursor-pointer" style="box-shadow: 2px 2px 0px 0px #000000 !important;">+</button>
                     </div>
                 `;
                 container.appendChild(div);
@@ -13180,7 +13581,7 @@ onDbSearchInput: function(value) {
             const badge = document.getElementById('bias-badge');
             let biasStr, biasClass;
 
-            const unifiedBiasClass = 'text-xs uppercase tracking-wider font-black px-3 py-1 rounded-none bg-[var(--bg-input)] border-2 border-black text-[var(--text-main)] w-full text-center transition-all shadow-[2px_2px_0px_0px_#000]';
+            const unifiedBiasClass = 'text-xs uppercase tracking-wider font-black px-3 py-1 bg-[var(--bg-input)] border-2 border-black text-[var(--text-main)] w-full text-center transition-all shadow-[2px_2px_0px_0px_#000]';
 
             if (bassScore > toneScore + 1.2 && bassScore > techScore + 1.2) {
                 biasStr = '💥 Basshead & Warm Bias';
@@ -13337,19 +13738,19 @@ if(this.radarChart) {
                     <td class="px-4 py-3"><input type="checkbox" class="compare-cb accent-blue-500 w-4 h-4 cursor-pointer" value="${safeId}"></td>
                     <td class="px-4 py-3 font-semibold text-[var(--text-main)] flex items-center gap-3">
                         <span class="text-[var(--text-secondary)] font-mono text-xs w-4">#${idx+1}</span>
-                        ${imgPath ? `<img src="${safeImg}" class="w-8 h-8 object-cover rounded border border-[var(--border-color)] bg-[#111]">` : '<div class="w-8 h-8 rounded border border-[var(--border-color)] bg-[#111] flex items-center justify-center text-zinc-650">🎧</div>'}
+                        ${imgPath ? `<img src="${safeImg}" class="w-8 h-8 object-cover border border-[var(--border-color)] bg-[#111]">` : '<div class="w-8 h-8 border border-[var(--border-color)] bg-[#111] flex items-center justify-center text-zinc-650">🎧</div>'}
                         <div>
                             <div class="text-xs">${safeBrand} <span class="text-[var(--accent-blue)]">${safeModel}</span></div>
                             <div class="text-xs text-[var(--text-secondary)] font-normal mt-0.5">$${safePrice} • Vol: ${safeVol}</div>
                         </div>
                     </td>
-                    <td class="px-4 py-3 font-black text-md text-center text-[var(--accent-blue)]">${safeScore}</td>
+                    <td class="px-4 py-3 font-black text-sm text-center text-[var(--accent-blue)]">${safeScore}</td>
                     <td class="px-4 py-3 text-right"></td>`;
                 // Load/Delete buttons are DOM-built with real listeners (no
                 // onclick string literals) — imported ids can contain quotes
                 // that previously broke out of the inline handler string.
                 const loadBtn = document.createElement('button');
-                loadBtn.className = 'px-3 py-1 bg-zinc-800 text-stone-200 rounded text-xs font-bold hover:bg-zinc-700 transition-colors shadow-sm';
+                loadBtn.className = 'px-3 py-1 bg-zinc-800 text-stone-200 text-xs font-bold hover:bg-zinc-700 transition-colors shadow-sm';
                 loadBtn.textContent = 'Load';
                 loadBtn.addEventListener('click', () => IEM_Module.loadFromLibrary(item.id));
                 const delBtn = document.createElement('button');
@@ -13415,7 +13816,20 @@ if (profile.eqData && typeof EQ_Module !== 'undefined' && EQ_Module.loadValues) 
 else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.applyPreset('balanced');
             this.updateAll(); this.toggleLibraryModal();
         },
-        deleteFromLibrary: async function(id) { if(!confirm("Are you sure you want to delete this profile?")) return; await DBCache.deleteReview(id); await this.renderLibrary(); },
+        // Was a native confirm(), which blocks the whole renderer on a modal the
+        // app cannot style - and froze the window until a human answered, which
+        // also made it impossible to exercise from a test. Every other
+        // destructive action in the app already uses UIKit.confirm.
+        deleteFromLibrary: async function(id) {
+            const ok = await UIKit.confirm({
+                title: "Delete this profile?",
+                confirmLabel: "Delete",
+                danger: true
+            });
+            if (!ok) return;
+            await DBCache.deleteReview(id);
+            await this.renderLibrary();
+        },
         compareSelected: async function() {
             const checkboxes = document.querySelectorAll('.compare-cb:checked'); if(checkboxes.length < 2 || checkboxes.length > 4) { alert("Please select between 2 and 4 IEMs to compare."); return; }
             const library = await this.getLibrary(); const selected = Array.from(checkboxes).map(cb => library.find(i => i.id === cb.value));
@@ -13444,14 +13858,23 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
                 const brandEsc = esc(item.brand); const modelEsc = esc(item.model);
                 const axes = [['Bass',0],['Mids',1],['Treble',2],['Detail',3],['Stage',4],['Imaging',5],['Dynamics',6],['Tonality',7],['Tech',8]];
                 const axisRows = axes.map(([label, i]) => `<div class="flex justify-between border-b border-[var(--border-color)] pb-0.5"><span class="text-zinc-500">${label}</span><span class="text-[var(--text-main)]">${rd(i)}</span></div>`).join('');
-                _compHtml += `<div class="bg-[var(--bg-input)] border border-[var(--border-color)] rounded p-4 flex flex-col items-center shadow relative"><div class="absolute top-2 left-2 text-xs text-[var(--text-secondary)] font-mono border border-[var(--border-color)] px-1.5 rounded">$${esc(item.price || '--')}</div>${imgPath ? `<img src="${safeImg}" class="h-20 object-contain mb-3 rounded bg-[#111] p-1 border border-[var(--border-color)]">` : `<div class="h-20 w-20 bg-[#111] rounded flex items-center justify-center mb-3 text-zinc-650 border border-[var(--border-color)]">🎧</div>`}<h3 class="font-bold text-xs text-center leading-tight">${brandEsc}<br><span class="text-[var(--accent-blue)] text-sm">${modelEsc}</span></h3><div class="text-3xl font-black mt-2 text-[var(--text-main)] tracking-tighter">${scoreVal}</div><div class="w-full mt-4 space-y-1 text-xs font-semibold">${axisRows}</div></div>`;
+                _compHtml += `<div class="bg-[var(--bg-input)] border border-[var(--border-color)] p-4 flex flex-col items-center shadow relative"><div class="absolute top-2 left-2 text-xs text-[var(--text-secondary)] font-mono border border-[var(--border-color)] px-1.5">$${esc(item.price || '--')}</div>${imgPath ? `<img src="${safeImg}" class="h-20 object-contain mb-3 bg-[#111] p-1 border border-[var(--border-color)]">` : `<div class="h-20 w-20 bg-[#111] flex items-center justify-center mb-3 text-zinc-650 border border-[var(--border-color)]">🎧</div>`}<h3 class="font-bold text-xs text-center leading-tight">${brandEsc}<br><span class="text-[var(--accent-blue)] text-sm">${modelEsc}</span></h3><div class="text-3xl font-black mt-2 text-[var(--text-main)] tracking-tighter">${scoreVal}</div><div class="w-full mt-4 space-y-1 text-xs font-semibold">${axisRows}</div></div>`;
             });
             compGrid.innerHTML = _compHtml;
             compView.classList.remove('hidden'); compView.classList.add('flex');
         },
         closeCompare: function() { document.getElementById('library-table').classList.remove('hidden'); document.getElementById('compare-view').classList.add('hidden'); document.getElementById('compare-view').classList.remove('flex'); },
-        resetAll: function() {
-            if(!confirm("Clear all current workspace data?")) return;
+        // Was a native confirm(), which blocks the renderer on an unstyleable
+        // modal and froze the window until a human answered. Now async because
+        // UIKit.confirm is a promise; the only caller is the reset button, which
+        // never depended on the wipe happening synchronously.
+        resetAll: async function() {
+            const ok = await UIKit.confirm({
+                title: "Clear all current workspace data?",
+                confirmLabel: "Clear all",
+                danger: true
+            });
+            if (!ok) return;
 
             // Preserve user preferences that are NOT workspace review data.
             // The old 5-key list let the wipe destroy the Find tab's curated
@@ -14660,15 +15083,21 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
                 EQ_Module.startVisualizer();
             }
         },
+        // Looked up by id. This used to be
+        // querySelector('button[onclick="Tone.toneSweep()"]'), which never
+        // matched anything: the button is wired through
+        // data-action="click_277_Tone_toneSweep" and has no inline onclick
+        // attribute, so all three lookups silently returned null and the button
+        // never showed "Stop Sweep" or its is-on state during a sweep.
         toneStop: function() {
             if (this.sweepTimer) {
                 clearInterval(this.sweepTimer);
                 this.sweepTimer = null;
             }
-            const btnSweep = document.querySelector('button[onclick="Tone.toneSweep()"]');
+            const btnSweep = document.getElementById('tone-sweep-btn');
             if (btnSweep) {
-                btnSweep.innerHTML = 'Auto Sweep';
-                btnSweep.classList.remove('active-yellow');
+                btnSweep.textContent = 'Auto Sweep';
+                btnSweep.classList.remove('is-on');
             }
             if(this.osc) { try { this.osc.stop(); } catch(e){} this.osc.disconnect(); this.osc = null; }
             if(this.gain) { this.gain.disconnect(); this.gain = null; }
@@ -14679,20 +15108,20 @@ toneSweep: async function() {
 if (this.sweepTimer) {
 clearInterval(this.sweepTimer);
 this.sweepTimer = null;
-const btnSweep = document.querySelector('button[onclick="Tone.toneSweep()"]');
-if (btnSweep) {
-btnSweep.innerHTML = 'Auto Sweep';
-btnSweep.classList.remove('active-yellow');
+const btnStop = document.getElementById('tone-sweep-btn');
+if (btnStop) {
+btnStop.textContent = 'Auto Sweep';
+btnStop.classList.remove('is-on');
 }
 return;
 }
             if (!this.osc) {
                 await this.toneTogglePlay();
             }
-            const btnSweep = document.querySelector('button[onclick="Tone.toneSweep()"]');
+            const btnSweep = document.getElementById('tone-sweep-btn');
             if (btnSweep) {
-                btnSweep.innerHTML = 'Stop Sweep';
-                btnSweep.classList.add('active-yellow');
+                btnSweep.textContent = 'Stop Sweep';
+                btnSweep.classList.add('is-on');
             }
                         this.sweepTimer = setInterval(() => {
                 this.current += 30;
@@ -15098,11 +15527,11 @@ const EQ_Module = {
         const btnAdvanced = document.getElementById('btn-sculpt-advanced');
         if (btnSimple && btnAdvanced) {
             if (mode === 'simple') {
-                btnSimple.className = "px-2 py-1 rounded bg-pink-500 text-white transition-all cursor-pointer";
-                btnAdvanced.className = "px-2 py-1 rounded text-zinc-500 hover:text-stone-300 transition-all cursor-pointer";
+                btnSimple.className = "px-2 py-1 bg-pink-500 text-white transition-all cursor-pointer";
+                btnAdvanced.className = "px-2 py-1 text-zinc-500 hover:text-stone-300 transition-all cursor-pointer";
             } else {
-                btnAdvanced.className = "px-2 py-1 rounded bg-pink-500 text-white transition-all cursor-pointer";
-                btnSimple.className = "px-2 py-1 rounded text-zinc-500 hover:text-stone-300 transition-all cursor-pointer";
+                btnAdvanced.className = "px-2 py-1 bg-pink-500 text-white transition-all cursor-pointer";
+                btnSimple.className = "px-2 py-1 text-zinc-500 hover:text-stone-300 transition-all cursor-pointer";
             }
         }
 
@@ -15134,7 +15563,7 @@ const EQ_Module = {
         executeCurrentExportFormat: function() {
             const current = this.exportFormats[this.selectedExportFormatIdx];
             if (current && current.fn) {
-                if (window.Mascot) Mascot.triggerTemporaryExpression('grin', 1500);
+                if (typeof Mascot !== 'undefined') Mascot.triggerTemporaryExpression('grin', 1500);
                 current.fn();
             }
         },
@@ -15642,7 +16071,7 @@ vizModalActive: false,
 
             const editBtn = document.getElementById('target-edit-btn');
             if (editBtn) {
-                editBtn.classList.add('active-btn', 'active-yellow');
+                editBtn.classList.add('active-btn', 'is-on');
                 editBtn.innerHTML = '🔒';
                 editBtn.title = "Lock and Apply Target Changes";
             }
@@ -15675,7 +16104,7 @@ vizModalActive: false,
 
             const editBtn = document.getElementById('target-edit-btn');
             if (editBtn) {
-                editBtn.classList.remove('active-btn', 'active-yellow');
+                editBtn.classList.remove('active-btn', 'is-on');
                 editBtn.innerHTML = '✏️';
                 editBtn.title = "Open Target Sculptor Lab";
             }
@@ -15729,7 +16158,7 @@ vizModalActive: false,
                 card.innerHTML = `
                     <div class="flex items-center justify-between text-[10px] select-none font-bold" draggable="false">
                         <div class="flex items-center gap-1.5" draggable="false">
-                            <span class="w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] font-black text-white" style="background-color: var(--band-color);">${i + 1}</span>
+                            <span class="w-3.5 h-3.5 flex items-center justify-center text-[8px] font-black text-white" style="background-color: var(--band-color);">${i + 1}</span>
                             <span class="text-zinc-350 text-[10px]">${b.emoji} ${b.name}</span>
                         </div>
                         <div class="flex items-center gap-1.5 font-mono text-zinc-400" draggable="false">
@@ -15738,7 +16167,7 @@ vizModalActive: false,
                         </div>
                     </div>
                     <div class="flex items-center h-4 mt-1" draggable="false">
-                        <input type="range" id="eq-s${i}-std" min="-20" max="20" step="0.1" value="0" class="w-full" oninput="EQ.handleStandardSlider(${i}, this.value)" draggable="false">
+                        <input type="range" id="eq-s${i}-std" min="-20" max="20" step="0.1" value="0" class="w-full" data-cmd-input="EQ.handleStandardSlider" data-arg-0="${i}" data-arg-1="@value" draggable="false">
                     </div>
                 `;
                 container.appendChild(card);
@@ -15784,15 +16213,15 @@ vizModalActive: false,
                 bandDiv.innerHTML = `
                     <div class="flex items-center justify-between w-full h-5 select-none" draggable="false">
                         <div class="flex items-center gap-1" draggable="false">
-                            <span class="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black text-white flex-shrink-0" style="background-color: var(--band-color);">${i + 1}</span>
-                            <button onclick="EQ.cycleBandType(${i})" id="eq-t_m${i}" class="eq-card-select px-2" style="color: var(--band-color);" draggable="false">${currentLabel}</button>
-                            <button onclick="EQ.cycleBandSlope(${i})" id="eq-sl_m${i}" class="eq-card-select px-1.5 ml-1 ${isSlopeVisible ? '' : 'hidden'}" style="color: var(--text-secondary); border-color: rgba(255,255,255,0.04);" title="Filter steepness (12—48 dB/octave)" draggable="false">${currentSlope}dB</button>
+                            <span class="w-4 h-4 flex items-center justify-center text-[9px] font-black text-white flex-shrink-0" style="background-color: var(--band-color);">${i + 1}</span>
+                            <button data-cmd="EQ.cycleBandType" data-arg-0="${i}" id="eq-t_m${i}" class="eq-card-select px-2" style="color: var(--band-color);" draggable="false">${currentLabel}</button>
+                            <button data-cmd="EQ.cycleBandSlope" data-arg-0="${i}" id="eq-sl_m${i}" class="eq-card-select px-1.5 ml-1 ${isSlopeVisible ? '' : 'hidden'}" style="color: var(--text-secondary); border-color: rgba(255,255,255,0.04);" title="Filter steepness (12—48 dB/octave)" draggable="false">${currentSlope}dB</button>
                         </div>
 
                         <div class="flex items-center gap-1" draggable="false">
-                            <button onclick="EQ.copyBand(${i})" class="eq-card-action-btn" draggable="false">Copy</button>
-                            <button onclick="EQ.resetBand(${i})" class="eq-card-action-btn" draggable="false">Reset</button>
-                            <button onclick="EQ.toggleBandBypass(${i})" id="eq-bp_m${i}" class="text-[8px] font-black cursor-pointer focus:outline-none ml-1" style="color: ${isBypassed ? 'var(--accent-red)' : 'var(--accent-green)'}" draggable="false">
+                            <button data-cmd="EQ.copyBand" data-arg-0="${i}" class="eq-card-action-btn" draggable="false">Copy</button>
+                            <button data-cmd="EQ.resetBand" data-arg-0="${i}" class="eq-card-action-btn" draggable="false">Reset</button>
+                            <button data-cmd="EQ.toggleBandBypass" data-arg-0="${i}" id="eq-bp_m${i}" class="text-[8px] font-black cursor-pointer focus:outline-none ml-1" style="color: ${isBypassed ? 'var(--accent-red)' : 'var(--accent-green)'}" draggable="false">
                                 ${isBypassed ? '🔴' : '🟢'}
                             </button>
                         </div>
@@ -15801,20 +16230,20 @@ vizModalActive: false,
                     <div class="grid grid-cols-1 gap-1.5 pt-1 border-t border-white/[0.03]" draggable="false">
                         <div class="flex items-center justify-between gap-2 h-5" id="row-tune_m${i}" draggable="false">
                             <span class="eq-card-label w-7">Tune</span>
-                            <input type="number" id="eq-f${i}" value="${b.hz}" min="20" max="20000" class="eq-card-input w-16" onchange="EQ.handleFreqNumInput(${i}, this.value)" draggable="false">
-                            <input type="range" id="eq-fs_m${i}" min="0" max="1000" value="${this.logHzToSlider(b.hz)}" class="flex-grow flex-1" oninput="EQ.handleFreqSlider(${i}, this.value)" draggable="false">
+                            <input type="number" id="eq-f${i}" value="${b.hz}" min="20" max="20000" class="eq-card-input w-16" data-cmd-change="EQ.handleFreqNumInput" data-arg-0="${i}" data-arg-1="@value" draggable="false">
+                            <input type="range" id="eq-fs_m${i}" min="0" max="1000" value="${this.logHzToSlider(b.hz)}" class="flex-grow flex-1" data-cmd-input="EQ.handleFreqSlider" data-arg-0="${i}" data-arg-1="@value" draggable="false">
                         </div>
 
                         <div class="flex items-center justify-between gap-2 h-5" id="row-gain_m${i}" draggable="false">
                             <span class="eq-card-label w-7">Gain</span>
-                            <input type="number" id="eq-s${i}_num" value="0.0" step="0.1" class="eq-card-input w-16" onchange="EQ.handleGainNumInput(${i}, this.value)" draggable="false">
-                            <input type="range" id="eq-s${i}" min="-20" max="20" step="0.1" value="0" class="flex-grow flex-1" oninput="EQ.updateSlider(${i})" draggable="false">
+                            <input type="number" id="eq-s${i}_num" value="0.0" step="0.1" class="eq-card-input w-16" data-cmd-change="EQ.handleGainNumInput" data-arg-0="${i}" data-arg-1="@value" draggable="false">
+                            <input type="range" id="eq-s${i}" min="-20" max="20" step="0.1" value="0" class="flex-grow flex-1" data-cmd-input="EQ.updateSlider" data-arg-0="${i}" draggable="false">
                         </div>
 
                         <div class="flex items-center justify-between gap-2 h-5" id="row-q_m${i}" draggable="false">
                             <span class="eq-card-label w-7">Q</span>
-                            <input type="number" id="eq-q_m${i}_num" value="${b.defaultQ}" step="0.05" class="eq-card-input w-16" onchange="EQ.handleQNumInput(${i}, this.value)" draggable="false">
-                            <input type="range" id="eq-q_m${i}" min="0.1" max="10" step="0.1" value="${b.defaultQ}" class="flex-grow flex-1" oninput="EQ.updateSlider(${i})" draggable="false">
+                            <input type="number" id="eq-q_m${i}_num" value="${b.defaultQ}" step="0.05" class="eq-card-input w-16" data-cmd-change="EQ.handleQNumInput" data-arg-0="${i}" data-arg-1="@value" draggable="false">
+                            <input type="range" id="eq-q_m${i}" min="0.1" max="10" step="0.1" value="${b.defaultQ}" class="flex-grow flex-1" data-cmd-input="EQ.updateSlider" data-arg-0="${i}" draggable="false">
                         </div>
                     </div>
                 `;
@@ -15998,6 +16427,12 @@ vizModalActive: false,
                 }
 
                 if (!window.isProgrammaticPreampUpdate && prevPreampVal !== null && prevPreampVal !== val) {
+                    // The user moved the preamp themselves: forget the Anti-Clip
+                    // baseline so it neither restores a stale value later nor
+                    // pushes the slider back up against their new setting.
+                    this._agcUserPreamp = undefined;
+                    this._agcAutoDb = 0;
+                    this._agcNotified = false;
                     PEQDB_Module._similarTargetEverModified = true;
                     if (PEQDB_Module.searchMode === 'similar' && PEQDB_Module.debouncedFindSimilarCurves) {
                         PEQDB_Module.debouncedFindSimilarCurves();
@@ -16217,7 +16652,7 @@ switchCategory: function(catId) {
                     const btn = document.createElement('button');
                     btn.id = 'preset-btn-' + p.id;
 
-                    btn.className = 'w-full text-center text-[10px] h-8 px-1 py-1 rounded bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate flex items-center justify-center gap-1 cursor-pointer';
+                    btn.className = 'w-full text-center text-[10px] h-8 px-1 py-1 bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate flex items-center justify-center gap-1 cursor-pointer';
                     btn.innerHTML = `<span>${p.name}</span>`;
                     btn.onclick = () => { this.applyPreset(p.id); };
                     grid.appendChild(btn);
@@ -16237,6 +16672,10 @@ switchCategory: function(catId) {
         applyGeneratedPEQ: function(bands) {
             EQ_Module.isProgrammaticSliderUpdate = true;
 
+            // ALWAYS release the programmatic flag. b.gain.toFixed(1) below
+            // throws on a non-numeric member, and a stuck true flag silently
+            // disables every later manual audio update for the whole session.
+            try {
             this.bands.forEach((b, i) => {
                 const sSlider = document.getElementById("eq-s" + i);
                 const fInput = document.getElementById("eq-f" + i);
@@ -16319,7 +16758,9 @@ switchCategory: function(catId) {
                 }
             });
 
-            EQ_Module.isProgrammaticSliderUpdate = false;
+            } finally {
+                EQ_Module.isProgrammaticSliderUpdate = false;
+            }
 
             if (EQ_Module.graphBuilt) {
                 EQ_Module.updateAudioConnections();
@@ -16344,6 +16785,13 @@ switchCategory: function(catId) {
             const _prevSuppress = this._suppressDraw;
             if (skipDraw) this._suppressDraw = true;
 
+            // ALWAYS release the programmatic flag, even if a band throws
+            // mid-loop. A stuck true flag silently disabled every subsequent
+            // manual audio update for the whole session: sliders would move and
+            // the drawn curve would change, but the sound would not
+            // (updateSlider's worklet push is gated on !isProgrammaticSliderUpdate).
+            // This is the path the one-click "Clear" button runs.
+            try {
             this.bands.forEach((b, i) => {
                 const fInput = document.getElementById("eq-f" + i);
                 if (fInput) fInput.value = b.hz;
@@ -16405,7 +16853,9 @@ switchCategory: function(catId) {
 
             this.updatePreamp();
 
-            EQ_Module.isProgrammaticSliderUpdate = false;
+            } finally {
+                EQ_Module.isProgrammaticSliderUpdate = false;
+            }
 
             const sliderDefaults = {
                 'comp-attack-slider': { val: 15, param: 'attack', text: '15.0 ms' },
@@ -16527,8 +16977,45 @@ const EQ_TapeModMethods = {
 // function except for the SharedAudio sample-rate read; merged into EQ_Module
 // via Object.assign in db-cache.js.
 const EQ_BiquadMathMethods = {
+        // The sample rate the AUDIO path is actually running at.
+        //
+        // This used to read `window.SharedAudio`, but SharedAudio is a
+        // top-level `const` in a classic (non-module) script, so it is never a
+        // property of `window` — that guard was therefore ALWAYS false and the
+        // whole expression fell through to the hard-coded 44100. Meanwhile
+        // dsp-processor.js runs inside an AudioWorklet whose `globalThis.sampleRate`
+        // is the device's real rate (48000 is the common Windows default), so
+        // every drawn and exported curve was computed against the wrong rate.
+        //
+        // The practical audible impact is small — the drawing path applies the
+        // SAME 0.45*Fs clamp, so the two agree to within ~0.14 dB — but the
+        // clamp CEILING diverges (19845 Hz drawn vs 21600 Hz allowed at 48 kHz,
+        // and 19845 vs 43200 at 96 kHz), so a band in between is drawn at a
+        // slightly different frequency than it is played. Fixing it also keeps
+        // the "MUST stay identical to updateCoefficients" contract honest.
+        //
+        // The AudioContext is created lazily on the first user gesture, so before
+        // any playback this legitimately falls back to 44100; the curve corrects
+        // itself on the first play once the real rate is known.
+        _resolvedFs: 0,
+        _resolvedFsCtx: null,
+        getAudioSampleRate: function() {
+            let ctx = null;
+            // typeof on a lexical binding is safe here: nothing calls this during
+            // bundle evaluation, so the TDZ can never apply.
+            try { if (typeof SharedAudio !== 'undefined' && SharedAudio) ctx = SharedAudio.ctx; } catch (_) {}
+            if (ctx !== this._resolvedFsCtx) {
+                this._resolvedFsCtx = ctx;
+                this._resolvedFs = (ctx && Number.isFinite(ctx.sampleRate)) ? ctx.sampleRate : 0;
+            }
+            return this._resolvedFs;
+        },
+
         _biquadCoeffs: function(type, f0, Q, G, Fs) {
-            const rawFs = Fs || (window.SharedAudio && SharedAudio.ctx ? SharedAudio.ctx.sampleRate : 44100);
+            // An explicit Fs argument still wins; otherwise use the live context
+            // rate; otherwise fall back to 44100 until the context exists.
+            const explicit = Number.isFinite(Fs) ? Fs : 0;
+            const rawFs = explicit || this.getAudioSampleRate() || 44100;
             const activeFs = Number.isFinite(rawFs) && rawFs >= 2000 ? rawFs : 44100;
             const maxF0 = Math.min(activeFs * 0.45, activeFs / 2 - 1000);
             const safeF0 = Math.max(10, Math.min(maxF0, Number.isFinite(f0) ? f0 : 1000));
@@ -17545,6 +18032,36 @@ const EQ_DspGraphMethods = {        _dspBuildPromise: null,
                 outputChannelCount: [2]
             });
 
+            // onprocessorerror was never assigned anywhere in the project. Per
+            // the Web Audio spec the node is PERMANENTLY disabled once it fires,
+            // so an unhandled fault meant the graph went silently dead with no
+            // error and no recovery. Surface it instead of swallowing it.
+            SharedAudio.workletNode.onprocessorerror = () => {
+                console.error('[AudioEngine] dsp-processor faulted and was disabled. Audio is silent until the graph is rebuilt.');
+                try {
+                    if (typeof showToast === 'function') {
+                        showToast('Audio engine fault — output is silent. Press play again or restart to recover.', '⚠️');
+                    }
+                } catch (_) {}
+                // Allow the next ensureDSPGraph() to rebuild instead of being
+                // blocked by a stale graphBuilt flag pointing at a dead node.
+                this.graphBuilt = false;
+            };
+
+            // The worklet also reports faults it caught itself (dsp-processor.js
+            // wraps process() so a throw degrades one block instead of killing
+            // the node). That is a warning, not a death.
+            SharedAudio.workletNode.port.addEventListener('message', (e) => {
+                const d = e.data;
+                if (d && d.type === 'processorError') {
+                    console.error('[AudioEngine] dsp-processor recovered from: ' + d.message);
+                }
+            });
+            // A MessagePort only dispatches to addEventListener('message')
+            // listeners after start(); assigning onmessage would start it
+            // implicitly, but these listeners use addEventListener.
+            try { SharedAudio.workletNode.port.start(); } catch (_) {}
+
             SharedAudio.workletNode.port.postMessage({
                 type: 'init',
                 sampleRate: ctx.sampleRate
@@ -17781,29 +18298,45 @@ const EQ_DspGraphMethods = {        _dspBuildPromise: null,
         // posts and paints the meter bar in the output panel. Runs only while
         // the limiter is enabled AND audio is flowing; started from the DSP
         // graph build and stopped on disable.
-        _grMeterRunning: false,
+        //
+        // The listener is bound to a PER-BUILD port, but the guard used to be
+        // plain module state that was never reset. After the first successful
+        // build set it true, any rebuild returned early here and the NEW
+        // node's port never got a listener — so the meter froze at its last
+        // value for the rest of the session while still looking live. Track the
+        // port we actually subscribed to and re-subscribe when it changes.
+        _grMeterPort: null,
         startGrMeter: function() {
-            if (this._grMeterRunning || !SharedAudio.workletNode) return;
-            this._grMeterRunning = true;
-            SharedAudio.workletNode.port.addEventListener('message', (e) => {
-                const d = e.data;
-                if (d && d.type === 'gainReduction') {
-                    const bar = document.getElementById('gr-meter-bar');
-                    const lbl = document.getElementById('gr-meter-label');
-                    if (bar || lbl) {
-                        const gr = Math.max(0, Math.min(24, d.grDb || 0));
-                        // Scale: 0..12dB maps to 0..100% width.
-                        const pct = (gr / 12) * 100;
-                        if (bar) bar.style.width = pct + '%';
-                        if (lbl) {
-                            if (gr < 0.1) { lbl.textContent = '0.0 dB'; lbl.style.color = ''; }
-                            else if (gr < 3) { lbl.textContent = '-' + gr.toFixed(1) + ' dB'; lbl.style.color = 'var(--accent-green)'; }
-                            else if (gr < 8) { lbl.textContent = '-' + gr.toFixed(1) + ' dB'; lbl.style.color = 'var(--accent-amber)'; }
-                            else { lbl.textContent = '-' + gr.toFixed(1) + ' dB'; lbl.style.color = 'var(--accent-red, #f87171)'; }
+            const node = SharedAudio.workletNode;
+            if (!node) return;
+            if (this._grMeterPort === node.port) return;   // already subscribed
+            if (this._grMeterPort) {
+                try { this._grMeterPort.removeEventListener('message', this._grMeterHandler); } catch (_) {}
+            }
+            this._grMeterPort = node.port;
+            if (!this._grMeterHandler) {
+                this._grMeterHandler = (e) => {
+                    const d = e.data;
+                    if (d && d.type === 'gainReduction') {
+                        const bar = document.getElementById('gr-meter-bar');
+                        const lbl = document.getElementById('gr-meter-label');
+                        if (bar || lbl) {
+                            const gr = Math.max(0, Math.min(24, d.grDb || 0));
+                            // Scale: 0..12dB maps to 0..100% width.
+                            const pct = (gr / 12) * 100;
+                            if (bar) bar.style.width = pct + '%';
+                            if (lbl) {
+                                if (gr < 0.1) { lbl.textContent = '0.0 dB'; lbl.style.color = ''; }
+                                else if (gr < 3) { lbl.textContent = '-' + gr.toFixed(1) + ' dB'; lbl.style.color = 'var(--accent-green)'; }
+                                else if (gr < 8) { lbl.textContent = '-' + gr.toFixed(1) + ' dB'; lbl.style.color = 'var(--accent-amber)'; }
+                                else { lbl.textContent = '-' + gr.toFixed(1) + ' dB'; lbl.style.color = 'var(--accent-red, #f87171)'; }
+                            }
                         }
                     }
-                }
-            });
+                };
+            }
+            node.port.addEventListener('message', this._grMeterHandler);
+            try { node.port.start(); } catch (_) {}   // required for addEventListener delivery
         },
         // rAF-coalesced updateAudioConnections: slider drags fire `input`
         // many times per frame (pointermove rate, up to ~240Hz) and each call
@@ -18953,13 +19486,46 @@ startVisualizer: function() {
                         if (excessDb > 0.1) {
                             const preampSlider = document.getElementById("eq-preampSlider");
                             if (preampSlider) {
-                                const currentPreamp = parseFloat(preampSlider.value) || 0;
-                                const newPreamp = Math.max(-20, currentPreamp - excessDb);
+                                // Never fight the user. This watchdog runs every
+                                // 30ms; writing .value while the pointer was on the
+                                // slider made the user's next input event read OUR
+                                // value instead of theirs.
+                                if (preampSlider === document.activeElement || preampSlider.matches(':active')) return;
 
-                                preampSlider.value = newPreamp.toFixed(1);
-                                window.isProgrammaticPreampUpdate = true;
-                                EQ_Module.updatePreamp();
-                                window.isProgrammaticPreampUpdate = false;
+                                const currentPreamp = parseFloat(preampSlider.value) || 0;
+                                if (!Number.isFinite(EQ_Module._agcUserPreamp)) EQ_Module._agcUserPreamp = currentPreamp;
+                                const userPreamp = EQ_Module._agcUserPreamp;
+                                const autoDb = Number.isFinite(EQ_Module._agcAutoDb) ? EQ_Module._agcAutoDb : 0;
+
+                                // Ask for a little MORE total reduction. Because
+                                // excessDb is recomputed from the current peak,
+                                // each step shrinks after the previous one applied,
+                                // so this converges geometrically instead of
+                                // ratcheting to the -20 dB floor.
+                                const target = Math.max(-20, userPreamp - (autoDb + excessDb));
+                                const newAutoDb = userPreamp - target;
+                                if (newAutoDb - autoDb < 0.02) return;   // already converged
+                                EQ_Module._agcAutoDb = newAutoDb;
+
+                                preampSlider.value = target.toFixed(1);
+                                // try/finally: a throw from updatePreamp() used to
+                                // leave isProgrammaticPreampUpdate stuck true, which
+                                // silently disabled the preamp dead-zone snap and
+                                // the userPreampTarget capture for the whole session.
+                                try {
+                                    window.isProgrammaticPreampUpdate = true;
+                                    EQ_Module.updatePreamp();
+                                } catch (e) {
+                                    console.warn('[Visualizer] anti-clip preamp update failed:', e && e.message);
+                                } finally {
+                                    window.isProgrammaticPreampUpdate = false;
+                                }
+                                if (!EQ_Module._agcNotified) {
+                                    EQ_Module._agcNotified = true;
+                                    showToast('Anti-Clip lowered your preamp ' +
+                                        newAutoDb.toFixed(1) +
+                                        ' dB to stop clipping. Your own setting is restored when you turn CLIP off.', '🛡️');
+                                }
                             }
                         }
                     }
@@ -20057,14 +20623,38 @@ const DBCache = {
                 STORE_NAME: "curves",
                 db: null,
                 catalog: [],
+                // Single-flight handle for the catalogue fetch + parse.
+                //
+                // PEQDB_Module.init() fires DATA.init() without awaiting it, so
+                // the boot loop reaches FindEngine.init() while this load is
+                // still in flight. FindEngine.loadDatabase() used to react by
+                // re-fetching and re-parsing the same 2.85 MB payload a second
+                // time (twice the transfer, twice the synchronous JSON.parse on
+                // the main thread, and two separate array instances so the
+                // entry indexes got built twice). Both callers now await THIS
+                // promise instead, so the file is downloaded and parsed exactly
+                // once per launch no matter which module gets there first.
+                catalogReady: null,
+
+                ensureCatalogReady: function() {
+                    if (!this.catalogReady) {
+                        this.catalogReady = (async () => {
+                            try {
+                                await this._openDB();
+                            } catch (err) {
+                                console.error("[CurveIndexer] DB open failed — continuing without persistent cache:", err);
+                            }
+                            await this._loadCatalog();
+                            return this.catalog;
+                        })();
+                        // Do not memoise a rejected load: allow a later retry.
+                        this.catalogReady.catch(() => { this.catalogReady = null; });
+                    }
+                    return this.catalogReady;
+                },
 
                 init: async function() {
-                    try {
-                        await this._openDB();
-                    } catch (err) {
-                        console.error("[CurveIndexer] DB open failed — continuing without persistent cache:", err);
-                    }
-                    await this._loadCatalog();
+                    await this.ensureCatalogReady();
                     return this.buildDataset();
                 },
 
@@ -20159,7 +20749,7 @@ const DBCache = {
                         if (headerBadge) {
                             headerBadge.classList.remove('hidden');
                             headerBadge.classList.add('flex');
-                            headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30 rounded text-[9px] font-mono font-bold text-emerald-400 select-none ml-1.5 whitespace-nowrap flex-shrink-0";
+                            headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30 text-[9px] font-mono font-bold text-emerald-400 select-none ml-1.5 whitespace-nowrap flex-shrink-0";
                             headerBadge.innerHTML = "<span class=\"whitespace-nowrap\">✓ DB Ready</span>";
                             setTimeout(() => {
                                 headerBadge.classList.add('hidden');
@@ -20168,26 +20758,39 @@ const DBCache = {
                         }
                         if (dbIndicator) {
                             dbIndicator.textContent = "✓ DB Ready";
-                            dbIndicator.className = "text-[9px] font-black text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 px-2 py-0.5 rounded uppercase tracking-wider whitespace-nowrap";
+                            dbIndicator.className = "text-[9px] font-black text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 px-2 py-0.5 uppercase tracking-wider whitespace-nowrap";
                             setTimeout(() => dbIndicator.classList.add('hidden'), 2500);
                         }
                     } else {
                         if (headerBadge) {
                             headerBadge.classList.remove('hidden');
                             headerBadge.classList.add('flex');
-                            headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 rounded text-[9px] font-mono font-bold text-amber-400 select-none animate-pulse ml-1.5 whitespace-nowrap flex-shrink-0";
+                            headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 text-[9px] font-mono font-bold text-amber-400 select-none animate-pulse ml-1.5 whitespace-nowrap flex-shrink-0";
                             headerBadge.innerHTML = `<span class="whitespace-nowrap">📥 DB:</span><span id="db-download-pct" class="whitespace-nowrap">${pct}%</span>`;
                         }
 
                         if (dbIndicator) {
                             dbIndicator.classList.remove('hidden');
                             dbIndicator.textContent = `📥 Loading: ${pct}%`;
-                            dbIndicator.className = "text-[9px] font-black text-amber-400 bg-amber-950/30 border border-amber-900/40 px-2 py-0.5 rounded animate-pulse uppercase tracking-wider whitespace-nowrap";
+                            dbIndicator.className = "text-[9px] font-black text-amber-400 bg-amber-950/30 border border-amber-900/40 px-2 py-0.5 animate-pulse uppercase tracking-wider whitespace-nowrap";
                         }
                     }
                 },
 
                 _loadCatalog: async function() {
+                    // A non-array root used to be reported as a 100%-complete
+                    // load with catalog = [], which is indistinguishable from
+                    // success to every downstream check. Report the failure.
+                    const accept = (list) => {
+                        if (!Array.isArray(list)) {
+                            console.warn('[CurveIndexer] database.json root is not an array; treating as empty.');
+                            this.catalog = [];
+                            this.updateCatalogProgressUI(0, 0, 0, true);
+                            throw new Error('database.json root is not an array');
+                        }
+                        this.catalog = list;
+                        this.updateCatalogProgressUI(100, 0, 0, true);
+                    };
                     try {
 
                         let res = await fetch('./database.json.gz');
@@ -20196,22 +20799,21 @@ const DBCache = {
                             console.warn("database.json.gz not found, trying database.json...");
                             res = await fetch('./database.json');
                             if (!res.ok) throw new Error("Database file missing");
-                            const list = await res.json();
-                            this.catalog = Array.isArray(list) ? list : [];
-                            this.updateCatalogProgressUI(100, 0, 0, true);
+                            accept(await res.json());
                             return;
                         }
 
                         const decompressedStream = res.body.pipeThrough(new DecompressionStream('gzip'));
                         const response = new Response(decompressedStream);
 
-                        const list = await response.json();
-                        this.catalog = Array.isArray(list) ? list : [];
-                        this.updateCatalogProgressUI(100, 0, 0, true);
+                        accept(await response.json());
                     } catch (e) {
                         console.warn("[CurveIndexer] Could not load catalog:", e);
                         this.catalog = [];
-                        this.updateCatalogProgressUI(100, 0, 0, true);
+                        this.catalogLoadError = (e && e.message) || String(e);
+                        // 0%, not 100% — the bar meant "done", and a failed load
+                        // that renders as "done" is what hid this for so long.
+                        this.updateCatalogProgressUI(0, 0, 0, true);
                     }
                 },
 
@@ -20390,11 +20992,11 @@ const DBCache = {
                     const btn = document.getElementById('sculptor-draw-btn');
                     if (btn) {
                         if (this.isDrawingModeActive) {
-                            btn.className = "px-2.5 py-1 rounded bg-pink-500 text-white hover:bg-pink-600 transition-all cursor-pointer";
+                            btn.className = "px-2.5 py-1 bg-pink-500 text-white hover:bg-pink-600 transition-all cursor-pointer";
                             btn.textContent = "🖌️ Draw Mode: ON";
                             showToast("Draw Mode active! Hold click and draw directly onto the graph to sketch your target.", "🖌️");
                         } else {
-                            btn.className = "px-2.5 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-stone-300 transition-all cursor-pointer";
+                            btn.className = "px-2.5 py-1 bg-zinc-800 text-zinc-400 hover:text-stone-300 transition-all cursor-pointer";
                             btn.textContent = "🖌️ Draw Mode: Off";
                         }
                     }
@@ -20532,10 +21134,14 @@ const DBCache = {
             if (this.databaseFullyLoaded) return;
             const dataset = this.STATE.dataset;
             if (!dataset || dataset.length === 0) {
-                this.databaseFullyLoaded = true;
-                localStorage.setItem('squig_db_indexed', 'true');
+                // This branch means the catalogue load FAILED and the fallback
+                // path installed its handful of built-in targets. It used to
+                // set databaseFullyLoaded = true and persist
+                // squig_db_indexed='true' here, which wrote a permanent "all
+                // good" flag over a failed load — replacing database.json and
+                // relaunching would then never retry. Do not claim success.
                 this.renderList(false, true);
-                if (window.FindEngine && FindEngine.updateIndexingProgressBar) {
+                if (typeof FindEngine !== 'undefined' && FindEngine.updateIndexingProgressBar) {
                     FindEngine.updateIndexingProgressBar();
                 }
                 return;
@@ -20667,7 +21273,7 @@ const DBCache = {
                 }
                 if (importBtn) {
                     importBtn.disabled = false;
-                    importBtn.className = "py-2 text-[10px] font-bold rounded bg-[var(--accent-blue)] text-white hover:brightness-110 transition-all text-center cursor-pointer";
+                    importBtn.className = "py-2 text-[10px] font-bold bg-[var(--accent-blue)] text-white hover:brightness-110 transition-all text-center cursor-pointer";
                 }
             } else {
                 if (detectedEl) detectedEl.textContent = "None";
@@ -20678,7 +21284,7 @@ const DBCache = {
                 if (pointsEl) pointsEl.textContent = "0";
                 if (importBtn) {
                     importBtn.disabled = true;
-                    importBtn.className = "py-2 text-[10px] font-bold rounded bg-zinc-800 text-zinc-500 cursor-not-allowed transition-all text-center";
+                    importBtn.className = "py-2 text-[10px] font-bold bg-zinc-800 text-zinc-500 cursor-not-allowed transition-all text-center";
                 }
             }
         },
@@ -21147,8 +21753,20 @@ const DBCache = {
                 console.warn("Manifest loading failed, loading local fallback targets:", err);
                 const fallback = PEQDB_Module.DATA.fallbackDataset || [];
                 PEQDB_Module.STATE.dataset = fallback.map(item => ({ ...item, searchKey: `${item.name} ${item.variant} ${item.source}`.toLowerCase() }));
-                PEQDB_Module.databaseFullyLoaded = true;
-                localStorage.setItem('squig_db_indexed', 'true');
+                // These two lines used to report success while shipping 6
+                // hard-coded curves in place of ~5,000, which is how a
+                // malformed database.json turned into a silent downgrade:
+                //   - databaseFullyLoaded = true claimed a complete catalogue
+                //   - squig_db_indexed = 'true' was a persisted flag that
+                //     suppressed every future re-check, so replacing the file
+                //     and relaunching did not recover
+                // Only claim "fully loaded" when it actually is, and only write
+                // the persisted flag on the real path.
+                PEQDB_Module.databaseFullyLoaded = false;
+                PEQDB_Module.catalogLoadFailed = true;
+                try { localStorage.removeItem('squig_db_indexed'); } catch (_) {}
+                showToast('Curve database failed to load — only ' + PEQDB_Module.STATE.dataset.length +
+                    ' built-in targets available. Check database.json.', '⚠️');
             }
 
                 try {
@@ -21302,7 +21920,19 @@ const savedDb = localStorage.getItem('settings_align_db');
                 });
             }
 
-            this.DATA.init();
+            // Deliberately NOT awaited. The catalogue load is shared via
+            // CurveIndexer.ensureCatalogReady()'s single-flight promise, so the
+            // rest of the boot sequence (Tone, Test Lab, Accessibility, and
+            // FindEngine itself) proceeds in parallel and still ends up with
+            // exactly ONE download + ONE parse of database.json.gz. Awaiting
+            // here instead would serialise the whole boot behind a ~2.85 MB
+            // JSON parse for no benefit. Do not "fix" this into an await.
+            this.DATA.init().catch((err) => {
+                // Floating promise otherwise: DATA.init() has internal
+                // try/catch, but a future await added outside one would
+                // become an unhandled rejection with nobody listening.
+                console.error('[PEQDB] DATA.init() failed:', err);
+            });
         },
         autoeqResolution: 10,
         resolutionsList: [10, 15, 20, 30, 40, 50],
@@ -21359,7 +21989,7 @@ const savedDb = localStorage.getItem('settings_align_db');
             } else {
                 this.expandedBrands.add(brandName);
             }
-            const brandSlug = brandName.replace(/[^a-zA-Z0-9]/g, '_');
+            const brandSlug = this._brandSlug(brandName);
             const groupEl = document.querySelector(`[data-brand-group="${brandSlug}"]`);
             if (groupEl) {
                 const container = groupEl.querySelector('.brand-items-container');
@@ -21554,6 +22184,25 @@ const savedDb = localStorage.getItem('settings_align_db');
             this.renderActiveCurvesDock();
         },
 
+        // DOM key for a brand group.
+        //
+        // The old key was `brandName.replace(/[^a-zA-Z0-9]/g, '_')`, which is
+        // NOT injective: "Moondrop A", "Moondrop-A", "Moondrop/A" and
+        // "Moondrop_A" all collapsed to "Moondrop_A". Since that string is the
+        // `data-brand-group` value, the appendMore path's
+        // querySelector('[data-brand-group="Moondrop_A"]') found the FIRST
+        // match and appended a second brand's rows into the first brand's
+        // container, and toggleBrandGroup toggled the wrong group's chevron
+        // while the label still showed the other name. Appending a short
+        // deterministic hash of the ORIGINAL string keeps the readable part and
+        // makes distinct brands distinct. Both call sites must use this.
+        _brandSlug: function(brandName) {
+            const s = String(brandName == null ? '' : brandName);
+            let h = 5381;
+            for (let i = 0; i < s.length; i++) h = (((h << 5) + h) + s.charCodeAt(i)) >>> 0;
+            return s.replace(/[^a-zA-Z0-9]/g, '_') + '-' + h.toString(36);
+        },
+
         renderList: function(appendMore = false, preserveScroll = false, preserveLimit = false) {
             const list = document.getElementById('peqdb-list');
             const existingLoader = document.getElementById('peqdb-loading');
@@ -21575,11 +22224,32 @@ const savedDb = localStorage.getItem('settings_align_db');
             const countEl = document.getElementById('peqdb-result-count');
             if (countEl && this.searchMode !== 'similar') countEl.textContent = totalItems;
 
-            const brandCounts = new Map();
-            PEQDB_Module.STATE.renderList.forEach(item => {
-                const bk = item.brand || 'Unknown Brand';
-                brandCounts.set(bk, (brandCounts.get(bk) || 0) + 1);
-            });
+            // Brand row counts. This used to walk the ENTIRE filtered result set
+            // on every renderList() call — including every +40-row scroll append,
+            // where only 40 rows are actually rendered. That is O(N) work per
+            // O(40) of output, i.e. O(N^2/40) across a full scroll-through (the
+            // last append iterated ~5,000 entries to draw 40), which is why
+            // scrolling the Database list got progressively jankier.
+            //
+            // The counts cover the whole filtered set (a brand header shows its
+            // total even when only some of its rows are on screen), so a full
+            // render computes them once and an append can simply reuse them.
+            // renderList is only called with appendMore=true as a continuation of
+            // a previous full render, so the cache is always in step.
+            let brandCounts;
+            if (appendMore && this._brandCounts) {
+                brandCounts = this._brandCounts;
+            } else {
+                brandCounts = new Map();
+                const all = PEQDB_Module.STATE.renderList;
+                for (let i = 0; i < all.length; i++) {
+                    const item = all[i];
+                    if (!item) continue;
+                    const bk = item.brand || 'Unknown Brand';
+                    brandCounts.set(bk, (brandCounts.get(bk) || 0) + 1);
+                }
+                this._brandCounts = brandCounts;
+            }
 
             const fragment = document.createDocumentFragment();
             const activeCurves = PEQDB_Module.STATE.activeCurves;
@@ -21632,15 +22302,19 @@ const savedDb = localStorage.getItem('settings_align_db');
                 const connectorEmoji = FindEngine.connectorEmojis[item.connector] || '🔌';
 
                 const specIconsHtml = `
-                    ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:9px;">$${item.price_usd}</span></span>` : ''}
-                    ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:9px;">${item.year}</span></span>` : ''}
-                    ${item.driver_type ? `<span class="spec-icon-badge" data-tooltip="${driverTooltip}">${driverEmoji}</span>` : ''}
-                    ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${item.connector}">${connectorEmoji}</span>` : ''}
-                    <span class="spec-icon-badge" data-tooltip="${item.form_factor || 'In-Ear Monitor (IEM)'}">${formEmoji}</span>
+                    ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:9px;">$${esc(item.price_usd)}</span></span>` : ''}
+                    ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:9px;">${esc(item.year)}</span></span>` : ''}
+                    ${item.driver_type ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
+                    ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${esc(item.connector)}">${connectorEmoji}</span>` : ''}
+                    <span class="spec-icon-badge" data-tooltip="${esc(item.form_factor || 'In-Ear Monitor (IEM)')}">${formEmoji}</span>
                 `;
 
                 const getTagEmoji = (tagStr) => {
-                    if (!tagStr) return '🏷️';
+                    // Same defect as FindEngine.getTagEmoji: only the array-ness
+                    // of `tags` is validated, never the element type, so a
+                    // numeric tag reached .toLowerCase() and threw.
+                    if (tagStr === null || tagStr === undefined || tagStr === '') return '🏷️';
+                    if (typeof tagStr !== 'string') tagStr = String(tagStr);
                     const cleanKey = tagStr.toLowerCase().trim().replace(/[\s_]+/g, '-');
                     const emojiMap = {
                         'basshead': '💥', 'sub-bass': '🌊', 'punchy-bass': '🥊', 'warm': '🌿', 'warm-tilt': '🌿',
@@ -21659,16 +22333,16 @@ const savedDb = localStorage.getItem('settings_align_db');
                 if (isMulti) {
                     fileRowHtml = `
                         <div class="flex items-center gap-1.5 mt-1">
-                            <button onclick="event.stopPropagation(); PEQDB_Module.cycleDbItemSource('${escJs(item.id)}', -1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
-                            <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
+                            <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
+                            <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                                 <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
                             </div>
-                            <button onclick="event.stopPropagation(); PEQDB_Module.cycleDbItemSource('${escJs(item.id)}', 1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
+                            <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
                         </div>
                     `;
                 } else {
                     fileRowHtml = `
-                        <div class="mt-1 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
+                        <div class="mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                             <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
                         </div>
                     `;
@@ -21696,7 +22370,7 @@ const savedDb = localStorage.getItem('settings_align_db');
             };
 
             for (const [brandName, items] of brandBuckets) {
-                const brandSlug = brandName.replace(/[^a-zA-Z0-9]/g, '_');
+                const brandSlug = this._brandSlug(brandName);
 
                 let groupEl = appendMore ? list.querySelector(`[data-brand-group="${brandSlug}"]`) : null;
                 let itemsContainer;
@@ -21710,7 +22384,7 @@ const savedDb = localStorage.getItem('settings_align_db');
                     groupEl.setAttribute('data-brand-group', brandSlug);
                     groupEl.setAttribute('data-letter', alphaKeyOf({ brand: brandName }));
                     groupEl.innerHTML = `
-                        <div class="flex items-center justify-between p-2 cursor-pointer select-none border-2 border-black rounded" style="background: var(--bg-input);" onclick="PEQDB_Module.toggleBrandGroup('${escJs(brandName)}')">
+                        <div class="flex items-center justify-between p-2 cursor-pointer select-none border-2 border-black" style="background: var(--bg-input);" data-cmd="PEQDB_Module.toggleBrandGroup" data-arg-0="${escJs(brandName)}">
                             <span class="text-xs font-black uppercase tracking-wider text-[var(--accent-blue)]">${esc(brandName)}</span>
                             <span class="flex items-center gap-1.5 flex-shrink-0">
                                 <span class="text-[9px] font-black text-zinc-500">${this._brandCounts.get(brandName) || 0}</span>
@@ -21923,6 +22597,10 @@ const savedDb = localStorage.getItem('settings_align_db');
 
             EQ_Module.isProgrammaticSliderUpdate = true;
 
+            // ALWAYS release the programmatic flag. A stuck true flag silently
+            // disabled every subsequent manual audio update for the whole
+            // session (sliders move, curve redraws, sound does not change).
+            try {
             for (let i = 0; i < 10; i++) {
                 const slider = document.getElementById("eq-s" + i);
                 if (slider) slider.value = 0;
@@ -21967,7 +22645,9 @@ const savedDb = localStorage.getItem('settings_align_db');
             // (native virtualFilters zeroing removed — virtual bands live in
             // the worklet and are pushed via updateAudioConnections)
 
-            EQ_Module.isProgrammaticSliderUpdate = false;
+            } finally {
+                EQ_Module.isProgrammaticSliderUpdate = false;
+            }
 
             const baseInterp = this.DSP.interpolate(this.getNormalizedData(baseCurve.data, baseCurve.name));
             const targetInterp = this.DSP.interpolate(this.getNormalizedData(targetCurve.data, targetCurve.name));
@@ -22097,6 +22777,11 @@ const savedDb = localStorage.getItem('settings_align_db');
 
             EQ_Module.isProgrammaticSliderUpdate = true;
 
+            // ALWAYS release the programmatic flag. b.gain.toFixed(1) below
+            // throws outright on a non-numeric solved band, and a stuck true
+            // flag silently disabled every later manual audio update for the
+            // rest of the session.
+            try {
             if (bandCount === 10 || bandCount === 20) {
                 optimizedBands.forEach((b) => {
                     if (b.role === 'main') {
@@ -22169,7 +22854,10 @@ const savedDb = localStorage.getItem('settings_align_db');
                 EQ_Module.virtualBands = virtuals;
             }
 
-            EQ_Module.isProgrammaticSliderUpdate = false;
+            } finally {
+                EQ_Module.isProgrammaticSliderUpdate = false;
+            }
+
             EQ_Module.eqEnabled = true;
             const eqToggleBtn = document.getElementById("eqToggleBtn");
             if (eqToggleBtn) {
@@ -22199,7 +22887,19 @@ const savedDb = localStorage.getItem('settings_align_db');
             }
         },
 
-                        clearState: function() {
+        clearState: async function() {
+            // This button discards every loaded curve AND resets the whole EQ,
+            // in one click, with no undo. It used to run unguarded, so a stray
+            // click lost the entire session's work irrecoverably. Route it
+            // through the same themed confirm the preset delete already uses.
+            const ok = await UIKit.confirm({
+                title: 'Clear the graph and reset the EQ?',
+                message: 'Every loaded curve and target will be removed and all bands reset to flat. This cannot be undone.',
+                confirmLabel: 'Clear Everything',
+                danger: true
+            });
+            if (!ok) return;
+
             this.STATE.activeCurves = [];
             this.targetMode = '';
             this.activeSculptIndex = -1;
@@ -22209,7 +22909,7 @@ const savedDb = localStorage.getItem('settings_align_db');
             var overlay = document.getElementById('graph-focus-selector');
             if (overlay) overlay.classList.add('hidden');
             var editBtn = document.getElementById('target-edit-btn');
-            if (editBtn) { editBtn.classList.remove('active-btn', 'active-yellow'); editBtn.innerHTML = '✏️'; }
+            if (editBtn) { editBtn.classList.remove('active-btn', 'is-on'); editBtn.innerHTML = '✏️'; }
             var selector = document.getElementById('target-selector');
             if (selector) selector.value = "";
             EQ_Module.resetEQ(true);
@@ -22253,7 +22953,7 @@ const savedDb = localStorage.getItem('settings_align_db');
                 item.setAttribute('data-uid', c.uid);
                 item.title = "Drag to Base / Target / Reference slot to change role";
                 const roleLabel = c.role==='base'?'BASE':(c.role==='target'?'TARGET':'REF');
-                item.innerHTML = `<div class="flex items-center justify-between w-full h-6 select-none" draggable="false"><span class="px-2 py-0.5 rounded text-[8.5px] font-black tracking-wider text-white uppercase bg-black/60 border border-white/10 flex-shrink-0" title="Drag to rearrange" draggable="false">${roleLabel}</span><div class="flex items-center gap-1.5" draggable="false"><button onclick="PEQDB_Module.toggleVisible(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 text-white text-[11px] flex items-center justify-center border border-white/10 cursor-pointer" title="Show or hide this curve" draggable="false">${c.visible?'👁️':'🙈'}</button><button onclick="PEQDB_Module.cycleColor(this.closest('[data-uid]').dataset.uid)" class="w-5 h-5 rounded-full border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style="background-color:${c.color}" title="Change this curve's color" draggable="false"></button><button onclick="PEQDB_Module.removeCurve(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-black text-[11px] flex items-center justify-center cursor-pointer" title="Remove this curve" draggable="false">✕</button></div></div><div onclick="PEQDB_Module.renameCurve(this.closest('[data-uid]').dataset.uid)" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5" draggable="false"><div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none"><span id="marquee-${esc(c.uid)}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span></div></div><div class="flex justify-between items-center w-full h-6" draggable="false"><div class="flex items-center gap-1.5 h-6 decibel-stepper flex-shrink-0 select-none" style="width:110px !important;min-width:110px !important;max-width:110px !important;" draggable="false"><button type="button" onclick="event.stopPropagation();PEQDB_Module.adjustCurveOffset(this.closest('[data-uid]').dataset.uid,-1)" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve down 1 dB" draggable="false">◄</button><button type="button" onclick="event.stopPropagation();" class="flex-1 h-6 bg-[var(--bg-input)] border-2 border-black text-[#c85a0e] font-mono font-black text-[9px] flex items-center justify-center text-center cursor-default select-none focus:outline-none px-0 min-w-0" draggable="false">${(c.offset||0)>=0?'+':''}${c.offset||0}dB</button><button type="button" onclick="event.stopPropagation();PEQDB_Module.adjustCurveOffset(this.closest('[data-uid]').dataset.uid,1)" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve up 1 dB" draggable="false">►</button></div><div class="flex items-center gap-1.5" draggable="false"><button onclick="PEQDB_Module.exportCurveByUid(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Export this curve as a text file" draggable="false">📥</button><button onclick="PEQDB_Module.findMatchesFromDock(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Find similar curves" draggable="false">🔍</button></div></div>`;
+                item.innerHTML = `<div class="flex items-center justify-between w-full h-6 select-none" draggable="false"><span class="px-2 py-0.5 text-[8.5px] font-black tracking-wider text-white uppercase bg-black/60 border border-white/10 flex-shrink-0" title="Drag to rearrange" draggable="false">${roleLabel}</span><div class="flex items-center gap-1.5" draggable="false"><button data-cmd="PEQDB_Module.toggleVisible" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 text-white text-[11px] flex items-center justify-center border border-white/10 cursor-pointer" title="Show or hide this curve" draggable="false">${c.visible?'👁️':'🙈'}</button><button data-cmd="PEQDB_Module.cycleColor" data-arg-0="@from:uid" class="w-5 h-5 border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style="background-color:${c.color}" title="Change this curve's color" draggable="false"></button><button data-cmd="PEQDB_Module.removeCurve" data-arg-0="@from:uid" class="w-6 h-6 bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-black text-[11px] flex items-center justify-center cursor-pointer" title="Remove this curve" draggable="false">✕</button></div></div><div data-cmd="PEQDB_Module.renameCurve" data-arg-0="@from:uid" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5" draggable="false"><div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none"><span id="marquee-${esc(c.uid)}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span></div></div><div class="flex justify-between items-center w-full h-6" draggable="false"><div class="flex items-center gap-1.5 h-6 decibel-stepper flex-shrink-0 select-none" style="width:110px !important;min-width:110px !important;max-width:110px !important;" draggable="false"><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="-1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve down 1 dB" draggable="false">◄</button><button type="button" data-stop-propagation class="flex-1 h-6 bg-[var(--bg-input)] border-2 border-black text-[#c85a0e] font-mono font-black text-[9px] flex items-center justify-center text-center cursor-default select-none focus:outline-none px-0 min-w-0" draggable="false">${(c.offset||0)>=0?'+':''}${c.offset||0}dB</button><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve up 1 dB" draggable="false">►</button></div><div class="flex items-center gap-1.5" draggable="false"><button data-cmd="PEQDB_Module.exportCurveByUid" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Export this curve as a text file" draggable="false">📥</button><button data-cmd="PEQDB_Module.findMatchesFromDock" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Find similar curves" draggable="false">🔍</button></div></div>`;
                 if (c.role==='base') { baseSlot.appendChild(item); baseCount++; }
                 else if (c.role==='target') { targetSlot.appendChild(item); targetCount++; }
                 else { referencePile.appendChild(item); refCount++; }
@@ -23021,7 +23721,7 @@ setSearchMode: function(mode) {
             const badgeFor = (item) => {
                 const loadedCurve = activeCurves.find(c => c.id === item.id);
                 if (loadedCurve) {
-                    return `<span class="text-[8px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded text-white flex-shrink-0" style="background-color: ${loadedCurve.color}">${loadedCurve.role.toUpperCase()}</span>`;
+                    return `<span class="text-[8px] uppercase font-bold tracking-widest px-1.5 py-0.5 text-white flex-shrink-0" style="background-color: ${loadedCurve.color}">${loadedCurve.role.toUpperCase()}</span>`;
                 }
                 return `<span class="text-[8px] text-zinc-500 uppercase tracking-widest font-black">LOAD</span>`;
             };
@@ -23061,7 +23761,10 @@ const countEl = document.getElementById('peqdb-result-count');
             let filterHtml = '<div class="flex items-center justify-center gap-0.5 mb-2 py-1 overflow-x-hidden w-full max-w-full similar-formfactor-filters">';
             filterIcons.forEach(f => {
                 const isActive = !!this._similarFormFactorFilters[f.key];
-                filterHtml += '<button type="button" onclick="PEQDB_Module.toggleSimilarFormFactor(\'' + f.key + '\')" class="no-tactile find-pick-badge' + (isActive ? ' on' : '') + '" data-tooltip="' + f.label + '" title="' + f.label + '" aria-pressed="' + isActive + '">';
+                // Was onclick="PEQDB_Module.toggleSimilarFormFactor('<key>')", built
+                // by string concatenation with the quotes spliced in by hand. As a
+                // data attribute the key goes through esc() like every other one.
+                filterHtml += '<button type="button" data-cmd="PEQDB_Module.toggleSimilarFormFactor" data-arg-0="' + esc(f.key) + '" class="no-tactile find-pick-badge' + (isActive ? ' on' : '') + '" data-tooltip="' + f.label + '" title="' + f.label + '" aria-pressed="' + isActive + '">';
                 filterHtml += '<img src="' + f.icon + '" alt="' + f.label + '" draggable="false">';
                 filterHtml += '</button>';
             });
@@ -23073,11 +23776,22 @@ const countEl = document.getElementById('peqdb-result-count');
                 '</div>' + filterHtml;
 
             if (filteredMatches.length === 0) {
-                html += '<div class="text-zinc-500 text-[11px] italic text-center mt-8 p-4 border border-dashed border-zinc-800 rounded">' +
+                html += '<div class="text-zinc-500 text-[11px] italic text-center mt-8 p-4 border border-dashed border-zinc-800">' +
                     (anySelected ? 'No matches for selected form factors.<br><span class="text-[10px]">Try enabling more filters.</span>' : '&#9889; 0 matches &mdash; adjust the DSP curve to find similar IEMs.') +
                     '</div>';
             } else {
-                filteredMatches.forEach((match, idx) => {
+                // Cap the rendered cards. This list had no limit at all while the
+                // Database list is chunked at 40 (`listRenderLimit`) and
+                // fillVisibleList is depth-capped at 25. The 50% similarity
+                // threshold is low enough that a near-flat DSP target matches a
+                // large fraction of a 5,000-curve catalogue, and every card is
+                // built with createElement + innerHTML + outerHTML before being
+                // concatenated into one multi-megabyte string — a multi-second
+                // input freeze. `matches` is already sorted best-first, so the
+                // top slice is the part the user actually reads.
+                const RENDER_CAP = 150;
+                const shown = filteredMatches.slice(0, RENDER_CAP);
+                shown.forEach((match, idx) => {
                     const rank = idx + 1;
                     const fullItem = datasetById ? (datasetById.get(match.id) || match) : match;
                     html += this.buildDbModelCard(fullItem, {
@@ -23086,6 +23800,14 @@ const countEl = document.getElementById('peqdb-result-count');
                         badgeHtml: badgeFor(match)
                     }).outerHTML;
                 });
+                if (filteredMatches.length > shown.length) {
+                    // Never hide that the list was truncated — the count above
+                    // still reports the true total.
+                    html += '<div class="text-[10px] text-zinc-500 italic text-center mt-4 p-3 border border-dashed border-zinc-800">' +
+                        'Showing the top ' + shown.length + ' of ' + filteredMatches.length +
+                        ' matches &mdash; the closest curves are ranked first. Refine the EQ to narrow the field.' +
+                        '</div>';
+                }
             }
 
             list.innerHTML = html;
@@ -23135,7 +23857,7 @@ const countEl = document.getElementById('peqdb-result-count');
                             const badgeFor = (item) => {
                                 const loadedCurve = activeCurves.find(c => c.id === item.id);
                                 if (loadedCurve) {
-                                    return `<span class="text-[8px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded text-white flex-shrink-0" style="background-color: ${loadedCurve.color}">${loadedCurve.role.toUpperCase()}</span>`;
+                                    return `<span class="text-[8px] uppercase font-bold tracking-widest px-1.5 py-0.5 text-white flex-shrink-0" style="background-color: ${loadedCurve.color}">${loadedCurve.role.toUpperCase()}</span>`;
                                 }
                                 return `<span class="text-[8px] text-zinc-500 uppercase tracking-widest font-black">LOAD</span>`;
                             };
@@ -23271,16 +23993,16 @@ const countEl = document.getElementById('peqdb-result-count');
             if (isMulti) {
                 fileRowHtml = `
                     <div class="flex items-center gap-1.5 mt-1">
-                        <button onclick="event.stopPropagation(); PEQDB_Module.cycleDbItemSource('${escJs(item.id)}', -1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
-                        <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
+                        <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
+                        <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                             <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
                         </div>
-                        <button onclick="event.stopPropagation(); PEQDB_Module.cycleDbItemSource('${escJs(item.id)}', 1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
+                        <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
                     </div>
                 `;
             } else {
                 fileRowHtml = `
-                    <div class="mt-1 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
+                    <div class="mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                         <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
                     </div>
                 `;
@@ -23307,7 +24029,7 @@ const countEl = document.getElementById('peqdb-result-count');
             // NOTE: this card is serialized via .outerHTML and reinjected as an
             // HTML string at both call sites (renderSimilarList's main list
             // build and toggleGroupExpand's lazy drawer fill), so the
-            // click-to-load handler MUST be a real onclick="" attribute, not a
+            // click-to-load handler MUST be a real attribute, not a
             // JS property (div.onclick = ...) — property handlers are
             // invisible to .outerHTML and get silently dropped once the
             // markup is re-parsed from the string.
@@ -23646,7 +24368,7 @@ const countEl = document.getElementById('peqdb-result-count');
             const startBtn = document.getElementById('abx-start-btn');
             if (startBtn) {
                 startBtn.textContent = 'STOP TEST';
-                startBtn.className = "bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/15 font-bold text-[10px] px-2.5 h-7 rounded shadow whitespace-nowrap flex-shrink-0";
+                startBtn.className = "bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/15 font-bold text-[10px] px-2.5 h-7 shadow whitespace-nowrap flex-shrink-0";
                 startBtn.onclick = () => this.abxReset();
             }
 
@@ -23786,7 +24508,7 @@ const countEl = document.getElementById('peqdb-result-count');
             const startBtn = document.getElementById('abx-start-btn');
             if (startBtn) {
                 startBtn.textContent = 'START TEST';
-                startBtn.className = "bg-indigo-600/15 border border-indigo-500/40 text-indigo-400 hover:bg-indigo-600/20 font-bold text-[10px] px-2.5 h-7 rounded shadow whitespace-nowrap flex-shrink-0";
+                startBtn.className = "bg-indigo-600/15 border border-indigo-500/40 text-indigo-400 hover:bg-indigo-600/20 font-bold text-[10px] px-2.5 h-7 shadow whitespace-nowrap flex-shrink-0";
                 startBtn.onclick = () => this.abxStart();
             }
             this.setABXControlsEnabled(true);
@@ -23808,7 +24530,7 @@ const countEl = document.getElementById('peqdb-result-count');
             const startBtn = document.getElementById('abx-start-btn');
             if (startBtn) {
                 startBtn.textContent = 'START TEST';
-                startBtn.className = "bg-indigo-600/15 border border-indigo-500/40 text-indigo-400 hover:bg-indigo-600/20 font-bold text-[10px] px-2.5 h-7 rounded shadow whitespace-nowrap flex-shrink-0";
+                startBtn.className = "bg-indigo-600/15 border border-indigo-500/40 text-indigo-400 hover:bg-indigo-600/20 font-bold text-[10px] px-2.5 h-7 shadow whitespace-nowrap flex-shrink-0";
                 startBtn.onclick = () => this.abxStart();
             }
 
@@ -24803,6 +25525,11 @@ setABXControlsEnabled: function(enabled) {
 
             EQ_Module.isProgrammaticSliderUpdate = true;
 
+            // ALWAYS release the programmatic flag. updateSlider() is called up
+            // to 8 times in here and any one of them throwing would leave the
+            // lock stuck true, silently killing every later manual EQ change
+            // for the rest of the session.
+            try {
             let maxGain = -999;
             Object.entries(faderMappings).forEach(([fIdx, offsetVal]) => {
                 const slider = document.getElementById("eq-s" + fIdx);
@@ -24833,7 +25560,10 @@ setABXControlsEnabled: function(enabled) {
             if (preampSlider) preampSlider.value = preamp.toFixed(1);
             EQ_Module.updatePreamp();
 
-            EQ_Module.isProgrammaticSliderUpdate = false;
+            } finally {
+                EQ_Module.isProgrammaticSliderUpdate = false;
+            }
+
             EQ_Module.eqEnabled = true;
 
             const eqToggleBtn = document.getElementById("eqToggleBtn");
@@ -24894,7 +25624,7 @@ setABXControlsEnabled: function(enabled) {
             if (!btn) return;
 
             if (this.spatialOrbitActive) {
-                btn.className = "bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold rounded text-[10px] h-8 px-3 shadow-sm flex items-center justify-center active-btn";
+                btn.className = "bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold text-[10px] h-8 px-3 shadow-sm flex items-center justify-center active-btn";
                 btn.textContent = '🔄 Orbit: ON';
 
                 if (this.spatialActive) {
@@ -24902,7 +25632,7 @@ setABXControlsEnabled: function(enabled) {
                 }
                 showToast("Auto-Orbit armed. Resumes on panel hover", "🔄");
             } else {
-                btn.className = "bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.12] text-stone-200 font-bold rounded text-[10px] h-8 px-3 shadow-sm flex items-center justify-center";
+                btn.className = "bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.12] text-stone-200 font-bold text-[10px] h-8 px-3 shadow-sm flex items-center justify-center";
                 btn.textContent = '🔄 Orbit: Off';
                 this.stopSpatialOrbit();
                 showToast("Auto-Orbit disabled", "🔄");
@@ -24991,7 +25721,7 @@ setABXControlsEnabled: function(enabled) {
             this.spatialOrbitActive = false;
             const btn = document.getElementById('spatial-orbit-btn');
             if (btn) {
-                btn.className = "bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.12] text-stone-200 font-bold rounded text-[10px] h-8 px-3 shadow-sm flex items-center justify-center";
+                btn.className = "bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.12] text-stone-200 font-bold text-[10px] h-8 px-3 shadow-sm flex items-center justify-center";
                 btn.textContent = '🔄 Orbit: Off';
             }
         },
@@ -25459,8 +26189,8 @@ toggleChannelSwap: function() {
                 burninCtrls.classList.add('hidden');
             }
 
-            if (btnSpatial) btnSpatial.className = "px-2.5 py-1 rounded text-[10px] font-bold text-[var(--text-secondary)]";
-            if (btnBurnin) btnBurnin.className = "px-2.5 py-1 rounded text-[10px] font-bold bg-white/[0.08] text-[var(--text-main)] shadow";
+            if (btnSpatial) btnSpatial.className = "px-2.5 py-1 text-[10px] font-bold text-[var(--text-secondary)]";
+            if (btnBurnin) btnBurnin.className = "px-2.5 py-1 text-[10px] font-bold bg-white/[0.08] text-[var(--text-main)] shadow";
 
             this.updateBurninDisplay();
             this.updateBurninStatus('idle');
@@ -25482,8 +26212,8 @@ toggleChannelSwap: function() {
                 spatialCtrls.classList.add('flex');
             }
 
-            if (btnBurnin) btnBurnin.className = "px-2.5 py-1 rounded text-[10px] font-bold text-[var(--text-secondary)]";
-            if (btnSpatial) btnSpatial.className = "px-2.5 py-1 rounded text-[10px] font-bold bg-white/[0.08] text-[var(--text-main)] shadow";
+            if (btnBurnin) btnBurnin.className = "px-2.5 py-1 text-[10px] font-bold text-[var(--text-secondary)]";
+            if (btnSpatial) btnSpatial.className = "px-2.5 py-1 text-[10px] font-bold bg-white/[0.08] text-[var(--text-main)] shadow";
         }
     },
 
@@ -25788,11 +26518,11 @@ toggleChannelSwap: function() {
             const lockBtn = document.getElementById('resonance-lock-btn');
             if (scanBtn) {
                 scanBtn.textContent = 'Scan';
-                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5 rounded";
+                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5";
             }
             if (lockBtn) {
                 lockBtn.disabled = true;
-                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 rounded opacity-50 cursor-not-allowed";
+                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 opacity-50 cursor-not-allowed";
             }
 
             if (this.hearingOsc) {
@@ -25964,17 +26694,17 @@ toggleChannelSwap: function() {
 
             if (needle) {
 
-                needle.className = "absolute top-0 bottom-0 w-1 bg-sky-400 rounded-full transition-all duration-75";
+                needle.className = "absolute top-0 bottom-0 w-1 bg-sky-400 transition-all duration-75";
                 needle.style.boxShadow = "0 0 6px #38bdf8";
             }
 
             if (scanBtn) {
                 scanBtn.textContent = 'Scan...';
-                scanBtn.className = "w-full bg-sky-500/20 border border-sky-500/50 text-sky-300 font-bold text-[9px] py-1.5 rounded active-btn animate-pulse truncate";
+                scanBtn.className = "w-full bg-sky-500/20 border border-sky-500/50 text-sky-300 font-bold text-[9px] py-1.5 active-btn animate-pulse truncate";
             }
             if (lockBtn) {
                 lockBtn.disabled = false;
-                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/15 font-bold text-[9px] py-1.5 rounded";
+                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/15 font-bold text-[9px] py-1.5";
             }
 
             this.resonanceOsc = ctx.createOscillator();
@@ -26038,7 +26768,7 @@ toggleChannelSwap: function() {
 
             const needle = document.getElementById('resonance-gauge-needle');
             if (needle) {
-                needle.className = "absolute top-0 bottom-0 w-1 bg-emerald-400 rounded-full animate-pulse";
+                needle.className = "absolute top-0 bottom-0 w-1 bg-emerald-400 animate-pulse";
                 needle.style.boxShadow = "0 0 10px #10b981";
             }
 
@@ -26050,15 +26780,15 @@ toggleChannelSwap: function() {
 
             if (scanBtn) {
                 scanBtn.textContent = 'Scan';
-                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5 rounded";
+                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5";
             }
             if (lockBtn) {
                 lockBtn.disabled = true;
-                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 rounded opacity-50 cursor-not-allowed";
+                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 opacity-50 cursor-not-allowed";
             }
             if (readout) {
                 readout.textContent = `${PEQDB_Module.resonanceHz.toLocaleString()} Hz`;
-                readout.className = "text-xs font-mono font-black text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded shadow-[0_0_8px_rgba(16,185,129,0.2)]";
+                readout.className = "text-xs font-mono font-black text-emerald-400 bg-emerald-950/30 px-2 py-0.5 shadow-[0_0_8px_rgba(16,185,129,0.2)]";
             }
 
             EQ_Module.resonanceCalEnabled = true;
@@ -26152,22 +26882,22 @@ toggleChannelSwap: function() {
 
             if (needle) {
 
-                needle.className = "absolute top-0 bottom-0 w-1 bg-sky-400 rounded-full transition-all duration-75";
+                needle.className = "absolute top-0 bottom-0 w-1 bg-sky-400 transition-all duration-75";
                 needle.style.left = "50%";
                 needle.style.boxShadow = "0 0 6px #38bdf8";
             }
 
             if (scanBtn) {
                 scanBtn.textContent = 'Scan';
-                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5 rounded";
+                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5";
             }
             if (lockBtn) {
                 lockBtn.disabled = true;
-                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 rounded opacity-50 cursor-not-allowed";
+                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 opacity-50 cursor-not-allowed";
             }
             if (readout) {
                 readout.textContent = '8,000 Hz';
-                readout.className = "text-xs font-mono font-black text-sky-400 bg-sky-950/30 px-2 py-0.5 rounded border border-sky-900/30";
+                readout.className = "text-xs font-mono font-black text-sky-400 bg-sky-950/30 px-2 py-0.5 border border-sky-900/30";
             }
             if (calBtn) calBtn.classList.remove('active-btn');
             if (calLbl) calLbl.textContent = 'Resonance: Off';
@@ -26340,7 +27070,7 @@ toggleChannelSwap: function() {
                 const btn = document.getElementById('btn-resonance-tuner');
                 if (btn) {
                     btn.textContent = '🎯 Find Ear Resonance Peak';
-                    btn.className = "w-full bg-sky-950/20 border border-zinc-900/40 text-sky-400 font-bold text-xs py-2 rounded transition-all";
+                    btn.className = "w-full bg-sky-950/20 border border-zinc-900/40 text-sky-400 font-bold text-xs py-2 transition-all";
                 }
 
                 EQ_Module.resonanceCalEnabled = true;
@@ -26362,7 +27092,7 @@ toggleChannelSwap: function() {
 
                 const btn = document.getElementById('btn-resonance-tuner');
                 if (btn) {
-                    btn.className = "w-full bg-[#38bdf8]/10 border border-[#38bdf8]/30 text-sky-400 font-bold text-xs py-2 rounded transition-all active-btn";
+                    btn.className = "w-full bg-[#38bdf8]/10 border border-[#38bdf8]/30 text-sky-400 font-bold text-xs py-2 transition-all active-btn";
                 }
 
                 this.resonanceOsc = ctx.createOscillator();
@@ -26917,15 +27647,23 @@ loadSoundLibrary: async function() {
                 // The dot's position now lives in its transform (compositor
                 // layer — see initSpatialPad); read the tracked logical
                 // position instead of the no-longer-written style.left/top.
-                const x = (this.lastPosX !== undefined) ? this.lastPosX : (rect.width / 2);
-                const y = (this.lastPosY !== undefined) ? this.lastPosY : (rect.height / 2);
-                const normX = ((x / rect.width) * 10) - 5;
-                const normY = (((rect.height - y) / rect.height) * 10) - 5;
+                //
+                // A zero-size pad (collapsed panel, hidden tab, or before layout
+                // has settled) made the normalisation below compute 0/0, i.e.
+                // NaN, and AudioParam.setValueAtTime rejects a non-finite value —
+                // so starting spatial playback threw and aborted the rest of the
+                // start-up. Fall back to the neutral centre position instead.
+                const w = rect.width;
+                const h = rect.height;
+                const x = (this.lastPosX !== undefined) ? this.lastPosX : (w / 2);
+                const y = (this.lastPosY !== undefined) ? this.lastPosY : (h / 2);
+                const normX = w > 0 ? ((x / w) * 10) - 5 : 0;
+                const normY = h > 0 ? (((h - y) / h) * 10) - 5 : 0;
                 const now = ctx.currentTime;
 
-                this.spatialPanner.positionX.setValueAtTime(normX, now);
-                this.spatialPanner.positionY.setValueAtTime(normY, now);
-                this.spatialPanner.positionZ.setValueAtTime(this.spatialDepthZ, now);
+                this.spatialPanner.positionX.setValueAtTime(Number.isFinite(normX) ? normX : 0, now);
+                this.spatialPanner.positionY.setValueAtTime(Number.isFinite(normY) ? normY : 0, now);
+                this.spatialPanner.positionZ.setValueAtTime(Number.isFinite(this.spatialDepthZ) ? this.spatialDepthZ : -1.5, now);
             }
             this.updateVolumeSliderVisibility();
             this.startImbalanceMeter();
@@ -27228,11 +27966,11 @@ loadSoundLibrary: async function() {
             if (btn) {
                 if (this.heightModeActive) {
                     btn.textContent = "↕️ Height: ON";
-                    btn.className = "bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold rounded text-[10px] h-7 px-2.5 shadow-sm active-btn";
+                    btn.className = "bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold text-[10px] h-7 px-2.5 shadow-sm active-btn";
                     showToast("3D Elevation engaged! Vertical movement now adjusts Height (Y-axis).", "↕️");
                 } else {
                     btn.textContent = "↕️ Height: OFF";
-                    btn.className = "bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.12] text-stone-200 font-bold rounded text-[10px] h-7 px-2.5 shadow-sm";
+                    btn.className = "bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.12] text-stone-200 font-bold text-[10px] h-7 px-2.5 shadow-sm";
                     showToast("Returned to standard 2D flat plane.", "🧭");
                 }
             }
@@ -27435,11 +28173,50 @@ loadSoundLibrary: async function() {
             ['FindEngine', FindEngine]
         ];
 
+        // Silent degradation is a legitimate design choice only when it is
+        // VISIBLE. Previously a failed mod.init() produced nothing but a
+        // console.error and the two global handlers — so a dead IEM_Module or
+        // EQ_Module left the UI looking completely normal while the features
+        // silently did nothing, with no banner, no disabled state and no retry.
+        // Collect the failures and surface them once, non-blocking, naming the
+        // features the user actually lost.
+        const bootFailures = [];
         for (const [name, mod] of bootModules) {
             try {
                 await mod.init();
             } catch (err) {
                 console.error(`[Boot] ${name}.init() failed — continuing with remaining modules.`, err);
+                bootFailures.push({ name, err });
+            }
+        }
+        if (bootFailures.length) {
+            const FRIENDLY = {
+                App: 'Navigation',
+                IEM_Module: 'Review tab',
+                EQ_Module: 'EQ / parametric equalizer',
+                PEQDB_Module: 'Curve database',
+                Tone_Module: 'Tone generator',
+                TestLab_Module: 'Test Lab',
+                Accessibility: 'Accessibility options',
+                FindEngine: 'Find tab',
+            };
+            const lost = bootFailures.map((f) => FRIENDLY[f.name] || f.name);
+            const firstMsg = (bootFailures[0].err && bootFailures[0].err.message) || 'unknown error';
+            console.error('[Boot] ' + bootFailures.length + ' module(s) failed to initialise: ' +
+                bootFailures.map((f) => f.name).join(', '));
+            if (typeof showToast === 'function') {
+                showToast(
+                    lost.length === 1
+                        ? lost[0] + ' failed to start — that feature is unavailable.'
+                        : lost.length + ' features failed to start: ' + lost.join(', ') + '.',
+                    '⚠️'
+                );
+            }
+            if (typeof showDebugError === 'function') {
+                showDebugError(
+                    lost.join(', ') + ' failed to start',
+                    'Boot: ' + bootFailures.map((f) => f.name).join(', ') + ' — ' + firstMsg
+                );
             }
         }
 
@@ -27744,7 +28521,7 @@ loadSoundLibrary: async function() {
                             const on = isSel(p);
                             const fx = this.pickFx[p.value] || '';
                             const playing = on && p.value === this._lastFx ? ' fx-play' : '';
-                            html += `<button type="button" onclick="FindEngine.togglePick('${p.kind}','${p.value.replace(/'/g, "\\'")}')" data-tooltip="${p.value}" data-value="${p.value}" data-fx="${fx}" class="no-tactile find-pick-badge ${on ? 'on' : ''}${playing}" aria-pressed="${on}">
+                            html += `<button type="button" data-cmd="FindEngine.togglePick" data-arg-0="${esc(p.kind)}" data-arg-1="${esc(p.value)}" data-tooltip="${p.value}" data-value="${p.value}" data-fx="${fx}" class="no-tactile find-pick-badge ${on ? 'on' : ''}${playing}" aria-pressed="${on}">
                                 <span class="emoji-font vibrant-emoji leading-none pointer-events-none">${p.emoji}</span>
                             </button>`;
                         });
@@ -27853,7 +28630,16 @@ loadSoundLibrary: async function() {
                     'Wireless Over-Ear Headphones': '<img src="app/icons/wireless.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">'
                 },
                 getTagEmoji: function(tagStr) {
-                    if (!tagStr) return '🏷️';
+                    // Tags come straight out of database.json, where only the
+                    // ARRAY-ness is validated (peqdb-module.js buildDataset) —
+                    // never the element type. A numeric tag is truthy, so this
+                    // reached (5).toLowerCase() and threw. That throw happened
+                    // inside renderChunk's setTimeout with no try/catch, so the
+                    // chunk chain died mid-render, the IntersectionObserver was
+                    // never attached, finalizeRender() never ran, and the user
+                    // got a silently truncated results grid with no error.
+                    if (tagStr === null || tagStr === undefined || tagStr === '') return '🏷️';
+                    if (typeof tagStr !== 'string') tagStr = String(tagStr);
                     const emojiMatch = tagStr.match(/^(\p{Extended_Pictographic}|\p{Emoji})/u);
                     if (emojiMatch) return '';
                     const cleanKey = tagStr.toLowerCase().trim().replace(/_/g, '-');
@@ -28190,15 +28976,63 @@ loadSoundLibrary: async function() {
                     return true;
                 },
 
+                // Memoised so concurrent callers (boot + a scan pressed early)
+                // share one load instead of each starting their own fetch.
+                _dbLoadPromise: null,
+
+                // Memoised search-normalised text for the three Find-tab search
+                // boxes (Flagship / owned-IEM / taste favourites).
+                //
+                // These used PEQDB_Module.matchSearchTokens, which re-runs
+                // normalizeSearchText — ~20 global regex passes, two of which
+                // roughly double the string — on the HAYSTACK for every single
+                // dataset entry on every keystroke. With a ~5,000-entry
+                // catalogue that is 100k regex passes per 160ms debounce tick.
+                // PEQDB_Module already ships the two halves this needs
+                // (getSearchNorm's memo + matchSearchTokensNorm); the Database
+                // list uses them. Memoising onto the item itself keeps the cache
+                // naturally bounded at one string per entry, with no global Map
+                // to grow or evict.
+                _fnSearchNorm: function(item, withFiles) {
+                    if (!item) return '';
+                    if (withFiles) {
+                        if (item._fnSearchNormFull === undefined) {
+                            const filePaths = Array.isArray(item.files) ? item.files.join(' ') : (item.primaryFilePath || '');
+                            item._fnSearchNormFull = PEQDB_Module.normalizeSearchText(
+                                `${item.name || ''} ${item.brand || ''} ${item.model || ''} ${item.variant || ''} ${filePaths} ${item.searchKey || ''}`
+                            );
+                        }
+                        return item._fnSearchNormFull;
+                    }
+                    if (item._fnSearchNorm === undefined) {
+                        item._fnSearchNorm = PEQDB_Module.normalizeSearchText(
+                            `${item.name} ${item.brand || ''} ${item.model || ''}`
+                        );
+                    }
+                    return item._fnSearchNorm;
+                },
+
                 loadDatabase: async function() {
+                    if (this._dbLoadPromise) return this._dbLoadPromise;
+                    this._dbLoadPromise = (async () => {
                     try {
 
                         // typeof, not window.*: CurveIndexer is a top-level
-                        // const (peqdb-module.js), never assigned to window,
-                        // so the old window.CurveIndexer guard was always
-                        // false and this whole function re-fetched and
-                        // re-parsed the 2.77 MB database a second time.
-                        if (typeof CurveIndexer !== 'undefined' && Array.isArray(CurveIndexer.catalog) && CurveIndexer.catalog.length > 0) {
+                        // const (peqdb-module.js), never assigned to window.
+                        //
+                        // Await CurveIndexer's OWN single-flight catalogue load
+                        // rather than re-fetching. PEQDB_Module.init() starts
+                        // that load without awaiting it, so FindEngine.init()
+                        // (the last module in the boot sequence) used to arrive
+                        // while it was still in flight, found `catalog` still
+                        // empty, and downloaded + gunzipped + JSON.parsed the
+                        // same 2.85 MB payload a SECOND time on the main thread.
+                        // It also produced a separate array instance, so the
+                        // ~5,100-entry id/name indexes were built twice and
+                        // could silently diverge from PEQDB's copy.
+                        if (typeof CurveIndexer !== 'undefined' && typeof CurveIndexer.ensureCatalogReady === 'function') {
+                            this.iemDatabase = await CurveIndexer.ensureCatalogReady();
+                        } else if (typeof CurveIndexer !== 'undefined' && Array.isArray(CurveIndexer.catalog) && CurveIndexer.catalog.length > 0) {
                             this.iemDatabase = CurveIndexer.catalog;
                         } else if (typeof DecompressionStream !== 'undefined') {
                             // Prefer the 12x-smaller .gz (0.22MB vs 2.64MB) and
@@ -28216,11 +29050,26 @@ loadSoundLibrary: async function() {
                             const res = await fetch('database.json');
                             if (res.ok) this.iemDatabase = await res.json();
                         }
+                        // Shape check. The guards above all test `.length === 0`,
+                        // and a non-array (a hand-edited database.json whose root
+                        // became an object) has `length === undefined`, so
+                        // `undefined === 0` is false — every guard would pass and
+                        // the first `.filter()`/`.find()` would throw. Normalise
+                        // to [] here, once, so all consumers see an array.
+                        if (!Array.isArray(this.iemDatabase)) {
+                            console.warn('[FindEngine] database.json is not an array; using an empty metadata list.');
+                            this.iemDatabase = [];
+                        }
                         this.populateCloneSelector();
                         this.populateBrandSuggestions();
                     } catch(e) {
                         console.warn("[FindEngine] Metadata database not found or offline. Filtering fallback in effect.", e);
+                        if (!Array.isArray(this.iemDatabase)) this.iemDatabase = [];
+                        // Do not memoise a failure: let the next call retry.
+                        this._dbLoadPromise = null;
                     }
+                    })();
+                    return this._dbLoadPromise;
                 },
 
                 findModes: [
@@ -28513,7 +29362,12 @@ loadSoundLibrary: async function() {
                         setTimeout(() => {
                             if (progressContainer && !progressContainer.classList.contains('hidden')) {
                                 progressContainer.classList.add('hidden');
-                                PEQDB_Module.databaseFullyLoaded = true;
+                                // Do NOT claim the database finished loading here.
+                                // This timer fires purely because the bar was still
+                                // on screen, which is equally true when the load
+                                // failed; setting databaseFullyLoaded = true made a
+                                // failed catalogue load indistinguishable from a
+                                // slow-but-successful one.
                                 console.warn("[FindEngine] Progress bar auto-hidden via safety timer.");
                             }
                         }, 3000);
@@ -28667,7 +29521,7 @@ loadSoundLibrary: async function() {
                         if (baseCurve) {
                             if (!this.isClonedModeActive) {
                                 btn.textContent = `📁 Detected: ${baseCurve.name}`;
-                                btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 rounded text-[9px] font-bold text-stone-300 flex items-center justify-center px-2 truncate shadow-inner";
+                                btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 text-[9px] font-bold text-stone-300 flex items-center justify-center px-2 truncate shadow-inner";
                                 row.classList.remove('hidden');
                             }
                         } else {
@@ -28675,7 +29529,7 @@ loadSoundLibrary: async function() {
                                 this.deactivateEQBaseClone();
                             }
                             btn.textContent = "🔒 EQ Base Slot Empty";
-                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 rounded text-[9px] font-black uppercase text-zinc-555 flex items-center justify-center gap-1.5 shadow-inner cursor-not-allowed";
+                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 text-[9px] font-black uppercase text-zinc-555 flex items-center justify-center gap-1.5 shadow-inner cursor-not-allowed";
                             row.classList.add('hidden');
                         }
                     }, 500);
@@ -28692,7 +29546,7 @@ loadSoundLibrary: async function() {
                     const btn = document.getElementById('find-clone-btn');
                     if (btn) {
                         btn.textContent = `🟢 Active Clone: ${baseCurve.name}`;
-                        btn.className = "w-full h-7 bg-gradient-to-r from-emerald-600 to-teal-600 border border-emerald-500/40 rounded text-[9px] font-black uppercase text-white flex items-center justify-center px-2 truncate shadow-md active-btn";
+                        btn.className = "w-full h-7 bg-gradient-to-r from-emerald-600 to-teal-600 border border-emerald-500/40 text-[9px] font-black uppercase text-white flex items-center justify-center px-2 truncate shadow-md active-btn";
                     }
                     this.drawTargetVisualization();
                     showToast(`Target locked to "${baseCurve.name}"!`, "💾");
@@ -28706,10 +29560,10 @@ loadSoundLibrary: async function() {
                     if (btn) {
                         if (baseCurve) {
                             btn.textContent = `📁 Detected: ${baseCurve.name}`;
-                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 rounded text-[9px] font-bold text-stone-300 flex items-center justify-center px-2 truncate shadow-inner";
+                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 text-[9px] font-bold text-stone-300 flex items-center justify-center px-2 truncate shadow-inner";
                         } else {
                             btn.textContent = "🔒 EQ Base Slot Empty";
-                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 rounded text-[9px] font-black uppercase text-zinc-555 flex items-center justify-center gap-1.5 shadow-inner cursor-not-allowed";
+                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 text-[9px] font-black uppercase text-zinc-555 flex items-center justify-center gap-1.5 shadow-inner cursor-not-allowed";
                         }
                     }
                     this.drawTargetVisualization();
@@ -28748,6 +29602,14 @@ loadSoundLibrary: async function() {
                     if (title) title.textContent = "Synthesizing Taste Profile...";
                     if (subtitle) subtitle.textContent = "Averaging favorite frequency curves...";
 
+                    // Everything between raising isScanning and the setTimeout
+                    // below used to run UNGUARDED, while the flag was already
+                    // true. A throw in the curve loads / interpolation / toast
+                    // left isScanning stuck true and the overlay stuck visible,
+                    // and since all 5 scan entry points early-return on
+                    // `isScanning`, the entire Find tab went dead until restart.
+                    // Same shape as scanEndgameSets' try/finally.
+                    try {
                     const dataset = PEQDB_Module.STATE.dataset;
                     await Promise.all(selected.map(async (id) => {
                         const item = dataset.find(i => i.id === id);
@@ -28875,6 +29737,15 @@ loadSoundLibrary: async function() {
                             this._handleScanError(err);
                         }
                     }, 1000);
+                    } catch (err) {
+                        // Guard for the pre-timeout region above (curve loads,
+                        // interpolation, toast). Without this a throw left
+                        // isScanning stuck true and the overlay stuck visible,
+                        // and — because all 5 scan entry points early-return on
+                        // `isScanning` — the whole Find tab went dead.
+                        console.error("[FindEngine] taste scan setup failed:", err);
+                        this._handleScanError(err);
+                    }
                 },
 
                 loadCachedCanonicalProfiles: function() {
@@ -29296,6 +30167,34 @@ loadSoundLibrary: async function() {
                     return canonicalList;
                 },
 
+                // A Worker that has errored, timed out, or stopped replying is
+                // PERMANENTLY dead: its `error` event only ever fires once, and
+                // a terminated worker never posts again. Leaving it cached meant
+                // every later scan attached listeners that could never fire, its
+                // promise hung forever, `isScanning` stayed true, the scanning
+                // overlay never hid, and — because all 5 scan entry points
+                // early-return on `isScanning` — the entire Find tab went dead
+                // until the app was restarted. Retiring it means the next scan
+                // transparently builds a fresh worker instead.
+                _killFindWorker: function(reason) {
+                    const w = this._findWorker;
+                    this._findWorker = null;
+                    // A fresh worker starts with an empty canonical-profile
+                    // cache, so any signature we believed it held is void.
+                    this._workerCanonicalSig = null;
+                    if (w) { try { w.terminate(); } catch (_) {} }
+                    console.warn('[FindEngine] retired find worker:', reason);
+                },
+
+                // The worker can also die SILENTLY (an OOM or an uncaught throw
+                // inside a scan, a message that fails to deserialize). In that
+                // case no `error` event fires and the request promise would never
+                // settle, so `isScanning` would stay true forever. Cap it: 30s is
+                // far longer than any legitimate pass over the catalogue, and
+                // falling back to the main-thread scan is a perf cost, not a
+                // correctness one.
+                WORKER_TIMEOUT_MS: 30000,
+
                 ensureFindWorker: function() {
                     if (this._findWorker) return this._findWorker;
                     if (typeof Worker === 'undefined') return null;
@@ -29392,6 +30291,28 @@ loadSoundLibrary: async function() {
                     };
                     return new Promise((resolve) => {
                         let retriedWithItems = false;
+                        let settled = false;
+                        let timer = null;
+                        // Resolve EXACTLY once, always after detaching listeners
+                        // and disarming the timeout. The reprime path re-enters
+                        // postMessage, so without a settled latch a late reply
+                        // could resolve an already-resolved promise.
+                        const done = (v) => {
+                            if (settled) return;
+                            settled = true;
+                            if (timer) { clearTimeout(timer); timer = null; }
+                            worker.removeEventListener('message', onMsg);
+                            worker.removeEventListener('error', onErr);
+                            worker.removeEventListener('messageerror', onErr);
+                            resolve(v);
+                        };
+                        const armTimeout = () => {
+                            if (timer) clearTimeout(timer);
+                            timer = setTimeout(() => {
+                                this._killFindWorker('tuning request timed out after ' + this.WORKER_TIMEOUT_MS + 'ms');
+                                done(null);
+                            }, this.WORKER_TIMEOUT_MS);
+                        };
                         const onMsg = (e) => {
                             const d = e.data || {};
                             if (d.type !== 'result') return;
@@ -29407,17 +30328,17 @@ loadSoundLibrary: async function() {
                                 try {
                                     worker.postMessage({ type: 'tuning', reqId: reqId, items: buildSlim(), targetInterp: targetInterp, freqs: freqs, sig: sig });
                                     this._workerCanonicalSig = sig;
+                                    armTimeout();
                                 } catch (postErr) {
-                                    worker.removeEventListener('message', onMsg);
-                                    worker.removeEventListener('error', onErr);
-                                    resolve(null);
+                                    this._killFindWorker('postMessage failed during reprime');
+                                    done(null);
                                 }
                                 return;
                             }
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
-                            if (this._scanToken !== token) return resolve(null);
-                            if (!d.ok) { console.warn("[FindEngine] worker tuning failed:", d.error); return resolve(null); }
+                            if (this._scanToken !== token) return done(null);
+                            // A worker-reported payload failure leaves the worker
+                            // itself healthy, so it is NOT retired here.
+                            if (!d.ok) { console.warn("[FindEngine] worker tuning failed:", d.error); return done(null); }
                             const list = (d.matches || []).slice();
                             // The worker only echoes slim payloads (no curve data),
                             // so reattach each match's data by id on the main thread.
@@ -29429,16 +30350,22 @@ loadSoundLibrary: async function() {
                                 if (it) m.data = it.data || null;
                             });
                             list.sort((a, b) => b.similarity - a.similarity);
-                            resolve(list);
+                            done(list);
                         };
                         const onErr = (e) => {
                             console.warn("[FindEngine] worker error:", e && e.message);
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
-                            resolve(null);
+                            // The worker is dead. Terminate + drop it from the
+                            // cache so the NEXT scan builds a fresh one; leaving
+                            // it cached is what used to wedge the whole tab.
+                            this._killFindWorker('error event: ' + ((e && e.message) || 'unknown'));
+                            done(null);
                         };
                         worker.addEventListener('message', onMsg);
                         worker.addEventListener('error', onErr);
+                        // messageerror = the worker tried to send something that
+                        // could not be deserialized. Also fatal for this worker.
+                        worker.addEventListener('messageerror', onErr);
+                        armTimeout();
                         try {
                             if (workerHasSet) {
                                 // Same item set the worker already memoized:
@@ -29449,9 +30376,8 @@ loadSoundLibrary: async function() {
                                 this._workerCanonicalSig = sig;
                             }
                         } catch (e) {
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
-                            resolve(null);
+                            this._killFindWorker('postMessage threw: ' + e.message);
+                            done(null);
                         }
                     });
                 },
@@ -29535,6 +30461,12 @@ loadSoundLibrary: async function() {
 
                 scanAndMatch: async function() {
                     if (this.isScanning) return;
+                    // Guard the whole pre-timeout region. `await loadDatabase()`
+                    // and the curve/dataset setup below used to run while
+                    // isScanning was already true but outside any try, so a
+                    // throw there left the flag stuck and the overlay visible —
+                    // and all 5 scan entry points early-return on `isScanning`.
+                    try {
                     this.isScanning = true;
 
                     if (!this.iemDatabase || this.iemDatabase.length === 0) {
@@ -29692,6 +30624,10 @@ loadSoundLibrary: async function() {
                                 this._handleScanError(err);
                             }
                         }, 300);
+                    }
+                    } catch (err) {
+                        console.error("[FindEngine] scan setup failed:", err);
+                        this._handleScanError(err);
                     }
                 },
 
@@ -29944,6 +30880,27 @@ loadSoundLibrary: async function() {
                     const reqId = 'e' + ((this._workerReqSeq = (this._workerReqSeq || 0) + 1));
                     return new Promise((resolve) => {
                         let retriedWithItems = false;
+                        let settled = false;
+                        let timer = null;
+                        const cleanup = () => {
+                            if (timer) { clearTimeout(timer); timer = null; }
+                            worker.removeEventListener('message', onMsg);
+                            worker.removeEventListener('error', onErr);
+                            worker.removeEventListener('messageerror', onErr);
+                        };
+                        const done = (v) => {
+                            if (settled) return;
+                            settled = true;
+                            cleanup();
+                            resolve(v);
+                        };
+                        const armTimeout = () => {
+                            if (timer) clearTimeout(timer);
+                            timer = setTimeout(() => {
+                                this._killFindWorker('endgame request timed out after ' + this.WORKER_TIMEOUT_MS + 'ms');
+                                done(null);
+                            }, this.WORKER_TIMEOUT_MS);
+                        };
                         const onMsg = (e) => {
                             const d = e.data || {};
                             if (d.type !== 'result') return;
@@ -29957,27 +30914,27 @@ loadSoundLibrary: async function() {
                                 try {
                                     worker.postMessage({ type: 'endgame', reqId: reqId, items: items, maxPrice: maxPrice, freqs: freqs, sig: sig });
                                     this._workerCanonicalSig = sig;
+                                    armTimeout();
                                 } catch (postErr) {
-                                    cleanup();
-                                    resolve(null);
+                                    this._killFindWorker('postMessage failed during endgame reprime');
+                                    done(null);
                                 }
                                 return;
                             }
-                            cleanup();
-                            if (!d.ok) { console.warn("[FindEngine] worker endgame failed:", d.error); return resolve(null); }
-                            resolve(d.endgame);
+                            // A worker-reported payload failure leaves the worker
+                            // healthy, so it is NOT retired here.
+                            if (!d.ok) { console.warn("[FindEngine] worker endgame failed:", d.error); return done(null); }
+                            done(d.endgame);
                         };
                         const onErr = (e) => {
                             console.warn("[FindEngine] worker error:", e && e.message);
-                            cleanup();
-                            resolve(null);
-                        };
-                        const cleanup = () => {
-                            worker.removeEventListener('message', onMsg);
-                            worker.removeEventListener('error', onErr);
+                            this._killFindWorker('error event: ' + ((e && e.message) || 'unknown'));
+                            done(null);
                         };
                         worker.addEventListener('message', onMsg);
                         worker.addEventListener('error', onErr);
+                        worker.addEventListener('messageerror', onErr);
+                        armTimeout();
                         try {
                             if (workerHasSet) {
                                 worker.postMessage({ type: 'endgame', reqId: reqId, maxPrice: maxPrice, freqs: freqs, sig: sig });
@@ -29986,8 +30943,8 @@ loadSoundLibrary: async function() {
                                 this._workerCanonicalSig = sig;
                             }
                         } catch (e) {
-                            cleanup();
-                            resolve(null);
+                            this._killFindWorker('postMessage threw: ' + e.message);
+                            done(null);
                         }
                     });
                 },
@@ -30160,12 +31117,21 @@ loadSoundLibrary: async function() {
 
                                     <div class="flex justify-between items-center text-xs select-none">
                                         <span class="text-[9px] font-mono text-zinc-400 font-bold uppercase tracking-wider">Option ${curOption} of ${totalOptions}</span>
-                                        ${totalOptions > 1 ? `
-                                            <div class="flex items-center gap-1">
-                                                <button onclick="FindEngine.${isValueStrip ? 'cycleEndgameValue(-1)' : `cycleEndgamePick('${catId}', -1)`}" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
-                                                <button onclick="FindEngine.${isValueStrip ? 'cycleEndgameValue(1)' : `cycleEndgamePick('${catId}', 1)`}" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
-                                            </div>
-                                        ` : ''}
+    ${totalOptions > 1 ? (() => {
+    // The stepper used to pick the whole call inside the attribute:
+    //   onclick="FindEngine.${isValueStrip ? 'cycleEndgameValue(-1)' : `cycleEndgamePick('${catId}', -1)`}"
+    // which cannot be expressed as data attributes. Choose the command and its
+    // args here instead, so the markup stays declarative.
+    const prevCmd = isValueStrip ? 'FindEngine.cycleEndgameValue' : 'FindEngine.cycleEndgamePick';
+    const nextCmd = isValueStrip ? 'FindEngine.cycleEndgameValue' : 'FindEngine.cycleEndgamePick';
+    const prevArgs = isValueStrip ? ' data-arg-0="-1"' : ` data-arg-0="${esc(catId)}" data-arg-1="-1"`;
+    const nextArgs = isValueStrip ? ' data-arg-0="1"' : ` data-arg-0="${esc(catId)}" data-arg-1="1"`;
+    return `
+    <div class="flex items-center gap-1">
+    <button data-cmd="${prevCmd}"${prevArgs} class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
+    <button data-cmd="${nextCmd}"${nextArgs} class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
+    </div>
+    `; })() : ''}
                                     </div>
 
                                     <div class="flex items-center gap-2 mt-1">
@@ -30185,7 +31151,7 @@ loadSoundLibrary: async function() {
 
                                     <div class="space-y-1">
                                         <div class="flex items-center gap-2 w-full mt-1">
-                                            <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0" data-id="${esc(curveIdToLoad)}" data-name="${esc(finalName)}" onclick="event.stopPropagation(); FindEngine.updateFloatingCompareBar();">
+                                            <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0" data-id="${esc(curveIdToLoad)}" data-name="${esc(finalName)}" data-cmd="FindEngine.updateFloatingCompareBar">
                                             <div class="flex-1 overflow-hidden relative flex items-center h-5">
                                                 <span id="${marqId}" class="text-xs font-black text-stone-200 inline-block whitespace-nowrap">${esc(finalName)}</span>
                                             </div>
@@ -30194,12 +31160,12 @@ loadSoundLibrary: async function() {
                                         <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
                                             ${price !== null && price !== undefined ? `<span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>` : ''}
                                             ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
-                                            ${driverType ? `<span class="spec-icon-badge" data-tooltip="${driverTooltip}">${driverEmoji}</span>` : ''}
-                                            ${connector ? `<span class="spec-icon-badge" data-tooltip="${connectorTooltip}">${connectorEmoji}</span>` : ''}
-                                            <span class="spec-icon-badge" data-tooltip="${formTooltip}">${formEmoji}</span>
+                        ${driverType ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
+                        ${connector ? `<span class="spec-icon-badge" data-tooltip="${esc(connectorTooltip)}">${connectorEmoji}</span>` : ''}
+                        <span class="spec-icon-badge" data-tooltip="${esc(formTooltip)}">${formEmoji}</span>
                                         </div>
 
-                                        <div class="h-[42px] w-full rounded-none border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
+                                        <div class="h-[42px] w-full border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
                                             <canvas id="${sparkId}" class="absolute inset-0 w-full h-full block opacity-85"></canvas>
                                         </div>
 
@@ -30217,11 +31183,11 @@ loadSoundLibrary: async function() {
                                 </div>
 
                                 <div class="flex items-center gap-1.5 mt-3 pt-2 border-t-2 border-black ${hasGraph ? '' : 'hidden'}">
-                                    <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole('${cardIdx}', -1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                    <button onclick="event.stopPropagation(); FindEngine.loadCardToGraph('${cardIdx}', '${esc(curveIdToLoad)}')" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none">
+                                    <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${cardIdx}" data-arg-1="-1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
+                                    <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${cardIdx}" data-arg-1="${escJs(curveIdToLoad)}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none">
                                         <span id="label-role-stepper-${cardIdx}" class="flex items-center justify-center gap-1 truncate">${currentRoleOpt.label}</span>
                                     </button>
-                                    <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole('${cardIdx}', 1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
+                                    <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${cardIdx}" data-arg-1="1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
                                 </div>
                             </div>
                         `;
@@ -30331,8 +31297,7 @@ loadSoundLibrary: async function() {
                             const isFlagTag = Array.isArray(item.tags) && item.tags.some(t => String(t).toLowerCase() === 'flagship');
                             return isFlagTag || price >= 1000;
                         }
-                        const searchableText = `${item.name} ${item.brand || ''} ${item.model || ''}`;
-                        return PEQDB_Module.matchSearchTokens(searchableText, query);
+                        return PEQDB_Module.matchSearchTokensNorm(this._fnSearchNorm(item), query);
                     }).sort((a, b) => {
                         return (a.name || '').localeCompare(b.name || '');
                     });
@@ -30355,7 +31320,7 @@ loadSoundLibrary: async function() {
                         const numP = Number.isFinite(parseFloat(rawP)) ? parseFloat(rawP) : 250;
                         const dispP = rawP != null ? rawP : '200+';
                         return `
-                            <div data-letter="${alphaKeyOf(item)}" onclick="FindEngine.setGkFlagship('${escJs(item.id)}', '${escJs(item.name)}', ${numP})" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800 flex justify-between">
+                            <div data-letter="${alphaKeyOf(item)}" data-cmd="FindEngine.setGkFlagship" data-arg-0="${escJs(item.id)}" data-arg-1="${escJs(item.name)}" data-arg-2="${numP}" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800 flex justify-between">
                                 <span>${esc(item.name)}</span>
                                 <span class="text-amber-400 font-mono ml-2">$${dispP}</span>
                             </div>
@@ -30390,7 +31355,7 @@ loadSoundLibrary: async function() {
                                 <span class="emoji-font vibrant-emoji text-sm flex-shrink-0 leading-none">👑</span>
                                 <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(name)} ($${this.selectedGkFlagshipPrice})</span>
                             </div>
-                            <button type="button" onclick="FindEngine.clearGkFlagship()" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the flagship target">✕</button>
+                            <button type="button" data-cmd="FindEngine.clearGkFlagship" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the flagship target">✕</button>
                         `;
                     }
                 },
@@ -30414,12 +31379,15 @@ loadSoundLibrary: async function() {
                         return;
                     }
 
-                    this.isScanning = true;
                     const grid = document.getElementById('find-matches-grid');
                     const emptyState = document.getElementById('find-empty-state');
                     const overlay = document.getElementById('find-scanning-overlay');
 
                     try {
+                        // Raise the flag INSIDE the try so no throw can leave it
+                        // stuck true — all 5 scan entry points early-return on
+                        // `isScanning`, so a stuck flag kills the whole Find tab.
+                        this.isScanning = true;
                         if (grid) grid.innerHTML = '';
                         if (emptyState) emptyState.classList.add('hidden');
                         if (overlay) overlay.classList.remove('hidden');
@@ -31255,8 +32223,7 @@ applyGenreFilters: function(matches) {
                     const dataset = PEQDB_Module.STATE.dataset || [];
                     const matches = dataset.filter(item => {
                         if (!hasQuery) return true;
-                        const searchableText = `${item.name} ${item.brand || ''} ${item.model || ''}`;
-                        return PEQDB_Module.matchSearchTokens(searchableText, query);
+                        return PEQDB_Module.matchSearchTokensNorm(this._fnSearchNorm(item), query);
                     }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
                     if (matches.length === 0) {
@@ -31265,7 +32232,7 @@ applyGenreFilters: function(matches) {
                     }
 
                     container.innerHTML = matches.map(item => `
-                        <div onclick="FindEngine.setUpgradeBaseIem('${escJs(item.id)}', '${escJs(item.name)}')" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
+                        <div data-cmd="FindEngine.setUpgradeBaseIem" data-arg-0="${escJs(item.id)}" data-arg-1="${escJs(item.name)}" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
                             ${esc(item.name)}
                         </div>
                     `).join('');
@@ -31291,9 +32258,9 @@ applyGenreFilters: function(matches) {
                         baseSlot.innerHTML = `
                             <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                                 <span class="emoji-font vibrant-emoji text-sm flex-shrink-0 leading-none">📱</span>
-                                <span class="text-xs font-black text-[var(--text-main)] truncate">${name}</span>
+                                <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(name)}</span>
                             </div>
-                            <button type="button" onclick="FindEngine.clearUpgradeBaseIem()" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the base IEM">✕</button>
+                            <button type="button" data-cmd="FindEngine.clearUpgradeBaseIem" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the base IEM">✕</button>
                         `;
                     }
 
@@ -31655,14 +32622,14 @@ applyGenreFilters: function(matches) {
                                     <span class="text-[9px] font-mono text-zinc-400 font-bold">Option ${curIdx + 1} of ${total}</span>
                                     ${total > 1 ? `
                                         <div class="flex items-center gap-1">
-                                            <button onclick="FindEngine.cycleUpgradeStep(${stepNum}, -1)" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
-<button onclick="FindEngine.cycleUpgradeStep(${stepNum}, 1)" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
+                                            <button data-cmd="FindEngine.cycleUpgradeStep" data-arg-0="${stepNum}" data-arg-1="-1" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
+<button data-cmd="FindEngine.cycleUpgradeStep" data-arg-0="${stepNum}" data-arg-1="1" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
                                         </div>
                                     ` : ''}
                                 </div>
 
                                 <div class="flex items-center gap-2 w-full mt-1">
-                                    <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0" data-id="${esc(curveIdToLoad)}" data-name="${esc(name)}" onclick="event.stopPropagation();">
+                                    <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0" data-id="${esc(curveIdToLoad)}" data-name="${esc(name)}" data-stop-propagation>
                                     <div class="flex-1 overflow-hidden relative flex items-center h-5">
                                         <span id="marquee-ug-${stepNum}" class="text-xs font-black text-stone-200 inline-block whitespace-nowrap">${esc(name)}</span>
                                     </div>
@@ -31691,13 +32658,13 @@ applyGenreFilters: function(matches) {
                                     </div>
                                 </div>
 
-                                <div class="h-[42px] w-full rounded-none border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
+                                <div class="h-[42px] w-full border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
                                     <canvas id="spark-ug-${stepNum}" class="absolute inset-0 w-full h-full block opacity-85"></canvas>
                                 </div>
 
                                 ${isMulti ? `
                                     <div class="flex items-center gap-1 w-full h-7 mt-1.5">
-                                        <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardSource('${cardIdx}', -1)" class="w-6 h-7 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0">◀</button>
+                                        <button type="button" data-cmd="FindEngine.cycleCardSource" data-arg-0="${cardIdx}" data-arg-1="-1" class="w-6 h-7 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0">◀</button>
                                         <div class="flex-1 bg-black/60 border-2 border-black px-1.5 h-7 flex items-center justify-start overflow-hidden text-left relative">
                                             <div id="src-stepper-container-${cardIdx}" class="w-full overflow-hidden text-left flex items-center justify-start">
                                                 <span id="label-src-stepper-${cardIdx}" class="text-[8.5px] font-bold text-left inline-block whitespace-nowrap">
@@ -31705,7 +32672,7 @@ applyGenreFilters: function(matches) {
                                                 </span>
                                             </div>
                                         </div>
-                                        <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardSource('${cardIdx}', 1)" class="w-6 h-7 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0">▶</button>
+                                        <button type="button" data-cmd="FindEngine.cycleCardSource" data-arg-0="${cardIdx}" data-arg-1="1" class="w-6 h-7 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0">▶</button>
                                     </div>
                                 ` : ''}
 
@@ -31720,11 +32687,11 @@ applyGenreFilters: function(matches) {
                             </div>
 
                             <div class="flex items-center gap-1.5 mt-3 pt-2 border-t-2 border-black ${hasGraph ? '' : 'hidden'}">
-                                <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole('${cardIdx}', -1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                <button onclick="event.stopPropagation(); FindEngine.loadCardToGraph('${cardIdx}')" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
+                                <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${cardIdx}" data-arg-1="-1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
+                                <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${cardIdx}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
                                     <span id="label-role-stepper-${cardIdx}" class="flex items-center justify-center gap-1 truncate">${currentRoleOpt.label}</span>
                                 </button>
-                                <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole('${cardIdx}', 1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
+                                <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${cardIdx}" data-arg-1="1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
                             </div>
                         </div>
                     `;
@@ -31743,6 +32710,10 @@ applyGenreFilters: function(matches) {
                     this._upgradeHasRun = true;
                     this.isScanning = true;
 
+                    // Guard the pre-timeout region for the same reason as the
+                    // other scans: nothing may throw while isScanning is true
+                    // but outside a try, or the Find tab is wedged until restart.
+                    try {
                     if (grid) grid.innerHTML = '';
                     if (emptyState) emptyState.classList.add('hidden');
                     if (overlay) overlay.classList.remove('hidden');
@@ -31876,15 +32847,15 @@ applyGenreFilters: function(matches) {
 
                                 if (acousticTest.passed && matchedTag) {
                                     score += 35;
-                                    badgeHtml = `<span class="text-[8.5px] font-black text-emerald-400 bg-emerald-950/40 border border-emerald-800/80 px-1.5 py-0.5 rounded">✅ Confirmed ${goal.toUpperCase()}</span>`;
+                                    badgeHtml = `<span class="text-[8.5px] font-black text-emerald-400 bg-emerald-950/40 border border-emerald-800/80 px-1.5 py-0.5">✅ Confirmed ${goal.toUpperCase()}</span>`;
                                 } else if (acousticTest.passed && !matchedTag) {
                                     score += 20;
-                                    badgeHtml = `<span class="text-[8.5px] font-black text-teal-400 bg-teal-950/40 border border-teal-800/80 px-1.5 py-0.5 rounded">🔬 Measured ${goal.toUpperCase()}</span>`;
+                                    badgeHtml = `<span class="text-[8.5px] font-black text-teal-400 bg-teal-950/40 border border-teal-800/80 px-1.5 py-0.5">🔬 Measured ${goal.toUpperCase()}</span>`;
                                 } else if (!acousticTest.passed && matchedTag) {
                                     score -= 25;
-                                    badgeHtml = `<span class="text-[8.5px] font-black text-rose-400 bg-rose-950/40 border border-rose-800/80 px-1.5 py-0.5 rounded">⚠️ Tag Conflict</span>`;
+                                    badgeHtml = `<span class="text-[8.5px] font-black text-rose-400 bg-rose-950/40 border border-rose-800/80 px-1.5 py-0.5">⚠️ Tag Conflict</span>`;
                                 } else {
-                                    badgeHtml = `<span class="text-[8.5px] font-bold text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">Standard Candidate</span>`;
+                                    badgeHtml = `<span class="text-[8.5px] font-bold text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5">Standard Candidate</span>`;
                                 }
 
                                 if (goal === 'tech') {
@@ -32006,12 +32977,49 @@ applyGenreFilters: function(matches) {
                         this.isScanning = false;
                     }
                 }, 50);
-            },
+                    } catch (err) {
+                        console.error("[FindEngine] upgrade pathway setup failed:", err);
+                        this._handleScanError(err);
+                    }
+                },
+
+                // Bounded LRU for per-card render data. This was a plain object
+                // keyed by database id that was written on every card render and
+                // NEVER cleared or capped, so simply browsing the Find results
+                // grew it to one entry per catalogue row (~5,000) and held it for
+                // the whole session — each entry retaining a 100-point
+                // Float32Array plus an HTML string. (It did not go stale:
+                // candInterp is built with an explicit 500 Hz / 75 dB and never
+                // reads the alignment settings, so only unbounded growth was at
+                // fault, not staleness.)
+                _cardDataCache: null,
+                _cardDataCacheKeys: [],
+                CARD_CACHE_MAX: 400,
+                _cardCacheGet: function(key) {
+                    if (!this._cardDataCache || key == null) return undefined;
+                    return this._cardDataCache[key];
+                },
+                _cardCacheSet: function(key, data) {
+                    if (key == null) return data;
+                    if (!this._cardDataCache) { this._cardDataCache = {}; this._cardDataCacheKeys = []; }
+                    if (this._cardDataCache[key] === undefined) {
+                        this._cardDataCacheKeys.push(key);
+                        // Evict oldest-first. The list is insertion-ordered, so
+                        // shifting off the front is the LRU approximation and
+                        // costs nothing at this size.
+                        while (this._cardDataCacheKeys.length > this.CARD_CACHE_MAX) {
+                            const oldest = this._cardDataCacheKeys.shift();
+                            delete this._cardDataCache[oldest];
+                        }
+                    }
+                    this._cardDataCache[key] = data;
+                    return data;
+                },
 
                 _getCachedCardData: function(item, dbEntry, freqs) {
                     const key = (dbEntry && dbEntry.id != null) ? dbEntry.id : (item.id != null ? item.id : null);
-                    if (!this._cardDataCache) this._cardDataCache = {};
-                    if (key != null && this._cardDataCache[key] !== undefined) return this._cardDataCache[key];
+                    const hit = this._cardCacheGet(key);
+                    if (hit !== undefined) return hit;
 
                     const candInterp = item.interp || (item.data ? CurveUtils.cubicSplineInterpolate(CurveUtils.normalizeTo75dB(item.data, 500, 75), freqs) : null);
 
@@ -32019,7 +33027,7 @@ applyGenreFilters: function(matches) {
                     const uniqueTags = [...new Set(rawTags || [])].slice(0, 4);
                     const tagsHtml = uniqueTags.map(t => {
                         const emoji = FindEngine.getTagEmoji(t);
-                        return `<span class="find-tag-icon" data-tooltip="${t}">${emoji || '🏷️'}</span>`;
+                        return `<span class="find-tag-icon" data-tooltip="${esc(t)}">${emoji || '🏷️'}</span>`;
                     }).join('');
 
                     const genreMatch = FindEngine.determineIemGenreMatch ? FindEngine.determineIemGenreMatch(item, dbEntry) : { emoji: '🎧', name: 'Pop / Dance' };
@@ -32032,7 +33040,7 @@ applyGenreFilters: function(matches) {
                         genreMatch: genreMatch,
                         gameGenreMatch: gameGenreMatch
                     };
-                    if (key != null) this._cardDataCache[key] = data;
+                    if (key != null) return this._cardCacheSet(key, data);
                     return data;
                 },
 
@@ -32303,14 +33311,14 @@ applyGenreFilters: function(matches) {
                                         <span class="text-xs font-black ${badgeColorClass}">${badgeText}</span>
                                     </div>
                                     <div class="space-y-1">
-                                        <h4 id="blind-title-${idx}" class="text-xs font-bold blur-xs select-none">Reveal Required</h4>
+                                        <h4 id="blind-title-${idx}" class="text-xs font-bold select-none" style="filter: blur(5px);">Reveal Required</h4>
                                         <div class="flex flex-wrap gap-1 mt-1.5">
                                             <span class="text-[8.5px] font-bold text-zinc-500">🔐 Profile Locked</span>
                                         </div>
                                     </div>
                                 </div>
                                 <div class="flex gap-2 mt-3 pt-2.5 border-t-2 border-black">
-                                    <button onclick="FindEngine.revealIEM(this, '${finalName.replace(/'/g, "\\'")}', 'blind-title-${idx}')" class="flex-1 py-1.5 btn-clear text-[9px] font-black cursor-pointer">🔓 Reveal IEM</button>
+                                    <button data-cmd="FindEngine.revealIEM" data-arg-0="@self" data-arg-1="${escJs(finalName)}" data-arg-2="blind-title-${idx}" class="flex-1 py-1.5 btn-clear text-[9px] font-black cursor-pointer">🔓 Reveal IEM</button>
                                 </div>
                             `;
                         } else {
@@ -32341,7 +33349,7 @@ applyGenreFilters: function(matches) {
 
                                     <div class="space-y-1">
                                         <div class="flex items-start gap-2 w-full">
-                                            <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0 mt-0.5" data-id="${escCurveId}" data-name="${escFinalName}" onclick="event.stopPropagation(); FindEngine.updateFloatingCompareBar();">
+                                            <input type="checkbox" class="find-compare-cb accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer flex-shrink-0 mt-0.5" data-id="${escCurveId}" data-name="${escFinalName}" data-cmd="FindEngine.updateFloatingCompareBar">
                                             <div class="flex-1 w-full">
                                                 <span class="text-xs font-black text-stone-200 leading-snug line-clamp-2">${escFinalName}</span>
                                             </div>
@@ -32355,7 +33363,7 @@ applyGenreFilters: function(matches) {
                                             <span class="spec-icon-badge" data-tooltip="${escFormTip}">${formEmoji}</span>
                                         </div>
 
-                                        <div class="h-[42px] w-full rounded-none border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
+                                        <div class="h-[42px] w-full border-2 border-black bg-black overflow-hidden relative mt-1.5 ${hasGraph ? '' : 'hidden'}">
                                             <canvas id="spark-${idx}" class="absolute inset-0 w-full h-full block opacity-85"></canvas>
                                         </div>
 
@@ -32371,11 +33379,11 @@ applyGenreFilters: function(matches) {
                                 </div>
 
                                 <div class="flex items-center gap-1.5 mt-3 pt-2 border-t-2 border-black ${hasGraph ? '' : 'hidden'}">
-                                    <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole(${idx}, -1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                    <button onclick="event.stopPropagation(); FindEngine.loadCardToGraph(${idx})" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
+                                    <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${idx}" data-arg-1="-1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
+                                    <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${idx}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
                                         <span id="label-role-stepper-${idx}" class="flex items-center justify-center gap-1 truncate">${currentRoleOpt.label}</span>
                                     </button>
-                                    <button type="button" onclick="event.stopPropagation(); FindEngine.cycleCardRole(${idx}, 1)" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
+                                    <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${idx}" data-arg-1="1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
                                 </div>
                             `;
                         }
@@ -32497,7 +33505,12 @@ applyGenreFilters: function(matches) {
                     const titleEl = document.getElementById(titleId);
                     if (titleEl) {
                         titleEl.textContent = realName;
-                        titleEl.classList.remove('blur-xs', 'select-none');
+                        // Undo the blur. The blur is an inline style now because
+                        // Tailwind has no `blur-xs` step (its scale starts at
+                        // `sm`), so the old class never compiled and the blind
+                        // test's answer was fully legible before the reveal.
+                        titleEl.classList.remove('select-none');
+                        titleEl.style.filter = '';
                     }
 
                     const iem = PEQDB_Module.STATE.dataset.find(i => i.name === realName || this.sanitizeName(i.name) === realName);
@@ -32506,7 +33519,7 @@ applyGenreFilters: function(matches) {
 
                         const sigs = PEQDB_Module.analyzeCurveSignature(iem.data);
                         const tagsHtml = sigs.map(t => {
-                            return `<span class="text-[8px] font-black px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.05] text-zinc-400 whitespace-nowrap">${t}</span>`;
+                            return `<span class="text-[8px] font-black px-1.5 py-0.5 bg-white/[0.04] border border-white/[0.05] text-zinc-400 whitespace-nowrap">${t}</span>`;
                         }).join('');
 
                         const cardBody = parent.previousElementSibling;
@@ -32516,8 +33529,8 @@ applyGenreFilters: function(matches) {
                         }
 
                         parent.innerHTML = `
-                            <button onclick="FindEngine.loadToGraph('${iem.id}', 'base')" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-stone-200 rounded font-black text-[9px] cursor-pointer">📈 Base</button>
-                            <button onclick="FindEngine.loadToGraph('${iem.id}', 'reference')" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-750 text-stone-200 rounded font-black text-[9px] cursor-pointer">🆚 Reference</button>
+                            <button data-cmd="FindEngine.loadToGraph" data-arg-0="${escJs(iem.id)}" data-arg-1="base" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-stone-200 font-black text-[9px] cursor-pointer">📈 Base</button>
+                            <button data-cmd="FindEngine.loadToGraph" data-arg-0="${escJs(iem.id)}" data-arg-1="reference" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-750 text-stone-200 font-black text-[9px] cursor-pointer">🆚 Reference</button>
                         `;
                     }
                     showToast("IEM identity unlocked!", "🔓");
@@ -32563,9 +33576,7 @@ applyGenreFilters: function(matches) {
 
                     const matches = candidates.filter(item => {
                         if (!hasQuery) return true;
-                        const filePaths = Array.isArray(item.files) ? item.files.join(' ') : (item.primaryFilePath || '');
-                        const searchableText = `${item.name || ''} ${item.brand || ''} ${item.model || ''} ${item.variant || ''} ${filePaths} ${item.searchKey || ''}`;
-                        return PEQDB_Module.matchSearchTokens(searchableText, query);
+                        return PEQDB_Module.matchSearchTokensNorm(this._fnSearchNorm(item, true), query);
                     }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
                     if (matches.length === 0) {
@@ -32580,7 +33591,7 @@ applyGenreFilters: function(matches) {
                         const isAdded = this.tasteFavorites.some(f => f.id === item.id);
 
                         html += `
-                            <div class="peqdb-row-item flex items-center justify-between p-1.5 cursor-pointer hover:bg-[var(--bg-card)] mb-1 transition-all select-none" onclick="FindEngine.addTasteFavorite('${escJs(item.id)}')">
+                            <div class="peqdb-row-item flex items-center justify-between p-1.5 cursor-pointer hover:bg-[var(--bg-card)] mb-1 transition-all select-none" data-cmd="FindEngine.addTasteFavorite" data-arg-0="${escJs(item.id)}">
                                 <span class="text-xs text-stone-200 font-bold truncate flex-1 pr-2">${esc(item.name)}</span>
                                 ${isAdded ? '<span class="text-[9px] text-rose-400 font-black flex-shrink-0 ml-1">✓ Added</span>' : '<span class="text-[9px] text-[var(--accent-blue)] font-black flex-shrink-0 ml-1">+ Add</span>'}
                             </div>
@@ -32738,12 +33749,12 @@ applyGenreFilters: function(matches) {
                                     <span class="emoji-font vibrant-emoji text-lg flex-shrink-0 overflow-visible" style="line-height: 1.25;">❤️</span>
                                     <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(f.name)}</span>
                                 </div>
-                                <button type="button" onclick="event.stopPropagation(); FindEngine.removeTasteFavorite('${escJs(f.id)}')" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${esc(f.name)}">✕</button>
+                                <button type="button" data-cmd="FindEngine.removeTasteFavorite" data-arg-0="${escJs(f.id)}" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${esc(f.name)}">✕</button>
                             `;
                             container.appendChild(div);
                         } else {
                             const div = document.createElement('div');
-                            div.className = 'border-2 border-dashed border-black rounded-none h-9 flex items-center justify-center select-none w-full bg-black/10';
+                            div.className = 'border-2 border-dashed border-black h-9 flex items-center justify-center select-none w-full bg-black/10';
                             div.innerHTML = `<span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Favorite ${i + 1}</span>`;
                             container.appendChild(div);
                         }
@@ -33191,6 +34202,35 @@ const handlers = {
         "blur_127_EQ_commitPreampEdit": function(event, element) { EQ.commitPreampEdit() },
         "blur_268_setTimeout_______document_getElementById__brand_suggestions___classList_add__hid": function(event, element) { setTimeout(() => document.getElementById('brand-suggestions').classList.add('hidden'), 200) },
         "keydown_189_if_event_key____Enter___EQ_commitPreampEdit": function(event, element) { if(event.key==='Enter') EQ.commitPreampEdit() },
+
+        // ---- migrated from inline on*= attributes (see index.html) ----
+        // Four search boxes re-query on focus so the suggestion list matches what
+        // is already typed. Was: onfocus="IEM.updateBrandSuggestions(this.value)"
+        // etc. `focus` does not bubble, so events.js binds it with capture.
+        "focus_900_IEM_updateBrandSuggestions": function(event, element) { IEM.updateBrandSuggestions(this.value) },
+        "focus_901_FindEngine_handleTasteSearch": function(event, element) { FindEngine.handleTasteSearch(this.value) },
+        "focus_902_FindEngine_handleGkSearch": function(event, element) { FindEngine.handleGkSearch(this.value) },
+        "focus_903_FindEngine_handleUpgradeSearch": function(event, element) { FindEngine.handleUpgradeSearch(this.value) },
+
+        // EQ slot drop targets (base / target / reference). One handler per event
+        // rather than one per slot: the slot name and the highlight colour are read
+        // from data attributes on the element, so the three targets share them.
+        //
+        // The dragover preventDefault() is load-bearing — without it the browser
+        // refuses the drop and ondrop never fires at all. It is called
+        // unconditionally, exactly as the inline version did, so behaviour on a
+        // drag with no payload is unchanged.
+        "dragover_904_EQ_highlightDropSlot": function(event, element) {
+            event.preventDefault();
+            this.style.borderColor = this.getAttribute('data-drop-border') || '';
+        },
+        "dragleave_905_EQ_unhighlightDropSlot": function(event, element) {
+            this.style.borderColor = '';
+        },
+        "drop_906_EQ_handleSlotDrop": function(event, element) {
+            this.style.borderColor = '';
+            PEQDB_Module.handleDrop(event, this.getAttribute('data-drop-slot'));
+        },
     };
 
     // Register all handlers
@@ -33271,7 +34311,7 @@ const handlers = {
                     input.type = 'number';
                     input.min = MIN; input.max = MAX; input.step = 1;
                     input.value = currentHz;
-                    input.className = 'w-24 bg-[var(--bg-input)] border border-[var(--border-color)] rounded text-2xl font-black text-[var(--accent-amber)] px-1';
+                    input.className = 'w-24 bg-[var(--bg-input)] border border-[var(--border-color)] text-2xl font-black text-[var(--accent-amber)] px-1';
                     freqDisplay.textContent = '';
                     freqDisplay.appendChild(input);
                     input.focus();

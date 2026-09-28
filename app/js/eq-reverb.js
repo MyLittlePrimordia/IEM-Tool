@@ -55,34 +55,42 @@ const EQ_ReverbMethods = {
         const presetBtn = document.getElementById('reverb-preset-btn');
         if (presetBtn) presetBtn.textContent = preset.label || '🚪 Small Room';
 
-        this.reverbParams.mix = preset.wet;
-        this.reverbParams.size = preset.size;
-        this.reverbParams.damp = preset.damp;
-        this.reverbParams.filter = preset.filter;
-        this.reverbParams.fade = preset.fade;
-        this.reverbParams.predelay = preset.predelay;
-        this.reverbParams.predelaymix = preset.predelaymix;
+        // Preset fields are only trusted to be numbers. `mix` has a read-side
+        // guard, but size/damp/fade/predelay feed createImpulseResponse(), where
+        // Math.max(0.1, NaN) is NaN and ctx.createBuffer(2, NaN, sr) throws
+        // NotSupportedError inside an unguarded setTimeout — stranding the
+        // reverb with its dry/wet gains frozen.
+        const num = (v, dflt) => { const n = parseFloat(v); return Number.isFinite(n) ? n : dflt; };
+        this.reverbParams.mix = num(preset.wet, 0.3);
+        this.reverbParams.size = num(preset.size, 0.4);
+        this.reverbParams.damp = num(preset.damp, 0.5);
+        this.reverbParams.filter = num(preset.filter, 1);
+        this.reverbParams.fade = num(preset.fade, 0.2);
+        this.reverbParams.predelay = num(preset.predelay, 0);
+        this.reverbParams.predelaymix = num(preset.predelaymix, 0);
 
-        document.getElementById('rev-mix-slider').value = Math.round(preset.wet * 100);
-        document.getElementById('rev-mix-val').textContent = preset.wet.toFixed(2);
-        
-        document.getElementById('rev-size-slider').value = Math.round(preset.size * 100);
-        document.getElementById('rev-size-val').textContent = preset.size.toFixed(2);
-        
-        document.getElementById('rev-damp-slider').value = Math.round(preset.damp * 100);
-        document.getElementById('rev-damp-val').textContent = preset.damp.toFixed(2);
-        
-        document.getElementById('rev-filter-slider').value = Math.round(preset.filter * 100);
-        document.getElementById('rev-filter-val').textContent = preset.filter.toFixed(2);
-
-        document.getElementById('rev-fade-slider').value = Math.round(preset.fade * 100);
-        document.getElementById('rev-fade-val').textContent = preset.fade.toFixed(2);
-        
-        document.getElementById('rev-predelay-slider').value = Math.round(preset.predelay * 1000);
-        document.getElementById('rev-predelay-val').textContent = preset.predelay.toFixed(3);
-
-        document.getElementById('rev-predelaymix-slider').value = Math.round(preset.predelaymix * 100);
-        document.getElementById('rev-predelaymix-val').textContent = preset.predelaymix.toFixed(2);
+        // These 16 writes were the only unguarded DOM accesses in this file, so
+        // if the reverb panel is ever absent, collapsed to a mobile variant, or
+        // mid-DOM-rebuild, the FIRST missing slider threw a TypeError and aborted
+        // the whole preset application — before scheduleImpulseRebuild() and
+        // updateReverbDSP() ran, so reverb silently stopped responding to preset
+        // changes with no error shown.
+        // scale: value multiplier for the slider; dp: decimal places for the label.
+        const applyField = (sliderId, labelId, value, scale, dp) => {
+            const num = parseFloat(value);
+            if (!Number.isFinite(num)) return;
+            const s = document.getElementById(sliderId);
+            if (s) s.value = String(Math.round(num * scale));
+            const l = document.getElementById(labelId);
+            if (l) l.textContent = num.toFixed(dp);
+        };
+        applyField('rev-mix-slider',        'rev-mix-val',        preset.wet,        100, 2);
+        applyField('rev-size-slider',       'rev-size-val',       preset.size,       100, 2);
+        applyField('rev-damp-slider',       'rev-damp-val',       preset.damp,       100, 2);
+        applyField('rev-filter-slider',     'rev-filter-val',     preset.filter,     100, 2);
+        applyField('rev-fade-slider',       'rev-fade-val',       preset.fade,       100, 2);
+        applyField('rev-predelay-slider',   'rev-predelay-val',   preset.predelay,  1000, 3);
+        applyField('rev-predelaymix-slider','rev-predelaymix-val',preset.predelaymix,100, 2);
 
         // Update Convolver Buffer seamlessly (debounced - slider drags during
         // preset cycles coalesce into a single rebuild)
@@ -93,7 +101,15 @@ const EQ_ReverbMethods = {
         },
 
     updateReverbParam: function(param, val) {
-        this.reverbParams[param] = parseFloat(val);
+        // Reject non-numeric input at the writer so a bad value can never be
+        // stored. `filter` already had a read-side guard; `mix` did not, and a
+        // NaN there used to throw out of updateReverbDSP and strand the slider.
+        const parsed = parseFloat(val);
+        if (!Number.isFinite(parsed)) {
+            console.warn('[Reverb] Ignoring non-numeric param:', param, val);
+            return;
+        }
+        this.reverbParams[param] = parsed;
         const valEl = document.getElementById(`rev-${param}-val`);
         if (valEl) {
             // predelay is a seconds value entered in ms-scale steps — keep the
@@ -289,10 +305,24 @@ const EQ_ReverbMethods = {
             // Keep the wet gain at the user's mix while paused so the reverb
             // tail rings out naturally instead of snapping to silence on every
             // pause/seek (with the source muted the finite IR fades on its own).
-            const mix = this.reverbActive ? this.reverbParams.mix : 0;
-            // Equal-power crossfade so dry+wet stays unity and never clips (previous 1 - mix*0.35 + mix = 1.65 at mix=1).
-            const dryGain = Math.cos(mix * 0.5 * Math.PI);
-            const wetGain = Math.sin(mix * 0.5 * Math.PI);
+            const mixRaw = this.reverbActive ? this.reverbParams.mix : 0;
+            // Guard: `mix` came from parseFloat(val) with no finite check, and a
+            // NaN here propagated straight into cos()/sin() and then into
+            // setAudioParamSmooth, which throws on a non-finite AudioParam value.
+            const mix = Number.isFinite(mixRaw) ? Math.max(0, Math.min(1, mixRaw)) : 0;
+            // Equal-power SHAPE, amplitude-limited so the claim in the old
+            // comment actually holds. cos(t)+sin(t) peaks at sqrt(2) = +3.01 dB
+            // at mix=0.5, so a plain equal-power crossfade made reverb LOUDER
+            // mid-mix and pushed an already limiter-bound signal into continuous
+            // gain reduction. Dividing both terms by max(1, c+s) keeps the smooth
+            // equal-power blend while guaranteeing dry+wet <= 1 (0 dB, never
+            // clipping). At mix=0 and mix=1 max(1,...) is 1, so the endpoints
+            // are bit-for-bit unchanged.
+            const c = Math.cos(mix * 0.5 * Math.PI);
+            const s = Math.sin(mix * 0.5 * Math.PI);
+            const ampNorm = Math.max(1, c + s);
+            const dryGain = c / ampNorm;
+            const wetGain = s / ampNorm;
             setAudioParamSmooth(SharedAudio.dryGainNode.gain, dryGain, 0.015);
             setAudioParamSmooth(SharedAudio.wetGainNode.gain, wetGain, 0.015);
             

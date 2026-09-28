@@ -1,0 +1,6 @@
+[
+  { "name": "endgame-legend", "w": 1600, "h": 900, "js": "App.switchTab('find'); FindEngine.switchRightTab('endgame')" },
+  { "name": "testlab-tone", "w": 1600, "h": 900, "js": "App.switchTab('testlab'); TestLab.switchRightTab('tone')" },
+  { "name": "testlab-ab", "w": 1600, "h": 900, "js": "App.switchTab('testlab'); TestLab.switchRightTab('ab')" },
+  { "name": "testlab-hearing", "w": 1600, "h": 900, "js": "App.switchTab('testlab'); TestLab.switchRightTab('hearing')" }
+]

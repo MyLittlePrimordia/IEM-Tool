@@ -9,14 +9,38 @@
                 STORE_NAME: "curves",
                 db: null,
                 catalog: [],
+                // Single-flight handle for the catalogue fetch + parse.
+                //
+                // PEQDB_Module.init() fires DATA.init() without awaiting it, so
+                // the boot loop reaches FindEngine.init() while this load is
+                // still in flight. FindEngine.loadDatabase() used to react by
+                // re-fetching and re-parsing the same 2.85 MB payload a second
+                // time (twice the transfer, twice the synchronous JSON.parse on
+                // the main thread, and two separate array instances so the
+                // entry indexes got built twice). Both callers now await THIS
+                // promise instead, so the file is downloaded and parsed exactly
+                // once per launch no matter which module gets there first.
+                catalogReady: null,
+
+                ensureCatalogReady: function() {
+                    if (!this.catalogReady) {
+                        this.catalogReady = (async () => {
+                            try {
+                                await this._openDB();
+                            } catch (err) {
+                                console.error("[CurveIndexer] DB open failed — continuing without persistent cache:", err);
+                            }
+                            await this._loadCatalog();
+                            return this.catalog;
+                        })();
+                        // Do not memoise a rejected load: allow a later retry.
+                        this.catalogReady.catch(() => { this.catalogReady = null; });
+                    }
+                    return this.catalogReady;
+                },
 
                 init: async function() {
-                    try {
-                        await this._openDB();
-                    } catch (err) {
-                        console.error("[CurveIndexer] DB open failed — continuing without persistent cache:", err);
-                    }
-                    await this._loadCatalog();
+                    await this.ensureCatalogReady();
                     return this.buildDataset();
                 },
 
@@ -111,7 +135,7 @@
                         if (headerBadge) {
                             headerBadge.classList.remove('hidden');
                             headerBadge.classList.add('flex');
-                            headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30 rounded text-[9px] font-mono font-bold text-emerald-400 select-none ml-1.5 whitespace-nowrap flex-shrink-0";
+                            headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30 text-[9px] font-mono font-bold text-emerald-400 select-none ml-1.5 whitespace-nowrap flex-shrink-0";
                             headerBadge.innerHTML = "<span class=\"whitespace-nowrap\">✓ DB Ready</span>";
                             setTimeout(() => {
                                 headerBadge.classList.add('hidden');
@@ -120,26 +144,39 @@
                         }
                         if (dbIndicator) {
                             dbIndicator.textContent = "✓ DB Ready";
-                            dbIndicator.className = "text-[9px] font-black text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 px-2 py-0.5 rounded uppercase tracking-wider whitespace-nowrap";
+                            dbIndicator.className = "text-[9px] font-black text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 px-2 py-0.5 uppercase tracking-wider whitespace-nowrap";
                             setTimeout(() => dbIndicator.classList.add('hidden'), 2500);
                         }
                     } else {
                         if (headerBadge) {
                             headerBadge.classList.remove('hidden');
                             headerBadge.classList.add('flex');
-                            headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 rounded text-[9px] font-mono font-bold text-amber-400 select-none animate-pulse ml-1.5 whitespace-nowrap flex-shrink-0";
+                            headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 text-[9px] font-mono font-bold text-amber-400 select-none animate-pulse ml-1.5 whitespace-nowrap flex-shrink-0";
                             headerBadge.innerHTML = `<span class="whitespace-nowrap">📥 DB:</span><span id="db-download-pct" class="whitespace-nowrap">${pct}%</span>`;
                         }
 
                         if (dbIndicator) {
                             dbIndicator.classList.remove('hidden');
                             dbIndicator.textContent = `📥 Loading: ${pct}%`;
-                            dbIndicator.className = "text-[9px] font-black text-amber-400 bg-amber-950/30 border border-amber-900/40 px-2 py-0.5 rounded animate-pulse uppercase tracking-wider whitespace-nowrap";
+                            dbIndicator.className = "text-[9px] font-black text-amber-400 bg-amber-950/30 border border-amber-900/40 px-2 py-0.5 animate-pulse uppercase tracking-wider whitespace-nowrap";
                         }
                     }
                 },
 
                 _loadCatalog: async function() {
+                    // A non-array root used to be reported as a 100%-complete
+                    // load with catalog = [], which is indistinguishable from
+                    // success to every downstream check. Report the failure.
+                    const accept = (list) => {
+                        if (!Array.isArray(list)) {
+                            console.warn('[CurveIndexer] database.json root is not an array; treating as empty.');
+                            this.catalog = [];
+                            this.updateCatalogProgressUI(0, 0, 0, true);
+                            throw new Error('database.json root is not an array');
+                        }
+                        this.catalog = list;
+                        this.updateCatalogProgressUI(100, 0, 0, true);
+                    };
                     try {
 
                         let res = await fetch('./database.json.gz');
@@ -148,22 +185,21 @@
                             console.warn("database.json.gz not found, trying database.json...");
                             res = await fetch('./database.json');
                             if (!res.ok) throw new Error("Database file missing");
-                            const list = await res.json();
-                            this.catalog = Array.isArray(list) ? list : [];
-                            this.updateCatalogProgressUI(100, 0, 0, true);
+                            accept(await res.json());
                             return;
                         }
 
                         const decompressedStream = res.body.pipeThrough(new DecompressionStream('gzip'));
                         const response = new Response(decompressedStream);
 
-                        const list = await response.json();
-                        this.catalog = Array.isArray(list) ? list : [];
-                        this.updateCatalogProgressUI(100, 0, 0, true);
+                        accept(await response.json());
                     } catch (e) {
                         console.warn("[CurveIndexer] Could not load catalog:", e);
                         this.catalog = [];
-                        this.updateCatalogProgressUI(100, 0, 0, true);
+                        this.catalogLoadError = (e && e.message) || String(e);
+                        // 0%, not 100% — the bar meant "done", and a failed load
+                        // that renders as "done" is what hid this for so long.
+                        this.updateCatalogProgressUI(0, 0, 0, true);
                     }
                 },
 
@@ -342,11 +378,11 @@
                     const btn = document.getElementById('sculptor-draw-btn');
                     if (btn) {
                         if (this.isDrawingModeActive) {
-                            btn.className = "px-2.5 py-1 rounded bg-pink-500 text-white hover:bg-pink-600 transition-all cursor-pointer";
+                            btn.className = "px-2.5 py-1 bg-pink-500 text-white hover:bg-pink-600 transition-all cursor-pointer";
                             btn.textContent = "🖌️ Draw Mode: ON";
                             showToast("Draw Mode active! Hold click and draw directly onto the graph to sketch your target.", "🖌️");
                         } else {
-                            btn.className = "px-2.5 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-stone-300 transition-all cursor-pointer";
+                            btn.className = "px-2.5 py-1 bg-zinc-800 text-zinc-400 hover:text-stone-300 transition-all cursor-pointer";
                             btn.textContent = "🖌️ Draw Mode: Off";
                         }
                     }
@@ -484,10 +520,14 @@
             if (this.databaseFullyLoaded) return;
             const dataset = this.STATE.dataset;
             if (!dataset || dataset.length === 0) {
-                this.databaseFullyLoaded = true;
-                localStorage.setItem('squig_db_indexed', 'true');
+                // This branch means the catalogue load FAILED and the fallback
+                // path installed its handful of built-in targets. It used to
+                // set databaseFullyLoaded = true and persist
+                // squig_db_indexed='true' here, which wrote a permanent "all
+                // good" flag over a failed load — replacing database.json and
+                // relaunching would then never retry. Do not claim success.
                 this.renderList(false, true);
-                if (window.FindEngine && FindEngine.updateIndexingProgressBar) {
+                if (typeof FindEngine !== 'undefined' && FindEngine.updateIndexingProgressBar) {
                     FindEngine.updateIndexingProgressBar();
                 }
                 return;
@@ -619,7 +659,7 @@
                 }
                 if (importBtn) {
                     importBtn.disabled = false;
-                    importBtn.className = "py-2 text-[10px] font-bold rounded bg-[var(--accent-blue)] text-white hover:brightness-110 transition-all text-center cursor-pointer";
+                    importBtn.className = "py-2 text-[10px] font-bold bg-[var(--accent-blue)] text-white hover:brightness-110 transition-all text-center cursor-pointer";
                 }
             } else {
                 if (detectedEl) detectedEl.textContent = "None";
@@ -630,7 +670,7 @@
                 if (pointsEl) pointsEl.textContent = "0";
                 if (importBtn) {
                     importBtn.disabled = true;
-                    importBtn.className = "py-2 text-[10px] font-bold rounded bg-zinc-800 text-zinc-500 cursor-not-allowed transition-all text-center";
+                    importBtn.className = "py-2 text-[10px] font-bold bg-zinc-800 text-zinc-500 cursor-not-allowed transition-all text-center";
                 }
             }
         },
@@ -1099,8 +1139,20 @@
                 console.warn("Manifest loading failed, loading local fallback targets:", err);
                 const fallback = PEQDB_Module.DATA.fallbackDataset || [];
                 PEQDB_Module.STATE.dataset = fallback.map(item => ({ ...item, searchKey: `${item.name} ${item.variant} ${item.source}`.toLowerCase() }));
-                PEQDB_Module.databaseFullyLoaded = true;
-                localStorage.setItem('squig_db_indexed', 'true');
+                // These two lines used to report success while shipping 6
+                // hard-coded curves in place of ~5,000, which is how a
+                // malformed database.json turned into a silent downgrade:
+                //   - databaseFullyLoaded = true claimed a complete catalogue
+                //   - squig_db_indexed = 'true' was a persisted flag that
+                //     suppressed every future re-check, so replacing the file
+                //     and relaunching did not recover
+                // Only claim "fully loaded" when it actually is, and only write
+                // the persisted flag on the real path.
+                PEQDB_Module.databaseFullyLoaded = false;
+                PEQDB_Module.catalogLoadFailed = true;
+                try { localStorage.removeItem('squig_db_indexed'); } catch (_) {}
+                showToast('Curve database failed to load — only ' + PEQDB_Module.STATE.dataset.length +
+                    ' built-in targets available. Check database.json.', '⚠️');
             }
 
                 try {
@@ -1254,7 +1306,19 @@ const savedDb = localStorage.getItem('settings_align_db');
                 });
             }
 
-            this.DATA.init();
+            // Deliberately NOT awaited. The catalogue load is shared via
+            // CurveIndexer.ensureCatalogReady()'s single-flight promise, so the
+            // rest of the boot sequence (Tone, Test Lab, Accessibility, and
+            // FindEngine itself) proceeds in parallel and still ends up with
+            // exactly ONE download + ONE parse of database.json.gz. Awaiting
+            // here instead would serialise the whole boot behind a ~2.85 MB
+            // JSON parse for no benefit. Do not "fix" this into an await.
+            this.DATA.init().catch((err) => {
+                // Floating promise otherwise: DATA.init() has internal
+                // try/catch, but a future await added outside one would
+                // become an unhandled rejection with nobody listening.
+                console.error('[PEQDB] DATA.init() failed:', err);
+            });
         },
         autoeqResolution: 10,
         resolutionsList: [10, 15, 20, 30, 40, 50],
@@ -1311,7 +1375,7 @@ const savedDb = localStorage.getItem('settings_align_db');
             } else {
                 this.expandedBrands.add(brandName);
             }
-            const brandSlug = brandName.replace(/[^a-zA-Z0-9]/g, '_');
+            const brandSlug = this._brandSlug(brandName);
             const groupEl = document.querySelector(`[data-brand-group="${brandSlug}"]`);
             if (groupEl) {
                 const container = groupEl.querySelector('.brand-items-container');
@@ -1506,6 +1570,25 @@ const savedDb = localStorage.getItem('settings_align_db');
             this.renderActiveCurvesDock();
         },
 
+        // DOM key for a brand group.
+        //
+        // The old key was `brandName.replace(/[^a-zA-Z0-9]/g, '_')`, which is
+        // NOT injective: "Moondrop A", "Moondrop-A", "Moondrop/A" and
+        // "Moondrop_A" all collapsed to "Moondrop_A". Since that string is the
+        // `data-brand-group` value, the appendMore path's
+        // querySelector('[data-brand-group="Moondrop_A"]') found the FIRST
+        // match and appended a second brand's rows into the first brand's
+        // container, and toggleBrandGroup toggled the wrong group's chevron
+        // while the label still showed the other name. Appending a short
+        // deterministic hash of the ORIGINAL string keeps the readable part and
+        // makes distinct brands distinct. Both call sites must use this.
+        _brandSlug: function(brandName) {
+            const s = String(brandName == null ? '' : brandName);
+            let h = 5381;
+            for (let i = 0; i < s.length; i++) h = (((h << 5) + h) + s.charCodeAt(i)) >>> 0;
+            return s.replace(/[^a-zA-Z0-9]/g, '_') + '-' + h.toString(36);
+        },
+
         renderList: function(appendMore = false, preserveScroll = false, preserveLimit = false) {
             const list = document.getElementById('peqdb-list');
             const existingLoader = document.getElementById('peqdb-loading');
@@ -1527,11 +1610,32 @@ const savedDb = localStorage.getItem('settings_align_db');
             const countEl = document.getElementById('peqdb-result-count');
             if (countEl && this.searchMode !== 'similar') countEl.textContent = totalItems;
 
-            const brandCounts = new Map();
-            PEQDB_Module.STATE.renderList.forEach(item => {
-                const bk = item.brand || 'Unknown Brand';
-                brandCounts.set(bk, (brandCounts.get(bk) || 0) + 1);
-            });
+            // Brand row counts. This used to walk the ENTIRE filtered result set
+            // on every renderList() call — including every +40-row scroll append,
+            // where only 40 rows are actually rendered. That is O(N) work per
+            // O(40) of output, i.e. O(N^2/40) across a full scroll-through (the
+            // last append iterated ~5,000 entries to draw 40), which is why
+            // scrolling the Database list got progressively jankier.
+            //
+            // The counts cover the whole filtered set (a brand header shows its
+            // total even when only some of its rows are on screen), so a full
+            // render computes them once and an append can simply reuse them.
+            // renderList is only called with appendMore=true as a continuation of
+            // a previous full render, so the cache is always in step.
+            let brandCounts;
+            if (appendMore && this._brandCounts) {
+                brandCounts = this._brandCounts;
+            } else {
+                brandCounts = new Map();
+                const all = PEQDB_Module.STATE.renderList;
+                for (let i = 0; i < all.length; i++) {
+                    const item = all[i];
+                    if (!item) continue;
+                    const bk = item.brand || 'Unknown Brand';
+                    brandCounts.set(bk, (brandCounts.get(bk) || 0) + 1);
+                }
+                this._brandCounts = brandCounts;
+            }
 
             const fragment = document.createDocumentFragment();
             const activeCurves = PEQDB_Module.STATE.activeCurves;
@@ -1584,15 +1688,19 @@ const savedDb = localStorage.getItem('settings_align_db');
                 const connectorEmoji = FindEngine.connectorEmojis[item.connector] || '🔌';
 
                 const specIconsHtml = `
-                    ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:9px;">$${item.price_usd}</span></span>` : ''}
-                    ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:9px;">${item.year}</span></span>` : ''}
-                    ${item.driver_type ? `<span class="spec-icon-badge" data-tooltip="${driverTooltip}">${driverEmoji}</span>` : ''}
-                    ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${item.connector}">${connectorEmoji}</span>` : ''}
-                    <span class="spec-icon-badge" data-tooltip="${item.form_factor || 'In-Ear Monitor (IEM)'}">${formEmoji}</span>
+                    ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:9px;">$${esc(item.price_usd)}</span></span>` : ''}
+                    ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:9px;">${esc(item.year)}</span></span>` : ''}
+                    ${item.driver_type ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
+                    ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${esc(item.connector)}">${connectorEmoji}</span>` : ''}
+                    <span class="spec-icon-badge" data-tooltip="${esc(item.form_factor || 'In-Ear Monitor (IEM)')}">${formEmoji}</span>
                 `;
 
                 const getTagEmoji = (tagStr) => {
-                    if (!tagStr) return '🏷️';
+                    // Same defect as FindEngine.getTagEmoji: only the array-ness
+                    // of `tags` is validated, never the element type, so a
+                    // numeric tag reached .toLowerCase() and threw.
+                    if (tagStr === null || tagStr === undefined || tagStr === '') return '🏷️';
+                    if (typeof tagStr !== 'string') tagStr = String(tagStr);
                     const cleanKey = tagStr.toLowerCase().trim().replace(/[\s_]+/g, '-');
                     const emojiMap = {
                         'basshead': '💥', 'sub-bass': '🌊', 'punchy-bass': '🥊', 'warm': '🌿', 'warm-tilt': '🌿',
@@ -1611,16 +1719,16 @@ const savedDb = localStorage.getItem('settings_align_db');
                 if (isMulti) {
                     fileRowHtml = `
                         <div class="flex items-center gap-1.5 mt-1">
-                            <button onclick="event.stopPropagation(); PEQDB_Module.cycleDbItemSource('${escJs(item.id)}', -1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
-                            <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
+                            <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
+                            <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                                 <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
                             </div>
-                            <button onclick="event.stopPropagation(); PEQDB_Module.cycleDbItemSource('${escJs(item.id)}', 1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
+                            <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
                         </div>
                     `;
                 } else {
                     fileRowHtml = `
-                        <div class="mt-1 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
+                        <div class="mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                             <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
                         </div>
                     `;
@@ -1648,7 +1756,7 @@ const savedDb = localStorage.getItem('settings_align_db');
             };
 
             for (const [brandName, items] of brandBuckets) {
-                const brandSlug = brandName.replace(/[^a-zA-Z0-9]/g, '_');
+                const brandSlug = this._brandSlug(brandName);
 
                 let groupEl = appendMore ? list.querySelector(`[data-brand-group="${brandSlug}"]`) : null;
                 let itemsContainer;
@@ -1662,7 +1770,7 @@ const savedDb = localStorage.getItem('settings_align_db');
                     groupEl.setAttribute('data-brand-group', brandSlug);
                     groupEl.setAttribute('data-letter', alphaKeyOf({ brand: brandName }));
                     groupEl.innerHTML = `
-                        <div class="flex items-center justify-between p-2 cursor-pointer select-none border-2 border-black rounded" style="background: var(--bg-input);" onclick="PEQDB_Module.toggleBrandGroup('${escJs(brandName)}')">
+                        <div class="flex items-center justify-between p-2 cursor-pointer select-none border-2 border-black" style="background: var(--bg-input);" data-cmd="PEQDB_Module.toggleBrandGroup" data-arg-0="${escJs(brandName)}">
                             <span class="text-xs font-black uppercase tracking-wider text-[var(--accent-blue)]">${esc(brandName)}</span>
                             <span class="flex items-center gap-1.5 flex-shrink-0">
                                 <span class="text-[9px] font-black text-zinc-500">${this._brandCounts.get(brandName) || 0}</span>
@@ -1875,6 +1983,10 @@ const savedDb = localStorage.getItem('settings_align_db');
 
             EQ_Module.isProgrammaticSliderUpdate = true;
 
+            // ALWAYS release the programmatic flag. A stuck true flag silently
+            // disabled every subsequent manual audio update for the whole
+            // session (sliders move, curve redraws, sound does not change).
+            try {
             for (let i = 0; i < 10; i++) {
                 const slider = document.getElementById("eq-s" + i);
                 if (slider) slider.value = 0;
@@ -1919,7 +2031,9 @@ const savedDb = localStorage.getItem('settings_align_db');
             // (native virtualFilters zeroing removed — virtual bands live in
             // the worklet and are pushed via updateAudioConnections)
 
-            EQ_Module.isProgrammaticSliderUpdate = false;
+            } finally {
+                EQ_Module.isProgrammaticSliderUpdate = false;
+            }
 
             const baseInterp = this.DSP.interpolate(this.getNormalizedData(baseCurve.data, baseCurve.name));
             const targetInterp = this.DSP.interpolate(this.getNormalizedData(targetCurve.data, targetCurve.name));
@@ -2049,6 +2163,11 @@ const savedDb = localStorage.getItem('settings_align_db');
 
             EQ_Module.isProgrammaticSliderUpdate = true;
 
+            // ALWAYS release the programmatic flag. b.gain.toFixed(1) below
+            // throws outright on a non-numeric solved band, and a stuck true
+            // flag silently disabled every later manual audio update for the
+            // rest of the session.
+            try {
             if (bandCount === 10 || bandCount === 20) {
                 optimizedBands.forEach((b) => {
                     if (b.role === 'main') {
@@ -2121,7 +2240,10 @@ const savedDb = localStorage.getItem('settings_align_db');
                 EQ_Module.virtualBands = virtuals;
             }
 
-            EQ_Module.isProgrammaticSliderUpdate = false;
+            } finally {
+                EQ_Module.isProgrammaticSliderUpdate = false;
+            }
+
             EQ_Module.eqEnabled = true;
             const eqToggleBtn = document.getElementById("eqToggleBtn");
             if (eqToggleBtn) {
@@ -2151,7 +2273,19 @@ const savedDb = localStorage.getItem('settings_align_db');
             }
         },
 
-                        clearState: function() {
+        clearState: async function() {
+            // This button discards every loaded curve AND resets the whole EQ,
+            // in one click, with no undo. It used to run unguarded, so a stray
+            // click lost the entire session's work irrecoverably. Route it
+            // through the same themed confirm the preset delete already uses.
+            const ok = await UIKit.confirm({
+                title: 'Clear the graph and reset the EQ?',
+                message: 'Every loaded curve and target will be removed and all bands reset to flat. This cannot be undone.',
+                confirmLabel: 'Clear Everything',
+                danger: true
+            });
+            if (!ok) return;
+
             this.STATE.activeCurves = [];
             this.targetMode = '';
             this.activeSculptIndex = -1;
@@ -2161,7 +2295,7 @@ const savedDb = localStorage.getItem('settings_align_db');
             var overlay = document.getElementById('graph-focus-selector');
             if (overlay) overlay.classList.add('hidden');
             var editBtn = document.getElementById('target-edit-btn');
-            if (editBtn) { editBtn.classList.remove('active-btn', 'active-yellow'); editBtn.innerHTML = '✏️'; }
+            if (editBtn) { editBtn.classList.remove('active-btn', 'is-on'); editBtn.innerHTML = '✏️'; }
             var selector = document.getElementById('target-selector');
             if (selector) selector.value = "";
             EQ_Module.resetEQ(true);
@@ -2205,7 +2339,7 @@ const savedDb = localStorage.getItem('settings_align_db');
                 item.setAttribute('data-uid', c.uid);
                 item.title = "Drag to Base / Target / Reference slot to change role";
                 const roleLabel = c.role==='base'?'BASE':(c.role==='target'?'TARGET':'REF');
-                item.innerHTML = `<div class="flex items-center justify-between w-full h-6 select-none" draggable="false"><span class="px-2 py-0.5 rounded text-[8.5px] font-black tracking-wider text-white uppercase bg-black/60 border border-white/10 flex-shrink-0" title="Drag to rearrange" draggable="false">${roleLabel}</span><div class="flex items-center gap-1.5" draggable="false"><button onclick="PEQDB_Module.toggleVisible(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 text-white text-[11px] flex items-center justify-center border border-white/10 cursor-pointer" title="Show or hide this curve" draggable="false">${c.visible?'👁️':'🙈'}</button><button onclick="PEQDB_Module.cycleColor(this.closest('[data-uid]').dataset.uid)" class="w-5 h-5 rounded-full border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style="background-color:${c.color}" title="Change this curve's color" draggable="false"></button><button onclick="PEQDB_Module.removeCurve(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-black text-[11px] flex items-center justify-center cursor-pointer" title="Remove this curve" draggable="false">✕</button></div></div><div onclick="PEQDB_Module.renameCurve(this.closest('[data-uid]').dataset.uid)" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5" draggable="false"><div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none"><span id="marquee-${esc(c.uid)}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span></div></div><div class="flex justify-between items-center w-full h-6" draggable="false"><div class="flex items-center gap-1.5 h-6 decibel-stepper flex-shrink-0 select-none" style="width:110px !important;min-width:110px !important;max-width:110px !important;" draggable="false"><button type="button" onclick="event.stopPropagation();PEQDB_Module.adjustCurveOffset(this.closest('[data-uid]').dataset.uid,-1)" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve down 1 dB" draggable="false">◄</button><button type="button" onclick="event.stopPropagation();" class="flex-1 h-6 bg-[var(--bg-input)] border-2 border-black text-[#c85a0e] font-mono font-black text-[9px] flex items-center justify-center text-center cursor-default select-none focus:outline-none px-0 min-w-0" draggable="false">${(c.offset||0)>=0?'+':''}${c.offset||0}dB</button><button type="button" onclick="event.stopPropagation();PEQDB_Module.adjustCurveOffset(this.closest('[data-uid]').dataset.uid,1)" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve up 1 dB" draggable="false">►</button></div><div class="flex items-center gap-1.5" draggable="false"><button onclick="PEQDB_Module.exportCurveByUid(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Export this curve as a text file" draggable="false">📥</button><button onclick="PEQDB_Module.findMatchesFromDock(this.closest('[data-uid]').dataset.uid)" class="w-6 h-6 rounded bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Find similar curves" draggable="false">🔍</button></div></div>`;
+                item.innerHTML = `<div class="flex items-center justify-between w-full h-6 select-none" draggable="false"><span class="px-2 py-0.5 text-[8.5px] font-black tracking-wider text-white uppercase bg-black/60 border border-white/10 flex-shrink-0" title="Drag to rearrange" draggable="false">${roleLabel}</span><div class="flex items-center gap-1.5" draggable="false"><button data-cmd="PEQDB_Module.toggleVisible" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 text-white text-[11px] flex items-center justify-center border border-white/10 cursor-pointer" title="Show or hide this curve" draggable="false">${c.visible?'👁️':'🙈'}</button><button data-cmd="PEQDB_Module.cycleColor" data-arg-0="@from:uid" class="w-5 h-5 border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style="background-color:${c.color}" title="Change this curve's color" draggable="false"></button><button data-cmd="PEQDB_Module.removeCurve" data-arg-0="@from:uid" class="w-6 h-6 bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-black text-[11px] flex items-center justify-center cursor-pointer" title="Remove this curve" draggable="false">✕</button></div></div><div data-cmd="PEQDB_Module.renameCurve" data-arg-0="@from:uid" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5" draggable="false"><div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none"><span id="marquee-${esc(c.uid)}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span></div></div><div class="flex justify-between items-center w-full h-6" draggable="false"><div class="flex items-center gap-1.5 h-6 decibel-stepper flex-shrink-0 select-none" style="width:110px !important;min-width:110px !important;max-width:110px !important;" draggable="false"><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="-1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve down 1 dB" draggable="false">◄</button><button type="button" data-stop-propagation class="flex-1 h-6 bg-[var(--bg-input)] border-2 border-black text-[#c85a0e] font-mono font-black text-[9px] flex items-center justify-center text-center cursor-default select-none focus:outline-none px-0 min-w-0" draggable="false">${(c.offset||0)>=0?'+':''}${c.offset||0}dB</button><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve up 1 dB" draggable="false">►</button></div><div class="flex items-center gap-1.5" draggable="false"><button data-cmd="PEQDB_Module.exportCurveByUid" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Export this curve as a text file" draggable="false">📥</button><button data-cmd="PEQDB_Module.findMatchesFromDock" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Find similar curves" draggable="false">🔍</button></div></div>`;
                 if (c.role==='base') { baseSlot.appendChild(item); baseCount++; }
                 else if (c.role==='target') { targetSlot.appendChild(item); targetCount++; }
                 else { referencePile.appendChild(item); refCount++; }
@@ -2973,7 +3107,7 @@ setSearchMode: function(mode) {
             const badgeFor = (item) => {
                 const loadedCurve = activeCurves.find(c => c.id === item.id);
                 if (loadedCurve) {
-                    return `<span class="text-[8px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded text-white flex-shrink-0" style="background-color: ${loadedCurve.color}">${loadedCurve.role.toUpperCase()}</span>`;
+                    return `<span class="text-[8px] uppercase font-bold tracking-widest px-1.5 py-0.5 text-white flex-shrink-0" style="background-color: ${loadedCurve.color}">${loadedCurve.role.toUpperCase()}</span>`;
                 }
                 return `<span class="text-[8px] text-zinc-500 uppercase tracking-widest font-black">LOAD</span>`;
             };
@@ -3013,7 +3147,10 @@ const countEl = document.getElementById('peqdb-result-count');
             let filterHtml = '<div class="flex items-center justify-center gap-0.5 mb-2 py-1 overflow-x-hidden w-full max-w-full similar-formfactor-filters">';
             filterIcons.forEach(f => {
                 const isActive = !!this._similarFormFactorFilters[f.key];
-                filterHtml += '<button type="button" onclick="PEQDB_Module.toggleSimilarFormFactor(\'' + f.key + '\')" class="no-tactile find-pick-badge' + (isActive ? ' on' : '') + '" data-tooltip="' + f.label + '" title="' + f.label + '" aria-pressed="' + isActive + '">';
+                // Was onclick="PEQDB_Module.toggleSimilarFormFactor('<key>')", built
+                // by string concatenation with the quotes spliced in by hand. As a
+                // data attribute the key goes through esc() like every other one.
+                filterHtml += '<button type="button" data-cmd="PEQDB_Module.toggleSimilarFormFactor" data-arg-0="' + esc(f.key) + '" class="no-tactile find-pick-badge' + (isActive ? ' on' : '') + '" data-tooltip="' + f.label + '" title="' + f.label + '" aria-pressed="' + isActive + '">';
                 filterHtml += '<img src="' + f.icon + '" alt="' + f.label + '" draggable="false">';
                 filterHtml += '</button>';
             });
@@ -3025,11 +3162,22 @@ const countEl = document.getElementById('peqdb-result-count');
                 '</div>' + filterHtml;
 
             if (filteredMatches.length === 0) {
-                html += '<div class="text-zinc-500 text-[11px] italic text-center mt-8 p-4 border border-dashed border-zinc-800 rounded">' +
+                html += '<div class="text-zinc-500 text-[11px] italic text-center mt-8 p-4 border border-dashed border-zinc-800">' +
                     (anySelected ? 'No matches for selected form factors.<br><span class="text-[10px]">Try enabling more filters.</span>' : '&#9889; 0 matches &mdash; adjust the DSP curve to find similar IEMs.') +
                     '</div>';
             } else {
-                filteredMatches.forEach((match, idx) => {
+                // Cap the rendered cards. This list had no limit at all while the
+                // Database list is chunked at 40 (`listRenderLimit`) and
+                // fillVisibleList is depth-capped at 25. The 50% similarity
+                // threshold is low enough that a near-flat DSP target matches a
+                // large fraction of a 5,000-curve catalogue, and every card is
+                // built with createElement + innerHTML + outerHTML before being
+                // concatenated into one multi-megabyte string — a multi-second
+                // input freeze. `matches` is already sorted best-first, so the
+                // top slice is the part the user actually reads.
+                const RENDER_CAP = 150;
+                const shown = filteredMatches.slice(0, RENDER_CAP);
+                shown.forEach((match, idx) => {
                     const rank = idx + 1;
                     const fullItem = datasetById ? (datasetById.get(match.id) || match) : match;
                     html += this.buildDbModelCard(fullItem, {
@@ -3038,6 +3186,14 @@ const countEl = document.getElementById('peqdb-result-count');
                         badgeHtml: badgeFor(match)
                     }).outerHTML;
                 });
+                if (filteredMatches.length > shown.length) {
+                    // Never hide that the list was truncated — the count above
+                    // still reports the true total.
+                    html += '<div class="text-[10px] text-zinc-500 italic text-center mt-4 p-3 border border-dashed border-zinc-800">' +
+                        'Showing the top ' + shown.length + ' of ' + filteredMatches.length +
+                        ' matches &mdash; the closest curves are ranked first. Refine the EQ to narrow the field.' +
+                        '</div>';
+                }
             }
 
             list.innerHTML = html;
@@ -3087,7 +3243,7 @@ const countEl = document.getElementById('peqdb-result-count');
                             const badgeFor = (item) => {
                                 const loadedCurve = activeCurves.find(c => c.id === item.id);
                                 if (loadedCurve) {
-                                    return `<span class="text-[8px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded text-white flex-shrink-0" style="background-color: ${loadedCurve.color}">${loadedCurve.role.toUpperCase()}</span>`;
+                                    return `<span class="text-[8px] uppercase font-bold tracking-widest px-1.5 py-0.5 text-white flex-shrink-0" style="background-color: ${loadedCurve.color}">${loadedCurve.role.toUpperCase()}</span>`;
                                 }
                                 return `<span class="text-[8px] text-zinc-500 uppercase tracking-widest font-black">LOAD</span>`;
                             };
@@ -3223,16 +3379,16 @@ const countEl = document.getElementById('peqdb-result-count');
             if (isMulti) {
                 fileRowHtml = `
                     <div class="flex items-center gap-1.5 mt-1">
-                        <button onclick="event.stopPropagation(); PEQDB_Module.cycleDbItemSource('${escJs(item.id)}', -1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
-                        <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
+                        <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
+                        <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                             <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
                         </div>
-                        <button onclick="event.stopPropagation(); PEQDB_Module.cycleDbItemSource('${escJs(item.id)}', 1)" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black rounded" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
+                        <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
                     </div>
                 `;
             } else {
                 fileRowHtml = `
-                    <div class="mt-1 overflow-hidden border border-white/[0.06] rounded px-1.5 py-0.5" style="background: var(--bg-input);">
+                    <div class="mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                         <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
                     </div>
                 `;
@@ -3259,7 +3415,7 @@ const countEl = document.getElementById('peqdb-result-count');
             // NOTE: this card is serialized via .outerHTML and reinjected as an
             // HTML string at both call sites (renderSimilarList's main list
             // build and toggleGroupExpand's lazy drawer fill), so the
-            // click-to-load handler MUST be a real onclick="" attribute, not a
+            // click-to-load handler MUST be a real attribute, not a
             // JS property (div.onclick = ...) — property handlers are
             // invisible to .outerHTML and get silently dropped once the
             // markup is re-parsed from the string.

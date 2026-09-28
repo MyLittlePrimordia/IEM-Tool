@@ -55,15 +55,21 @@
                 EQ_Module.startVisualizer();
             }
         },
+        // Looked up by id. This used to be
+        // querySelector('button[onclick="Tone.toneSweep()"]'), which never
+        // matched anything: the button is wired through
+        // data-action="click_277_Tone_toneSweep" and has no inline onclick
+        // attribute, so all three lookups silently returned null and the button
+        // never showed "Stop Sweep" or its is-on state during a sweep.
         toneStop: function() {
             if (this.sweepTimer) {
                 clearInterval(this.sweepTimer);
                 this.sweepTimer = null;
             }
-            const btnSweep = document.querySelector('button[onclick="Tone.toneSweep()"]');
+            const btnSweep = document.getElementById('tone-sweep-btn');
             if (btnSweep) {
-                btnSweep.innerHTML = 'Auto Sweep';
-                btnSweep.classList.remove('active-yellow');
+                btnSweep.textContent = 'Auto Sweep';
+                btnSweep.classList.remove('is-on');
             }
             if(this.osc) { try { this.osc.stop(); } catch(e){} this.osc.disconnect(); this.osc = null; }
             if(this.gain) { this.gain.disconnect(); this.gain = null; }
@@ -74,20 +80,20 @@ toneSweep: async function() {
 if (this.sweepTimer) {
 clearInterval(this.sweepTimer);
 this.sweepTimer = null;
-const btnSweep = document.querySelector('button[onclick="Tone.toneSweep()"]');
-if (btnSweep) {
-btnSweep.innerHTML = 'Auto Sweep';
-btnSweep.classList.remove('active-yellow');
+const btnStop = document.getElementById('tone-sweep-btn');
+if (btnStop) {
+btnStop.textContent = 'Auto Sweep';
+btnStop.classList.remove('is-on');
 }
 return;
 }
             if (!this.osc) {
                 await this.toneTogglePlay();
             }
-            const btnSweep = document.querySelector('button[onclick="Tone.toneSweep()"]');
+            const btnSweep = document.getElementById('tone-sweep-btn');
             if (btnSweep) {
-                btnSweep.innerHTML = 'Stop Sweep';
-                btnSweep.classList.add('active-yellow');
+                btnSweep.textContent = 'Stop Sweep';
+                btnSweep.classList.add('is-on');
             }
                         this.sweepTimer = setInterval(() => {
                 this.current += 30;

@@ -202,7 +202,7 @@
             const startBtn = document.getElementById('abx-start-btn');
             if (startBtn) {
                 startBtn.textContent = 'STOP TEST';
-                startBtn.className = "bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/15 font-bold text-[10px] px-2.5 h-7 rounded shadow whitespace-nowrap flex-shrink-0";
+                startBtn.className = "bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/15 font-bold text-[10px] px-2.5 h-7 shadow whitespace-nowrap flex-shrink-0";
                 startBtn.onclick = () => this.abxReset();
             }
 
@@ -342,7 +342,7 @@
             const startBtn = document.getElementById('abx-start-btn');
             if (startBtn) {
                 startBtn.textContent = 'START TEST';
-                startBtn.className = "bg-indigo-600/15 border border-indigo-500/40 text-indigo-400 hover:bg-indigo-600/20 font-bold text-[10px] px-2.5 h-7 rounded shadow whitespace-nowrap flex-shrink-0";
+                startBtn.className = "bg-indigo-600/15 border border-indigo-500/40 text-indigo-400 hover:bg-indigo-600/20 font-bold text-[10px] px-2.5 h-7 shadow whitespace-nowrap flex-shrink-0";
                 startBtn.onclick = () => this.abxStart();
             }
             this.setABXControlsEnabled(true);
@@ -364,7 +364,7 @@
             const startBtn = document.getElementById('abx-start-btn');
             if (startBtn) {
                 startBtn.textContent = 'START TEST';
-                startBtn.className = "bg-indigo-600/15 border border-indigo-500/40 text-indigo-400 hover:bg-indigo-600/20 font-bold text-[10px] px-2.5 h-7 rounded shadow whitespace-nowrap flex-shrink-0";
+                startBtn.className = "bg-indigo-600/15 border border-indigo-500/40 text-indigo-400 hover:bg-indigo-600/20 font-bold text-[10px] px-2.5 h-7 shadow whitespace-nowrap flex-shrink-0";
                 startBtn.onclick = () => this.abxStart();
             }
 
@@ -1359,6 +1359,11 @@ setABXControlsEnabled: function(enabled) {
 
             EQ_Module.isProgrammaticSliderUpdate = true;
 
+            // ALWAYS release the programmatic flag. updateSlider() is called up
+            // to 8 times in here and any one of them throwing would leave the
+            // lock stuck true, silently killing every later manual EQ change
+            // for the rest of the session.
+            try {
             let maxGain = -999;
             Object.entries(faderMappings).forEach(([fIdx, offsetVal]) => {
                 const slider = document.getElementById("eq-s" + fIdx);
@@ -1389,7 +1394,10 @@ setABXControlsEnabled: function(enabled) {
             if (preampSlider) preampSlider.value = preamp.toFixed(1);
             EQ_Module.updatePreamp();
 
-            EQ_Module.isProgrammaticSliderUpdate = false;
+            } finally {
+                EQ_Module.isProgrammaticSliderUpdate = false;
+            }
+
             EQ_Module.eqEnabled = true;
 
             const eqToggleBtn = document.getElementById("eqToggleBtn");
@@ -1450,7 +1458,7 @@ setABXControlsEnabled: function(enabled) {
             if (!btn) return;
 
             if (this.spatialOrbitActive) {
-                btn.className = "bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold rounded text-[10px] h-8 px-3 shadow-sm flex items-center justify-center active-btn";
+                btn.className = "bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold text-[10px] h-8 px-3 shadow-sm flex items-center justify-center active-btn";
                 btn.textContent = '🔄 Orbit: ON';
 
                 if (this.spatialActive) {
@@ -1458,7 +1466,7 @@ setABXControlsEnabled: function(enabled) {
                 }
                 showToast("Auto-Orbit armed. Resumes on panel hover", "🔄");
             } else {
-                btn.className = "bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.12] text-stone-200 font-bold rounded text-[10px] h-8 px-3 shadow-sm flex items-center justify-center";
+                btn.className = "bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.12] text-stone-200 font-bold text-[10px] h-8 px-3 shadow-sm flex items-center justify-center";
                 btn.textContent = '🔄 Orbit: Off';
                 this.stopSpatialOrbit();
                 showToast("Auto-Orbit disabled", "🔄");
@@ -1547,7 +1555,7 @@ setABXControlsEnabled: function(enabled) {
             this.spatialOrbitActive = false;
             const btn = document.getElementById('spatial-orbit-btn');
             if (btn) {
-                btn.className = "bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.12] text-stone-200 font-bold rounded text-[10px] h-8 px-3 shadow-sm flex items-center justify-center";
+                btn.className = "bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.12] text-stone-200 font-bold text-[10px] h-8 px-3 shadow-sm flex items-center justify-center";
                 btn.textContent = '🔄 Orbit: Off';
             }
         },
@@ -2015,8 +2023,8 @@ toggleChannelSwap: function() {
                 burninCtrls.classList.add('hidden');
             }
 
-            if (btnSpatial) btnSpatial.className = "px-2.5 py-1 rounded text-[10px] font-bold text-[var(--text-secondary)]";
-            if (btnBurnin) btnBurnin.className = "px-2.5 py-1 rounded text-[10px] font-bold bg-white/[0.08] text-[var(--text-main)] shadow";
+            if (btnSpatial) btnSpatial.className = "px-2.5 py-1 text-[10px] font-bold text-[var(--text-secondary)]";
+            if (btnBurnin) btnBurnin.className = "px-2.5 py-1 text-[10px] font-bold bg-white/[0.08] text-[var(--text-main)] shadow";
 
             this.updateBurninDisplay();
             this.updateBurninStatus('idle');
@@ -2038,8 +2046,8 @@ toggleChannelSwap: function() {
                 spatialCtrls.classList.add('flex');
             }
 
-            if (btnBurnin) btnBurnin.className = "px-2.5 py-1 rounded text-[10px] font-bold text-[var(--text-secondary)]";
-            if (btnSpatial) btnSpatial.className = "px-2.5 py-1 rounded text-[10px] font-bold bg-white/[0.08] text-[var(--text-main)] shadow";
+            if (btnBurnin) btnBurnin.className = "px-2.5 py-1 text-[10px] font-bold text-[var(--text-secondary)]";
+            if (btnSpatial) btnSpatial.className = "px-2.5 py-1 text-[10px] font-bold bg-white/[0.08] text-[var(--text-main)] shadow";
         }
     },
 
@@ -2344,11 +2352,11 @@ toggleChannelSwap: function() {
             const lockBtn = document.getElementById('resonance-lock-btn');
             if (scanBtn) {
                 scanBtn.textContent = 'Scan';
-                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5 rounded";
+                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5";
             }
             if (lockBtn) {
                 lockBtn.disabled = true;
-                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 rounded opacity-50 cursor-not-allowed";
+                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 opacity-50 cursor-not-allowed";
             }
 
             if (this.hearingOsc) {
@@ -2520,17 +2528,17 @@ toggleChannelSwap: function() {
 
             if (needle) {
 
-                needle.className = "absolute top-0 bottom-0 w-1 bg-sky-400 rounded-full transition-all duration-75";
+                needle.className = "absolute top-0 bottom-0 w-1 bg-sky-400 transition-all duration-75";
                 needle.style.boxShadow = "0 0 6px #38bdf8";
             }
 
             if (scanBtn) {
                 scanBtn.textContent = 'Scan...';
-                scanBtn.className = "w-full bg-sky-500/20 border border-sky-500/50 text-sky-300 font-bold text-[9px] py-1.5 rounded active-btn animate-pulse truncate";
+                scanBtn.className = "w-full bg-sky-500/20 border border-sky-500/50 text-sky-300 font-bold text-[9px] py-1.5 active-btn animate-pulse truncate";
             }
             if (lockBtn) {
                 lockBtn.disabled = false;
-                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/15 font-bold text-[9px] py-1.5 rounded";
+                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/15 font-bold text-[9px] py-1.5";
             }
 
             this.resonanceOsc = ctx.createOscillator();
@@ -2594,7 +2602,7 @@ toggleChannelSwap: function() {
 
             const needle = document.getElementById('resonance-gauge-needle');
             if (needle) {
-                needle.className = "absolute top-0 bottom-0 w-1 bg-emerald-400 rounded-full animate-pulse";
+                needle.className = "absolute top-0 bottom-0 w-1 bg-emerald-400 animate-pulse";
                 needle.style.boxShadow = "0 0 10px #10b981";
             }
 
@@ -2606,15 +2614,15 @@ toggleChannelSwap: function() {
 
             if (scanBtn) {
                 scanBtn.textContent = 'Scan';
-                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5 rounded";
+                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5";
             }
             if (lockBtn) {
                 lockBtn.disabled = true;
-                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 rounded opacity-50 cursor-not-allowed";
+                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 opacity-50 cursor-not-allowed";
             }
             if (readout) {
                 readout.textContent = `${PEQDB_Module.resonanceHz.toLocaleString()} Hz`;
-                readout.className = "text-xs font-mono font-black text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded shadow-[0_0_8px_rgba(16,185,129,0.2)]";
+                readout.className = "text-xs font-mono font-black text-emerald-400 bg-emerald-950/30 px-2 py-0.5 shadow-[0_0_8px_rgba(16,185,129,0.2)]";
             }
 
             EQ_Module.resonanceCalEnabled = true;
@@ -2708,22 +2716,22 @@ toggleChannelSwap: function() {
 
             if (needle) {
 
-                needle.className = "absolute top-0 bottom-0 w-1 bg-sky-400 rounded-full transition-all duration-75";
+                needle.className = "absolute top-0 bottom-0 w-1 bg-sky-400 transition-all duration-75";
                 needle.style.left = "50%";
                 needle.style.boxShadow = "0 0 6px #38bdf8";
             }
 
             if (scanBtn) {
                 scanBtn.textContent = 'Scan';
-                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5 rounded";
+                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5";
             }
             if (lockBtn) {
                 lockBtn.disabled = true;
-                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 rounded opacity-50 cursor-not-allowed";
+                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 opacity-50 cursor-not-allowed";
             }
             if (readout) {
                 readout.textContent = '8,000 Hz';
-                readout.className = "text-xs font-mono font-black text-sky-400 bg-sky-950/30 px-2 py-0.5 rounded border border-sky-900/30";
+                readout.className = "text-xs font-mono font-black text-sky-400 bg-sky-950/30 px-2 py-0.5 border border-sky-900/30";
             }
             if (calBtn) calBtn.classList.remove('active-btn');
             if (calLbl) calLbl.textContent = 'Resonance: Off';
@@ -2896,7 +2904,7 @@ toggleChannelSwap: function() {
                 const btn = document.getElementById('btn-resonance-tuner');
                 if (btn) {
                     btn.textContent = '🎯 Find Ear Resonance Peak';
-                    btn.className = "w-full bg-sky-950/20 border border-zinc-900/40 text-sky-400 font-bold text-xs py-2 rounded transition-all";
+                    btn.className = "w-full bg-sky-950/20 border border-zinc-900/40 text-sky-400 font-bold text-xs py-2 transition-all";
                 }
 
                 EQ_Module.resonanceCalEnabled = true;
@@ -2918,7 +2926,7 @@ toggleChannelSwap: function() {
 
                 const btn = document.getElementById('btn-resonance-tuner');
                 if (btn) {
-                    btn.className = "w-full bg-[#38bdf8]/10 border border-[#38bdf8]/30 text-sky-400 font-bold text-xs py-2 rounded transition-all active-btn";
+                    btn.className = "w-full bg-[#38bdf8]/10 border border-[#38bdf8]/30 text-sky-400 font-bold text-xs py-2 transition-all active-btn";
                 }
 
                 this.resonanceOsc = ctx.createOscillator();
@@ -3473,15 +3481,23 @@ loadSoundLibrary: async function() {
                 // The dot's position now lives in its transform (compositor
                 // layer — see initSpatialPad); read the tracked logical
                 // position instead of the no-longer-written style.left/top.
-                const x = (this.lastPosX !== undefined) ? this.lastPosX : (rect.width / 2);
-                const y = (this.lastPosY !== undefined) ? this.lastPosY : (rect.height / 2);
-                const normX = ((x / rect.width) * 10) - 5;
-                const normY = (((rect.height - y) / rect.height) * 10) - 5;
+                //
+                // A zero-size pad (collapsed panel, hidden tab, or before layout
+                // has settled) made the normalisation below compute 0/0, i.e.
+                // NaN, and AudioParam.setValueAtTime rejects a non-finite value —
+                // so starting spatial playback threw and aborted the rest of the
+                // start-up. Fall back to the neutral centre position instead.
+                const w = rect.width;
+                const h = rect.height;
+                const x = (this.lastPosX !== undefined) ? this.lastPosX : (w / 2);
+                const y = (this.lastPosY !== undefined) ? this.lastPosY : (h / 2);
+                const normX = w > 0 ? ((x / w) * 10) - 5 : 0;
+                const normY = h > 0 ? (((h - y) / h) * 10) - 5 : 0;
                 const now = ctx.currentTime;
 
-                this.spatialPanner.positionX.setValueAtTime(normX, now);
-                this.spatialPanner.positionY.setValueAtTime(normY, now);
-                this.spatialPanner.positionZ.setValueAtTime(this.spatialDepthZ, now);
+                this.spatialPanner.positionX.setValueAtTime(Number.isFinite(normX) ? normX : 0, now);
+                this.spatialPanner.positionY.setValueAtTime(Number.isFinite(normY) ? normY : 0, now);
+                this.spatialPanner.positionZ.setValueAtTime(Number.isFinite(this.spatialDepthZ) ? this.spatialDepthZ : -1.5, now);
             }
             this.updateVolumeSliderVisibility();
             this.startImbalanceMeter();
@@ -3784,11 +3800,11 @@ loadSoundLibrary: async function() {
             if (btn) {
                 if (this.heightModeActive) {
                     btn.textContent = "↕️ Height: ON";
-                    btn.className = "bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold rounded text-[10px] h-7 px-2.5 shadow-sm active-btn";
+                    btn.className = "bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold text-[10px] h-7 px-2.5 shadow-sm active-btn";
                     showToast("3D Elevation engaged! Vertical movement now adjusts Height (Y-axis).", "↕️");
                 } else {
                     btn.textContent = "↕️ Height: OFF";
-                    btn.className = "bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.12] text-stone-200 font-bold rounded text-[10px] h-7 px-2.5 shadow-sm";
+                    btn.className = "bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.12] text-stone-200 font-bold text-[10px] h-7 px-2.5 shadow-sm";
                     showToast("Returned to standard 2D flat plane.", "🧭");
                 }
             }
@@ -3991,11 +4007,50 @@ loadSoundLibrary: async function() {
             ['FindEngine', FindEngine]
         ];
 
+        // Silent degradation is a legitimate design choice only when it is
+        // VISIBLE. Previously a failed mod.init() produced nothing but a
+        // console.error and the two global handlers — so a dead IEM_Module or
+        // EQ_Module left the UI looking completely normal while the features
+        // silently did nothing, with no banner, no disabled state and no retry.
+        // Collect the failures and surface them once, non-blocking, naming the
+        // features the user actually lost.
+        const bootFailures = [];
         for (const [name, mod] of bootModules) {
             try {
                 await mod.init();
             } catch (err) {
                 console.error(`[Boot] ${name}.init() failed — continuing with remaining modules.`, err);
+                bootFailures.push({ name, err });
+            }
+        }
+        if (bootFailures.length) {
+            const FRIENDLY = {
+                App: 'Navigation',
+                IEM_Module: 'Review tab',
+                EQ_Module: 'EQ / parametric equalizer',
+                PEQDB_Module: 'Curve database',
+                Tone_Module: 'Tone generator',
+                TestLab_Module: 'Test Lab',
+                Accessibility: 'Accessibility options',
+                FindEngine: 'Find tab',
+            };
+            const lost = bootFailures.map((f) => FRIENDLY[f.name] || f.name);
+            const firstMsg = (bootFailures[0].err && bootFailures[0].err.message) || 'unknown error';
+            console.error('[Boot] ' + bootFailures.length + ' module(s) failed to initialise: ' +
+                bootFailures.map((f) => f.name).join(', '));
+            if (typeof showToast === 'function') {
+                showToast(
+                    lost.length === 1
+                        ? lost[0] + ' failed to start — that feature is unavailable.'
+                        : lost.length + ' features failed to start: ' + lost.join(', ') + '.',
+                    '⚠️'
+                );
+            }
+            if (typeof showDebugError === 'function') {
+                showDebugError(
+                    lost.join(', ') + ' failed to start',
+                    'Boot: ' + bootFailures.map((f) => f.name).join(', ') + ' — ' + firstMsg
+                );
             }
         }
 

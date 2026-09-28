@@ -20,11 +20,11 @@ const EQ_CrossfeedMethods = {
         if (btn) {
             if (this.crossfeedState === 'off') {
                 btn.textContent = "Feed: Off";
-                btn.className = 'btn-clear text-stone-200 font-bold rounded text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center';
+                btn.className = 'btn-clear text-stone-200 font-bold text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center';
                 if (container) container.classList.add('opacity-40', 'pointer-events-none');
             } else {
                 btn.textContent = "Feed: ON";
-                btn.className = 'btn-clear text-emerald-400 border-emerald-500/50 bg-emerald-950/15 font-bold rounded text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center active-btn';
+                btn.className = 'btn-clear text-emerald-400 border-emerald-500/50 bg-emerald-950/15 font-bold text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center active-btn';
                 if (container) container.classList.remove('opacity-40', 'pointer-events-none');
             }
         }

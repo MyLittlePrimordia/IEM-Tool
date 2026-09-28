@@ -316,6 +316,35 @@ const handlers = {
         "blur_127_EQ_commitPreampEdit": function(event, element) { EQ.commitPreampEdit() },
         "blur_268_setTimeout_______document_getElementById__brand_suggestions___classList_add__hid": function(event, element) { setTimeout(() => document.getElementById('brand-suggestions').classList.add('hidden'), 200) },
         "keydown_189_if_event_key____Enter___EQ_commitPreampEdit": function(event, element) { if(event.key==='Enter') EQ.commitPreampEdit() },
+
+        // ---- migrated from inline on*= attributes (see index.html) ----
+        // Four search boxes re-query on focus so the suggestion list matches what
+        // is already typed. Was: onfocus="IEM.updateBrandSuggestions(this.value)"
+        // etc. `focus` does not bubble, so events.js binds it with capture.
+        "focus_900_IEM_updateBrandSuggestions": function(event, element) { IEM.updateBrandSuggestions(this.value) },
+        "focus_901_FindEngine_handleTasteSearch": function(event, element) { FindEngine.handleTasteSearch(this.value) },
+        "focus_902_FindEngine_handleGkSearch": function(event, element) { FindEngine.handleGkSearch(this.value) },
+        "focus_903_FindEngine_handleUpgradeSearch": function(event, element) { FindEngine.handleUpgradeSearch(this.value) },
+
+        // EQ slot drop targets (base / target / reference). One handler per event
+        // rather than one per slot: the slot name and the highlight colour are read
+        // from data attributes on the element, so the three targets share them.
+        //
+        // The dragover preventDefault() is load-bearing — without it the browser
+        // refuses the drop and ondrop never fires at all. It is called
+        // unconditionally, exactly as the inline version did, so behaviour on a
+        // drag with no payload is unchanged.
+        "dragover_904_EQ_highlightDropSlot": function(event, element) {
+            event.preventDefault();
+            this.style.borderColor = this.getAttribute('data-drop-border') || '';
+        },
+        "dragleave_905_EQ_unhighlightDropSlot": function(event, element) {
+            this.style.borderColor = '';
+        },
+        "drop_906_EQ_handleSlotDrop": function(event, element) {
+            this.style.borderColor = '';
+            PEQDB_Module.handleDrop(event, this.getAttribute('data-drop-slot'));
+        },
     };
 
     // Register all handlers

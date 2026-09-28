@@ -81,13 +81,46 @@ startVisualizer: function() {
                         if (excessDb > 0.1) {
                             const preampSlider = document.getElementById("eq-preampSlider");
                             if (preampSlider) {
-                                const currentPreamp = parseFloat(preampSlider.value) || 0;
-                                const newPreamp = Math.max(-20, currentPreamp - excessDb);
+                                // Never fight the user. This watchdog runs every
+                                // 30ms; writing .value while the pointer was on the
+                                // slider made the user's next input event read OUR
+                                // value instead of theirs.
+                                if (preampSlider === document.activeElement || preampSlider.matches(':active')) return;
 
-                                preampSlider.value = newPreamp.toFixed(1);
-                                window.isProgrammaticPreampUpdate = true;
-                                EQ_Module.updatePreamp();
-                                window.isProgrammaticPreampUpdate = false;
+                                const currentPreamp = parseFloat(preampSlider.value) || 0;
+                                if (!Number.isFinite(EQ_Module._agcUserPreamp)) EQ_Module._agcUserPreamp = currentPreamp;
+                                const userPreamp = EQ_Module._agcUserPreamp;
+                                const autoDb = Number.isFinite(EQ_Module._agcAutoDb) ? EQ_Module._agcAutoDb : 0;
+
+                                // Ask for a little MORE total reduction. Because
+                                // excessDb is recomputed from the current peak,
+                                // each step shrinks after the previous one applied,
+                                // so this converges geometrically instead of
+                                // ratcheting to the -20 dB floor.
+                                const target = Math.max(-20, userPreamp - (autoDb + excessDb));
+                                const newAutoDb = userPreamp - target;
+                                if (newAutoDb - autoDb < 0.02) return;   // already converged
+                                EQ_Module._agcAutoDb = newAutoDb;
+
+                                preampSlider.value = target.toFixed(1);
+                                // try/finally: a throw from updatePreamp() used to
+                                // leave isProgrammaticPreampUpdate stuck true, which
+                                // silently disabled the preamp dead-zone snap and
+                                // the userPreampTarget capture for the whole session.
+                                try {
+                                    window.isProgrammaticPreampUpdate = true;
+                                    EQ_Module.updatePreamp();
+                                } catch (e) {
+                                    console.warn('[Visualizer] anti-clip preamp update failed:', e && e.message);
+                                } finally {
+                                    window.isProgrammaticPreampUpdate = false;
+                                }
+                                if (!EQ_Module._agcNotified) {
+                                    EQ_Module._agcNotified = true;
+                                    showToast('Anti-Clip lowered your preamp ' +
+                                        newAutoDb.toFixed(1) +
+                                        ' dB to stop clipping. Your own setting is restored when you turn CLIP off.', '🛡️');
+                                }
                             }
                         }
                     }

@@ -12,7 +12,7 @@
     <link rel="apple-touch-icon" href="app/favicon.png">
 
     <link rel="stylesheet" href="app/css/tailwind.output.css">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: data:; worker-src 'self' blob:; connect-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: data:; worker-src 'self' blob:; connect-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'">
 
     
 
@@ -60,29 +60,29 @@
 </head>
 <body class="bg-[#050507]">
 
-    <div id="mobile-nav-drawer" class="fixed inset-0 bg-black/60 z-[300] hidden backdrop-blur-xs select-none" data-action="click_110_App_toggleMobileDrawer">
+    <div id="mobile-nav-drawer" class="fixed inset-0 bg-black/60 z-[300] hidden backdrop-blur-sm select-none" data-action="click_110_App_toggleMobileDrawer">
         <div class="w-64 max-w-[80vw] h-full bg-[var(--bg-window)] border-r border-[var(--border-color)] p-4 flex flex-col gap-4" data-action="click_29_event_stopPropagation">
             <div class="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
                 <span class="text-xs font-black uppercase tracking-widest text-stone-200">Menu Navigation</span>
                 <button data-action="click_110_App_toggleMobileDrawer" class="text-zinc-500 hover:text-white text-base cursor-pointer">✕</button>
             </div>
             <nav class="flex flex-col gap-2">
-            <button data-action="click_140_App_switchTab__iem____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
+            <button data-action="click_140_App_switchTab__iem____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
                 <span class="text-[18px]">📝</span> <span>Review</span>
             </button>
-            <button data-action="click_257_App_switchTab__eq____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
+            <button data-action="click_257_App_switchTab__eq____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
                 <span class="text-[18px]">🎚️</span> <span>EQ</span>
             </button>
-            <button data-action="click_188_App_switchTab__testlab____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
+            <button data-action="click_188_App_switchTab__testlab____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
                 <span class="text-[18px]">🔬</span> <span>Test</span>
             </button>
-            <button data-action="click_147_App_switchTab__visualizer____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
+            <button data-action="click_147_App_switchTab__visualizer____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
                 <span class="text-[18px]">📊</span> <span>Visualizer</span>
             </button>
-            <button data-action="click_121_App_switchTab__find____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
+            <button data-action="click_121_App_switchTab__find____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
                 <span class="text-[18px]">🔍</span> <span>Find</span>
             </button>
-            <button data-action="click_26_App_switchTab__settings____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
+            <button data-action="click_26_App_switchTab__settings____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
                 <span class="text-[18px]">⚙️</span> <span>Settings</span>
             </button>
         </nav>
@@ -96,15 +96,14 @@
         <header class="w-full h-12 border-b flex items-center justify-between px-4 select-none flex-shrink-0 z-50 macos-header">
 
             <div class="w-64 flex items-center gap-2 select-none flex-shrink-0">
-
-                <button data-action="click_267_App_toggleMobileSidebar" class="md:hidden p-1 px-2 rounded bg-[var(--bg-input)] hover:bg-zinc-800 text-stone-200 cursor-pointer text-[13px] leading-none flex items-center justify-center border border-white/[0.04]" title="Open menu" style="pointer-events: auto;">
+                <button data-action="click_267_App_toggleMobileSidebar" class="md:hidden p-1 px-2 bg-[var(--bg-input)] hover:bg-zinc-800 text-stone-200 cursor-pointer text-[13px] leading-none flex items-center justify-center border border-white/[0.04]" title="Open menu" style="pointer-events: auto;">
                     ☰
                 </button>
                 <span id="brand-icon-emoji" class="inline select-none emoji-font" style="font-size: 22px; line-height: 1;">😐</span>
                 <span id="tb-label-3" data-action="click_87_App_tbClick_3" class="text-[11px] font-black tracking-widest text-[var(--text-main)] uppercase hover:text-[var(--accent-blue)] cursor-pointer select-none transition-colors">IEM Tool</span>
                 <span class="cursor-pointer inline-block ml-0.5 hover:brightness-125 select-none transition-all duration-300 emoji-font" data-action="click_287_App_triggerMushroomEgg_this" style="font-size: 13px;">🍄</span>
 
-                <div id="db-download-progress" class="hidden items-center gap-1.5 px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 rounded text-[9px] font-mono font-bold text-amber-400 select-none animate-pulse ml-1.5" title="Loading IEM database…">
+                <div id="db-download-progress" class="hidden items-center gap-1.5 px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 text-[9px] font-mono font-bold text-amber-400 select-none animate-pulse ml-1.5" title="Loading IEM database…">
                     <span>📥 DB:</span>
                     <span id="db-download-pct">0%</span>
                 </div>
@@ -113,27 +112,27 @@
             <input type="file" id="import-input" accept=".json" class="hidden" data-action-change="change_69_IEM_importConfig_event">
 
             <nav class="flex bg-[var(--bg-input)] p-1.5 gap-2 items-center" id="top-nav-bar" style="border: 2px solid var(--border-color); box-shadow: 3px 3px 0px 0px var(--border-color);">
-                            <button data-action="click_42_App_switchTab__find" id="tab-find-btn" data-tooltip="🔍 Find — search & match IEMs by taste, specs and price" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
+                            <button data-action="click_42_App_switchTab__find" id="tab-find-btn" data-tooltip="🔍 Find — search & match IEMs by taste, specs and price" class="flex items-center justify-center text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
                 <span class="text-[21px] leading-none">🔍</span>
             </button>
-			                <button data-action="click_19_App_switchTab__eq" id="tab-eq-btn" data-tooltip="🎚️ EQ — parametric EQ, AutoEQ and the curve database" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
+			                <button data-action="click_19_App_switchTab__eq" id="tab-eq-btn" data-tooltip="🎚️ EQ — parametric EQ, AutoEQ and the curve database" class="flex items-center justify-center text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
                 <span class="text-[21px] leading-none">🎚️</span>
             </button>
-			                <button data-action="click_40_App_switchTab__testlab" id="tab-testlab-btn" data-tooltip="🔬 Test Lab — hearing test, ABX, resonance and burn-in" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
+			                <button data-action="click_40_App_switchTab__testlab" id="tab-testlab-btn" data-tooltip="🔬 Test Lab — hearing test, ABX, resonance and burn-in" class="flex items-center justify-center text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
                 <span class="text-[21px] leading-none">🔬</span>
             </button>
-			<button data-action="click_198_App_switchTab__iem" id="tab-iem-btn" data-tooltip="📝 Review — score and review your gear" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
+			<button data-action="click_198_App_switchTab__iem" id="tab-iem-btn" data-tooltip="📝 Review — score and review your gear" class="flex items-center justify-center text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
                 <span class="text-[21px] leading-none">📝</span>
             </button>
-            <button data-action="click_291_App_switchTab__visualizer" id="tab-visualizer-btn" data-tooltip="📊 Visualizer — full-screen spectrum & waveform" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
+            <button data-action="click_291_App_switchTab__visualizer" id="tab-visualizer-btn" data-tooltip="📊 Visualizer — full-screen spectrum & waveform" class="flex items-center justify-center text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
                 <span class="text-[21px] leading-none">📊</span>
             </button>
-            <button data-action="click_80_App_switchTab__settings" id="tab-settings-btn" data-tooltip="⚙️ Settings — themes, fonts and playback options" class="flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
+            <button data-action="click_80_App_switchTab__settings" id="tab-settings-btn" data-tooltip="⚙️ Settings — themes, fonts and playback options" class="flex items-center justify-center text-[var(--text-secondary)] hover:text-white hover:bg-zinc-800/20 cursor-pointer focus:outline-none">
                 <span class="text-[21px] leading-none">⚙️</span>
             </button>
         </nav>
 
-            <div class="w-64 flex-shrink-0 hidden md:block"></div>
+            <div class="w-48 flex-shrink-0 hidden xl:block"></div>
         </header>
 
         <div class="flex-1 workspace-pane flex flex-col overflow-hidden">
@@ -153,7 +152,7 @@
 
                         <div class="flex items-center gap-1.5 w-full mb-2.5 flex-shrink-0">
                             <button type="button" data-action="click_216_IEM_cycleLeftTab__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                            <button type="button" id="iem-left-tab-stepper-btn" data-action="click_88_IEM_cycleLeftTab_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none" >
+                            <button type="button" id="iem-left-tab-stepper-btn" data-action="click_88_IEM_cycleLeftTab_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate" >
                                 <span id="iem-left-tab-stepper-label" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-black uppercase tracking-wider">
                                     <span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">📝</span> Info
                                 </span>
@@ -168,7 +167,7 @@
                                 <div class="space-y-2">
                                     <div class="relative">
                                         <label class="block text-xs uppercase text-zinc-400 font-bold mb-1">Brand</label>
-                                        <input type="text" id="brand" autocomplete="off" placeholder="e.g. FatFreq" class="w-full input-bg-fix px-2.5 py-1 font-bold outline-none h-8 text-xs" data-action-input="input_199_IEM_updateBrandSuggestions_this_value" onfocus="IEM.updateBrandSuggestions(this.value)" data-action-blur="blur_268_setTimeout_______document_getElementById__brand_suggestions___classList_add__hid">
+                                        <input type="text" id="brand" autocomplete="off" placeholder="e.g. FatFreq" class="w-full input-bg-fix px-2.5 py-1 font-bold outline-none h-8 text-xs" data-action-input="input_199_IEM_updateBrandSuggestions_this_value" data-action-focus="focus_900_IEM_updateBrandSuggestions" data-action-blur="blur_268_setTimeout_______document_getElementById__brand_suggestions___classList_add__hid">
                                         <div id="brand-suggestions" class="hidden absolute left-0 right-0 top-full z-[200] max-h-40 overflow-y-auto border-[3px] border-[var(--accent-blue)] bg-black p-1 space-y-0.5" style="box-shadow: 3px 3px 0px 0px #000000;"></div>
                                     </div>
                                     <div>
@@ -193,7 +192,7 @@
                                         <input type="hidden" id="iem-formfactor" value="IEM">
                                         <div class="flex items-center gap-1.5 w-full h-9">
                                             <button type="button" data-action="click_223_IEM_cycleFormFactor__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                            <button id="iem-formfactor-btn" data-action="click_193_IEM_cycleFormFactor_1" class="flex-1 text-center text-xs px-2.5 rounded-none bg-[var(--bg-input)] border-[3px] border-black text-[var(--text-main)] transition-all font-bold shadow-none h-9 cursor-pointer flex items-center justify-center truncate gap-1.5 focus:outline-none">
+                                            <button id="iem-formfactor-btn" data-action="click_193_IEM_cycleFormFactor_1" class="flex-1 text-center text-xs px-2.5 bg-[var(--bg-input)] border-[3px] border-black text-[var(--text-main)] transition-all font-bold shadow-none h-9 cursor-pointer flex items-center justify-center truncate gap-1.5 focus:outline-none">
                                                 <span id="iem-formfactor-label" class="flex items-center justify-center gap-2 truncate"><img src="app/icons/iem.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block anim-toggle-pop"> IEM</span>
                                             </button>
                                             <button type="button" data-action="click_193_IEM_cycleFormFactor_1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
@@ -204,7 +203,7 @@
                                         <input type="hidden" id="iem-connector" value="2-pin">
                                         <div class="flex items-center gap-1.5 w-full h-9">
                                             <button type="button" data-action="click_6_IEM_cycleConnector__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                            <button id="iem-connector-btn" data-action="click_224_IEM_cycleConnector_1" class="flex-1 text-center text-xs px-2.5 rounded-none bg-[var(--bg-input)] border-[3px] border-black text-[var(--text-main)] transition-all font-bold shadow-none h-9 cursor-pointer flex items-center justify-center truncate gap-1.5 focus:outline-none">
+                                            <button id="iem-connector-btn" data-action="click_224_IEM_cycleConnector_1" class="flex-1 text-center text-xs px-2.5 bg-[var(--bg-input)] border-[3px] border-black text-[var(--text-main)] transition-all font-bold shadow-none h-9 cursor-pointer flex items-center justify-center truncate gap-1.5 focus:outline-none">
                                                 <span id="iem-connector-label" class="flex items-center justify-center gap-2 truncate"><img src="app/icons/2pin.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block anim-toggle-pop"> 2-pin</span>
                                             </button>
                                             <button type="button" data-action="click_224_IEM_cycleConnector_1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
@@ -218,7 +217,7 @@
                                 <div class="relative flex-shrink-0">
                                     <input type="text" id="iem-db-search-input" autocomplete="off" placeholder="Search brand, model, tags..." class="w-full input-bg-fix px-2.5 py-1 font-bold outline-none h-8 text-xs" data-action-input="input_174_IEM_onDbSearchInput_this_value">
                                 </div>
-                                <div id="iem-db-results-box" class="iem-db-results-box flex-1 min-h-0 flex flex-col border-2 border-black rounded bg-black/30">
+                                <div id="iem-db-results-box" class="iem-db-results-box flex-1 min-h-0 flex flex-col border-2 border-black bg-black/30">
                                     <div class="flex items-center justify-between px-1.5 py-1 flex-shrink-0 border-b border-black/60 bg-[var(--bg-input)]">
                                         <span class="text-[9px] font-black uppercase tracking-widest text-fuchsia-300">Results</span>
                                         <span id="iem-db-result-count" class="text-[9px] font-black text-zinc-400">0</span>
@@ -291,7 +290,7 @@
                                     <span class="text-xs font-black text-emerald-400 uppercase tracking-widest block mb-1">Compatibility</span>
                                     <div class="flex items-center gap-1.5 w-full h-9">
                                         <button type="button" data-action="click_160_IEM_cycleDacPower__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                        <button id="dac-cycle-btn" data-action="click_251_IEM_cycleDacPower_1" class="flex-1 text-center text-xs px-2.5 rounded-none bg-[var(--bg-input)] border-[3px] border-black text-[var(--text-main)] transition-all font-bold shadow-none h-9 cursor-pointer flex items-center justify-center truncate gap-1.5 focus:outline-none" >
+                                        <button id="dac-cycle-btn" data-action="click_251_IEM_cycleDacPower_1" class="flex-1 text-center text-xs px-2.5 bg-[var(--bg-input)] border-[3px] border-black text-[var(--text-main)] transition-all font-bold shadow-none h-9 cursor-pointer flex items-center justify-center truncate gap-1.5 focus:outline-none" >
                                             <span id="dac-btn-label" class="flex items-center justify-center gap-2 truncate"><img src="app/icons/dongle.png" class="w-6 h-6 object-contain flex-shrink-0 inline-block anim-toggle-pop"> Dongle</span>
                                         </button>
                                         <button type="button" data-action="click_251_IEM_cycleDacPower_1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
@@ -303,7 +302,7 @@
                                         </div>
 
                                         <div class="px-1">
-                                            <div class="w-full h-2.5 bg-zinc-950 rounded-full overflow-hidden relative border border-zinc-900/50 shadow-inner">
+                                            <div class="w-full h-2.5 bg-zinc-950 overflow-hidden relative border border-zinc-900/50 shadow-inner">
                                                 <div id="compatibility-bar" style="width: 100%" class="h-full transition-all duration-300 ease-in-out"></div>
                                             </div>
                                         </div>
@@ -353,15 +352,15 @@
                         </div>
 
                         <div class="flex gap-2 justify-center items-center w-full max-w-md flex-shrink-0 pb-1">
-                            <button data-action="click_233_IEM_showExportModal" class="flex-1 h-10 btn-clear text-stone-200 font-black text-xs rounded transition-all flex items-center justify-center gap-1.5 shadow-sm" title="Save a high-res review card graphic">
+                            <button data-action="click_233_IEM_showExportModal" class="flex-1 h-10 btn-clear text-stone-200 font-black text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm" title="Save a high-res review card graphic">
                                 <span class="text-base leading-none">🖼️</span>
                                 <span class="uppercase tracking-wider text-xs leading-none">EXPORT</span>
                             </button>
-                            <button id="library-toggle-btn" data-action="click_115_IEM_toggleLibraryModal" class="flex-1 h-10 btn-clear text-stone-200 font-black text-xs rounded transition-all flex items-center justify-center gap-1.5 shadow-sm" title="View your saved profiles">
+                            <button id="library-toggle-btn" data-action="click_115_IEM_toggleLibraryModal" class="flex-1 h-10 btn-clear text-stone-200 font-black text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm" title="View your saved profiles">
                                 <span class="text-base leading-none">🏆</span>
                                 <span class="uppercase tracking-wider text-xs leading-none">LIST</span>
                             </button>
-                            <button data-action="click_150_IEM_saveToLibrary" class="flex-1 h-10 btn-clear text-stone-200 font-black text-xs rounded transition-all flex items-center justify-center gap-1.5 shadow-sm" title="Save this profile to your library">
+                            <button data-action="click_150_IEM_saveToLibrary" class="flex-1 h-10 btn-clear text-stone-200 font-black text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm" title="Save this profile to your library">
                                 <span class="text-base leading-none">💾</span>
                                 <span class="uppercase tracking-wider text-xs leading-none">SAVE</span>
                             </button>
@@ -374,7 +373,7 @@
 
                         <div class="flex items-center gap-1.5 w-full mb-1 flex-shrink-0">
                             <button type="button" data-action="click_156_IEM_cycleRightTab__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                            <button type="button" id="iem-right-tab-stepper-btn" data-action="click_65_IEM_cycleRightTab_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none" >
+                            <button type="button" id="iem-right-tab-stepper-btn" data-action="click_65_IEM_cycleRightTab_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate" >
                                 <span id="iem-right-tab-stepper-label" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-black uppercase tracking-wider">
                                     <span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🎚️</span> Sound
                                 </span>
@@ -634,7 +633,7 @@
 
                                     <div class="flex items-center gap-1.5 w-full flex-shrink-0">
                                         <button type="button" data-action="click_246_IEM_cycleReviewTag__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                                        <button type="button" data-action="click_133_IEM_addCurrentReviewTag" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none" >
+                                        <button type="button" data-action="click_133_IEM_addCurrentReviewTag" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate" >
                                             <span id="label-review-tag-select" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-bold">
                                                 <span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">⚖️</span> Neutral
                                             </span>
@@ -654,7 +653,7 @@
                                 <span class="text-xs font-black text-rose-400 uppercase tracking-widest block">IEM Photo Attachment</span>
                                 <input type="file" id="image-upload" accept="image/*" class="hidden" data-action-change="change_276_IEM_handleImageUpload_event">
 
-                                <div id="image-preview-container" class="w-full h-[340px] border-2 border-dashed border-black rounded-none flex flex-col items-center justify-center hover:bg-[var(--bg-input)] bg-[var(--bg-input)] transition-all relative overflow-hidden cursor-grab flex-shrink-0">
+                                <div id="image-preview-container" class="w-full h-[340px] border-2 border-dashed border-black flex flex-col items-center justify-center hover:bg-[var(--bg-input)] bg-[var(--bg-input)] transition-all relative overflow-hidden cursor-grab flex-shrink-0">
                                     <button id="upload-placeholder" data-action="click_214_document_getElementById__image_upload___click" class="absolute inset-0 w-full h-full flex flex-col items-center justify-center gap-1.5 bg-transparent border-0 cursor-pointer">
                                         <span class="text-4xl leading-none" style="color: var(--text-secondary);">📷</span>
                                         <span class="text-xs font-bold uppercase tracking-wide" style="color: var(--text-secondary);">Attach IEM Photo</span>
@@ -662,15 +661,15 @@
 
                                     <canvas id="image-preview-canvas" class="hidden w-full h-full"></canvas>
 
-                                    <button id="image-clear-btn" data-action="click_175_IEM_clearImage_event" style="top: 6px; right: 6px;" class="no-tactile hidden absolute w-5 h-5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-lg transition-all z-30 cursor-pointer border border-white/20">✕</button>
+                                    <button id="image-clear-btn" data-action="click_175_IEM_clearImage_event" style="top: 6px; right: 6px;" class="no-tactile hidden absolute w-5 h-5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black flex items-center justify-center shadow-lg transition-all z-30 cursor-pointer border border-white/20">✕</button>
                                 </div>
 
                                 <div id="image-controls-bar" class="hidden bg-[var(--bg-input)] border-2 border-black p-1.5 flex items-center justify-between gap-2 flex-shrink-0 select-none">
                                     <div class="flex items-center gap-1.5 flex-shrink-0">
-                                        <button data-action="click_200_IEM_recenterImage" class="h-8 w-8 btn-clear text-stone-200 font-black text-xs rounded-none transition-all flex items-center justify-center cursor-pointer shadow-sm flex-shrink-0" data-tooltip="🎯 Center the image">
+                                        <button data-action="click_200_IEM_recenterImage" class="h-8 w-8 btn-clear text-stone-200 font-black text-xs transition-all flex items-center justify-center cursor-pointer shadow-sm flex-shrink-0" data-tooltip="🎯 Center the image">
                                             <span class="text-base leading-none">🎯</span>
                                         </button>
-                                        <label class="btn-clear text-stone-200 font-black text-xs rounded-none h-8 w-8 flex items-center justify-center cursor-pointer select-none shadow-sm cassette-toggle flex-shrink-0" id="btn-transparency-toggle" data-tooltip="🪄 Remove the background">
+                                        <label class="btn-clear text-stone-200 font-black text-xs h-8 w-8 flex items-center justify-center cursor-pointer select-none shadow-sm cassette-toggle flex-shrink-0" id="btn-transparency-toggle" data-tooltip="🪄 Remove the background">
                                             <input type="checkbox" id="image-transparency-chk" class="hidden" data-action-change="change_210_IEM_toggleBgRemoval_this_checked___this_parentElement_classList_toggle__is_on___">
                                             <span class="text-base leading-none">🪄</span>
                                         </label>
@@ -714,7 +713,7 @@
 
                             <div class="flex items-center gap-1.5 w-full mb-1">
                                 <button type="button" data-action="click_56_FindEngine_cycleFindMode__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                                <button type="button" id="find-mode-stepper-btn" data-action="click_37_FindEngine_cycleFindMode_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none" >
+                                <button type="button" id="find-mode-stepper-btn" data-action="click_37_FindEngine_cycleFindMode_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate" >
                                     <span id="find-mode-stepper-label" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-black uppercase tracking-wider">
                                         <span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🎛️</span> Tuning
                                     </span>
@@ -723,7 +722,7 @@
                             </div>
 
                             <div id="find-target-curve-block" class="flex flex-col flex-shrink-0 mb-1">
-                                <div class="w-full h-10 relative bg-black/60 border border-white/[0.05] rounded-none overflow-hidden">
+                                <div class="w-full h-10 relative bg-black/60 border border-white/[0.05] overflow-hidden">
                                     <canvas id="find-target-canvas" class="w-full h-full block"></canvas>
                                 </div>
                             </div>
@@ -776,7 +775,7 @@
                                     <label class="block text-xs uppercase text-zinc-400 font-black mb-0.5">Starting Baseline Target</label>
                                     <div class="flex items-center gap-1.5 w-full h-8">
                                         <button type="button" data-action="click_310_FindEngine_cycleBaseline__1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-[var(--text-main)] font-black text-xs flex items-center justify-center cursor-pointer select-none flex-shrink-0 focus:outline-none" title="Previous baseline target">◀</button>
-                                        <button id="find-baseline-btn" data-action="click_24_FindEngine_cycleBaseline" class="flex-1 h-8 bg-[var(--bg-input)] border-2 border-black rounded-none text-xs font-bold text-stone-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer truncate min-w-0 focus:outline-none">
+                                        <button id="find-baseline-btn" data-action="click_24_FindEngine_cycleBaseline" class="flex-1 h-8 bg-[var(--bg-input)] border-2 border-black text-xs font-bold text-stone-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer truncate min-w-0 focus:outline-none">
                                             🎯 Harman IE 2019
                                         </button>
                                         <button type="button" data-action="click_311_FindEngine_cycleBaseline_1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-[var(--text-main)] font-black text-xs flex items-center justify-center cursor-pointer select-none flex-shrink-0 focus:outline-none" title="Next baseline target">▶</button>
@@ -786,31 +785,31 @@
                                 <div class="space-y-0.5">
                                     <div class="space-y-0.5">
                                         <div class="flex justify-between text-xs font-bold text-zinc-300"><span>🔥 Bass Impact</span><span id="find-bass-val" class="font-mono text-amber-400 font-bold">Neutral</span></div>
-                                        <input type="range" id="find-bass" min="-10" max="10" step="0.5" value="0" class="w-full cursor-pointer">
+                                        <input type="range" id="find-bass" min="-10" max="10" step="0.5" value="0" class="w-full cursor-pointer" aria-label="Bass impact">
                                     </div>
                                     <div class="space-y-0.5">
                                         <div class="flex justify-between text-xs font-bold text-zinc-300"><span>🌊 Sub Bass Rumble</span><span id="find-sub-val" class="font-mono text-cyan-400 font-bold">Neutral</span></div>
-                                        <input type="range" id="find-sub" min="-10" max="10" step="0.5" value="0" class="w-full cursor-pointer">
+                                        <input type="range" id="find-sub" min="-10" max="10" step="0.5" value="0" class="w-full cursor-pointer" aria-label="Sub-bass rumble">
                                     </div>
                                     <div class="space-y-0.5">
                                         <div class="flex justify-between text-xs font-bold text-zinc-300"><span>🥁 Bass Punch</span><span id="find-punch-val" class="font-mono text-emerald-400 font-bold">Neutral</span></div>
-                                        <input type="range" id="find-punch" min="-10" max="10" step="0.5" value="0" class="w-full cursor-pointer">
+                                        <input type="range" id="find-punch" min="-10" max="10" step="0.5" value="0" class="w-full cursor-pointer" aria-label="Bass punch">
                                     </div>
                                     <div class="space-y-0.5">
                                         <div class="flex justify-between text-xs font-bold text-zinc-300"><span>🔥 Warmth / Body</span><span id="find-warm-val" class="font-mono text-orange-400 font-bold">Neutral</span></div>
-                                        <input type="range" id="find-warm" min="-10" max="10" step="0.5" value="0" class="w-full cursor-pointer">
+                                        <input type="range" id="find-warm" min="-10" max="10" step="0.5" value="0" class="w-full cursor-pointer" aria-label="Warmth and body">
                                     </div>
                                     <div class="space-y-0.5">
                                         <div class="flex justify-between text-xs font-bold text-zinc-300"><span>🎤 Vocals</span><span id="find-vocals-val" class="font-mono text-indigo-400 font-bold">Neutral</span></div>
-                                        <input type="range" id="find-vocals" min="-10" max="10" step="0.5" value="0" class="w-full cursor-pointer">
+                                        <input type="range" id="find-vocals" min="-10" max="10" step="0.5" value="0" class="w-full cursor-pointer" aria-label="Vocal clarity">
                                     </div>
                                     <div class="space-y-0.5">
                                         <div class="flex justify-between text-xs font-bold text-zinc-300"><span>✨ Treble Detail</span><span id="find-treble-val" class="font-mono text-violet-400 font-bold">Neutral</span></div>
-                                        <input type="range" id="find-treble" min="-10" max="10" step="0.5" value="0" class="w-full cursor-pointer">
+                                        <input type="range" id="find-treble" min="-10" max="10" step="0.5" value="0" class="w-full cursor-pointer" aria-label="Treble detail">
                                     </div>
                                     <div class="space-y-0.5">
                                         <div class="flex justify-between text-xs font-bold text-zinc-300"><span>😌 Treble Smoothness</span><span id="find-smooth-val" class="font-mono text-rose-400 font-bold">Neutral</span></div>
-                                        <input type="range" id="find-smooth" min="-10" max="10" step="0.5" value="0" class="w-full cursor-pointer">
+                                        <input type="range" id="find-smooth" min="-10" max="10" step="0.5" value="0" class="w-full cursor-pointer" aria-label="Sibilance reduction">
                                     </div>
                                 </div>
 
@@ -838,17 +837,17 @@
                 <div id="find-col-results" class="flex-1 bg-transparent p-2.5 flex flex-col h-full overflow-hidden flex-shrink-0">
                     <div class="section-card p-3 flex flex-col h-full flex-1 overflow-hidden relative">
 
-                        <div id="find-progress-container" class="p-2 mb-2 bg-[var(--bg-input)] rounded border-2 border-black flex flex-col gap-1.5 flex-shrink-0">
+                        <div id="find-progress-container" class="p-2 mb-2 bg-[var(--bg-input)] border-2 border-black flex flex-col gap-1.5 flex-shrink-0">
                             <div class="flex justify-between text-xs font-bold text-zinc-300 select-none">
                                 <span class="flex items-center gap-1.5"><span id="find-progress-status" class="animate-pulse">⏳ Indexing database measurements...</span></span>
                                 <span id="find-progress-text" class="font-mono">0%</span>
                             </div>
-                            <div class="w-full h-3 bg-zinc-950 rounded-full overflow-hidden relative border border-white/[0.01]">
+                            <div class="w-full h-3 bg-zinc-950 overflow-hidden relative border border-white/[0.01]">
                                 <div id="find-progress-bar" style="width: 0%" class="h-full bg-gradient-to-r from-[var(--accent-blue)] to-cyan-500 transition-all duration-300"></div>
                             </div>
                         </div>
 
-                        <div id="find-scanning-overlay" class="hidden absolute inset-0 bg-[var(--bg-card)]/90 backdrop-blur-xs z-30 flex flex-col items-center justify-center text-center gap-3 p-4">
+                        <div id="find-scanning-overlay" class="hidden absolute inset-0 bg-black/85 backdrop-blur-sm z-30 flex flex-col items-center justify-center text-center gap-3 p-4">
                             <span id="find-scanning-emoji" class="text-5xl anim-magnifying-scan" style="display: inline-block;">🔍</span>
                             <div class="space-y-1">
                                 <h4 id="find-scanning-title" class="text-xs font-black uppercase tracking-wider text-[var(--text-main)]">Analyzing signatures...</h4>
@@ -876,7 +875,7 @@
 
                         <div class="flex items-center gap-1.5 w-full mb-2 flex-shrink-0">
                             <button type="button" data-action="click_256_FindEngine_cycleRightTab__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                            <button type="button" id="find-right-tab-stepper-btn" data-action="click_109_FindEngine_cycleRightTab_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none" >
+                            <button type="button" id="find-right-tab-stepper-btn" data-action="click_109_FindEngine_cycleRightTab_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate" >
                                 <span id="find-right-tab-stepper-label" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-black uppercase tracking-wider">
                                     <span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">❤️</span> Taste
                                 </span>
@@ -889,7 +888,7 @@
 
                             <div class="relative flex-shrink-0">
                                 <span class="absolute left-2.5 top-2 text-xs text-black font-bold z-10">🔍</span>
-                                <input type="text" id="find-taste-search" placeholder="Search favorites..." autocomplete="off" class="w-full bg-white text-black font-bold border-[3px] border-black pl-8 pr-2 py-1 text-xs outline-none h-8 rounded-none shadow-none" data-action-input="input_91_FindEngine_handleTasteSearchDebounced_this_value" onfocus="FindEngine.handleTasteSearch(this.value)">
+                                <input type="text" id="find-taste-search" placeholder="Search favorites..." autocomplete="off" class="w-full bg-white text-black font-bold border-[3px] border-black pl-8 pr-2 py-1 text-xs outline-none h-8 shadow-none" data-action-input="input_91_FindEngine_handleTasteSearchDebounced_this_value" data-action-focus="focus_901_FindEngine_handleTasteSearch">
                                 <div id="find-taste-results" class="hidden absolute left-0 right-0 top-[calc(100%+2px)] z-[200] max-h-48 overflow-y-auto border-[3px] border-[var(--accent-blue)] bg-black p-1 space-y-0.5 text-xs text-zinc-400 font-bold" style="box-shadow: 3px 3px 0px 0px #000000;"></div>
                             </div>
 
@@ -915,7 +914,7 @@
                                 <span class="text-xs font-black text-amber-500 uppercase tracking-wider block">1. Select Flagship IEM (tagged or $1000+)</span>
                                 <div class="relative">
                                     <span class="absolute left-2.5 top-2 text-xs text-black font-bold z-10">🔍</span>
-                                    <input type="text" id="find-gk-search" placeholder="Search flagship (e.g. Monarch, IE900)..." autocomplete="off" class="w-full bg-white text-black font-bold border-[3px] border-black pl-8 pr-2 py-1 text-xs outline-none h-7 rounded-none shadow-none" data-action-input="input_157_FindEngine_handleGkSearchDebounced_this_value" onfocus="FindEngine.handleGkSearch(this.value)">
+                                    <input type="text" id="find-gk-search" placeholder="Search flagship (e.g. Monarch, IE900)..." autocomplete="off" class="w-full bg-white text-black font-bold border-[3px] border-black pl-8 pr-2 py-1 text-xs outline-none h-7 shadow-none" data-action-input="input_157_FindEngine_handleGkSearchDebounced_this_value" data-action-focus="focus_902_FindEngine_handleGkSearch">
                                     <div id="find-gk-search-results" class="hidden absolute left-0 right-0 top-[calc(100%+2px)] z-[200] border-[3px] border-[var(--accent-blue)] bg-black p-1 text-xs text-zinc-300 font-bold relative" style="box-shadow: 3px 3px 0px 0px #000000;">
                                     <div id="find-gk-scroll" class="overflow-y-auto max-h-40 space-y-1 pr-2"></div>
                                 </div>
@@ -962,7 +961,7 @@
                                 <span class="text-xs font-black text-amber-500 uppercase tracking-wider block">1. Select Owned / Loved IEM</span>
                                 <div class="relative">
                                     <span class="absolute left-2.5 top-2 text-xs text-black font-bold z-10">🔍</span>
-                                    <input type="text" id="find-upgrade-search" placeholder="Search owned IEM (e.g. KZ Castor)..." autocomplete="off" class="w-full bg-white text-black font-bold border-[3px] border-black pl-8 pr-2 py-1 text-xs outline-none h-7 rounded-none shadow-none" data-action-input="input_195_FindEngine_handleUpgradeSearchDebounced_this_value" onfocus="FindEngine.handleUpgradeSearch(this.value)">
+                                    <input type="text" id="find-upgrade-search" placeholder="Search owned IEM (e.g. KZ Castor)..." autocomplete="off" class="w-full bg-white text-black font-bold border-[3px] border-black pl-8 pr-2 py-1 text-xs outline-none h-7 shadow-none" data-action-input="input_195_FindEngine_handleUpgradeSearchDebounced_this_value" data-action-focus="focus_903_FindEngine_handleUpgradeSearch">
                                     <div id="find-upgrade-search-results" class="hidden absolute left-0 right-0 top-[calc(100%+2px)] z-[200] max-h-40 overflow-y-auto border-[3px] border-[var(--accent-blue)] bg-black p-1 space-y-1 text-xs text-zinc-300 font-bold" style="box-shadow: 3px 3px 0px 0px #000000;"></div>
                                 </div>
 
@@ -975,7 +974,7 @@
                                 <span class="text-xs font-black text-sky-400 uppercase tracking-wider block">2. Choose Upgrade Goal</span>
                                 <div class="flex items-center gap-1.5 w-full">
                                     <button type="button" data-action="click_76_FindEngine_cycleGoalIndex__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                                    <button type="button" id="ug-goal-cycle-btn" data-action="click_226_FindEngine_cycleGoalIndex_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none">
+                                    <button type="button" id="ug-goal-cycle-btn" data-action="click_226_FindEngine_cycleGoalIndex_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate">
                                         <span class="flex items-center justify-center gap-1.5 truncate text-[var(--text-main)] font-black uppercase tracking-wider">
                                             <span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🎧</span> Detail Upgrade
                                         </span>
@@ -1070,8 +1069,12 @@
                             </div>
 
                             <div class="p-1.5 bg-black/50 border-2 border-black text-[9px] font-bold text-zinc-400 leading-relaxed flex-shrink-0">
-                                <span class="text-sky-400 font-black uppercase tracking-wider block mb-0.5">How it works</span>
-                                One box per category — use the <span class="text-white font-black">◄ ►</span> arrows to cycle through the top candidates, with the <span class="text-amber-400 font-black">👑 Champion</span> (best score under budget) first. <span class="text-emerald-400 font-black">✅ Confirmed</span> = curve matches its tags, <span class="text-sky-400 font-black">🔬 Measured</span> = curve fits despite its tags, <span class="text-red-400 font-black">⚠️ Tag Conflict</span> = tags claim it but the curve disagrees. The <span class="text-amber-300 font-black">💎 Value</span> strip collects the best <span class="text-emerald-400 font-black">💥 Giant Killer</span> of every champion — ≥75% similar for under 40% of its price.
+                                <span class="text-sky-400 font-black uppercase tracking-wider block mb-0.5">Legend</span>
+                                <span class="text-amber-400 font-black">👑</span> best under budget ·
+                                <span class="text-emerald-400 font-black">✅</span> tags match ·
+                                <span class="text-sky-400 font-black">🔬</span> curve fits anyway ·
+                                <span class="text-red-400 font-black">⚠️</span> tags disagree ·
+                                <span class="text-amber-300 font-black">💎</span> ≥75% match under 40% price
                             </div>
 
                         </div>
@@ -1097,18 +1100,18 @@
                                     <button type="button" id="btn-db-mode" data-action="click_79_PEQDB_Module_setSearchMode__database" class="subtab-seg-btn no-tactile active" title="Browse the measurement database"><span class="subtab-seg-emoji">📚</span> Database</button>
                                     <button type="button" id="btn-sim-mode" data-action="click_300_PEQDB_Module_setSearchMode__similar" class="subtab-seg-btn no-tactile" title="Find IEMs with curves similar to the current graph"><span class="subtab-seg-emoji">🔎</span> Similar</button>
                                 </div>
-                                <div id="peqdb-indexing-indicator" class="text-[9px] font-black text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 px-2 py-0.5 rounded animate-pulse uppercase tracking-wider hidden flex-shrink-0">⚡ Indexing: 0%</div>
+                                <div id="peqdb-indexing-indicator" class="text-[9px] font-black text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 px-2 py-0.5 animate-pulse uppercase tracking-wider hidden flex-shrink-0">⚡ Indexing: 0%</div>
                                 <button data-action="click_108_EQ_showSmartImportModal" class="px-2.5 py-1 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] text-[var(--text-main)] font-black text-xs border-[3px] border-black cursor-pointer shadow-sm flex items-center justify-center gap-1.5 h-9 flex-shrink-0" title="Import an EQ or measurement file">
                                     <span class="text-xl w-6 h-6 inline-flex items-center justify-center leading-none">📥</span> Import
                                 </button>
                             </div>
                             <div id="peqdb-search-wrap" class="relative flex-shrink-0">
                                 <span class="absolute left-2.5 top-2 text-xs text-black font-bold z-10">🔍</span>
-                                <input type="text" id="peqdb-search" placeholder="Search targets..." class="w-full bg-white text-black font-bold border-[3px] border-black pl-8 pr-2 py-1 text-xs outline-none h-8 rounded-none shadow-none">
+                                <input type="text" id="peqdb-search" placeholder="Search targets..." class="w-full bg-white text-black font-bold border-[3px] border-black pl-8 pr-2 py-1 text-xs outline-none h-8 shadow-none">
                                 <div id="peqdb-search-suggestions" class="hidden absolute left-0 right-0 top-[calc(100%+2px)] z-[200] flex flex-wrap gap-1.5 p-1.5 border-[3px] border-[var(--accent-blue)] bg-black" style="box-shadow: 3px 3px 0px 0px #000000;"></div>
                             </div>
 
-                            <div id="peqdb-list-wrapper" class="flex-1 min-h-0 overflow-hidden relative border-2 border-black bg-zinc-950/40 rounded-none mt-1 flex flex-col">
+                            <div id="peqdb-list-wrapper" class="flex-1 min-h-0 overflow-hidden relative border-2 border-black bg-zinc-950/40 mt-1 flex flex-col">
                                 <div class="flex items-center justify-between px-1.5 py-1 flex-shrink-0 border-b border-black/60 bg-[var(--bg-input)]">
                                     <span class="text-[9px] font-black uppercase tracking-widest text-amber-400">Results</span>
                                     <span id="peqdb-result-count" class="text-[9px] font-black text-zinc-400">0</span>
@@ -1126,12 +1129,12 @@
                             <div class="flex items-center gap-2.5 w-full h-9">
                                 <div class="flex items-center gap-1.5 w-full flex-1 h-9">
                                     <button type="button" data-action="click_178_PEQDB_Module_cycleTargetDirection__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-[3px] border-black text-[var(--text-main)] font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                    <button id="target-cycle-btn" data-action="click_161_PEQDB_Module_cycleTargetDirection_1" class="flex-1 text-center text-xs px-2.5 rounded-none bg-[var(--bg-input)] border-[3px] border-black text-[var(--text-main)] transition-all font-bold shadow-none h-9 cursor-pointer flex items-center justify-center truncate gap-1.5 focus:outline-none min-w-0">
+                                    <button id="target-cycle-btn" data-action="click_161_PEQDB_Module_cycleTargetDirection_1" class="flex-1 text-center text-xs px-2.5 bg-[var(--bg-input)] border-[3px] border-black text-[var(--text-main)] transition-all font-bold shadow-none h-9 cursor-pointer flex items-center justify-center truncate gap-1.5 focus:outline-none min-w-0">
                                         <span class="text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none">🎯</span> <span id="target-btn-text" class="truncate">Target: None</span>
                                     </button>
                                     <button type="button" data-action="click_161_PEQDB_Module_cycleTargetDirection_1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-[3px] border-black text-[var(--text-main)] font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
                                 </div>
-                                <button id="target-edit-btn" data-action="click_131_PEQDB_Module_toggleTargetSculptor" class="w-9 h-9 aspect-square rounded-none bg-[var(--bg-input)] border-[3px] border-black text-zinc-300 hover:border-[var(--border-color)] transition-all font-bold shadow-none cursor-pointer flex items-center justify-center flex-shrink-0 focus:outline-none" title="Open the Target Sculptor">
+                                <button id="target-edit-btn" data-action="click_131_PEQDB_Module_toggleTargetSculptor" class="w-9 h-9 aspect-square bg-[var(--bg-input)] border-[3px] border-black text-zinc-300 hover:border-[var(--border-color)] transition-all font-bold shadow-none cursor-pointer flex items-center justify-center flex-shrink-0 focus:outline-none" title="Open the Target Sculptor">
                                     <span class="text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none">✏️</span>
                                 </button>
                             </div>
@@ -1139,7 +1142,7 @@
 
                             <div class="flex items-center gap-1.5 w-full h-9">
                                 <button type="button" data-action="click_239_PEQDB_Module_cycleResolutionDirection__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-[3px] border-black text-[var(--text-main)] font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                <button data-action="click_285_PEQDB_Module_generateLeastSquaresAutoEQ" class="flex-1 text-center text-xs px-2.5 rounded-none text-white font-bold h-9 border-[3px] border-black shadow-none cursor-pointer flex items-center justify-center truncate focus:outline-none" style="background-color: #312e81 !important;" title="Auto-tune the EQ to match your target">
+                                <button data-action="click_285_PEQDB_Module_generateLeastSquaresAutoEQ" class="flex-1 text-center text-xs px-2.5 text-white font-bold h-9 border-[3px] border-black shadow-none cursor-pointer flex items-center justify-center truncate focus:outline-none" style="background-color: #312e81 !important;" title="Auto-tune the EQ to match your target">
                                     <span id="autoeq-btn-label" class="flex items-center justify-center gap-1.5 truncate"><span class="text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none">🪄</span> AutoEQ ( <span style="color: #ffffff !important; font-weight: 900;">10 Bands</span> )</span>
                                 </button>
                                 <button type="button" data-action="click_248_PEQDB_Module_cycleResolutionDirection_1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-[3px] border-black text-[var(--text-main)] font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
@@ -1147,7 +1150,7 @@
 
                             <div class="flex items-center gap-1.5 w-full h-9">
                                 <button type="button" data-action="click_2_PEQDB_Module_cycleCurveToolIndex__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-[3px] border-black text-[var(--text-main)] font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                <button data-action="click_203_PEQDB_Module_executeCurrentCurveTool" class="flex-1 text-center text-xs px-2.5 rounded-none bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 border-[3px] border-black shadow-none cursor-pointer flex items-center justify-center truncate focus:outline-none" >
+                                <button data-action="click_203_PEQDB_Module_executeCurrentCurveTool" class="flex-1 text-center text-xs px-2.5 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 border-[3px] border-black shadow-none cursor-pointer flex items-center justify-center truncate focus:outline-none" >
                                     <span id="curvetool-btn-label" class="flex items-center justify-center gap-1.5 truncate"><span class="text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none">📊</span> Average Curves</span>
                                 </button>
                                 <button type="button" data-action="click_38_PEQDB_Module_cycleCurveToolIndex_1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-[3px] border-black text-[var(--text-main)] font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
@@ -1177,41 +1180,41 @@
                             </div>
 
                             <div id="tl-controls-graph" class="flex-1 flex flex-row justify-center items-center gap-1.5 select-none overflow-x-auto no-scrollbar w-full">
-                                <button id="graph-align-hz-btn" data-action="click_53_PEQDB_Module_cycleAlignHz" class="btn-clear text-stone-200 font-bold rounded-none text-xs h-8 px-2.5 shadow-sm flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap" title="Set which point the curves line up on"><span class="align-label-prefix">Align: </span>AVG</button>
-                                <button id="graph-align-db-btn" data-action="click_202_PEQDB_Module_cycleAlignDb" class="btn-clear text-stone-200 font-bold rounded-none text-xs h-8 px-2.5 shadow-sm flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap" title="Move all curves up or down in volume"><span class="align-label-prefix">Amp: </span>0dB</button>
-                                <button data-action="click_283_PEQDB_Module_clearState" class="btn-clear text-stone-200 font-bold rounded-none text-xs h-8 px-2 sm:px-2.5 shadow-sm flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap" title="Clear the graph & reset the EQ to flat">
+                                <button id="graph-align-hz-btn" data-action="click_53_PEQDB_Module_cycleAlignHz" class="btn-clear text-stone-200 font-bold text-xs h-8 px-2.5 shadow-sm flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap" title="Set which point the curves line up on"><span class="align-label-prefix">Align: </span>AVG</button>
+                                <button id="graph-align-db-btn" data-action="click_202_PEQDB_Module_cycleAlignDb" class="btn-clear text-stone-200 font-bold text-xs h-8 px-2.5 shadow-sm flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap" title="Move all curves up or down in volume"><span class="align-label-prefix">Amp: </span>0dB</button>
+                                <button data-action="click_283_PEQDB_Module_clearState" class="btn-clear text-stone-200 font-bold text-xs h-8 px-2 sm:px-2.5 shadow-sm flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap" title="Clear the graph & reset the EQ to flat">
                                     <span>🧹</span><span class="hidden sm:inline">Clear</span>
                                 </button>
-                                <button data-action="click_207_EQ_saveCurrentAsCustomPreset" class="btn-clear text-stone-200 font-bold rounded-none text-xs h-8 px-2 sm:px-2.5 shadow-sm flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap" title="Save this EQ as a preset">
+                                <button data-action="click_207_EQ_saveCurrentAsCustomPreset" class="btn-clear text-stone-200 font-bold text-xs h-8 px-2 sm:px-2.5 shadow-sm flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap" title="Save this EQ as a preset">
                                     <span>⭐</span><span class="hidden sm:inline">Save</span>
-                                </button><button id="btn-spectrum-toggle" data-action="click_132_EQ_toggleSpectrumOverlay" class="retro-switch-btn font-bold rounded-none text-xs h-8 px-2 sm:px-2.5 shadow-sm flex items-center justify-center cursor-pointer whitespace-nowrap" title="Show the live audio spectrum on the graph"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg></button>
+                                </button><button id="btn-spectrum-toggle" data-action="click_132_EQ_toggleSpectrumOverlay" class="retro-switch-btn font-bold text-xs h-8 px-2 sm:px-2.5 shadow-sm flex items-center justify-center cursor-pointer whitespace-nowrap" title="Show the live audio spectrum on the graph"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg></button>
                             </div>
 
                             <div class="w-auto md:w-28 flex justify-end flex-shrink-0">
-                                <button id="btn-expand-active-graph" data-action="click_237_EQ_toggleActiveGraphFullscreen" class="btn-clear text-stone-200 font-bold rounded-none text-xs h-8 px-3 shadow-sm flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap" >
+                                <button id="btn-expand-active-graph" data-action="click_237_EQ_toggleActiveGraphFullscreen" class="btn-clear text-stone-200 font-bold text-xs h-8 px-3 shadow-sm flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap" >
                                     <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                                     <span class="hidden sm:inline">Expand</span>
                                 </button>
                             </div>
                         </div>
 
-                        <div id="advanced-settings-drawer" class="hidden mb-2 p-2 bg-[var(--bg-input)] rounded border border-[var(--border-color)] grid grid-cols-2 gap-3 text-xs select-none">
+                        <div id="advanced-settings-drawer" class="hidden mb-2 p-2 bg-[var(--bg-input)] border border-[var(--border-color)] grid grid-cols-2 gap-3 text-xs select-none">
                             <div class="space-y-1">
                                 <label class="block text-xs uppercase text-zinc-400 font-bold">📏 Alignment Center</label>
-                                <div class="flex bg-[var(--bg-input)] p-0.5 rounded border border-[var(--border-color)] justify-between w-full h-8">
-                                    <button data-action="click_125_PEQDB_Module_setAlignHz__500" id="align-hz-500" class="category-pill px-1.5 py-1 text-xs rounded flex-1 text-center transition-all cursor-pointer">500 Hz</button>
-                                    <button data-action="click_14_PEQDB_Module_setAlignHz__1000" id="align-hz-1000" class="category-pill active px-1.5 py-1 text-xs rounded flex-1 text-center transition-all cursor-pointer">1 kHz</button>
-                                    <button data-action="click_86_PEQDB_Module_setAlignHz__2000" id="align-hz-2000" class="category-pill px-1.5 py-1 text-xs rounded flex-1 text-center transition-all cursor-pointer">2 kHz</button>
-                                    <button data-action="click_32_PEQDB_Module_setAlignHz__mean" id="align-hz-mean" class="category-pill px-1.5 py-1 text-xs rounded flex-1 text-center transition-all cursor-pointer">Avg</button>
+                                <div class="flex bg-[var(--bg-input)] p-0.5 border border-[var(--border-color)] justify-between w-full h-8">
+                                    <button data-action="click_125_PEQDB_Module_setAlignHz__500" id="align-hz-500" class="category-pill px-1.5 py-1 text-xs flex-1 text-center transition-all cursor-pointer">500 Hz</button>
+                                    <button data-action="click_14_PEQDB_Module_setAlignHz__1000" id="align-hz-1000" class="category-pill active px-1.5 py-1 text-xs flex-1 text-center transition-all cursor-pointer">1 kHz</button>
+                                    <button data-action="click_86_PEQDB_Module_setAlignHz__2000" id="align-hz-2000" class="category-pill px-1.5 py-1 text-xs flex-1 text-center transition-all cursor-pointer">2 kHz</button>
+                                    <button data-action="click_32_PEQDB_Module_setAlignHz__mean" id="align-hz-mean" class="category-pill px-1.5 py-1 text-xs flex-1 text-center transition-all cursor-pointer">Avg</button>
                                 </div>
                             </div>
                             <div class="space-y-1">
                                 <label class="block text-xs uppercase text-zinc-400 font-bold">🔊 Alignment Target</label>
-                                <div class="flex bg-[var(--bg-input)] p-0.5 rounded border border-[var(--border-color)] justify-between w-full h-8">
-                                    <button data-action="click_60_PEQDB_Module_setAlignDb_75" id="align-db-75" class="category-pill px-1.5 py-1 text-xs rounded flex-1 text-center transition-all cursor-pointer">75 dB</button>
-                                    <button data-action="click_153_PEQDB_Module_setAlignDb_80" id="align-db-80" class="category-pill active px-1.5 py-1 text-xs rounded flex-1 text-center transition-all cursor-pointer">80 dB</button>
-                                    <button data-action="click_45_PEQDB_Module_setAlignDb_85" id="align-db-85" class="category-pill px-1.5 py-1 text-xs rounded flex-1 text-center transition-all cursor-pointer">85 dB</button>
-                                    <button data-action="click_61_PEQDB_Module_setAlignDb_0" id="align-db-0" class="category-pill px-1.5 py-1 text-xs rounded flex-1 text-center transition-all cursor-pointer">Original</button>
+                                <div class="flex bg-[var(--bg-input)] p-0.5 border border-[var(--border-color)] justify-between w-full h-8">
+                                    <button data-action="click_60_PEQDB_Module_setAlignDb_75" id="align-db-75" class="category-pill px-1.5 py-1 text-xs flex-1 text-center transition-all cursor-pointer">75 dB</button>
+                                    <button data-action="click_153_PEQDB_Module_setAlignDb_80" id="align-db-80" class="category-pill active px-1.5 py-1 text-xs flex-1 text-center transition-all cursor-pointer">80 dB</button>
+                                    <button data-action="click_45_PEQDB_Module_setAlignDb_85" id="align-db-85" class="category-pill px-1.5 py-1 text-xs flex-1 text-center transition-all cursor-pointer">85 dB</button>
+                                    <button data-action="click_61_PEQDB_Module_setAlignDb_0" id="align-db-0" class="category-pill px-1.5 py-1 text-xs flex-1 text-center transition-all cursor-pointer">Original</button>
                                 </div>
                             </div>
                         </div>
@@ -1229,7 +1232,7 @@
                                         <div class="text-[8px] uppercase font-black text-[var(--accent-blue)] leading-none">Music Match</div>
                                         <div id="music-match-genre-text" class="text-xs text-zinc-200 font-extrabold leading-tight truncate mt-0.5">No Match</div>
                                     </div>
-                                    <button type="button" data-action="click_77_EQ_toggleGenreTargetPicker__music" title="AutoEQ toward a genre target" class="genre-target-btn flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full cursor-pointer">
+                                    <button type="button" data-action="click_77_EQ_toggleGenreTargetPicker__music" title="AutoEQ toward a genre target" class="genre-target-btn flex-shrink-0 w-5 h-5 flex items-center justify-center cursor-pointer">
                                         <span class="emoji-font vibrant-emoji leading-none" style="font-size: 12px;">🎯</span>
                                     </button>
                                     <div id="music-genre-target-panel" class="genre-target-panel hidden">
@@ -1255,7 +1258,7 @@
                                         <div class="text-[8px] uppercase font-black text-[var(--accent-amber)] leading-none">Gaming Match</div>
                                         <div id="game-match-genre-text" class="text-xs text-zinc-200 font-extrabold leading-tight truncate mt-0.5">No Match</div>
                                     </div>
-                                    <button type="button" data-action="click_63_EQ_toggleGenreTargetPicker__game" title="AutoEQ toward a genre target" class="genre-target-btn flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full cursor-pointer">
+                                    <button type="button" data-action="click_63_EQ_toggleGenreTargetPicker__game" title="AutoEQ toward a genre target" class="genre-target-btn flex-shrink-0 w-5 h-5 flex items-center justify-center cursor-pointer">
                                         <span class="emoji-font vibrant-emoji leading-none" style="font-size: 12px;">🎯</span>
                                     </button>
                                     <div id="game-genre-target-panel" class="genre-target-panel hidden">
@@ -1275,40 +1278,40 @@
                                 </div>
                             </div>
 
-                            <div id="graph-focus-selector" class="absolute top-2 left-2 flex bg-[#0d0d14]/90 rounded border border-zinc-800 p-1.5 z-50 text-xs font-bold hidden select-none items-center gap-2">
+                            <div id="graph-focus-selector" class="absolute top-2 left-2 flex bg-[#0d0d14]/90 border border-zinc-800 p-1.5 z-50 text-xs font-bold hidden select-none items-center gap-2">
                                 <span class="text-pink-400 font-extrabold pr-1">✏️ Target Sculpting Mode</span>
                                 <div class="w-px h-3.5 bg-zinc-800"></div>
-                                <button id="sculptor-draw-btn" data-action="click_194_PEQDB_Module_toggleDrawMode" class="px-2.5 py-1 rounded bg-[var(--border-color)] text-zinc-400 hover:text-stone-300 transition-all cursor-pointer">🖌️ Draw Mode: Off</button>
+                                <button id="sculptor-draw-btn" data-action="click_194_PEQDB_Module_toggleDrawMode" class="px-2.5 py-1 bg-[var(--border-color)] text-zinc-400 hover:text-stone-300 transition-all cursor-pointer">🖌️ Draw Mode: Off</button>
                                 <div class="w-px h-3.5 bg-zinc-800"></div>
-                                <button data-action="click_128_EQ_exitTuningLab_true" class="px-2.5 py-1 rounded bg-pink-500 text-white hover:bg-pink-600 transition-all cursor-pointer">💾 Apply & Lock</button>
-                                <button data-action="click_275_EQ_exitTuningLab_false" class="px-2.5 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-stone-300 transition-all cursor-pointer">🚫 Discard</button>
+                                <button data-action="click_128_EQ_exitTuningLab_true" class="px-2.5 py-1 bg-pink-500 text-white hover:bg-pink-600 transition-all cursor-pointer">💾 Apply & Lock</button>
+                                <button data-action="click_275_EQ_exitTuningLab_false" class="px-2.5 py-1 bg-zinc-800 text-zinc-400 hover:text-stone-300 transition-all cursor-pointer">🚫 Discard</button>
                             </div>
 
                             <div id="canvas-container-squig" class="w-full h-full">
-                                <canvas id="eq-squiglinkViz" class="w-full h-full bg-[#050507] rounded border border-zinc-800 cursor-default"></canvas>
+                                <canvas id="eq-squiglinkViz" class="w-full h-full bg-[#050507] border border-zinc-800 cursor-default"></canvas>
                             </div>
-                            <div id="graph-tooltip" class="absolute bg-black/90 text-[11px] p-1.5 rounded border border-zinc-800 pointer-events-none hidden z-50"></div>
+                            <div id="graph-tooltip" class="absolute bg-black/90 text-[11px] p-1.5 border border-zinc-800 pointer-events-none hidden z-50"></div>
                         </div>
 
                         <div id="graph-slots-row" class="flex flex-row items-center gap-3 w-full min-h-[156px] h-[156px] overflow-x-auto no-scrollbar flex-shrink-0 pt-1 border-t-0">
 
                             <div id="base-slot-wrapper" class="flex flex-col gap-1 w-[205px] h-full flex-shrink-0">
                                 <span class="text-[10px] font-black text-amber-500 uppercase tracking-wider flex items-center gap-1">🔒 Base Slot</span>
-                                <div id="base-slot" class="flex-1 border-2 border-dashed border-[var(--border-color)] bg-zinc-950/40 p-1.5 flex items-center justify-center transition-all hover:border-amber-500/60 overflow-hidden" ondragover="event.preventDefault(); this.style.borderColor='rgba(245, 158, 11, 0.8)'" ondragleave="this.style.borderColor=''" ondrop="this.style.borderColor=''; PEQDB_Module.handleDrop(event, 'base')">
+                                <div id="base-slot" class="flex-1 border-2 border-dashed border-[var(--border-color)] bg-zinc-950/40 p-1.5 flex items-center justify-center transition-all hover:border-amber-500/60 overflow-hidden" data-drop-slot="base" data-drop-border="rgba(245, 158, 11, 0.8)" data-action-dragover="dragover_904_EQ_highlightDropSlot" data-action-dragleave="dragleave_905_EQ_unhighlightDropSlot" data-action-drop="drop_906_EQ_handleSlotDrop">
 
                                 </div>
                             </div>
 
                             <div id="target-slot-wrapper" class="flex flex-col gap-1 w-[205px] h-full flex-shrink-0">
                                 <span class="text-[10px] font-black text-blue-500 uppercase tracking-wider flex items-center gap-1">🎯 Target Slot</span>
-                                <div id="target-slot" class="flex-1 border-2 border-dashed border-[var(--border-color)] bg-zinc-950/40 p-1.5 flex items-center justify-center transition-all hover:border-blue-500/60 overflow-hidden" ondragover="event.preventDefault(); this.style.borderColor='rgba(59, 130, 246, 0.8)'" ondragleave="this.style.borderColor=''" ondrop="this.style.borderColor=''; PEQDB_Module.handleDrop(event, 'target')">
+                                <div id="target-slot" class="flex-1 border-2 border-dashed border-[var(--border-color)] bg-zinc-950/40 p-1.5 flex items-center justify-center transition-all hover:border-blue-500/60 overflow-hidden" data-drop-slot="target" data-drop-border="rgba(59, 130, 246, 0.8)" data-action-dragover="dragover_904_EQ_highlightDropSlot" data-action-dragleave="dragleave_905_EQ_unhighlightDropSlot" data-action-drop="drop_906_EQ_handleSlotDrop">
 
                                 </div>
                             </div>
 
                             <div id="reference-slot-wrapper" class="flex flex-col gap-1 flex-1 min-w-[400px] h-full flex-shrink-0">
                                 <span class="text-[10px] font-black text-zinc-400 tracking-wider uppercase flex items-center gap-1">🆚 Reference Slot</span>
-                                <div id="reference-pile" class="flex-1 border-2 border-dashed border-[var(--border-color)] bg-zinc-950/40 p-1.5 flex flex-row items-center gap-2.5 overflow-x-auto transition-all hover:border-white/40" ondragover="event.preventDefault(); this.style.borderColor='rgba(255, 255, 255, 0.6)'" ondragleave="this.style.borderColor=''" ondrop="this.style.borderColor=''; PEQDB_Module.handleDrop(event, 'reference')">
+                                <div id="reference-pile" class="flex-1 border-2 border-dashed border-[var(--border-color)] bg-zinc-950/40 p-1.5 flex flex-row items-center gap-2.5 overflow-x-auto transition-all hover:border-white/40" data-drop-slot="reference" data-drop-border="rgba(255, 255, 255, 0.6)" data-action-dragover="dragover_904_EQ_highlightDropSlot" data-action-dragleave="dragleave_905_EQ_unhighlightDropSlot" data-action-drop="drop_906_EQ_handleSlotDrop">
 
                                 </div>
                             </div>
@@ -1323,7 +1326,7 @@
 
                         <div class="flex items-center gap-1.5 w-full mb-2 flex-shrink-0">
                             <button type="button" data-action="click_47_EQ_cycleConsoleTab__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                            <button type="button" id="rc-tab-stepper-btn" data-action="click_95_EQ_cycleConsoleTab_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none" >
+                            <button type="button" id="rc-tab-stepper-btn" data-action="click_95_EQ_cycleConsoleTab_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate" >
                                 <span id="rc-tab-stepper-label" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-black uppercase tracking-wider">
                                     <span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🎛️</span> Filters
                                 </span>
@@ -1338,7 +1341,7 @@
                                 <button type="button" id="eq-tab-advanced" data-action="click_70_EQ_switchFaderTab__advanced" class="subtab-seg-btn no-tactile"><span class="subtab-seg-emoji">⚙️</span> Advanced</button>
                             </div>
 
-                            <div class="flex-1 min-h-0 overflow-hidden relative border-2 border-black bg-zinc-950/40 p-1 rounded-none my-1 flex flex-col">
+                            <div class="flex-1 min-h-0 overflow-hidden relative border-2 border-black bg-zinc-950/40 p-1 my-1 flex flex-col">
 
                                 <div class="flex-grow flex-1 overflow-y-auto eq-cards-scroll-container">
 
@@ -1369,7 +1372,7 @@
                                     <input type="range" id="eq-preampSlider" min="-20" max="20" step="0.1" value="0" class="flex-1 min-w-0 cursor-pointer" data-action-input="input_96_EQ_updatePreamp">
                                     <div class="flex items-center justify-end w-16 h-7 flex-shrink-0" id="eq-preamp-container">
                                         <span id="eq-preampDisplay" data-action="click_265_EQ_enablePreampEdit" class="text-xs font-mono font-bold text-amber-500 cursor-pointer hover:underline text-right whitespace-nowrap h-7 flex items-center justify-end w-full" >0.0 dB</span>
-                                        <input type="number" id="eq-preampVal" value="0.0" step="0.1" class="hidden w-full h-7 text-center text-xs font-mono font-bold bg-[var(--bg-input)] text-amber-500 border-2 border-black outline-none rounded-none box-border" data-action-blur="blur_127_EQ_commitPreampEdit" data-action-keydown="keydown_189_if_event_key____Enter___EQ_commitPreampEdit">
+                                        <input type="number" id="eq-preampVal" value="0.0" step="0.1" class="hidden w-full h-7 text-center text-xs font-mono font-bold bg-[var(--bg-input)] text-amber-500 border-2 border-black outline-none box-border" data-action-blur="blur_127_EQ_commitPreampEdit" data-action-keydown="keydown_189_if_event_key____Enter___EQ_commitPreampEdit">
                                     </div>
                                 </div>
 
@@ -1397,19 +1400,19 @@
 
                                 <div id="as-panel-coupling" class="acoustics-sub-panel flex flex-col gap-2.5">
                                     <div class="grid grid-cols-4 gap-1 w-full flex-shrink-0">
-                                        <button id="btn-tip-sound" data-action="click_235_EQ_cycleTipSound" class="btn-clear text-stone-200 font-bold rounded text-xs px-1 py-1 h-8 flex flex-col items-center justify-center" title="Change the ear-tip shape options">
+                                        <button id="btn-tip-sound" data-action="click_235_EQ_cycleTipSound" class="btn-clear text-stone-200 font-bold text-xs px-1 py-1 h-8 flex flex-col items-center justify-center" title="Change the ear-tip shape options">
                                             <span class="text-[8px] text-zinc-400 uppercase tracking-wider block">Tip</span>
                                             <span id="lbl-tip-sound" class="text-xs font-bold">Off</span>
                                         </button>
-                                        <button id="btn-fit-depth" data-action="click_170_EQ_cycleFitDepth" class="btn-clear text-stone-200 font-bold rounded text-xs px-1 py-1 h-8 flex flex-col items-center justify-center" title="Change how deep the nozzles sit">
+                                        <button id="btn-fit-depth" data-action="click_170_EQ_cycleFitDepth" class="btn-clear text-stone-200 font-bold text-xs px-1 py-1 h-8 flex flex-col items-center justify-center" title="Change how deep the nozzles sit">
                                             <span class="text-[8px] text-zinc-400 uppercase tracking-wider block">Depth</span>
                                             <span id="lbl-fit-depth" class="text-xs font-bold">Off</span>
                                         </button>
-                                        <button id="btn-seal-quality" data-action="click_72_EQ_cycleSealQuality" class="btn-clear text-stone-200 font-bold rounded text-xs px-1 py-1 h-8 flex flex-col items-center justify-center" title="Change how well the ear-tips seal">
+                                        <button id="btn-seal-quality" data-action="click_72_EQ_cycleSealQuality" class="btn-clear text-stone-200 font-bold text-xs px-1 py-1 h-8 flex flex-col items-center justify-center" title="Change how well the ear-tips seal">
                                             <span class="text-[8px] text-zinc-400 uppercase tracking-wider block">Seal</span>
                                             <span id="lbl-seal-quality" class="text-xs font-bold">Off</span>
                                         </button>
-                                        <button id="btn-deesser-toggle" data-action="click_105_EQ_toggleDeEsser" class="btn-clear text-stone-200 font-bold rounded text-xs px-1 py-1 h-8 flex flex-col items-center justify-center" title="Softens harsh S and SH (sibilant) sounds">
+                                        <button id="btn-deesser-toggle" data-action="click_105_EQ_toggleDeEsser" class="btn-clear text-stone-200 font-bold text-xs px-1 py-1 h-8 flex flex-col items-center justify-center" title="Softens harsh S and SH (sibilant) sounds">
                                             <span class="text-[8px] text-zinc-400 uppercase tracking-wider block">De-Ess</span>
                                             <span id="lbl-deesser-state" class="text-xs font-bold text-zinc-400">Off</span>
                                         </button>
@@ -1430,7 +1433,7 @@
                                         </div>
                                         <div class="flex items-center gap-1.5 w-full h-9">
                                             <button type="button" data-action="click_260_EQ_cycleGearSim__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                                            <button id="btn-gear-sim" data-action="click_139_EQ_cycleGearSim_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none shadow-none">
+                                            <button id="btn-gear-sim" data-action="click_139_EQ_cycleGearSim_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate shadow-none">
                                                 <span id="label-gear-sim" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-bold">
                                                     <span class="truncate">Off</span>
                                                 </span>
@@ -1446,7 +1449,7 @@
                                         </div>
                                         <div class="flex items-center gap-1.5 w-full h-9">
                                             <button type="button" data-action="click_4_EQ_cycleTapeMod__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                                            <button id="btn-tape-mod" data-action="click_204_EQ_cycleTapeMod_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none shadow-none">
+                                            <button id="btn-tape-mod" data-action="click_204_EQ_cycleTapeMod_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate shadow-none">
                                                 <span id="label-tape-mod" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-bold">
                                                     <span class="truncate">Off</span>
                                                 </span>
@@ -1576,8 +1579,8 @@
                                                 <span class="text-[8px] font-black uppercase tracking-wider text-zinc-500">Limiter GR</span>
                                                 <span id="gr-meter-label" class="text-[9px] font-mono font-bold text-zinc-400">0.0 dB</span>
                                             </div>
-                                            <div class="w-full h-1.5 bg-black/60 border border-white/10 rounded-sm overflow-hidden">
-                                                <div id="gr-meter-bar" class="h-full rounded-sm" style="width:0%; background: linear-gradient(90deg, var(--accent-green), var(--accent-amber) 60%, #f87171 100%);"></div>
+                                            <div class="w-full h-1.5 bg-black/60 border border-white/10 overflow-hidden">
+                                                <div id="gr-meter-bar" class="h-full" style="width:0%; background: linear-gradient(90deg, var(--accent-green), var(--accent-amber) 60%, #f87171 100%);"></div>
                                             </div>
                                         </div>
                                     </div>
@@ -1604,7 +1607,7 @@
     <span id="lbl-reverb-state">Reverb: OFF</span>
 </button>
 
-                                        <button id="reverb-preset-btn" data-action="click_165_EQ_cycleReverbPreset" class="w-full btn-clear text-stone-200 font-bold rounded text-xs h-8 px-2 opacity-40 pointer-events-none transition-all duration-200 truncate cursor-pointer">
+                                        <button id="reverb-preset-btn" data-action="click_165_EQ_cycleReverbPreset" class="w-full btn-clear text-stone-200 font-bold text-xs h-8 px-2 opacity-40 pointer-events-none transition-all duration-200 truncate cursor-pointer">
                                             🚪 Small Room
                                         </button>
 
@@ -1681,7 +1684,7 @@
                                         <label class="text-xs uppercase text-zinc-400 font-bold mb-0.5">Driver Layout</label>
                                         <div class="flex items-center gap-1.5 w-full">
                                             <button type="button" data-action="click_23_EQ_cycleCrossoverType__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                                            <button type="button" id="xo-type-stepper-btn" data-action="click_258_EQ_cycleCrossoverType_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none" >
+                                            <button type="button" id="xo-type-stepper-btn" data-action="click_258_EQ_cycleCrossoverType_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate" >
                                                 <span id="xo-type-stepper-label" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-black uppercase tracking-wider">
                                                     <span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">3️⃣</span>Way
                                                 </span>
@@ -1802,7 +1805,7 @@
 
                         <div class="flex items-center gap-1.5 w-full mb-2.5 flex-shrink-0">
                             <button type="button" data-action="click_129_TestLab_cycleLeftTab__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                            <button type="button" id="tl-left-tab-stepper-btn" data-action="click_16_TestLab_cycleLeftTab_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none" >
+                            <button type="button" id="tl-left-tab-stepper-btn" data-action="click_16_TestLab_cycleLeftTab_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate" >
                                 <span id="tl-left-tab-stepper-label" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-black uppercase tracking-wider">
                                     <span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🎯</span> Resonance
                                 </span>
@@ -1828,7 +1831,7 @@
                                     <button data-action="click_307_TestLab_resetResonance" class="w-full btn-clear text-stone-300 font-bold text-xs h-8 flex items-center justify-center truncate cursor-pointer">Reset</button>
                                 </div>
 
-                                <div class="p-2.5 bg-zinc-950/40 border-2 border-black rounded-none space-y-1 mt-3">
+                                <div class="p-2.5 bg-zinc-950/40 border-2 border-black space-y-1 mt-3">
                                     <span class="text-xs font-bold text-sky-300 uppercase tracking-wider block">💡 How to Calibrate:</span>
                                     <p class="text-xs text-zinc-400 leading-relaxed font-semibold">Press <span class="text-white font-bold">Scan</span> to sweep frequencies between 6.4kHz and 9.6kHz. Listen closely for where the tone sounds loudest in your ear canal, then press <span class="text-emerald-400 font-bold">Lock</span> to apply a notch filter.</p>
                                 </div>
@@ -1841,9 +1844,9 @@
                                 </div>
 
                                 <div class="flex bg-[var(--bg-input)] p-0.5 h-8 items-center w-full" id="channel-tone-selector">
-                                    <button data-action="click_266_TestLab_playChannelTone__left" id="c-test-l" class="category-pill cassette-toggle py-1 text-xs font-bold rounded-none flex-1 text-center cursor-pointer">Left</button>
-                                    <button data-action="click_219_TestLab_playChannelTone__right" id="c-test-r" class="category-pill cassette-toggle py-1 text-xs font-bold rounded-none flex-1 text-center cursor-pointer">Right</button>
-                                    <button data-action="click_281_TestLab_playChannelTone__center" id="c-test-c" class="category-pill cassette-toggle py-1 text-xs font-bold rounded-none flex-1 text-center cursor-pointer">Mono</button>
+                                    <button data-action="click_266_TestLab_playChannelTone__left" id="c-test-l" class="category-pill cassette-toggle py-1 text-xs font-bold flex-1 text-center cursor-pointer">Left</button>
+                                    <button data-action="click_219_TestLab_playChannelTone__right" id="c-test-r" class="category-pill cassette-toggle py-1 text-xs font-bold flex-1 text-center cursor-pointer">Right</button>
+                                    <button data-action="click_281_TestLab_playChannelTone__center" id="c-test-c" class="category-pill cassette-toggle py-1 text-xs font-bold flex-1 text-center cursor-pointer">Mono</button>
                                 </div>
 
                                 <div class="grid grid-cols-2 gap-2 pt-1">
@@ -1907,8 +1910,8 @@
                                 </div>
 
                                 <div class="grid grid-cols-2 gap-2 pt-1">
-                                    <button id="burnin-start-btn" data-action="click_142_TestLab_toggleBurnin" class="w-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold rounded-none text-xs h-8 flex items-center justify-center shadow transition-transform cursor-pointer border-2 border-black">Start</button>
-                                    <button data-action="click_103_TestLab_resetBurnin" class="w-full btn-clear text-stone-300 font-bold rounded-none text-xs h-8 flex items-center justify-center cursor-pointer">Reset</button>
+                                    <button id="burnin-start-btn" data-action="click_142_TestLab_toggleBurnin" class="w-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold text-xs h-8 flex items-center justify-center shadow transition-transform cursor-pointer border-2 border-black">Start</button>
+                                    <button data-action="click_103_TestLab_resetBurnin" class="w-full btn-clear text-stone-300 font-bold text-xs h-8 flex items-center justify-center cursor-pointer">Reset</button>
                                 </div>
                             </div>
 
@@ -1926,7 +1929,7 @@
 
                             <div id="tl-controls-spatial" class="flex-1 flex flex-row justify-center items-center gap-1.5 select-none overflow-x-auto no-scrollbar w-full">
 
-                                <div class="btn-clear rounded-none" style="flex: 1 1 0%; min-width: 0; height: 2rem; display: flex; align-items: stretch; justify-content: center; overflow: hidden;">
+                                <div class="btn-clear" style="flex: 1 1 0%; min-width: 0; height: 2rem; display: flex; align-items: stretch; justify-content: center; overflow: hidden;">
                                     <button data-action="click_74_TestLab_cycleSpatialSource" id="spatial-source-cycle-btn" class="font-bold cursor-pointer" style="flex: 1 1 0%; min-width: 0; height: 100%; background: transparent; border: none; outline: none; color: #e7e5e4; font-size: 0.75rem; padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="Change the test sound">👣 Footsteps</button>
 
                                     <div style="width: 1px; background-color: rgba(0,0,0,0.3); flex-shrink: 0; margin: 6px 0;"></div>
@@ -1944,12 +1947,12 @@
                                     <button data-action="click_66_TestLab_toggleSpatialPlay_false" id="spatial-pause-btn" class="cursor-pointer spatial-icon-flex hidden" style="flex-shrink: 0; height: 100%; width: 32px; background: transparent; border: none; outline: none;" title="Pause the test sound"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg></button>
                                 </div>
 
-                                <button data-action="click_82_TestLab_cycleSpatialReverb" id="spatial-reverb-cycle-btn" class="btn-clear font-bold rounded-none transition-all cursor-pointer" style="flex: 1 1 0%; min-width: 0; height: 2rem; padding: 0 8px; font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="Change the room echo style">🎧 Normal</button>
-                                <button data-action="click_64_TestLab_Module_cycleSpatialWidth" id="spatial-width-cycle-btn" class="btn-clear font-bold rounded-none transition-all cursor-pointer" style="flex: 1 1 0%; min-width: 0; height: 2rem; padding: 0 8px; font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="Make the sound wider or narrower">↔️ Normal</button>
+                                <button data-action="click_82_TestLab_cycleSpatialReverb" id="spatial-reverb-cycle-btn" class="btn-clear font-bold transition-all cursor-pointer" style="flex: 1 1 0%; min-width: 0; height: 2rem; padding: 0 8px; font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="Change the room echo style">🎧 Normal</button>
+                                <button data-action="click_64_TestLab_Module_cycleSpatialWidth" id="spatial-width-cycle-btn" class="btn-clear font-bold transition-all cursor-pointer" style="flex: 1 1 0%; min-width: 0; height: 2rem; padding: 0 8px; font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="Make the sound wider or narrower">↔️ Normal</button>
                             </div>
 
                             <div class="w-28 flex justify-end flex-shrink-0">
-                                <button id="btn-expand-spatial" data-action="click_164_TestLab_toggleFullscreen" class="btn-clear text-stone-200 font-bold rounded-none text-xs h-8 px-3 shadow-sm flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap" >
+                                <button id="btn-expand-spatial" data-action="click_164_TestLab_toggleFullscreen" class="btn-clear text-stone-200 font-bold text-xs h-8 px-3 shadow-sm flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap" >
                                     <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                                     <span class="hidden sm:inline">Expand</span>
                                 </button>
@@ -1978,7 +1981,7 @@
 
                         <div class="flex items-center gap-1.5 w-full mb-2.5 flex-shrink-0">
                             <button type="button" data-action="click_94_TestLab_cycleRightTab__1" class="w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
-                            <button type="button" id="tl-right-tab-stepper-btn" data-action="click_230_TestLab_cycleRightTab_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate rounded-none" >
+                            <button type="button" id="tl-right-tab-stepper-btn" data-action="click_230_TestLab_cycleRightTab_1" class="flex-1 bg-[var(--bg-input)] text-[var(--text-main)] font-bold h-9 text-xs border-[3px] border-black px-2.5 cursor-pointer flex items-center justify-center truncate" >
                                 <span id="tl-right-tab-stepper-label" class="flex items-center justify-center gap-2 truncate text-[var(--text-main)] font-black uppercase tracking-wider">
                                     <span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">🔊</span> Tone Gen
                                 </span>
@@ -1997,7 +2000,7 @@
                                     </div>
                                 </div>
 
-                                <div id="tone-map" class="relative h-4 rounded-none border-2 border-black overflow-hidden bg-zinc-950">
+                                <div id="tone-map" class="relative h-4 border-2 border-black overflow-hidden bg-zinc-950">
                                     <div class="absolute inset-0 opacity-10" style="background: linear-gradient(90deg, #3b82f6 0%, #22c55e 25%, #a3a3a3 50%, #f97316 75%, #ef4444 100%);"></div>
                                     <div id="tone-selection" class="absolute top-0 bottom-0 bg-amber-500/20 border-x border-amber-500/40 hidden"></div>
                                     <div id="tone-cursor" class="absolute top-0 bottom-0 w-[1.5px] bg-amber-500 shadow-[0_0_5px_#f59e0b]"></div>
@@ -2006,7 +2009,7 @@
 
                                 <div class="grid grid-cols-2 gap-2 pt-1">
                                     <button id="tone-playBtn2" data-action="click_171_Tone_toneTogglePlay" class="btn-clear text-stone-200 font-bold text-xs h-8">Play</button>
-                                    <button data-action="click_277_Tone_toneSweep" class="btn-clear text-stone-200 font-bold text-xs h-8">Auto Sweep</button>
+                                    <button id="tone-sweep-btn" data-action="click_277_Tone_toneSweep" class="btn-clear text-stone-200 font-bold text-xs h-8">Auto Sweep</button>
                                 </div>
 
                                 <div class="border-t-[3px] border-black my-3"></div>
@@ -2036,7 +2039,7 @@
 
                                 <div class="grid grid-cols-1 gap-1.5" id="ab-file-loaders">
                                     <div id="ab-drop-zone-a" class="flex items-center gap-1.5 bg-[var(--bg-input)] p-1 border-2 border-black transition-all duration-150 min-w-0">
-                                        <label id="ab-file-label-a" class="btn-label cursor-pointer bg-[var(--bg-card)] border-2 border-black rounded-none w-8 h-8 flex items-center justify-center transition-transform flex-shrink-0" style="box-shadow: 2px 2px 0px 0px #000000 !important;" >
+                                        <label id="ab-file-label-a" role="button" tabindex="0" data-file-trigger aria-label="Choose source A audio file" class="btn-label cursor-pointer bg-[var(--bg-card)] border-2 border-black w-8 h-8 flex items-center justify-center transition-transform flex-shrink-0" style="box-shadow: 2px 2px 0px 0px #000000 !important;" >
                                             <span class="flex items-center justify-center text-white">
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
                                             </span>
@@ -2052,7 +2055,7 @@
                                     </div>
 
                                     <div id="ab-drop-zone-b" class="flex items-center gap-1.5 bg-[var(--bg-input)] p-1 border-2 border-black transition-all duration-150 min-w-0">
-                                        <label id="ab-file-label-b" class="btn-label cursor-pointer bg-[var(--bg-card)] border-2 border-black rounded-none w-8 h-8 flex items-center justify-center transition-transform flex-shrink-0" style="box-shadow: 2px 2px 0px 0px #000000 !important;" >
+                                        <label id="ab-file-label-b" role="button" tabindex="0" data-file-trigger aria-label="Choose source B audio file" class="btn-label cursor-pointer bg-[var(--bg-card)] border-2 border-black w-8 h-8 flex items-center justify-center transition-transform flex-shrink-0" style="box-shadow: 2px 2px 0px 0px #000000 !important;" >
                                             <span class="flex items-center justify-center text-white">
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
                                             </span>
@@ -2171,10 +2174,10 @@
                                         <button id="hearing-not-heard-btn" data-action="click_3201_TestLab_hearingNotHeard" class="w-full bg-amber-500/10 border-2 border-black text-amber-400 font-bold text-xs h-8 hidden">Not Heard (−)</button>
                                         <button data-action="click_298_TestLab_resetHearingTest" class="w-full btn-clear text-stone-300 font-bold text-xs h-8">Reset</button>
                                     </div>
-                                    <button id="hearing-eq-generate-btn" data-action="click_205_TestLab_convertHearingToEQ" class="w-full py-1 bg-zinc-800 text-zinc-500 font-bold rounded-none text-xs mt-1 transition-all text-center cursor-not-allowed hidden border-2 border-black" disabled title="Add the measured correction directly onto the EQ faders">🪄 Bake Correction into Faders</button>
-                                    <div class="p-2.5 bg-zinc-950/40 border-2 border-black rounded-none space-y-1">
+                                    <button id="hearing-eq-generate-btn" data-action="click_205_TestLab_convertHearingToEQ" class="w-full py-1 bg-zinc-800 text-zinc-500 font-bold text-xs mt-1 transition-all text-center cursor-not-allowed hidden border-2 border-black" disabled title="Add the measured correction directly onto the EQ faders">🪄 Bake Correction into Faders</button>
+                                    <div class="p-2.5 bg-zinc-950/40 border-2 border-black space-y-1">
                                         <span class="text-xs font-bold text-cyan-300 uppercase tracking-wider block">💡 How to Test:</span>
-                                        <p class="text-xs text-zinc-400 leading-snug font-semibold">Answer <span class="text-cyan-400 font-bold">Heard (+)</span> or <span class="text-amber-400 font-bold">Not Heard (−)</span> — the tone homes in on your limit per tone. 8 tones total. Result auto-applies and saves until Reset.</p>
+                                        <p class="text-xs text-zinc-400 leading-snug font-semibold">8 tones. Answer <span class="text-cyan-400 font-bold">Heard (+)</span> or <span class="text-amber-400 font-bold">Not Heard (−)</span> — the tone homes in on your limit. Result auto-applies until Reset.</p>
                                     </div>
                                 </div>
 
@@ -2187,9 +2190,9 @@
                                         <button data-action="click_185_TestLab_toggleBassLeakTest__right" id="seal-test-r-btn" class="btn-clear text-stone-200 font-bold text-xs h-8">Test Right</button>
                                         <button data-action="click_252_TestLab_stopBassLeakTest" class="bg-red-950/60 hover:bg-red-900/80 border-2 border-black text-red-400 font-bold text-xs h-8 cursor-pointer" title="Stop the leak test">Stop</button>
                                     </div>
-                                    <div class="p-2.5 bg-zinc-950/40 border-2 border-black rounded-none space-y-1">
+                                    <div class="p-2.5 bg-zinc-950/40 border-2 border-black space-y-1">
                                         <span class="text-xs font-bold text-cyan-300 uppercase tracking-wider block">💡 How to Test:</span>
-                                        <p class="text-xs text-zinc-400 leading-snug font-semibold">Plays <span class="text-white font-bold">50 Hz in one ear</span>, quiet 1 kHz in the other. Bass should sound full — thin or fluttering means a bad seal. Re-seat or swap tips, then test both sides.</p>
+                                        <p class="text-xs text-zinc-400 leading-snug font-semibold">50 Hz in one ear, quiet 1 kHz in the other. <span class="text-white font-bold">Bass should sound full</span> — thin or fluttering means a bad seal. Test both sides.</p>
                                     </div>
                                 </div>
                             </div>
@@ -2212,10 +2215,10 @@
                             <canvas id="fullscreen-viz-canvas" data-action="click_186_EQ_cycleVizEffect" class="absolute inset-0 w-full h-full block cursor-pointer" ></canvas>
 
                                 <div id="viz-controls-overlay" class="absolute top-4 right-4 flex items-center gap-2 bg-[#0a0a0f]/90 border-[3px] border-black px-2.5 py-1.5 shadow-2xl z-10 transition-all duration-300 opacity-100">
-                                    <button data-action="click_186_EQ_cycleVizEffect" id="viz-effect-btn" class="px-3 h-8 bg-zinc-900/60 hover:bg-zinc-800/80 border border-[var(--border-color)] text-stone-200 text-xs font-bold rounded transition-all cursor-pointer flex items-center justify-center">
+                                    <button data-action="click_186_EQ_cycleVizEffect" id="viz-effect-btn" class="px-3 h-8 bg-zinc-900/60 hover:bg-zinc-800/80 border border-[var(--border-color)] text-stone-200 text-xs font-bold transition-all cursor-pointer flex items-center justify-center">
                                         🎨 Effect: Waveform
                                     </button>
-                                    <button data-action="click_299_EQ_toggleVisualizerFullscreen" id="viz-fullscreen-btn" class="px-3 h-8 bg-zinc-900/60 hover:bg-zinc-800/80 border border-[var(--border-color)] text-stone-200 text-xs font-bold rounded transition-all cursor-pointer flex items-center justify-center" >
+                                    <button data-action="click_299_EQ_toggleVisualizerFullscreen" id="viz-fullscreen-btn" class="px-3 h-8 bg-zinc-900/60 hover:bg-zinc-800/80 border border-[var(--border-color)] text-stone-200 text-xs font-bold transition-all cursor-pointer flex items-center justify-center" >
                                         ⛶ Fullscreen
                                     </button>
                                 </div>
@@ -2239,13 +2242,13 @@
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                                     <div>
                                         <label class="block text-xs uppercase text-zinc-400 font-bold mb-1">Theme Color</label>
-                                        <button id="theme-cycle-btn" data-action="click_209_App_cycleTheme" class="w-full h-8 bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer">
+                                        <button id="theme-cycle-btn" data-action="click_209_App_cycleTheme" class="w-full h-8 bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer">
                                             📜 Sandpaper
                                         </button>
                                     </div>
                                     <div>
                                         <label class="block text-xs uppercase text-zinc-400 font-bold mb-1">Font Style</label>
-                                        <button id="font-cycle-btn" data-action="click_43_App_cycleFont" class="w-full h-8 bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer">
+                                        <button id="font-cycle-btn" data-action="click_43_App_cycleFont" class="w-full h-8 bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer">
                                             𔤤 Font
                                         </button>
                                     </div>
@@ -2266,25 +2269,25 @@
                                 <div class="grid grid-cols-4 gap-3">
                                     <div>
                                         <label class="block text-xs uppercase text-zinc-400 font-bold mb-1">Audio Channel</label>
-                                        <button id="a11y-audio-btn" data-action="click_50_toggleAudioMode" class="w-full h-8 bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer">
+                                        <button id="a11y-audio-btn" data-action="click_50_toggleAudioMode" class="w-full h-8 bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer">
                                             🔊 Stereo
                                         </button>
                                     </div>
                                     <div>
                                         <label class="block text-xs uppercase text-zinc-400 font-bold mb-1">Blue Light Filter</label>
-                                        <button id="a11y-bluelight-btn" data-action="click_212_Accessibility_toggleBlueLightFilter" class="w-full h-8 retro-switch-btn text-xs font-bold rounded flex items-center justify-center gap-2 cursor-pointer">
+                                        <button id="a11y-bluelight-btn" data-action="click_212_Accessibility_toggleBlueLightFilter" class="w-full h-8 retro-switch-btn text-xs font-bold flex items-center justify-center gap-2 cursor-pointer">
                                             🌙 Filter: Off
                                         </button>
                                     </div>
                                     <div>
                                         <label class="block text-xs uppercase text-zinc-400 font-bold mb-1">Gapless</label>
-                                        <button id="a11y-gapless-btn" data-action="click_215_EQ_toggleGapless" class="w-full h-8 retro-switch-btn text-xs font-bold rounded flex items-center justify-center gap-2 cursor-pointer is-on" title="Seamless gapless track transitions">
+                                        <button id="a11y-gapless-btn" data-action="click_215_EQ_toggleGapless" class="w-full h-8 retro-switch-btn text-xs font-bold flex items-center justify-center gap-2 cursor-pointer is-on" title="Seamless gapless track transitions">
                                             🔗 Gapless: On
                                         </button>
                                     </div>
                                     <div>
                                         <label class="block text-xs uppercase text-zinc-400 font-bold mb-1">Crossfade</label>
-<button id="a11y-crossfade-btn" data-action="click_75_EQ_toggleCrossfade" class="w-full h-8 retro-switch-btn text-xs font-bold rounded flex items-center justify-center gap-2 cursor-pointer" title="Crossfade between tracks on skip and auto-advance">
+<button id="a11y-crossfade-btn" data-action="click_75_EQ_toggleCrossfade" class="w-full h-8 retro-switch-btn text-xs font-bold flex items-center justify-center gap-2 cursor-pointer" title="Crossfade between tracks on skip and auto-advance">
                                             🎚️ Crossfade: Off
                                         </button>
                                         <div class="flex items-center gap-1.5 mt-2">
@@ -2300,13 +2303,13 @@
                             <div class="space-y-2">
                                 <h3 class="text-xs font-black uppercase tracking-wider text-zinc-400">📋 Data Operations</h3>
                                 <div class="grid grid-cols-3 gap-2">
-                                    <button data-action="click_196_IEM_saveConfig" class="h-8 btn-clear font-bold rounded text-xs transition-all cursor-pointer">
+                                    <button data-action="click_196_IEM_saveConfig" class="h-8 btn-clear font-bold text-xs transition-all cursor-pointer">
                                         📥 Dump
                                     </button>
-                                    <button data-action="click_8_document_getElementById__import_input___click" class="h-8 btn-clear font-bold rounded text-xs cursor-pointer flex items-center justify-center transition-all">
+                                    <button data-action="click_8_document_getElementById__import_input___click" class="h-8 btn-clear font-bold text-xs cursor-pointer flex items-center justify-center transition-all">
                                         📤 Import
                                     </button>
-                                    <button data-action="click_49_IEM_resetAll" class="h-8 btn-clear font-bold rounded text-xs transition-all text-red-400 hover:text-red-300 cursor-pointer">
+                                    <button data-action="click_49_IEM_resetAll" class="h-8 btn-clear font-bold text-xs transition-all text-red-400 hover:text-red-300 cursor-pointer">
                                         🔄 Reset
                                     </button>
                                 </div>
@@ -2327,7 +2330,26 @@
 
     <div id="global-footer-bar" class="h-14 px-4 flex items-center justify-center flex-shrink-0 select-none z-50" style="background: transparent !important; border-top: none !important;">
 
-        <div id="footer-bar-desktop" class="hidden md:flex items-center gap-6 w-full max-w-[1320px] justify-center rounded-lg px-4 py-1.5" style="background: linear-gradient(180deg, rgba(var(--accent-blue-rgb), 0.07) 0%, rgba(var(--accent-blue-rgb), 0.01) 100%), var(--bg-sidebar); border: 2px solid var(--border-color); box-shadow: 3px 3px 0px 0px var(--border-color);">
+        <!--
+            Shown from md (768px) as before, but app.css forces it hidden across
+            768px-1279px, because this row needs ~1056px: 370px of left content
+            (200px track info + volume cluster) + ~284px of centre buttons +
+            322px on the right (time/scrub + 80px meters + 64px "Stable"), plus
+            2x24px gaps and 32px padding. All of it is flex-shrink-0, so the
+            min-w-[340px] floors that `@media (max-width: 1279px)` already clears
+            do not help. Previously it rendered from 768px and the groups
+            overflowed: the volume "50%" readout collided with the "0:00" one.
+
+            1280px is the threshold this app already uses everywhere else
+            (`@media (min-width: 1280px)` / `max-width: 1279px` in app.css, and
+            `window.innerWidth < 1280` in iem-module.js).
+
+            This is done with an explicit media query in app.css rather than
+            `xl:flex`, because .xl\:flex is not present in the checked-in
+            tailwind.output.css and switching to it would silently leave this
+            bar display:none at EVERY width.
+        -->
+        <div id="footer-bar-desktop" class="hidden md:flex items-center gap-6 w-full max-w-[1320px] justify-center px-4 py-1.5" style="background: linear-gradient(180deg, rgba(var(--accent-blue-rgb), 0.07) 0%, rgba(var(--accent-blue-rgb), 0.01) 100%), var(--bg-sidebar); border: 2px solid var(--border-color); box-shadow: 3px 3px 0px 0px var(--border-color);">
 
             <div id="footer-left-group" class="flex items-center justify-between gap-2 px-2.5 py-1 w-full max-w-[460px] flex-1 h-8 min-w-[340px]">
 
@@ -2342,34 +2364,34 @@
 
                 <div class="flex items-center gap-1.5 flex-shrink-0 select-none">
                     <span id="eq-volIcon" class="text-xs cursor-pointer select-none flex-shrink-0 themed-emoji" data-action="click_305_EQ_toggleMute">🔊</span>
-                    <input type="range" id="eq-musicVolumeSlider" min="0" max="100" value="50" style="accent-color: var(--accent-blue) !important;" class="w-[110px] flex-shrink-0 h-1 cursor-pointer" data-action-input="input_39_EQ_updateMusicVolume_this_value">
+                    <input type="range" id="eq-musicVolumeSlider" min="0" max="100" value="50" style="accent-color: var(--accent-blue) !important;" class="w-[110px] flex-shrink-0 h-1 cursor-pointer" data-action-input="input_39_EQ_updateMusicVolume_this_value" aria-label="Music volume">
                     <div id="eq-volDisplay" class="text-[9px] font-mono font-extrabold text-[var(--text-secondary)] w-9 text-right flex-shrink-0 pr-1">50%</div>
                 </div>
             </div>
 
             <div id="footer-center-group" class="flex items-center gap-1 h-8 flex-shrink-0">
-                <label id="eq-file-label" class="btn-label cursor-pointer btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center transition-all shadow-sm" >
+                <label id="eq-file-label" role="button" tabindex="0" data-file-trigger aria-label="Add audio files" class="btn-label cursor-pointer btn-playback-reactive w-8 h-8 flex items-center justify-center transition-all shadow-sm" >
                     <span class="flex items-center justify-center">
-                        <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" style="width: 18px; height: 18px;"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
                     </span>
                     <input type="file" id="eq-file" accept="audio/*" multiple class="hidden">
                 </label>
-                <button id="playlist-shuffle-btn" data-action="click_218_EQ_toggleShuffle" class="btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center" >
+                <button id="playlist-shuffle-btn" data-action="click_218_EQ_toggleShuffle" class="btn-playback-reactive w-8 h-8 flex items-center justify-center"  aria-label="Shuffle">
                     <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
                 </button>
-                <button data-action="click_20_EQ_prevTrack" class="btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center" >
+                <button data-action="click_20_EQ_prevTrack" class="btn-playback-reactive w-8 h-8 flex items-center justify-center"  aria-label="Previous track">
                     <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
                 </button>
-                <button id="playlist-play-btn" data-action="click_306_EQ_togglePlayState" class="btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center" >
+                <button id="playlist-play-btn" data-action="click_306_EQ_togglePlayState" class="btn-playback-reactive w-8 h-8 flex items-center justify-center"  aria-label="Play or pause">
                     <svg id="play-icon" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                 </button>
-                <button data-action="click_81_EQ_nextTrack" class="btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center" >
+                <button data-action="click_81_EQ_nextTrack" class="btn-playback-reactive w-8 h-8 flex items-center justify-center"  aria-label="Next track">
                     <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zm8-12v12h2V6h-2z"/></svg>
                 </button>
-                <button id="playlist-repeat-btn" data-action="click_263_EQ_toggleRepeat" class="btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center" >
+                <button id="playlist-repeat-btn" data-action="click_263_EQ_toggleRepeat" class="btn-playback-reactive w-8 h-8 flex items-center justify-center"  aria-label="Repeat">
                     <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
                 </button>
-                <button data-action="click_282_EQ_clearPlaylist" class="btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center" >
+                <button data-action="click_282_EQ_clearPlaylist" class="btn-playback-reactive w-8 h-8 flex items-center justify-center"  aria-label="Clear playlist">
                     <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
                 </button>
             </div>
@@ -2377,7 +2399,7 @@
             <div id="footer-right-group" class="flex items-center justify-between gap-2 px-2 py-1 w-full max-w-[460px] flex-1 h-8 min-w-[340px]">
                 <div class="flex items-center gap-1.5 flex-1 min-w-0 justify-center">
                     <span class="text-[9px] font-mono text-zinc-555 flex-shrink-0" id="playlist-time-current">0:00</span>
-                    <input type="range" id="playlist-scrub" min="0" max="100" value="0" class="w-[110px] flex-shrink-0 cursor-pointer">
+                    <input type="range" id="playlist-scrub" min="0" max="100" value="0" class="w-[110px] flex-shrink-0 cursor-pointer" aria-label="Track position">
                     <span class="text-[9px] font-mono text-zinc-555 flex-shrink-0" id="playlist-time-duration">0:00</span>
                 </div>
 
@@ -2385,14 +2407,14 @@
                     <div class="flex-grow flex flex-col gap-1 justify-center h-full w-[80px] flex-shrink-0">
                         <div class="flex items-center gap-1.5 h-3.5">
                             <span class="text-[8px] font-black text-zinc-400 w-1.5 text-center leading-none">L</span>
-                            <div class="flex-grow bg-white border-2 border-black rounded-none h-3 overflow-hidden relative shadow-inner">
+                            <div class="flex-grow bg-white border-2 border-black h-3 overflow-hidden relative shadow-inner">
                                 <div class="vu-meter-fill h-full meter-bar-l-vu-vu" style="width: 0%"></div>
                                 <div class="absolute top-0 bottom-0 w-1 bg-[var(--accent-blue)] border-x border-black meter-bar-l-peak-hold" style="left: 0%"></div>
                             </div>
                         </div>
                         <div class="flex items-center gap-1.5 h-3.5">
                             <span class="text-[8px] font-black text-zinc-400 w-1.5 text-center leading-none">R</span>
-                            <div class="flex-grow bg-white border-2 border-black rounded-none h-3 overflow-hidden relative shadow-inner">
+                            <div class="flex-grow bg-white border-2 border-black h-3 overflow-hidden relative shadow-inner">
                                 <div class="vu-meter-fill h-full meter-bar-r-vu-vu" style="width: 0%"></div>
                                 <div class="absolute top-0 bottom-0 w-1 bg-[var(--accent-blue)] border-x border-black meter-bar-r-peak-hold" style="left: 0%"></div>
                             </div>
@@ -2403,7 +2425,11 @@
             </div>
         </div>
 
-        <div class="md:hidden flex flex-col w-full h-[110px] justify-between py-2 px-3 select-none rounded-lg" style="background: linear-gradient(180deg, rgba(var(--accent-blue-rgb), 0.07) 0%, rgba(var(--accent-blue-rgb), 0.01) 100%), var(--bg-sidebar); border: 2px solid var(--border-color); box-shadow: 3px 3px 0px 0px var(--border-color);">
+        <!-- Mobile transport. It carries its own volume slider
+             (#mobile-music-volume) precisely so that the 768px-1279px band
+             could be handed over to it without taking the volume control away
+             from narrow windows. Its visibility is switched in app.css. -->
+        <div id="footer-bar-mobile" class="md:hidden flex-shrink-0 flex-col w-full h-[110px] justify-between py-2 px-3 select-none" style="background: linear-gradient(180deg, rgba(var(--accent-blue-rgb), 0.07) 0%, rgba(var(--accent-blue-rgb), 0.01) 100%), var(--bg-sidebar); border: 2px solid var(--border-color); box-shadow: 3px 3px 0px 0px var(--border-color);">
 
             <div class="flex items-center justify-between w-full h-8 gap-3">
 
@@ -2413,20 +2439,47 @@
                     </div>
                 </div>
 
+                <!--
+                    Volume for the narrow layout. The desktop bar's
+                    #eq-musicVolumeSlider used to be the only volume control in
+                    the app, which is why the desktop bar could not simply be
+                    given a higher breakpoint (see its comment): switching to
+                    this footer would have removed volume entirely below 1280px.
+
+                    Shares data-action-input with the desktop slider, so both
+                    drive EQ.updateMusicVolume(), which is the single place that
+                    syncs the slider values, the % readouts and both mute icons.
+                    Placed in the existing first row so the footer's height is
+                    unchanged and it keeps overlaying exactly as much content as
+                    before; the track-info text absorbs the squeeze by
+                    truncating.
+
+                    The two widths are inline styles, not w-[86px]/w-[22px]:
+                    tailwind.output.css is a checked-in prebuilt file and only
+                    contains w-[18|80|110|190|200|205|210]px, so new arbitrary
+                    widths silently do nothing. That left this group unconstrained
+                    at ~159px, which is what made the footer overflow by 105px at
+                    800px and crushed the track info to 44px at 360px.
+                -->
+                <div class="flex items-center gap-1 flex-shrink-0" style="width: 86px;">
+                    <input type="range" id="mobile-music-volume" min="0" max="100" value="50" aria-label="Music volume" class="flex-1 min-w-0 cursor-pointer" data-action-input="input_39_EQ_updateMusicVolume_this_value">
+                    <span id="mobile-vol-display" class="text-[7.5px] font-mono text-zinc-400 text-right flex-shrink-0" style="width: 22px;">50%</span>
+                </div>
+
                 <div class="flex items-center gap-1.5 flex-shrink-0 w-20" >
                     <div class="flex-grow flex flex-col gap-1 justify-center">
                         <div class="flex items-center gap-1 h-2">
                             <span class="text-[7px] font-bold text-zinc-500 w-1.5 text-center leading-none">L</span>
-                            <div class="flex-grow bg-zinc-950/80 rounded-full h-1.5 overflow-hidden border border-white/[0.02] relative">
+                            <div class="flex-grow bg-zinc-950/80 h-1.5 overflow-hidden border border-white/[0.02] relative">
                                 <div class="vu-meter-fill h-full meter-bar-l-vu-vu" style="width: 0%"></div>
-                                <div class="absolute top-0 bottom-0 w-0.5 bg-white/70 rounded-full meter-bar-l-peak-hold" style="left: 0%"></div>
+                                <div class="absolute top-0 bottom-0 w-0.5 bg-white/70 meter-bar-l-peak-hold" style="left: 0%"></div>
                             </div>
                         </div>
                         <div class="flex items-center gap-1 h-2">
                             <span class="text-[7px] font-bold text-zinc-500 w-1.5 text-center leading-none">R</span>
-                            <div class="flex-grow bg-zinc-950/80 rounded-full h-1.5 overflow-hidden border border-white/[0.02] relative">
+                            <div class="flex-grow bg-zinc-950/80 h-1.5 overflow-hidden border border-white/[0.02] relative">
                                 <div class="vu-meter-fill h-full meter-bar-r-vu-vu" style="width: 0%"></div>
-                                <div class="absolute top-0 bottom-0 w-0.5 bg-white/70 rounded-full meter-bar-r-peak-hold" style="left: 0%"></div>
+                                <div class="absolute top-0 bottom-0 w-0.5 bg-white/70 meter-bar-r-peak-hold" style="left: 0%"></div>
                             </div>
                         </div>
                     </div>
@@ -2441,32 +2494,32 @@
 
             <div class="flex items-center justify-center w-full h-8 mt-1 gap-2">
 
-                <label class="btn-label cursor-pointer btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center transition-all shadow-sm flex-shrink-0" >
+                <label role="button" tabindex="0" data-file-trigger aria-label="Add audio files" class="btn-label cursor-pointer btn-playback-reactive w-8 h-8 flex items-center justify-center transition-all shadow-sm flex-shrink-0" >
                     <span class="flex items-center justify-center" style="color: var(--accent-blue);">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" style="width: 15px; height: 15px;"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" style="width: 15px; height: 15px;"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
                     </span>
                     <input type="file" id="eq-file-mobile" accept="audio/*" multiple class="hidden" data-action-change="change_211_EQ_handleAudioFileSelection_this_files___this_value">
                 </label>
 
-                <button id="mobile-volIcon" data-action="click_305_EQ_toggleMute" class="btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center cursor-pointer" title="Mute or unmute">
+                <button id="mobile-volIcon" data-action="click_305_EQ_toggleMute" class="btn-playback-reactive w-8 h-8 flex items-center justify-center cursor-pointer" title="Mute or unmute">
                     <span class="text-[13px] leading-none themed-emoji">🔊</span>
                 </button>
-                <button id="mobile-shuffle-btn" data-action="click_218_EQ_toggleShuffle" class="btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center cursor-pointer" >
+                <button id="mobile-shuffle-btn" data-action="click_218_EQ_toggleShuffle" class="btn-playback-reactive w-8 h-8 flex items-center justify-center cursor-pointer" >
                     <span class="text-[13px] leading-none">⤭</span>
                 </button>
-                <button data-action="click_20_EQ_prevTrack" class="btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center cursor-pointer" >
+                <button data-action="click_20_EQ_prevTrack" class="btn-playback-reactive w-8 h-8 flex items-center justify-center cursor-pointer" >
                     <span class="text-[13px] leading-none">⏮</span>
                 </button>
-                <button id="mobile-play-btn" data-action="click_306_EQ_togglePlayState" class="btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center cursor-pointer" >
+                <button id="mobile-play-btn" data-action="click_306_EQ_togglePlayState" class="btn-playback-reactive w-8 h-8 flex items-center justify-center cursor-pointer" >
                     <span class="text-[13px] leading-none">▶</span>
                 </button>
-                <button data-action="click_81_EQ_nextTrack" class="btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center cursor-pointer" >
+                <button data-action="click_81_EQ_nextTrack" class="btn-playback-reactive w-8 h-8 flex items-center justify-center cursor-pointer" >
                     <span class="text-[13px] leading-none">⏭</span>
                 </button>
-                <button id="mobile-repeat-btn" data-action="click_263_EQ_toggleRepeat" class="btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center cursor-pointer" >
+                <button id="mobile-repeat-btn" data-action="click_263_EQ_toggleRepeat" class="btn-playback-reactive w-8 h-8 flex items-center justify-center cursor-pointer" >
                     <span class="text-[13px] leading-none">⟲</span>
                 </button>
-                <button data-action="click_282_EQ_clearPlaylist" class="btn-playback-reactive rounded-md w-8 h-8 flex items-center justify-center text-red-500 hover:text-red-400 cursor-pointer" >
+                <button data-action="click_282_EQ_clearPlaylist" class="btn-playback-reactive w-8 h-8 flex items-center justify-center text-red-500 hover:text-red-400 cursor-pointer" >
                     <span class="text-[13px] leading-none">✕</span>
                 </button>
             </div>
@@ -2481,23 +2534,23 @@
         <button data-action="click_111_FindEngine_compareSelected" class="px-3 py-1 bg-[var(--accent-blue)] hover:brightness-110 text-white font-black text-xs border-2 border-black cursor-pointer">Compare Now</button>
     </div>
 
-    <div id="toast-stack" class="fixed top-5 right-4 z-[500] flex flex-col gap-2 items-end pointer-events-none max-w-[min(90vw,380px)]"></div>
+        <div id="toast-stack" class="fixed top-5 right-4 z-[500] flex flex-col gap-2 items-end pointer-events-none" style="max-width: min(90vw, 380px);"></div>
 
 
     <div id="library-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] hidden flex items-center justify-center p-4">
-        <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-4xl rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
+        <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-4xl shadow-2xl flex flex-col overflow-hidden p-4 select-none">
 
             <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
-                <span class="text-xs font-black text-amber-450 uppercase tracking-wider flex items-center gap-1.5">🏆 Saved IEM Inventory</span>
+                <span class="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">🏆 Saved IEM Inventory</span>
                 <button data-action="click_115_IEM_toggleLibraryModal" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
             </div>
 
             <div class="flex gap-2 mb-3 flex-shrink-0">
-                <input type="text" id="lib-search" placeholder="Search saved profiles..." class="flex-1 bg-[var(--bg-input)] border border-[var(--border-color)] rounded px-3 py-1.5 text-xs outline-none focus:border-[var(--accent-blue)]" data-action-input="input_222_IEM_debouncedRenderLibrary">
-                <button data-action="click_217_IEM_compareSelected" class="px-4 py-1.5 bg-[var(--accent-blue)] text-white hover:brightness-110 font-bold rounded text-xs transition-all cursor-pointer">📊 Compare Selected</button>
+                <input type="text" id="lib-search" placeholder="Search saved profiles..." class="flex-1 bg-[var(--bg-input)] border border-[var(--border-color)] px-3 py-1.5 text-xs outline-none focus:border-[var(--accent-blue)]" data-action-input="input_222_IEM_debouncedRenderLibrary">
+                <button data-action="click_217_IEM_compareSelected" class="px-4 py-1.5 bg-[var(--accent-blue)] text-white hover:brightness-110 font-bold text-xs transition-all cursor-pointer">📊 Compare Selected</button>
             </div>
 
-            <div class="flex-1 overflow-y-auto max-h-[350px] border border-[var(--border-color)] bg-[var(--bg-input)] rounded p-1" id="library-table">
+            <div class="flex-1 overflow-y-auto max-h-[350px] border border-[var(--border-color)] bg-[var(--bg-input)] p-1" id="library-table">
                 <table class="w-full text-left text-xs">
                     <thead>
                         <tr class="text-zinc-500 border-b border-[var(--border-color)]">
@@ -2518,7 +2571,7 @@
                 <div id="compare-grid" class="grid grid-cols-2 lg:grid-cols-4 gap-3 max-h-[500px] overflow-y-auto p-1">
 
                 </div>
-                <button data-action="click_85_IEM_closeCompare" class="w-full py-2 bg-[var(--bg-input)] text-[var(--text-main)] font-bold rounded text-xs border border-[var(--border-color)] hover:brightness-110 transition-all cursor-pointer">
+                <button data-action="click_85_IEM_closeCompare" class="w-full py-2 bg-[var(--bg-input)] text-[var(--text-main)] font-bold text-xs border border-[var(--border-color)] hover:brightness-110 transition-all cursor-pointer">
                     ⬅️ Back to Inventory List
                 </button>
             </div>
@@ -2526,7 +2579,7 @@
     </div>
 
     <div id="export-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] hidden flex items-center justify-center p-4">
-        <div class="export-card bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
+        <div class="export-card bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm shadow-2xl flex flex-col overflow-hidden p-4 select-none">
             <div class="flex justify-between items-center mb-4 pb-2 border-b border-[var(--border-color)]">
                 <h3 class="text-xs font-black text-[var(--accent-amber)] uppercase tracking-wider">🎨 Customize Card Export</h3>
                 <button data-action="click_208_IEM_closeExportModal" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
@@ -2537,7 +2590,7 @@
                     <label class="block text-[9px] uppercase text-zinc-500 font-bold mb-1">Step 1: Card Color Theme</label>
                     <div class="flex items-center gap-1 w-full h-8">
                         <button type="button" data-action="click_253_IEM_cycleExportThemeDirection__1" class="w-8 h-full bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border border-[var(--border-color)] text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◄</button>
-                        <button id="export-theme-cycle-btn" data-action="click_201_IEM_cycleExportThemeDirection_1" class="flex-1 h-full bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer truncate">
+                        <button id="export-theme-cycle-btn" data-action="click_201_IEM_cycleExportThemeDirection_1" class="flex-1 h-full bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer truncate">
                             🎨 Select Theme...
                         </button>
                         <button type="button" data-action="click_201_IEM_cycleExportThemeDirection_1" class="w-8 h-full bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border border-[var(--border-color)] text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">►</button>
@@ -2547,7 +2600,7 @@
                     <label class="block text-[9px] uppercase text-zinc-500 font-bold mb-1">Step 2: Card Font</label>
                     <div class="flex items-center gap-1 w-full h-8">
                         <button type="button" data-action="click_78_IEM_cycleExportFontDirection__1" class="w-8 h-full bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border border-[var(--border-color)] text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◄</button>
-                        <button id="export-font-cycle-btn" data-action="click_308_IEM_cycleExportFontDirection_1" class="flex-1 h-full bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold rounded border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer truncate">
+                        <button id="export-font-cycle-btn" data-action="click_308_IEM_cycleExportFontDirection_1" class="flex-1 h-full bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer truncate">
                             ✏️ Select Font...
                         </button>
                         <button type="button" data-action="click_308_IEM_cycleExportFontDirection_1" class="w-8 h-full bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border border-[var(--border-color)] text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">►</button>
@@ -2566,7 +2619,7 @@
                 </div>
             </div>
 
-            <button id="export-confirm-btn" data-action="click_191_IEM_confirmAndTriggerExport" class="w-full py-2 bg-[var(--bg-input)] text-zinc-500 font-bold rounded-md text-xs transition-all text-center mb-3 cursor-not-allowed" disabled style="opacity: 0.5;">
+            <button id="export-confirm-btn" data-action="click_191_IEM_confirmAndTriggerExport" class="w-full py-2 bg-[var(--bg-input)] text-zinc-500 font-bold text-xs transition-all text-center mb-3 cursor-not-allowed" disabled style="opacity: 0.5;">
                 🖼️ Confirm & Export Card
             </button>
             <div class="text-center text-[10px] text-zinc-555 font-semibold">Generates High-DPI Symmetrical Infographic PNG</div>
@@ -2574,41 +2627,39 @@
     </div>
 
     <div id="rename-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] hidden flex items-center justify-center p-4">
-        <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
+        <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm shadow-2xl flex flex-col overflow-hidden p-4 select-none">
             <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
                 <span class="text-xs font-black text-rose-400 uppercase tracking-wider flex items-center gap-1.5">📝 Rename Active Curve</span>
                 <button data-action="click_104_PEQDB_Module_closeRenameModal" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
             </div>
 
-            <p class="text-[10px] text-zinc-500 mb-3 leading-normal">Enter a custom, user-friendly label to identify this trace on the graph and active docks:</p>
             <input type="text" id="rename-input" class="w-full input-bg-fix px-3 py-2 text-xs font-semibold outline-none border border-[var(--border-color)] focus:border-[var(--accent-blue)] mb-4" placeholder="e.g. My Aria (Silicone Tips)">
 
             <div class="grid grid-cols-2 gap-2">
-                <button data-action="click_104_PEQDB_Module_closeRenameModal" class="py-2 text-xs font-bold rounded btn-clear cursor-pointer">Cancel</button>
-                <button data-action="click_259_PEQDB_Module_confirmRename" class="py-2 text-xs font-bold rounded bg-[var(--accent-blue)] hover:brightness-110 text-white transition-all cursor-pointer text-center">Rename</button>
+                <button data-action="click_104_PEQDB_Module_closeRenameModal" class="py-2 text-xs font-bold btn-clear cursor-pointer">Cancel</button>
+                <button data-action="click_259_PEQDB_Module_confirmRename" class="py-2 text-xs font-bold bg-[var(--accent-blue)] hover:brightness-110 text-white transition-all cursor-pointer text-center">Rename</button>
             </div>
         </div>
     </div>
 
     <div id="save-preset-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] hidden flex items-center justify-center p-4">
-        <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
+        <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm shadow-2xl flex flex-col overflow-hidden p-4 select-none">
             <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
                 <span class="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">⭐ Save Custom EQ Preset</span>
                 <button data-action="click_228_EQ_closeSavePresetModal" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
             </div>
 
-            <p class="text-[10px] text-zinc-500 mb-3 leading-normal">Enter a descriptive, user-friendly label to save and identify this EQ configuration:</p>
             <input type="text" id="save-preset-input" class="w-full input-bg-fix px-3 py-2 text-xs font-semibold outline-none border border-[var(--border-color)] focus:border-[var(--accent-blue)] mb-4" placeholder="e.g. Dynamic Harman (Late Night)">
 
             <div class="grid grid-cols-2 gap-2">
-                <button data-action="click_228_EQ_closeSavePresetModal" class="py-2 text-xs font-bold rounded btn-clear cursor-pointer">Cancel</button>
-                <button data-action="click_154_EQ_confirmSavePreset" class="py-2 text-xs font-bold rounded bg-[var(--accent-blue)] hover:brightness-110 text-white transition-all cursor-pointer text-center">Save Preset</button>
+                <button data-action="click_228_EQ_closeSavePresetModal" class="py-2 text-xs font-bold btn-clear cursor-pointer">Cancel</button>
+                <button data-action="click_154_EQ_confirmSavePreset" class="py-2 text-xs font-bold bg-[var(--accent-blue)] hover:brightness-110 text-white transition-all cursor-pointer text-center">Save Preset</button>
             </div>
         </div>
     </div>
 
     <div id="smart-rf-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] hidden flex items-center justify-center p-4">
-        <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-md rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
+        <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-md shadow-2xl flex flex-col overflow-hidden p-4 select-none">
             <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
                 <span class="text-xs font-black text-sky-400 uppercase tracking-wider flex items-center gap-1.5">📥 Smart RF Import</span>
                 <button data-action="click_135_PEQDB_Module_closeSmartRFModal" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
@@ -2627,7 +2678,7 @@
                 <label for="smart-rf-auto-average" class="text-[10px] text-zinc-400 cursor-pointer font-bold select-none">Auto-average detected L/R channel pairs</label>
             </div>
 
-            <div class="bg-[var(--bg-input)] p-3 rounded-lg border border-[var(--border-color)] space-y-2 mb-4 text-[11px] font-bold">
+            <div class="bg-[var(--bg-input)] p-3 border border-[var(--border-color)] space-y-2 mb-4 text-[11px] font-bold">
                 <div class="flex justify-between">
                     <span class="text-zinc-500">Detected Source:</span>
                     <span id="srf-detected" class="text-sky-400">None</span>
@@ -2643,24 +2694,24 @@
             </div>
 
             <div class="grid grid-cols-4 gap-2">
-                <button id="srf-clear-btn" data-action="click_166_PEQDB_Module_clearSmartRF" class="py-2 text-[10px] font-bold rounded btn-clear cursor-pointer">🗑 Clear</button>
-                <button id="srf-paste-btn" data-action="click_225_PEQDB_Module_pasteSmartRF" class="py-2 text-[10px] font-bold rounded btn-clear cursor-pointer">📋 Paste</button>
-                <button data-action="click_135_PEQDB_Module_closeSmartRFModal" class="py-2 text-[10px] font-bold rounded btn-clear cursor-pointer">Cancel</button>
-                <button id="srf-import-btn" data-action="click_62_PEQDB_Module_confirmSmartRF" class="py-2 text-[10px] font-bold rounded bg-[var(--bg-input)] text-zinc-500 cursor-not-allowed transition-all text-center" disabled>📥 Import</button>
+                <button id="srf-clear-btn" data-action="click_166_PEQDB_Module_clearSmartRF" class="py-2 text-[10px] font-bold btn-clear cursor-pointer">🗑 Clear</button>
+                <button id="srf-paste-btn" data-action="click_225_PEQDB_Module_pasteSmartRF" class="py-2 text-[10px] font-bold btn-clear cursor-pointer">📋 Paste</button>
+                <button data-action="click_135_PEQDB_Module_closeSmartRFModal" class="py-2 text-[10px] font-bold btn-clear cursor-pointer">Cancel</button>
+                <button id="srf-import-btn" data-action="click_62_PEQDB_Module_confirmSmartRF" class="py-2 text-[10px] font-bold bg-[var(--bg-input)] text-zinc-500 cursor-not-allowed transition-all text-center" disabled>📥 Import</button>
             </div>
         </div>
     </div>
 
     <div id="smart-import-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] hidden flex items-center justify-center p-4">
-        <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-lg rounded-lg shadow-2xl flex flex-col overflow-hidden p-5 select-none">
+        <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-lg shadow-2xl flex flex-col overflow-hidden p-5 select-none">
             <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
                 <span class="text-xs font-black text-[var(--accent-blue)] uppercase tracking-wider flex items-center gap-1.5">📥 Universal Smart Import</span>
                 <button data-action="click_98_EQ_closeSmartImportModal" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
             </div>
 
-            <p class="text-[10px] text-zinc-500 mb-3 leading-normal">Paste an EQ profile (Peace/Wavelet), sound coordinate values, or drag and drop any compatible text/csv/json file here:</p>
+            <p class="text-[10px] text-zinc-500 mb-3 leading-normal">Peace / Wavelet, sound coordinates, or drop a txt / csv / json file:</p>
 
-            <div id="smart-import-dropzone" class="w-full h-24 border border-dashed border-[var(--border-color)] rounded-lg flex flex-col items-center justify-center bg-[var(--bg-input)] hover:brightness-90 transition-all cursor-pointer mb-3 text-center p-4">
+            <div id="smart-import-dropzone" role="button" tabindex="0" data-file-trigger aria-label="Choose a smart import file, or drop one here" class="w-full h-24 border border-dashed border-[var(--border-color)] flex flex-col items-center justify-center bg-[var(--bg-input)] hover:brightness-90 transition-all cursor-pointer mb-3 text-center p-4">
                 <span class="text-lg">📂</span>
                 <span class="text-[10px] font-bold text-zinc-400 mt-1">Drag & Drop File Here</span>
                 <span class="text-[9px] text-zinc-650 mt-0.5">Supports .txt, .csv, .json</span>
@@ -2671,8 +2722,8 @@
             <textarea id="smart-import-textarea" placeholder="Paste EQ string (e.g. Preamp: -3.0 dB / GraphicEQ: ...) or raw coordinate data here..." class="w-full h-32 p-2.5 text-xs resize-none outline-none input-bg-fix focus:border-[var(--accent-blue)] mb-4 font-mono"></textarea>
 
             <div class="grid grid-cols-2 gap-2">
-                <button data-action="click_98_EQ_closeSmartImportModal" class="py-2 text-xs font-bold rounded btn-clear cursor-pointer">Cancel</button>
-                <button data-action="click_119_EQ_processSmartImport" class="py-2 text-xs font-bold rounded bg-[var(--accent-blue)] hover:brightness-110 text-white transition-all cursor-pointer text-center">Process & Load</button>
+                <button data-action="click_98_EQ_closeSmartImportModal" class="py-2 text-xs font-bold btn-clear cursor-pointer">Cancel</button>
+                <button data-action="click_119_EQ_processSmartImport" class="py-2 text-xs font-bold bg-[var(--accent-blue)] hover:brightness-110 text-white transition-all cursor-pointer text-center">Process & Load</button>
             </div>
         </div>
     </div>
@@ -2681,23 +2732,9 @@
 
         <canvas id="global-spores-canvas" style="position: fixed; inset: 0; pointer-events: none; z-index: 99999; display: none;"></canvas>
 
-        <script src="app/js/bundle-version.js?v=08369a891983"></script>
-        <script>
-          // Packaged builds serve the minified bundle via ?packaged=1.
-          // Cache-bust with the content hash written by scripts/build-bundle.mjs
-          // (js/bundle-version.js) rather than Date.now(), so the ~1MB bundle
-          // stays cached across reloads until the source actually changes.
-          var isPackaged = location.search.indexOf('packaged') !== -1;
-          var bundleVersion = (typeof window.BUNDLE_VERSION === 'string' && window.BUNDLE_VERSION) || String(Date.now());
-          var bundleScript = document.createElement('script');
-          bundleScript.src = 'app/js/app.bundle' + (isPackaged ? '.min' : '') + '.js?v=' + bundleVersion;
-          bundleScript.onerror = function() {
-            var errBox = document.createElement('div');
-            errBox.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#050507;color:#f87171;font:14px monospace;padding:24px;text-align:center;white-space:pre-wrap';
-            errBox.textContent = 'Failed to load the app bundle.\n' + bundleScript.src + '\nCheck the network tab and try a hard refresh.';
-            document.body.appendChild(errBox);
-          };
-          document.body.appendChild(bundleScript);
-        </script>
+        <script src="app/js/bundle-version.js?v=985b08940f92"></script>
+        <!-- Bundle loader. External (app/js/boot-bundle.js) rather than inline so that
+         script-src can drop 'unsafe-inline'. -->
+        <script src="app/js/boot-bundle.js"></script>
     </body>
     </html>

@@ -5,8 +5,45 @@
 // function except for the SharedAudio sample-rate read; merged into EQ_Module
 // via Object.assign in db-cache.js.
 const EQ_BiquadMathMethods = {
+        // The sample rate the AUDIO path is actually running at.
+        //
+        // This used to read `window.SharedAudio`, but SharedAudio is a
+        // top-level `const` in a classic (non-module) script, so it is never a
+        // property of `window` — that guard was therefore ALWAYS false and the
+        // whole expression fell through to the hard-coded 44100. Meanwhile
+        // dsp-processor.js runs inside an AudioWorklet whose `globalThis.sampleRate`
+        // is the device's real rate (48000 is the common Windows default), so
+        // every drawn and exported curve was computed against the wrong rate.
+        //
+        // The practical audible impact is small — the drawing path applies the
+        // SAME 0.45*Fs clamp, so the two agree to within ~0.14 dB — but the
+        // clamp CEILING diverges (19845 Hz drawn vs 21600 Hz allowed at 48 kHz,
+        // and 19845 vs 43200 at 96 kHz), so a band in between is drawn at a
+        // slightly different frequency than it is played. Fixing it also keeps
+        // the "MUST stay identical to updateCoefficients" contract honest.
+        //
+        // The AudioContext is created lazily on the first user gesture, so before
+        // any playback this legitimately falls back to 44100; the curve corrects
+        // itself on the first play once the real rate is known.
+        _resolvedFs: 0,
+        _resolvedFsCtx: null,
+        getAudioSampleRate: function() {
+            let ctx = null;
+            // typeof on a lexical binding is safe here: nothing calls this during
+            // bundle evaluation, so the TDZ can never apply.
+            try { if (typeof SharedAudio !== 'undefined' && SharedAudio) ctx = SharedAudio.ctx; } catch (_) {}
+            if (ctx !== this._resolvedFsCtx) {
+                this._resolvedFsCtx = ctx;
+                this._resolvedFs = (ctx && Number.isFinite(ctx.sampleRate)) ? ctx.sampleRate : 0;
+            }
+            return this._resolvedFs;
+        },
+
         _biquadCoeffs: function(type, f0, Q, G, Fs) {
-            const rawFs = Fs || (window.SharedAudio && SharedAudio.ctx ? SharedAudio.ctx.sampleRate : 44100);
+            // An explicit Fs argument still wins; otherwise use the live context
+            // rate; otherwise fall back to 44100 until the context exists.
+            const explicit = Number.isFinite(Fs) ? Fs : 0;
+            const rawFs = explicit || this.getAudioSampleRate() || 44100;
             const activeFs = Number.isFinite(rawFs) && rawFs >= 2000 ? rawFs : 44100;
             const maxF0 = Math.min(activeFs * 0.45, activeFs / 2 - 1000);
             const safeF0 = Math.max(10, Math.min(maxF0, Number.isFinite(f0) ? f0 : 1000));

@@ -5,20 +5,26 @@
   "main": "main.js",
   "author": "🍄 MyLittlePrimordia",
   "license": "MIT",
+  "desktopName": "iem-tool",
   "scripts": {
-    "prestart": "node scripts/build-bundle.mjs",
+    "prestart": "npm run check && node scripts/build-bundle.mjs",
     "start": "electron .",
-    "predist": "node scripts/build-bundle.mjs --strict",
+    "predist": "npm run package:prepare",
     "dist": "electron-builder --publish never",
-    "predist-win": "node scripts/build-bundle.mjs --strict",
+    "predist-win": "npm run package:prepare",
     "dist-win": "electron-builder --win --publish never",
-    "predist-mac": "node scripts/build-bundle.mjs --strict",
+    "predist-mac": "npm run package:prepare",
     "dist-mac": "electron-builder --mac --publish never",
-    "predist-linux": "node scripts/build-bundle.mjs --strict",
+    "predist-linux": "npm run package:prepare",
     "dist-linux": "electron-builder --linux --publish never",
+    "package:prepare": "npm run check && node scripts/build-bundle.mjs --strict",
     "build:js": "node scripts/build-bundle.mjs",
     "check:js": "node scripts/check-js.mjs",
     "check:reach": "node scripts/check-reachability.mjs",
+    "check:integrity": "node scripts/check-integrity.mjs",
+    "check:workflow": "node tools/check-workflow.js",
+    "check": "npm run check:js && npm run check:reach && npm run check:integrity && npm run check:workflow",
+    "verify:ui": "node tools/run-ui-verify.mjs",
     "build:css": "tailwindcss -c twbuild/tailwind.config.js -i twbuild/input.css -o app/css/tailwind.output.css --minify"
   },
   "devDependencies": {
@@ -84,7 +90,8 @@
         }
       ],
       "icon": "app/icon.png",
-      "category": "Utility"
+      "category": "Utility",
+      "syncDesktopName": true
     },
     "extraResources": [
       {

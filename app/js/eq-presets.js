@@ -1,12 +1,46 @@
 const EQ_PresetMethods = {
+        // Unique quarantine key. A bare Date.now() collides when two corruptions
+        // land in the same millisecond, which would silently overwrite the first
+        // backup — the exact data loss this is meant to prevent.
+        _quarantinePresets: function(raw) {
+            const KEY = 'iem_custom_eq_presets';
+            const base = KEY + '.corrupt.' + Date.now();
+            let key = base, n = 1;
+            while (SafeStorage.getItem(key) !== null) { key = base + '-' + (n++); }
+            try { SafeStorage.setItem(key, raw); } catch (_) {}
+            try { SafeStorage.removeItem(KEY); } catch (_) {}
+            return key;
+        },
+
         getCustomPresets: function() {
+            const KEY = 'iem_custom_eq_presets';
+            let raw;
+            try { raw = SafeStorage.getItem(KEY); } catch (_) { return {}; }
+            if (!raw) return {};
+            let parsed;
             try {
-                return JSON.parse(SafeStorage.getItem('iem_custom_eq_presets') || '{}');
+                parsed = JSON.parse(raw);
             } catch (e) {
-                console.warn('[EQ] Corrupted custom preset data, resetting.', e);
-                try { SafeStorage.removeItem('iem_custom_eq_presets'); } catch (_) {}
+                // Do NOT delete the key. This is the user's hand-built preset
+                // library; the old code called removeItem() here, so a single
+                // truncated write (exactly the QuotaExceededError-mid-write case
+                // SafeStorage exists to absorb) destroyed every preset with only
+                // a console.warn. Quarantine it instead so it can be recovered.
+                const qk = this._quarantinePresets(raw);
+                console.error('[EQ] Corrupted custom preset data. Original preserved at "' + qk + '".', e);
+                showToast('Custom presets were corrupted. A backup was kept — please report this.', '⚠️');
                 return {};
             }
+            // Shape check: JSON.parse can succeed on something that is not a
+            // preset map (an array, a number, null). Downstream code does
+            // `presets[id]`, so anything non-object must not leak through.
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                const qk = this._quarantinePresets(raw);
+                console.error('[EQ] Custom preset data is not a preset map. Original preserved at "' + qk + '".');
+                showToast('Custom presets were corrupt. A backup was kept — please report this.', '⚠️');
+                return {};
+            }
+            return parsed;
         },
         saveCurrentAsCustomPreset: function() {
             const modal = document.getElementById('save-preset-modal');
@@ -69,12 +103,12 @@ const EQ_PresetMethods = {
 
                 const btn = document.createElement('button');
                 btn.id = 'preset-btn-' + id;
-                btn.className = 'w-full text-center text-[10px] px-1 py-1 rounded bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate h-7 flex items-center justify-center gap-1';
+                btn.className = 'w-full text-center text-[10px] px-1 py-1 bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate h-7 flex items-center justify-center gap-1';
                 btn.textContent = '🧪 ' + (p.name || 'Preset');
                 btn.onclick = () => { this.applyCustomPreset(id); };
 
                 const delBtn = document.createElement('button');
-                delBtn.className = 'absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-950/90 border border-red-900/40 text-red-400 text-[8px] font-bold rounded-full flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-20 cursor-pointer';
+                delBtn.className = 'absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-950/90 border border-red-900/40 text-red-400 text-[8px] font-bold flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-20 cursor-pointer';
                 delBtn.innerHTML = '❌';
                 delBtn.title = 'Delete Preset';
                 delBtn.onclick = (e) => {
@@ -92,6 +126,49 @@ const EQ_PresetMethods = {
                 }
             });
         },
+        // Presets are untrusted input: they come from localStorage, which is
+        // writable by any import path, and advanced bands have NO UI at all
+        // (#eq-panel-advanced is an empty container), so the model is the ONLY
+        // source for their hz/g/q. A non-numeric or out-of-range value flowed
+        // straight to updateAudioConnections -> worklet, where
+        // w0 = 2*PI*freq/sampleRate became NaN and the biquad produced NaN for
+        // the rest of the session: permanent total silence, no error shown.
+        // The worklet's own Number.isFinite(a0) guard only prevented a
+        // divide-by-zero; it happily propagated the NaN coefficients.
+        //
+        // Same defensive shape as eq-genre-targets.js loadValues(), which
+        // already documents the same data as untrusted.
+        _sanitizePresetBand: function(raw, fallback) {
+            const fb = fallback || {};
+            const src = (raw && typeof raw === 'object') ? raw : { g: raw };
+            const num = (v, lo, hi, dflt) => {
+                if (v === undefined || v === null) return dflt;
+                const n = parseFloat(v);
+                if (!Number.isFinite(n)) return dflt;
+                if (n < lo || n > hi) return dflt;
+                return n;
+            };
+            const VALID_TYPES = ['peaking', 'lowshelf', 'highshelf', 'highpass', 'lowpass', 'notch'];
+            const out = {
+                hz: num(src.hz, 10, 24000, Number.isFinite(fb.hz) ? fb.hz : 1000),
+                g: num(src.g, -60, 60, Number.isFinite(fb.g) ? fb.g : 0),
+                q: num(src.q, 0.01, 50, Number.isFinite(fb.q) ? fb.q : 1.0),
+                type: VALID_TYPES.includes(src.type) ? src.type : (VALID_TYPES.includes(fb.type) ? fb.type : 'peaking'),
+            };
+            if (src.s !== undefined && src.s !== null) {
+                const s = parseFloat(src.s);
+                out.s = (Number.isFinite(s) && s >= 1 && s <= 60) ? s : 12;
+            }
+            // Track whether anything had to be replaced so the user is told.
+            out.__repaired =
+                (src.hz !== undefined && out.hz !== parseFloat(src.hz)) ||
+                (src.g !== undefined && out.g !== parseFloat(src.g)) ||
+                (src.q !== undefined && out.q !== parseFloat(src.q)) ||
+                (src.type !== undefined && !VALID_TYPES.includes(src.type)) ||
+                (out.s !== undefined && out.s !== parseFloat(src.s));
+            return out;
+        },
+
         applyCustomPreset: function(id) {
             const presets = this.getCustomPresets();
             const p = presets[id];
@@ -99,23 +176,31 @@ const EQ_PresetMethods = {
 
             this.activePreset = id;
             EQ_Module.isProgrammaticSliderUpdate = true; // Lock UI updates during load
+            let repairedBands = 0;
 
             try {
             // Map values cleanly to UI faders
             const preSlider = document.getElementById("eq-preampSlider");
             if (preSlider && p.p !== undefined) {
-                preSlider.value = p.p;
+                const pNum = parseFloat(p.p);
+                // A range input silently self-heals an invalid assignment (it
+                // snaps to the midpoint), so clamp explicitly instead of letting
+                // a corrupt preamp land halfway up the slider.
+                preSlider.value = (Number.isFinite(pNum) && pNum >= -20 && pNum <= 20) ? pNum : 0;
                 this.updatePreamp();
             }
 
             if (p.m) {
                 p.m.forEach((val, i) => {
-                    const isObject = (val && typeof val === 'object');
-                    const gainVal = isObject ? val.g : val;
-                    const hzVal = isObject ? val.hz : undefined;
-                    const qVal = isObject ? val.q : undefined;
-                    const typeVal = isObject ? val.type : undefined;
-                    const slopeVal = isObject ? val.s : undefined;
+                    const band = this.bands[i];
+                    if (!band) return;   // more bands than the UI has slots
+                    const clean = this._sanitizePresetBand(val, { hz: band.hz, g: 0, q: Number.isFinite(band.q) ? band.q : band.defaultQ, type: band.type });
+                    if (clean.__repaired) repairedBands++;
+                    const gainVal = clean.g;
+                    const hzVal = clean.hz;
+                    const qVal = clean.q;
+                    const typeVal = clean.type;
+                    const slopeVal = clean.s;
 
                     const slider = document.getElementById("eq-s" + i);
                     if (slider) slider.value = gainVal;
@@ -171,19 +256,22 @@ const EQ_PresetMethods = {
 
             if (p.a) {
                 p.a.forEach((val, i) => {
-                    const isObject = (val && typeof val === 'object');
-                    const gainVal = isObject ? val.g : val;
-                    const hzVal = isObject ? val.hz : undefined;
-                    const qVal = isObject ? val.q : undefined;
-                    const typeVal = isObject ? val.type : undefined;
-
                     const b = this.advancedBands[i];
-                    if (b) {
-                        b.g = gainVal;
-                        if (hzVal !== undefined) b.hz = hzVal;
-                        if (qVal !== undefined) b.q = qVal;
-                        if (typeVal) b.type = typeVal;
-                    }
+                    if (!b) return;
+                    // Advanced bands have no UI, so this model write is the ONLY
+                    // place the value can be rejected before it reaches the
+                    // worklet. Validate here or not at all.
+                    const clean = this._sanitizePresetBand(val, { hz: b.hz, g: 0, q: b.q, type: b.type });
+                    if (clean.__repaired) repairedBands++;
+                    const gainVal = clean.g;
+                    const hzVal = clean.hz;
+                    const qVal = clean.q;
+                    const typeVal = clean.type;
+
+                    b.g = gainVal;
+                    b.hz = hzVal;
+                    b.q = qVal;
+                    b.type = typeVal;
 
                     if (typeVal && this.advancedBands[i]) {
                         // Mirror the main-band card sync (handleTypeChange):
@@ -215,10 +303,15 @@ const EQ_PresetMethods = {
                     const aSlider = document.getElementById("eq-a" + i);
                     if (aSlider) aSlider.value = gainVal;
 
-                    if (hzVal !== undefined) {
-                        const afInput = document.getElementById("eq-af" + i);
-                        if (afInput) afInput.value = hzVal;
-                    }
+                    // NOTE: there is no `eq-af${i}` element anywhere in
+                    // index.html — advanced bands have no frequency control
+                    // (in fact #eq-panel-advanced is an empty container, so
+                    // advancedBands is a model-only concept reachable solely
+                    // through custom presets). The model write above is
+                    // therefore the only place the value lands, which is why
+                    // it is validated rather than mirrored. Do not add a
+                    // read here expecting it to do something.
+
                     if (qVal !== undefined) {
                         const qSlider = document.getElementById("eq-q_a" + i);
                         if (qSlider) qSlider.value = qVal;
@@ -229,9 +322,13 @@ const EQ_PresetMethods = {
             }
 
                 if (p.v && Array.isArray(p.v)) {
-                    this.virtualBands = p.v.map(v => ({
-                        hz: v.hz, g: v.g, q: v.q != null ? v.q : 1.0, type: v.type || 'peaking'
-                    }));
+                    // Virtual bands feed worklet slots 50+ directly from
+                    // eq-dsp-graph.js, so they need the same validation.
+                    this.virtualBands = p.v.map(v => {
+                        const clean = this._sanitizePresetBand(v, { hz: 1000, g: 0, q: 1.0, type: 'peaking' });
+                        if (clean.__repaired) repairedBands++;
+                        return { hz: clean.hz, g: clean.g, q: clean.q, type: clean.type };
+                    });
                 } else if (p.v === undefined) {
                     // Backward compat: old presets without virtual still clear any
                     // previous virtual solve so the old 10/20-band preset does not
@@ -240,6 +337,15 @@ const EQ_PresetMethods = {
                 }
             } finally {
                 EQ_Module.isProgrammaticSliderUpdate = false; // Release UI lock even if a band throws
+            }
+
+            // Never silently alter a user's saved EQ. If anything had to be
+            // replaced because it was missing, non-numeric, or outside the
+            // range the DSP can represent, say so.
+            if (repairedBands > 0) {
+                console.warn('[EQ] Preset "' + id + '": repaired ' + repairedBands +
+                    ' band(s) with missing or out-of-range values.');
+                showToast('Preset loaded with ' + repairedBands + ' band value(s) reset to safe defaults.', '⚠️');
             }
 
             if (this.graphBuilt) {
@@ -367,10 +473,11 @@ const EQ_PresetMethods = {
                                 const gainRow = document.getElementById(`row-gain_a${i}`);
                                 if (gainRow) { gainRow.style.opacity = '1'; gainRow.style.pointerEvents = 'auto'; }
                             }
-                            b.hz = b.defaultHz || b.hz;
+                            // `b.defaultHz` never existed on an advancedBands
+                            // entry (they carry `hz`, not `defaultHz`), so this
+                            // was a no-op that only survived on `undefined || b.hz`.
+                            b.hz = b.hz;
                             b.q = b.defaultQ;
-                            const afInput = document.getElementById("eq-af" + i);
-                            if (afInput) afInput.value = b.hz;
                             const aqSlider = document.getElementById("eq-q_a" + i);
                             if (aqSlider) aqSlider.value = b.defaultQ;
                             const bypassBtnA = document.getElementById(`eq-bp_a${i}`);

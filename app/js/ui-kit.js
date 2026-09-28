@@ -24,15 +24,15 @@ const UIKit = {
         wrap.id = 'uikit-confirm-modal';
         wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden flex items-center justify-center p-4';
         wrap.innerHTML = `
-            <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm rounded-lg shadow-2xl flex flex-col overflow-hidden p-4 select-none">
+            <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm shadow-2xl flex flex-col overflow-hidden p-4 select-none">
                 <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
                     <span id="uikit-confirm-title" class="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">⚠️ Confirm</span>
                     <button id="uikit-confirm-x" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
                 </div>
                 <p id="uikit-confirm-msg" class="text-[10px] text-zinc-500 mb-4 leading-normal"></p>
                 <div class="grid grid-cols-2 gap-2">
-                    <button id="uikit-confirm-cancel" class="py-2 text-xs font-bold rounded btn-clear cursor-pointer">Cancel</button>
-                    <button id="uikit-confirm-ok" class="py-2 text-xs font-bold rounded hover:brightness-110 text-white transition-all cursor-pointer text-center"></button>
+                    <button id="uikit-confirm-cancel" class="py-2 text-xs font-bold btn-clear cursor-pointer">Cancel</button>
+                    <button id="uikit-confirm-ok" class="py-2 text-xs font-bold hover:brightness-110 text-white transition-all cursor-pointer text-center"></button>
                 </div>
             </div>`;
         document.body.appendChild(wrap);
@@ -96,7 +96,7 @@ const UIKit = {
         wrap.querySelector('#uikit-confirm-msg').textContent = opts.message || '';
         const okBtn = wrap.querySelector('#uikit-confirm-ok');
         okBtn.textContent = opts.confirmLabel || 'Confirm';
-        okBtn.className = 'py-2 text-xs font-bold rounded hover:brightness-110 text-white transition-all cursor-pointer text-center ' +
+        okBtn.className = 'py-2 text-xs font-bold hover:brightness-110 text-white transition-all cursor-pointer text-center' +
             (opts.danger ? 'bg-red-600' : 'bg-[var(--accent-blue)]');
 
         wrap.classList.remove('hidden');
