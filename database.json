@@ -25401,6 +25401,30 @@
     ]
   },
   {
+    "id": "cklvx_lava",
+    "brand": "CKLVX",
+    "model": "Lava",
+    "variant": "",
+    "year": 2024,
+    "price_usd": 150,
+    "driver_type": "Tribrid",
+    "driver_config": "2DD+3BA+1Planar",
+    "impedance": 36,
+    "sensitivity": 108,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Punchy Bass",
+      "Smooth",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/JAYTISS/MYER AUDIO CKLVX LAVA.txt"
+    ]
+  },
+  {
     "id": "clariar_i430",
     "brand": "Clariar",
     "model": "i430",
