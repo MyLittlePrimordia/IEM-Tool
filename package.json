@@ -76,6 +76,7 @@
           ]
         }
       ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
       "icon": "app/icon.icns",
       "category": "public.app-category.utilities"
     },

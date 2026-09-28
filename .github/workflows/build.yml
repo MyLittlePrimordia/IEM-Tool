@@ -217,7 +217,7 @@ jobs:
           for arch in arm64 x64; do
             src=$(ls dist/*-"$arch".dmg 2>/dev/null | head -n 1 || true)
             if [ -z "$src" ]; then
-              echo "::error::no $arch DM was produced; dist contains:"
+              echo "::error::no $arch DMG was produced; dist contains:"
               ls -la dist/
               exit 1
             fi
