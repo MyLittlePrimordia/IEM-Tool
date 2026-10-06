@@ -5825,7 +5825,7 @@ input[type="range"]::-moz-range-thumb {
     /* 20px top / 28px bottom rather than 24/48: at a 900px-tall window the
        tighter rhythm is the difference between the Library row clearing the
        fold and being sliced through the middle by it. */
-    padding: var(--s-5) var(--s-5) var(--s-8);
+    padding: var(--s-3) var(--s-5) var(--s-4);
 }
 
 /* .settings-head / .settings-title / .settings-sub were removed with the
@@ -5835,7 +5835,7 @@ input[type="range"]::-moz-range-thumb {
    scrollbar appeared on an otherwise-fitting pane. Nothing references the
    three classes any more; the pane is named by aria-label instead. */
 
-.settings-group { margin-bottom: var(--s-6); }
+.settings-group { margin-bottom: var(--s-4); }
 .settings-group:last-child { margin-bottom: 0; }
 .settings-group-title {
     font-size: var(--t-micro);
@@ -5857,8 +5857,8 @@ input[type="range"]::-moz-range-thumb {
     display: flex;
     align-items: center;
     gap: var(--s-4);
-    min-height: 56px;
-    padding: var(--s-3) var(--s-4);
+    min-height: 48px;
+    padding: var(--s-2) var(--s-4);
     border-bottom: 1px solid var(--line-subtle);
 }
 .settings-row:last-child { border-bottom: none; }

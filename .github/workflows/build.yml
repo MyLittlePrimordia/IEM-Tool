@@ -161,36 +161,38 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Windows (portable .exe - no installer)
-        # electron-builder's `portable` target emits ONE self-contained .exe:
-        # no installer, no admin rights, nothing written outside its own
-        # folder. Settings and saved reviews go to IEM-Profile/ beside the
-        # exe and optional database updates are read from IEM-Data/ beside it
+      - name: Build Windows (NSIS installer)
+        # electron-builder's `nsis` target emits a normal Setup wizard. Unlike
+        # the old `portable` target (which unpacks itself to a temp folder on
+        # EVERY launch - the cause of the slow start) an installed app starts
+        # straight from disk. Settings and saved reviews live in
+        # %APPDATA%\iem-tool; optional database updates go in the IEM-Data
+        # folder there, which Settings -> Data -> "Open database folder" opens
         # (see main.js).
         timeout-minutes: 30
         run: npm run dist-win
 
       - name: Rename to exact file name
-        # Fail loudly if the portable exe is missing, and refuse to publish if
-        # an installer-style "Setup" exe sneaks back in via a config change.
+        # Fail loudly if the installer is missing, and refuse to publish if a
+        # portable exe sneaks back in via a config change.
         run: |
-          $src = Get-ChildItem "dist/*-Portable.exe" | Select-Object -First 1
-          if (-not $src) { Write-Error "no portable exe was produced"; Get-ChildItem dist; exit 1 }
-          if (Get-ChildItem "dist/*Setup*.exe" -ErrorAction SilentlyContinue) { Write-Error "installer exe found - win target must be portable"; exit 1 }
-          Copy-Item $src.FullName "dist/IEM-Tool.exe"
-          Get-ChildItem "dist/IEM-Tool.exe"
+          $src = Get-ChildItem "dist/*Setup*.exe" | Select-Object -First 1
+          if (-not $src) { Write-Error "no installer exe was produced"; Get-ChildItem dist; exit 1 }
+          if (Get-ChildItem "dist/*-Portable.exe" -ErrorAction SilentlyContinue) { Write-Error "portable exe found - win target must be the NSIS installer"; exit 1 }
+          Copy-Item $src.FullName "dist/IEM-Tool-Setup.exe"
+          Get-ChildItem "dist/IEM-Tool-Setup.exe"
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v5
         with:
           name: IEM-Tool-Windows
-          path: dist/IEM-Tool.exe
+          path: dist/IEM-Tool-Setup.exe
 
       - name: Upload to Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/IEM-Tool.exe
+          files: dist/IEM-Tool-Setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -272,8 +274,8 @@ jobs:
         with:
           tag: latest
           name: Latest Build
-          body: Automatically rebuilt on every push to main. Contains IEM-Tool.exe (portable, no installer), IEM-Tool.dmg (Apple Silicon), IEM-Tool-x64.dmg (Intel) and IEM-Tool.appimage (portable; run chmod +x first).
+          body: Automatically rebuilt on every push to main. Contains IEM-Tool-Setup.exe (Windows installer), IEM-Tool.dmg (Apple Silicon), IEM-Tool-x64.dmg (Intel) and IEM-Tool.appimage (portable; run chmod +x first).
           allowUpdates: true
           replacesArtifacts: true
           makeLatest: true
-          artifacts: release-files/IEM-Tool-Windows/IEM-Tool.exe,release-files/IEM-Tool-macOS/IEM-Tool.dmg,release-files/IEM-Tool-macOS/IEM-Tool-x64.dmg,release-files/IEM-Tool-Linux/IEM-Tool.appimage
+          artifacts: release-files/IEM-Tool-Windows/IEM-Tool-Setup.exe,release-files/IEM-Tool-macOS/IEM-Tool.dmg,release-files/IEM-Tool-macOS/IEM-Tool-x64.dmg,release-files/IEM-Tool-Linux/IEM-Tool.appimage

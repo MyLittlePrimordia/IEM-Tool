@@ -81,6 +81,15 @@ const handlers = {
         "click_192_EQ_switchCategory__custom": function(event, element) { EQ.switchCategory('custom') },
         "click_193_IEM_cycleFormFactor_1": function(event, element) { IEM.cycleFormFactor(1) },
         "click_194_PEQDB_Module_toggleDrawMode": function(event, element) { PEQDB_Module.toggleDrawMode() },
+        "click_900_App_openDataFolder": function(event, element) {
+            if (window.appBridge && typeof window.appBridge.openDataFolder === 'function') {
+                window.appBridge.openDataFolder().then(function(r) {
+                    if (!r || !r.ok) showToast("Could not open the database folder.", "⚠️");
+                }).catch(function() { showToast("Could not open the database folder.", "⚠️"); });
+            } else {
+                showToast("Opening folders only works in the desktop app.", "⚠️");
+            }
+        },
         "click_196_IEM_saveConfig": function(event, element) { IEM.saveConfig() },
         "click_197_EQ_applyGenreTargetAutoEQ__music": function(event, element) { EQ.applyGenreTargetAutoEQ('music') },
         "click_198_App_switchTab__iem": function(event, element) { App.switchTab('iem') },

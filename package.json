@@ -62,7 +62,7 @@
     "win": {
       "target": [
         {
-          "target": "portable",
+          "target": "nsis",
           "arch": [
             "x64"
           ]
@@ -112,8 +112,14 @@
         "to": "data"
       }
     ],
-    "portable": {
-      "artifactName": "IEM-Tool-${version}-Portable.${ext}"
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "IEM Tool",
+      "artifactName": "IEM-Tool-Setup-${version}.${ext}"
     }
   },
   "allowScripts": {

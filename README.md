@@ -5,7 +5,7 @@
 Find budget clones of $1,000 flagships, tune any set with 1-click AutoEQ, pinpoint harsh treble peaks, and test your gear—100% offline with zero signups or tracking.
 
 [📥 **Download Latest Release (Windows / macOS / Linux)**](https://github.com/MyLittlePrimordia/IEM-Tool/releases/latest)  
-*100% Free • Portable (no installer) • Works completely offline*
+*100% Free • Works completely offline*
 
 ---
 
@@ -71,20 +71,15 @@ Switch between 9 colour themes anytime from the settings. Each one has its own a
 
 ---
 
-## 🚀 Running It (Portable - Nothing to Install)
+## 🚀 Installing & Running
 
 | Platform | File | How |
 | :--- | :--- | :--- |
-| **Windows** | `IEM-Tool.exe` | Double-click. No installer, no admin rights. |
-| **Linux** | `IEM-Tool.appimage` | `chmod +x IEM-Tool.appimage`, then run it. (Needs FUSE 2; if it won't start, run it with `--appimage-extract-and-run`.) |
-| **macOS** | `IEM-Tool.dmg` | Open the DMG and drag the app to Applications. macOS has no portable mode. |
+| **Windows** | `IEM-Tool-Setup.exe` | Run the installer and follow the wizard. Launch from the Start menu or desktop shortcut. |
+| **Linux** | `IEM-Tool.appimage` | `chmod +x IEM-Tool.appimage`, then run it. Portable, no install. (Needs FUSE 2; if it won't start, run it with `--appimage-extract-and-run`.) |
+| **macOS** | `IEM-Tool.dmg` | Open the DMG and drag the app to Applications. |
 
-On Windows and Linux the app keeps everything in two folders **next to the file you launched**, so you can run it from a USB stick and it leaves nothing behind on the PC:
-
-- `IEM-Profile/` - your settings, themes and saved reviews.
-- `IEM-Data/` - optional database updates (see below).
-
-If the folder isn't writable (for example a read-only drive) it quietly falls back to the normal per-user location.
+Your settings, themes and saved reviews are stored per user (Windows: `%APPDATA%\iem-tool`). The Linux AppImage instead keeps `IEM-Profile/` and `IEM-Data/` next to the file, so it can run from a USB stick.
 
 ---
 
@@ -93,11 +88,9 @@ If the folder isn't writable (for example a read-only drive) it quietly falls ba
 You don't need a new app version to get newly measured IEMs:
 
 1. Download the latest data from the **[📦 Database Repo](https://github.com/MyLittlePrimordia/Database/archive/refs/heads/main.zip)**.
-2. Extract it and drop `database.json` (and `database.json.gz` if included) plus the `data/` folder into an **`IEM-Data`** folder:
-   - **Windows:** create `IEM-Data` next to `IEM-Tool.exe`.
-   - **Linux:** create `IEM-Data` next to the AppImage.
-   - **macOS:** `~/Library/Application Support/IEM Tool/IEM-Data/`
-3. Restart **IEM Tool**.
+2. In IEM Tool open **Settings → Data → Offline database → Open folder**. This opens the `IEM-Data` folder (it is created for you).
+3. Extract the download and drop `database.json` (and `database.json.gz` if included) plus the `data/` folder into that `IEM-Data` folder. (Linux AppImage: it sits next to the AppImage. macOS: `~/Library/Application Support/IEM Tool/IEM-Data/`.)
+4. Restart **IEM Tool**.
 
 Files in `IEM-Data` win over the database built into the app, and anything missing there is still read from the built-in copy. To go back to the built-in database, delete the `IEM-Data` folder.
 

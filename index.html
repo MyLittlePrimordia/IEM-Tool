@@ -2518,6 +2518,17 @@ existing module drives this unchanged. -->
         <div class="settings-rows">
 
           <div class="settings-row">
+            <span class="settings-row-icon emoji-font">📂</span>
+            <div class="settings-row-text">
+              <span class="settings-row-label">Offline database</span>
+              <span class="settings-row-hint">Drop a newer database.json + data folder here, then restart</span>
+            </div>
+            <div class="settings-actions">
+              <button data-action="click_900_App_openDataFolder" class="settings-btn" title="Open the folder that holds database.json and data">Open folder</button>
+            </div>
+          </div>
+
+          <div class="settings-row">
             <span class="settings-row-icon emoji-font">💾</span>
             <div class="settings-row-text">
               <span class="settings-row-label">Library</span>
@@ -2981,7 +2992,7 @@ existing module drives this unchanged. -->
 <!-- ONNX Runtime Web is loaded on demand by IEM_Module.loadPhotoMatteRuntime();
      see the note next to this tag. -->
 
-<script src="app/js/bundle-version.js?v=708a2605efbf"></script>
+<script src="app/js/bundle-version.js?v=7c07cef8379f"></script>
         <!-- Bundle loader. External (app/js/boot-bundle.js) rather than inline so that
          script-src can drop 'unsafe-inline'. -->
         <script src="app/js/boot-bundle.js"></script>

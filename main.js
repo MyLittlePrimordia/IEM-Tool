@@ -1,13 +1,15 @@
-const { app, BrowserWindow, screen, ipcMain } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, shell } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
 const { captureThemeBackdrop } = require('./theme-backdrop.js');
 
 // ---------------------------------------------------------------------------
-// Portable mode.
+// Portable mode (Linux AppImage; also any portable Windows build).
 //
-// When the app is launched as the Windows portable .exe (electron-builder sets
+// Windows ships as a normal NSIS installer, so PORTABLE_EXECUTABLE_DIR is unset
+// there and the app uses the standard per-user locations (see below). When the
+// app is launched as a portable .exe (electron-builder sets
 // PORTABLE_EXECUTABLE_DIR) or as a Linux AppImage (APPIMAGE), everything the
 // app writes lives in two folders NEXT TO the executable, so the whole thing
 // can sit on a USB stick and leaves nothing behind in %APPDATA% / ~/.config:
@@ -247,9 +249,10 @@ function getDataRoot() {
 // copy that ships inside the app, so dropping a newer database.json + data/
 // into this folder updates the app without reinstalling or re-downloading it.
 // Deleting the folder reverts to the database that shipped with the build.
-//   Windows portable : <folder of the .exe>/IEM-Data
-//   Linux AppImage   : <folder of the AppImage>/IEM-Data
-//   macOS / installed: <userData>/IEM-Data
+//   Linux AppImage    : <folder of the AppImage>/IEM-Data
+//   Windows installer : %APPDATA%\iem-tool\IEM-Data
+//   macOS             : ~/Library/Application Support/<app>/IEM-Data
+// Settings -> Data -> "Open database folder" opens whichever one applies.
 function getExternalDataDir() {
   if (!app.isPackaged) return null;
   return path.join(PORTABLE_BASE || app.getPath('userData'), 'IEM-Data');
@@ -463,6 +466,40 @@ ipcMain.on('win:toggle-maximize', () => {
 ipcMain.on('win:close', () => { if (mainWindow) mainWindow.close(); });
 ipcMain.on('win:is-maximized', (event) => {
   event.returnValue = mainWindow ? mainWindow.isMaximized() : false;
+});
+
+// Settings -> Data -> "Open database folder". Opens the folder where a newer
+// database.json + data/ can be dropped (see getExternalDataDir). Creates it
+// first if it does not exist yet, with a short README so it is obvious what
+// goes in it. Argument-less on purpose: the renderer cannot choose the path.
+// In dev (unpackaged) there is no external folder, so the project root - where
+// database.json and data/ live - is opened instead.
+const IEM_DATA_README = [
+  'IEM Tool - offline database updates',
+  '',
+  'To update the database, copy a newer "database.json" (and/or "database.json.gz")',
+  'and the "data" folder into THIS folder, then restart IEM Tool.',
+  '',
+  'Files here win over the copy that came with the app. A missing file falls back',
+  'to the built-in one, so you only need to add what changed. If you supply',
+  'database.json or database.json.gz, the built-in database index is not used.',
+  'To go back to the built-in database, delete the files you added here.',
+  ''
+].join('\r\n');
+
+ipcMain.handle('app:open-data-folder', async () => {
+  try {
+    const dir = getExternalDataDir() || getDataRoot();
+    fs.mkdirSync(dir, { recursive: true });
+    const readme = path.join(dir, 'README.txt');
+    if (app.isPackaged && !isFile(readme)) {
+      try { fs.writeFileSync(readme, IEM_DATA_README); } catch (_) {}
+    }
+    const err = await shell.openPath(dir);
+    return err ? { ok: false, error: err, path: dir } : { ok: true, path: dir };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
 });
 
 // Review-card export backdrop. The rasterising itself lives in theme-backdrop.js

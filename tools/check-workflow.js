@@ -96,7 +96,7 @@ const releaseArtifacts = String(releaseStep?.with?.artifacts || '')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
-for (const f of ['IEM-Tool.exe', 'IEM-Tool.dmg', 'IEM-Tool-x64.dmg', 'IEM-Tool.appimage']) {
+for (const f of ['IEM-Tool-Setup.exe', 'IEM-Tool.dmg', 'IEM-Tool-x64.dmg', 'IEM-Tool.appimage']) {
   // Entries are full paths (release-files/<artifact>/<file>), so match on the
   // trailing filename rather than requiring exact list membership.
   check(`rolling release includes ${f}`, releaseArtifacts.some(p => p === f || p.endsWith('/' + f)), 'true');

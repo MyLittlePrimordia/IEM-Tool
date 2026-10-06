@@ -35,6 +35,12 @@ contextBridge.exposeInMainWorld('appBridge', {
   captureThemeBackdrop: (themeId, width, height) =>
     ipcRenderer.invoke('theme:capture-backdrop', { themeId, width, height }),
 
+  // Opens the offline-database folder (IEM-Data) in the system file manager,
+  // creating it first if needed. No path argument: the main process decides
+  // which folder, so this cannot be used to open an arbitrary location.
+  // Resolves to { ok, path, error? }.
+  openDataFolder: () => ipcRenderer.invoke('app:open-data-folder'),
+
   // Push subscription for maximize / unmaximize. Covers all three ways the
   // state can change: the caption button, double-click on the title-bar drag
   // region, and Win+Up / Win+Down — so the glyph can never go stale. Returns an
