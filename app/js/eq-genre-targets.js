@@ -11,6 +11,9 @@
 const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false, listOpen: false, selectedIdx: -1 }, game: { open: false, listOpen: false, selectedIdx: -1 } },
 
         toggleGenreTargetPicker: function(side) {
+            // Bind the outside-click/Escape dismiss on first open. Idempotent, so
+            // this needs no wiring into the module's boot sequence.
+            this.initGenreTargetDismiss();
             const st = this._genreTargetState[side];
             st.open = !st.open;
             const panel = document.getElementById(`${side}-genre-target-panel`);
@@ -32,6 +35,47 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
             if (panel) panel.classList.add('hidden');
             const list = document.getElementById(`${side}-genre-target-list`);
             if (list) list.classList.add('hidden');
+        },
+
+        // Dismiss on outside click / Escape.
+        //
+        // The picker is a popover, not a modal dialog, and popovers are expected
+        // to dismiss when you click elsewhere. Previously the ONLY ways out were
+        // the tick (which applies) and the X (which discards) - so clicking the
+        // graph, another tab, or empty space left it hanging open, which reads
+        // as the panel being stuck rather than the user's click being ignored.
+        //
+        // Both the Apply and Discard controls remain: they still mean "apply"
+        // and "discard", whereas an outside click means "neither, just close".
+        initGenreTargetDismiss: function() {
+            if (this._genreDismissBound) return;
+            this._genreDismissBound = true;
+            const self = this;
+
+            const isInside = (side, target) => {
+                const panel = document.getElementById(`${side}-genre-target-panel`);
+                if (panel && panel.contains(target)) return true;
+                // the badge button that opens it lives outside the panel
+                const btn = document.querySelector(
+                    `[data-action$="EQ_toggleGenreTargetPicker__${side}"]`);
+                return !!(btn && btn.contains(target));
+            };
+
+            document.addEventListener('click', (e) => {
+                for (const side of ['music', 'game']) {
+                    const st = self._genreTargetState[side];
+                    if (!st.open) continue;
+                    if (isInside(side, e.target)) continue;
+                    self.closeGenreTargetPicker(side);
+                }
+            }, true);
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape') return;
+                for (const side of ['music', 'game']) {
+                    if (self._genreTargetState[side].open) self.closeGenreTargetPicker(side);
+                }
+            });
         },
 
         toggleGenreTargetList: function(side) {

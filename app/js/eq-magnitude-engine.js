@@ -122,8 +122,8 @@ getLiveFiltersState: function() {
             // on the pre-zoom shape until the next slider change.
             const gridKey = (numPoints > 0 && freqs && freqs.length >= numPoints)
                 ? (Math.round(freqs[0] * 100) + '-' + Math.round(freqs[numPoints - 1] * 100)) : 'x';
-            const viewRange = (window.PEQDB_Module && PEQDB_Module.viewMinF !== undefined)
-                ? (PEQDB_Module.viewMinF + '-' + PEQDB_Module.viewMaxF) : 'x';
+            const viewRange = (window.PEQDB && window.PEQDB.viewMinF !== undefined)
+                ? (window.PEQDB.viewMinF + '-' + window.PEQDB.viewMaxF) : 'x';
 
             const cheapKey = [simStrength, loudnessVol, Number.isFinite(deEsserFreq) ? +deEsserFreq.toFixed(2) : 0,
                 this.deEsserEnabled ? 1 : 0,

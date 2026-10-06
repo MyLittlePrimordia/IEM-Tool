@@ -34,6 +34,31 @@
         updateToneVolume: function() { const volEl = document.getElementById('tone-volume'); const vol = volEl ? parseFloat(volEl.value) : 50; const disp = document.getElementById('tone-vol-display'); if (disp) disp.innerText = vol + '%'; if(this.gain) { setAudioParamSmooth(this.gain.gain, vol / 100 * 0.2); } },
         toneTogglePlay: async function() {
             if(this.osc) { this.toneStop(); return; }
+            // Re-entrancy guard.
+            //
+            // The check above is `if (this.osc)`, but this.osc is only assigned
+            // after TWO awaits - ensureDSPGraph() and ctx.resume(). Every click
+            // that lands before those settle therefore sees osc === null and
+            // proceeds. A double-click created two oscillators, and the module
+            // kept only the second: the first stayed connected to the input gain,
+            // kept sounding, and became unreachable, so toneStop() could never
+            // silence it. Measured: 2 clicks -> 2 oscillators and 1 stop() call;
+            // 3 clicks -> 3 oscillators.
+            //
+            // Join the in-flight start instead of starting again. A double-click
+            // on Play means "play", not "play then immediately stop".
+            if (this._toneStartInFlight) return this._toneStartInFlight;
+            this._toneStartInFlight = this._toneStart();
+            try {
+                return await this._toneStartInFlight;
+            } finally {
+                // Cleared in finally so a rejected start (no audio device, denied
+                // autoplay) cannot wedge the button permanently.
+                this._toneStartInFlight = null;
+            }
+        },
+        // The body of toneTogglePlay, run at most once per in-flight start.
+        _toneStart: async function() {
             await EQ_Module.ensureDSPGraph();
             const ctx = SharedAudio.init(); await ctx.resume();
 
@@ -87,6 +112,21 @@ btnStop.classList.remove('is-on');
 }
 return;
 }
+            // Same re-entrancy problem as toneTogglePlay: sweepTimer is only
+            // assigned after `await this.toneTogglePlay()`, so two clicks both
+            // saw it as null and both called setInterval. The second overwrote
+            // the first, leaving an interval nothing can clear - it kept
+            // mutating this.current and the frequency slider after the sweep was
+            // stopped, forever.
+            if (this._toneSweepInFlight) return this._toneSweepInFlight;
+            this._toneSweepInFlight = this._toneSweepStart();
+            try {
+                return await this._toneSweepInFlight;
+            } finally {
+                this._toneSweepInFlight = null;
+            }
+        },
+        _toneSweepStart: async function() {
             if (!this.osc) {
                 await this.toneTogglePlay();
             }

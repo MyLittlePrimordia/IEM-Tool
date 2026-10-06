@@ -12,18 +12,70 @@
                 const target = pct + '%';
                 if (_lastFill.get(el) === val + '|' + target) return;
                 _lastFill.set(el, val + '|' + target);
+                // Write BOTH names. --range-fill is the one the stylesheet reads
+                // (app.css: the input[type=range] track rule); --track-percent
+                // is still read by the EQ band cards and anything else that
+                // sets it directly. They were the same idea under two names and
+                // never met, which is why no slider showed a fill.
                 if (el.style.getPropertyValue('--range-fill') !== target) {
                     el.style.setProperty('--range-fill', target);
+                }
+                if (el.style.getPropertyValue('--track-percent') !== target) {
+                    el.style.setProperty('--track-percent', target);
                 }
             }
             document.addEventListener('input', (e) => {
                 if (e.target && e.target.matches && e.target.matches('input[type="range"]')) updateFill(e.target);
             }, true);
+            // updateFill normally runs from an `input` event or from the boot
+            // sweep below. Neither covers code that assigns el.value directly:
+            // no event fires, so --range-fill keeps whatever percentage the
+            // slider had before, and the knob ends up sitting somewhere the
+            // coloured fill does not reach - which reads as a detached knob.
+            // Anything that moves a slider programmatically should call this.
+            window.IEM_updateRangeFill = updateFill;
             function initAll() {
-                if (document.hidden || !document.hasFocus()) return;
+                // Do NOT gate on document.hasFocus(). That guard made the initial
+                // pass a no-op whenever the window was not focused - which is
+                // every launch, and any harness run - so no slider had a fill
+                // until the user happened to drag it. This is one pass over the
+                // ranges; there is nothing to protect against.
                 document.querySelectorAll('input[type="range"]').forEach(updateFill);
             }
-            window.addEventListener('DOMContentLoaded', initAll);
+            // Bind with a readyState check, like setup() at the bottom of this
+            // file. The bundle is loaded at the end of <body> and can execute
+            // AFTER DOMContentLoaded has already fired, in which case a bare
+            // addEventListener never runs and no slider is ever painted
+            // initially. That was the real reason sliders showed a bare track:
+            // only the ones the user happened to drag got a fill.
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initAll, { once: true });
+            } else {
+                initAll();
+            }
+
+            // Several sliders are created by JS after boot (driver tiles, review
+            // cards, per-band graph rows), so a single boot pass misses them and
+            // they stay empty until touched.
+            const _rangeObserver = new MutationObserver((muts) => {
+                for (const m of muts) {
+                    for (const node of m.addedNodes) {
+                        if (node.nodeType !== 1) continue;
+                        if (node.matches && node.matches('input[type="range"]')) updateFill(node);
+                        if (node.querySelectorAll) {
+                            node.querySelectorAll('input[type="range"]').forEach(updateFill);
+                        }
+                    }
+                }
+            });
+            const _observeRanges = () => {
+                if (document.body) _rangeObserver.observe(document.body, { childList: true, subtree: true });
+            };
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', _observeRanges, { once: true });
+            } else {
+                _observeRanges();
+            }
 
             // 3s polling removed: input listener + visibilitychange + syncGlobalSliders
             // already keep fill bars coherent. The interval was waking the tab every

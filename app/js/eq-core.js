@@ -326,13 +326,19 @@ const EQ_Module = {
     switchAcousticsSubTab: function(subTabId) {
         this.activeAcousticsSubTab = subTabId;
         document.querySelectorAll('.acoustics-sub-panel').forEach(p => p.classList.add('hidden'));
-        document.querySelectorAll('#acoustics-sub-tabs button').forEach(b => b.classList.remove('active'));
+document.querySelectorAll('#acoustics-sub-tabs button').forEach(b => {
+                b.classList.remove('active');
+                b.setAttribute('aria-selected', 'false');
+            });
 
-        const panel = document.getElementById('as-panel-' + subTabId);
-        if (panel) panel.classList.remove('hidden');
+            const panel = document.getElementById('as-panel-' + subTabId);
+            if (panel) panel.classList.remove('hidden');
 
-        const btn = document.getElementById('as-tab-' + subTabId);
-        if (btn) btn.classList.add('active');
+            const btn = document.getElementById('as-tab-' + subTabId);
+            if (btn) {
+                btn.classList.add('active');
+                btn.setAttribute('aria-selected', 'true');
+            }
 
         const stepperLabel = document.getElementById('acoustics-sub-stepper-label');
         if (stepperLabel) {
@@ -586,13 +592,13 @@ vizModalActive: false,
                 if (tabId === 'standard') {
                     pStd.classList.remove('hidden');
                     pAdv.classList.add('hidden');
-                    if (tStd) tStd.classList.add('active');
-                    if (tAdv) tAdv.classList.remove('active');
+                    if (tStd) { tStd.classList.add('active'); tStd.setAttribute('aria-selected', 'true'); }
+                    if (tAdv) { tAdv.classList.remove('active'); tAdv.setAttribute('aria-selected', 'false'); }
                 } else {
                     pStd.classList.add('hidden');
                     pAdv.classList.remove('hidden');
-                    if (tStd) tStd.classList.remove('active');
-                    if (tAdv) tAdv.classList.add('active');
+                    if (tStd) { tStd.classList.remove('active'); tStd.setAttribute('aria-selected', 'false'); }
+                    if (tAdv) { tAdv.classList.add('active'); tAdv.setAttribute('aria-selected', 'true'); }
                 }
             }
 
@@ -719,19 +725,23 @@ vizModalActive: false,
             this.drawCurve();
         },
 
-        buildStandardEQ: function() {
-            const container = document.getElementById("eq-panel-standard");
-            if (!container) return;
-            container.innerHTML = "";
+buildStandardEQ: function() {
+        const container = document.getElementById("eq-panel-standard");
+        if (!container) return;
+        container.innerHTML = "";
 
-            const bandColors = ['#ef4444', '#f97316', '#f59e0b', '#10b981', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e'];
-
-            this.bands.forEach((b, i) => {
-                const color = bandColors[i % bandColors.length];
-                const card = document.createElement("div");
-                card.id = `standard_card_m${i}`;
-                card.className = "eq-band-card flex flex-col gap-1 p-2";
-                card.style.setProperty('--band-color', color);
+        this.bands.forEach((b, i) => {
+            // Resolved through CSS custom properties rather than a JS array of
+            // hexes. The array used to be duplicated verbatim in buildEQ (they
+            // would inevitably drift), and the hexes ignored all nine themes.
+            // -hi is the text-safe step; the fill step is for the track/badge.
+            const color = `var(--band-${(i % 10) + 1})`;
+            const colorHi = `var(--band-${(i % 10) + 1}-hi)`;
+            const card = document.createElement("div");
+            card.id = `standard_card_m${i}`;
+            card.className = "eq-band-card flex flex-col gap-1 p-2";
+            card.style.setProperty('--band-color', color);
+            card.style.setProperty('--band-color-hi', colorHi);
 
                 card.innerHTML = `
                     <div class="flex items-center justify-between text-[10px] select-none font-bold" draggable="false">
@@ -769,18 +779,22 @@ vizModalActive: false,
 
             mainContainer.innerHTML = "";
 
-            if (window.bypassedBands === undefined) window.bypassedBands = new Set();
-            const bandColors = ['#ef4444', '#f97316', '#f59e0b', '#10b981', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e'];
+if (window.bypassedBands === undefined) window.bypassedBands = new Set();
 
-            this.buildStandardEQ();
+        this.buildStandardEQ();
 
-            this.bands.forEach((b, i) => {
-                const color = bandColors[i % bandColors.length];
-                const isBypassed = window.bypassedBands.has("m" + i);
-                const bandDiv = document.createElement("div");
-                bandDiv.id = `card_m${i}`;
-                bandDiv.className = `eq-band-card flex flex-col gap-1.5 ${isBypassed ? 'bypassed' : ''}`;
-                bandDiv.style.setProperty('--band-color', color);
+        this.bands.forEach((b, i) => {
+            // See buildStandardEQ: the band ramp lives in CSS as
+            // --band-N / --band-N-hi. The array of hexes this replaced used to be
+            // duplicated verbatim in both builders.
+            const color = `var(--band-${(i % 10) + 1})`;
+            const colorHi = `var(--band-${(i % 10) + 1}-hi)`;
+            const isBypassed = window.bypassedBands.has("m" + i);
+            const bandDiv = document.createElement("div");
+            bandDiv.id = `card_m${i}`;
+            bandDiv.className = `eq-band-card flex flex-col gap-1.5 ${isBypassed ? 'bypassed' : ''}`;
+            bandDiv.style.setProperty('--band-color', color);
+            bandDiv.style.setProperty('--band-color-hi', colorHi);
 
                 const labelMap = { peaking: 'PK', lowshelf: 'LS', highshelf: 'HS', highpass: 'HP', lowpass: 'LP', notch: 'Notch' };
                 const currentLabel = labelMap[b.type || 'peaking'] || 'PK';
@@ -1211,10 +1225,14 @@ switchCategory: function(catId) {
                 categoryContainers.forEach(pill => {
                     if (pill && (pill.id.startsWith('cat-') || pill.id === 'cat-custom')) {
                         pill.classList.remove('active');
+                        pill.setAttribute('aria-selected', 'false');
                     }
                 });
                 const activePill = document.getElementById('cat-' + catId);
-                if (activePill) activePill.classList.add('active');
+                if (activePill) {
+                    activePill.classList.add('active');
+                    activePill.setAttribute('aria-selected', 'true');
+                }
 
                 const grid = document.getElementById('preset-grid-content');
                 if (!grid) return;

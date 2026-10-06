@@ -1241,14 +1241,14 @@ Object.defineProperty(window, 'localStorage', {
             if (overlay) {
                 overlay.style.display = this.blueLightActive ? 'block' : 'none';
             }
-            if (btn) {
-                btn.innerHTML = this.blueLightActive ? "🟠 Filter: ON" : "🌙 Filter: Off";
-                if (this.blueLightActive) {
-                    btn.classList.add('is-on');
-                } else {
-                    btn.classList.remove('is-on');
-                }
-            }
+if (btn) {
+// R3: state only. This used to rewrite innerHTML with "🌙 Filter: ON" /
+// "🌙 Filter: Off", which destroys any markup inside the button - the reason a
+// real switch could not be built here. The visible wording now lives in the
+// settings row label; the control is a switch driven purely by `is-on`.
+btn.classList.toggle('is-on', this.blueLightActive);
+btn.setAttribute('aria-checked', this.blueLightActive ? 'true' : 'false');
+}
             
             // Show 😎 cool shades when blue light filter activates
             if (this.blueLightActive) {
@@ -1285,12 +1285,26 @@ Object.defineProperty(window, 'localStorage', {
         }
     };
 
+// Restore the persisted blue-light filter once the whole bundle has evaluated
+// (init() touches Mascot, which is defined later in the bundle). Without this
+// call the saved a11y_bluelight value was written but never read back.
+(function () {
+    function boot() { try { Accessibility.init(); } catch (e) { console.warn('[Accessibility] init failed', e); } }
+    if (document.readyState === 'complete') setTimeout(boot, 0);
+    else window.addEventListener('load', function () { setTimeout(boot, 0); }, { once: true });
+})();
+
 /* ===== app/js/ui-kit.js ===== */
-/* ===== ui-kit.js =====
+/* ===== app/js/ui-kit.js =====
  * Small drop-in UI primitives shared across workspaces.
- * Currently: UIKit.confirm() — a themed replacement for window.confirm()
- * that matches the existing modal styling (rename-modal, save-preset-modal,
- * etc.) instead of popping the unstyled native browser dialog.
+ *   UIKit.confirm(opts)  — themed replacement for window.confirm()
+ *   UIKit.windowChrome()  — R1 custom caption bar (minimise / maximize / close)
+ *
+ * The window became frameless in R1 so the app could draw its own title bar
+ * with rounded corners and Windows-convention red / amber / green buttons, which
+ * means the renderer owns three operations that used to be free. They are
+ * routed through preload.js, which exposes exactly three named commands and no
+ * generic IPC passthrough.
  *
  * Usage:
  *   const ok = await UIKit.confirm({
@@ -1304,6 +1318,7 @@ Object.defineProperty(window, 'localStorage', {
 const UIKit = {
     _modalEl: null,
     _resolver: null,
+    _chromeBound: false,
 
     _ensureModal: function () {
         if (this._modalEl) return this._modalEl;
@@ -1312,15 +1327,15 @@ const UIKit = {
         wrap.id = 'uikit-confirm-modal';
         wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden flex items-center justify-center p-4';
         wrap.innerHTML = `
-            <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm shadow-2xl flex flex-col overflow-hidden p-4 select-none">
-                <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
-                    <span id="uikit-confirm-title" class="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">⚠️ Confirm</span>
-                    <button id="uikit-confirm-x" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
+            <div class="bg-[var(--bg-card)] border border-[var(--line)] w-full max-w-sm flex flex-col overflow-hidden p-5 select-none" style="border-radius: var(--r-xl); box-shadow: var(--sh-3);">
+                <div class="flex justify-between items-center mb-3 pb-3 border-b border-[var(--line)]">
+                    <span id="uikit-confirm-title" class="text-[13px] font-semibold uppercase tracking-wide flex items-center gap-2" style="color: var(--text-hi);">⚠️ Confirm</span>
+                    <button id="uikit-confirm-x" class="app-caption-btn" style="width:28px;height:28px;" aria-label="Cancel">✕</button>
                 </div>
-                <p id="uikit-confirm-msg" class="text-[10px] text-zinc-500 mb-4 leading-normal"></p>
+                <p id="uikit-confirm-msg" class="text-[12px] mb-4 leading-relaxed" style="color: var(--text-mid);"></p>
                 <div class="grid grid-cols-2 gap-2">
-                    <button id="uikit-confirm-cancel" class="py-2 text-xs font-bold btn-clear cursor-pointer">Cancel</button>
-                    <button id="uikit-confirm-ok" class="py-2 text-xs font-bold hover:brightness-110 text-white transition-all cursor-pointer text-center"></button>
+                    <button id="uikit-confirm-cancel" class="btn-clear cursor-pointer" style="height:36px;border-radius: var(--r-md);">Cancel</button>
+                    <button id="uikit-confirm-ok" class="font-semibold text-white transition-all cursor-pointer text-center" style="height:36px;border-radius: var(--r-md);"></button>
                 </div>
             </div>`;
         document.body.appendChild(wrap);
@@ -1348,7 +1363,7 @@ const UIKit = {
     // Shared per-dialog keydown handler: attached on every confirm() and
     // removed by _finish(), so a stale handler never survives a dismissed
     // dialog and a reopened one always responds to Esc/Enter.
-    _attachKeyHandler: function(wrap) {
+    _attachKeyHandler: function (wrap) {
         if (this._keyHandler) {
             document.removeEventListener('keydown', this._keyHandler);
             this._keyHandler = null;
@@ -1364,7 +1379,7 @@ const UIKit = {
         document.addEventListener('keydown', this._keyHandler);
     },
 
-    _finish: function(result, wrap) {
+    _finish: function (result, wrap) {
         wrap.classList.add('hidden');
         if (this._keyHandler) {
             document.removeEventListener('keydown', this._keyHandler);
@@ -1384,8 +1399,12 @@ const UIKit = {
         wrap.querySelector('#uikit-confirm-msg').textContent = opts.message || '';
         const okBtn = wrap.querySelector('#uikit-confirm-ok');
         okBtn.textContent = opts.confirmLabel || 'Confirm';
-        okBtn.className = 'py-2 text-xs font-bold hover:brightness-110 text-white transition-all cursor-pointer text-center' +
-            (opts.danger ? 'bg-red-600' : 'bg-[var(--accent-blue)]');
+        // Primary action carries the accent halo; a destructive one gets the
+        // danger token. Both use --accent-ink / #fff for the label.
+        okBtn.style.background = opts.danger
+            ? 'var(--danger)'
+            : 'var(--accent)';
+        okBtn.style.color = opts.danger ? '#FFFFFF' : 'var(--accent-ink)';
 
         wrap.classList.remove('hidden');
         wrap.classList.add('flex');
@@ -1397,6 +1416,55 @@ const UIKit = {
             if (this._resolver) this._resolver(false);
             this._resolver = resolve;
         });
+    },
+
+    /* --- R1: window caption bar ------------------------------------------
+     * Binds minimise / maximise / close and keeps the maximise glyph in sync
+     * with the real window state, so double-clicking the title bar or using
+     * Win+Up also updates the button.
+     *
+     * A no-op outside Electron (the tools/ screenshot harness runs the page in a
+     * plain BrowserWindow with no preload), which is why every call is guarded.
+     * Idempotent: safe to call on every boot. */
+    windowChrome: function () {
+        if (this._chromeBound) return;
+        const bridge = window.appBridge;
+        if (!bridge || !bridge.windowMinimize) return;
+
+        const minBtn = document.getElementById('win-minimize');
+        const maxBtn = document.getElementById('win-maximize');
+        const closeBtn = document.getElementById('win-close');
+
+        const setMaxGlyph = (isMax) => {
+            if (!maxBtn) return;
+            maxBtn.title = isMax ? 'Restore' : 'Maximize';
+            maxBtn.setAttribute('aria-label', isMax ? 'Restore' : 'Maximize');
+            // Restore = two overlapping squares; Maximize = one square.
+            maxBtn.innerHTML = isMax
+                ? '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="2.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1"/><path d="M2.5 2.5V0.5H9.5V7.5H7.5" fill="none" stroke="currentColor" stroke-width="1"/></svg>'
+                : '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1"/></svg>';
+        };
+
+        if (minBtn) minBtn.addEventListener('click', () => bridge.windowMinimize());
+        if (maxBtn) maxBtn.addEventListener('click', () => bridge.windowToggleMaximize());
+        if (closeBtn) closeBtn.addEventListener('click', () => bridge.windowClose());
+
+        // A maximized window draws square corners on Windows, so the caption
+        // cluster is inset rather than hard against the frame while maximized.
+        const applyMaxFrame = (isMax) => {
+            setMaxGlyph(isMax);
+            document.documentElement.classList.toggle('win-maximized', !!isMax);
+        };
+        applyMaxFrame(bridge.windowIsMaximized());
+
+        // main.js pushes this on maximize / unmaximize, which also covers
+        // double-click on the drag region and Win+Up / Win+Down. Subscribing
+        // (rather than polling) means zero cost when the state never changes.
+        if (typeof bridge.onWindowStateChanged === 'function') {
+            bridge.onWindowStateChanged(applyMaxFrame);
+        }
+
+        this._chromeBound = true;
     }
 };
 
@@ -1425,6 +1493,7 @@ const Shortcuts = {
         { key: '5', label: 'Switch to Visualizer', group: 'Workspace', action: () => App.switchTab('visualizer') },
         { key: '6', label: 'Switch to Settings', group: 'Workspace', action: () => App.switchTab('settings') },
         { key: ' ', displayKey: 'Space', label: 'Play / Pause', group: 'Playback', action: () => { if (typeof EQ !== 'undefined' && EQ.togglePlayState) EQ.togglePlayState(); } },
+        { key: 'z', ctrl: true, label: 'Undo last EQ change', group: 'EQ', action: () => { if (typeof EQ !== 'undefined' && EQ.undoEQ) EQ.undoEQ(); } },
         { key: 'e', ctrl: true, label: 'Export EQ Profile', group: 'EQ', action: () => { if (typeof EQ !== 'undefined' && EQ.showExportModal) EQ.showExportModal(); } },
         { key: '?', label: 'Show this shortcuts list', group: 'General', action: () => Shortcuts.toggleHelp() },
         { key: 'escape', label: 'Close open modal', group: 'General', action: null } // handled natively by each modal; listed for discoverability only
@@ -1439,6 +1508,15 @@ const Shortcuts = {
     _handleKeydown: function (e) {
         // Respect handlers that already consumed the event (e.g. a modal).
         if (e.defaultPrevented) return;
+        // Undo must work while a slider/button still has focus after a drag or
+        // click, but never while typing in a text or number field.
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key || '').toLowerCase() === 'z') {
+            const t = e.target;
+            const textual = t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable ||
+                (t.tagName === 'INPUT' && !/^(range|checkbox|radio|button)$/.test(t.type)));
+            if (!textual && typeof EQ !== 'undefined' && EQ.undoEQ && EQ.undoEQ()) e.preventDefault();
+            return;
+        }
         if (Shortcuts._isTypingTarget(e.target)) return;
         // Don't hijack keys while an interactive control (button, link) has
         // focus: Space would otherwise both activate the control (native
@@ -2961,17 +3039,19 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             }
         },
 
-        _applyGaplessButton: function() {
-            const btn = document.getElementById("a11y-gapless-btn");
-            if (!btn) return;
-            if (this.gaplessEnabled()) {
-                btn.classList.add('is-on');
-                btn.textContent = "🔗 Gapless: On";
-            } else {
-                btn.classList.remove('is-on');
-                btn.textContent = "🔗 Gapless: Off";
-            }
-        },
+_applyGaplessButton: function() {
+    const btn = document.getElementById("a11y-gapless-btn");
+    if (!btn) return;
+    // R3: the button no longer rewrites its own textContent. It used to set
+    // "🔗 Gapless: On" / "🔗 Gapless: Off" wholesale, which is incompatible with
+    // a real switch - any markup inside the button would be destroyed on the
+    // first state change. The switch track, knob and colour are now driven
+    // purely by the `is-on` class, and the visible wording lives in the row
+    // label beside it. aria-checked carries the state to assistive tech.
+    const on = this.gaplessEnabled();
+    btn.classList.toggle('is-on', on);
+    btn.setAttribute('aria-checked', on ? 'true' : 'false');
+    },
 
         // Toggle crossfade playback (Settings -> Accessibility panel button).
         // Takes over from the gapless seam with a longer, user-adjustable
@@ -3003,13 +3083,11 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             const btn = document.getElementById("a11y-crossfade-btn");
             if (!btn) return;
             const on = this.crossfadeEnabled();
-            if (on) {
-                btn.classList.add('is-on');
-                btn.textContent = "🎚️ Crossfade: On";
-            } else {
-                btn.classList.remove('is-on');
-                btn.textContent = "🎚️ Crossfade: Off";
-            }
+            // R3: state only. This used to rewrite textContent wholesale, which
+            // destroys any markup inside the button - the reason a real switch
+            // could not be built here. See _applyGaplessButton.
+            btn.classList.toggle('is-on', on);
+            btn.setAttribute('aria-checked', on ? 'true' : 'false');
             const slider = document.getElementById("a11y-crossfade-slider");
             if (slider) {
                 slider.disabled = !on;
@@ -3544,6 +3622,7 @@ this.fadeMusicVolume(vol, 0.015);
             }
         },
 };
+
 /* ===== app/js/eq-reverb.js ===== */
 const EQ_ReverbMethods = {
     toggleReverb: function() {
@@ -4254,6 +4333,13 @@ const EQ_DynamicsMethods = {
             this._agcUserPreamp = undefined;
             this._agcAutoDb = 0;
             this._agcNotified = false;
+            // The watchdog tracks the slider value it has accounted for so it can
+            // tell a user edit from its own write. Clear it so the first tick after
+            // a toggle treats the current slider as the user's, and so the
+            // reduction toast starts counting from zero again.
+            this._agcLastSeenValue = undefined;
+            this._agcAnnouncedDb = 0;
+            this._agcUserAdjustAt = undefined;
             showToast("Anti-Clip Headroom Limiter Enabled", "🛡️");
         } else {
             // Restore the user's own preamp. The watchdog lowers the slider to
@@ -4275,11 +4361,22 @@ const EQ_DynamicsMethods = {
                         window.isProgrammaticPreampUpdate = false;
                     }
                     showToast('Preamp restored to ' + restore.toFixed(1) + ' dB (Anti-Clip released ' + autoDb.toFixed(1) + ' dB).', '🛡️');
+                } else {
+                    // Reduction happened but there is no baseline to go back to,
+                    // or no slider to put it on. Say so: the old code fell
+                    // through to a bare "Disabled" toast, leaving the user with a
+                    // permanently lowered preamp and no explanation for it.
+                    showToast('Anti-Clip released ' + autoDb.toFixed(1) +
+                        ' dB, but your original preamp could not be recovered - it is still at ' +
+                        (slider ? (parseFloat(slider.value) || 0).toFixed(1) : '?') + ' dB.', '⚠️', { duration: 8000 });
                 }
             }
             this._agcUserPreamp = undefined;
             this._agcAutoDb = 0;
             this._agcNotified = false;
+            this._agcLastSeenValue = undefined;
+            this._agcAnnouncedDb = 0;
+            this._agcUserAdjustAt = undefined;
             showToast("Anti-Clip Headroom Limiter Disabled", "🛡️");
         }
     },
@@ -4592,10 +4689,128 @@ const EQ_TempoMethods = {
 /* ===== app/js/eq-smart-import.js ===== */
 const EQ_SmartImportMethods = {
     parsedEQData: null,
+
+    // ---- Destructive-import safety -------------------------------------------
+    // parsePeaceFormat() commits by calling loadValues(), which overwrites the
+    // preamp and ALL 20 band slots with whatever it managed to parse. Nothing
+    // in that path kept a snapshot, so a misparse destroyed the user's mix with
+    // no undo. Two independent guards now:
+    //
+    //   1. snapshotEQState / restoreEQState + an Undo affordance on the toast
+    //      that announces the import. This is the one that fixes the CLASS of
+    //      bug: even a parse we get wrong cannot lose work.
+    //   2. The plausibility gate in parsePeaceFormat, which refuses to commit
+    //      to a "this is a filter set" reading of an ambiguous paste at all.
+    //
+    // Snapshot/restore has to read the DOM, not the band model, because the DOM
+    // is the source of truth for the main bank: updateAudioConnections()
+    // (eq-dsp-graph.js:414-421) reads eq-f{i} / eq-s{i} / eq-q_m{i} and only
+    // falls back to the model when those are absent. They are always present.
+    // The advanced bank is the mirror image - #eq-panel-advanced is an empty
+    // container with no inputs built for it, so eq-a{i} / eq-q_a{i} never exist
+    // and eq-dsp-graph.js:457-466 falls back to advancedBands[i].hz / .g / .q.
+
+    snapshotEQState: function() {
+        var snap = {
+            preamp: null,
+            activePreset: this.activePreset,
+            main: [],
+            adv: [],
+            bypassed: []
+        };
+        var preSlider = document.getElementById('eq-preampSlider');
+        snap.preamp = preSlider ? preSlider.value : this.preVal;
+        for (var i = 0; i < this.bands.length; i++) {
+            var b = this.bands[i];
+            var f = document.getElementById('eq-f' + i);
+            var fs = document.getElementById('eq-fs_m' + i);
+            var g = document.getElementById('eq-s' + i);
+            var gn = document.getElementById('eq-s' + i + '_num');
+            var q = document.getElementById('eq-q_m' + i);
+            var qn = document.getElementById('eq-q_m' + i + '_num');
+            snap.main.push({
+                hz: f ? f.value : b.hz,
+                fs: fs ? fs.value : null,
+                g: g ? g.value : 0,
+                gn: gn ? gn.value : null,
+                q: q ? q.value : b.defaultQ,
+                qn: qn ? qn.value : null,
+                type: b.type || 'peaking',
+                slope: b.slope
+            });
+        }
+        for (var j = 0; j < this.advancedBands.length; j++) {
+            var ab = this.advancedBands[j];
+            snap.adv.push({ hz: ab.hz, g: ab.g, q: ab.q, type: ab.type, slope: ab.slope });
+        }
+        if (window.bypassedBands && typeof window.bypassedBands.forEach === 'function') {
+            window.bypassedBands.forEach(function(k) { snap.bypassed.push(k); });
+        }
+        return snap;
+    },
+
+    restoreEQState: function(snap) {
+        if (!snap) return false;
+        var self = this;
+        var preValEl = document.getElementById('eq-preampVal');
+        var preSlider = document.getElementById('eq-preampSlider');
+        if (preValEl && snap.preamp != null) preValEl.value = Number(snap.preamp).toFixed(1);
+        if (preSlider && snap.preamp != null) {
+            preSlider.value = Math.max(-20, Math.min(20, Number(snap.preamp)));
+        }
+        function setVal(id, v) { var e = document.getElementById(id); if (e && v != null) e.value = v; }
+        snap.main.forEach(function(m, i) {
+            var b = self.bands[i];
+            if (!b) return;
+            b.type = m.type;
+            if (m.slope !== undefined) b.slope = m.slope;
+            setVal('eq-f' + i, m.hz);
+            setVal('eq-fs_m' + i, m.fs);
+            setVal('eq-s' + i, m.g);
+            setVal('eq-s' + i + '_num', m.gn);
+            setVal('eq-q_m' + i, m.q);
+            setVal('eq-q_m' + i + '_num', m.qn);
+        });
+        snap.adv.forEach(function(a, i) {
+            var b = self.advancedBands[i];
+            if (!b) return;
+            b.hz = a.hz; b.g = a.g; b.q = a.q; b.type = a.type;
+            if (a.slope !== undefined) b.slope = a.slope;
+        });
+        if (window.bypassedBands) {
+            window.bypassedBands.clear();
+            snap.bypassed.forEach(function(k) { window.bypassedBands.add(k); });
+        }
+        this.activePreset = snap.activePreset || null;
+        // Re-drive every band through the normal update path. The DOM values we
+        // just wrote are what updateAudioConnections() reads, so this is what
+        // actually pushes the restored curve back to the worklet - without it
+        // the audio would keep playing the imported curve while the sliders
+        // appeared restored.
+        var prevFlag = this.isProgrammaticSliderUpdate;
+        this.isProgrammaticSliderUpdate = true;
+        try {
+            for (var i = 0; i < this.bands.length; i++) this.updateSlider(i);
+            for (var j = 0; j < this.advancedBands.length; j++) this.updateSlider(j, 'adv');
+            if (this.updatePreamp) this.updatePreamp();
+        } finally {
+            this.isProgrammaticSliderUpdate = prevFlag;
+        }
+        if (this.updateAudioConnections) this.updateAudioConnections();
+        if (this.renderCustomPresets) this.renderCustomPresets();
+        if (this.drawCurve) this.drawCurve();
+        return true;
+    },
+
             showSmartImportModal: function() {
             var modal = document.getElementById('smart-import-modal');
             if (modal) { modal.classList.remove('hidden'); Mascot.update(); }
             var textarea = document.getElementById('smart-import-textarea');
+            // Wire the expand/collapse controls HERE, on open. Doing it lazily from
+            // inside expandSmartImportField cannot work: the only thing that calls
+            // that is the button's own click listener, which is what is not wired
+            // yet, so the button would never do anything.
+            this._smartImportWireExpand();
             if (textarea) { textarea.value = ''; setTimeout(function() { textarea.focus(); }, 50); }
             var dz = document.getElementById('smart-import-dropzone');
             if (dz && !dz._init) {
@@ -4614,9 +4829,104 @@ const EQ_SmartImportMethods = {
             }
         },
         closeSmartImportModal: function() {
+            // Collapse first: the textarea lives in the expanded overlay while it
+            // is open, so closing the modal underneath it would hide the text
+            // and then the next open would restore a detached node.
+            this.collapseSmartImportExpand({ silent: true });
             var modal = document.getElementById('smart-import-modal');
             if (modal) modal.classList.add('hidden');
             Mascot.update();
+        },
+
+        /* Expand / collapse the paste field.
+           The SAME textarea element is moved between the collapsed row and the
+           expanded overlay instead of being copied into a second one. That keeps
+           a single source of truth: the value, the caret position, the selection,
+           the native undo history and the #smart-import-textarea id that
+           processSmartImport() reads all survive the move untouched. A mirrored
+           pair would need two-way sync on every input event plus paste, and
+           would have two undo stacks that disagree.
+
+           Listeners are attached once here rather than through data-action,
+           because these two controls are created with the modal and are not part
+           of the generated action table. */
+        expandSmartImportField: function() {
+            var ta = document.getElementById('smart-import-textarea');
+            var overlay = document.getElementById('smart-import-expand-overlay');
+            var slot = document.getElementById('smart-import-expand-slot');
+            var btn = document.getElementById('smart-import-expand-btn');
+            if (!ta || !overlay || !slot) return;
+
+            this._smartImportWireExpand();
+
+            var caret = ta.selectionStart;
+            slot.appendChild(ta);
+            ta.classList.add('is-expanded');
+            overlay.classList.add('is-open');
+            if (btn) btn.setAttribute('aria-expanded', 'true');
+            // Moving an element drops focus and, in Chromium, can reset the
+            // caret to the end - which would be very wrong for a long paste.
+            ta.focus();
+            try { ta.setSelectionRange(caret, caret); } catch (e) { /* noop */ }
+        },
+
+        collapseSmartImportExpand: function(opts) {
+            var ta = document.getElementById('smart-import-textarea');
+            var overlay = document.getElementById('smart-import-expand-overlay');
+            var home = document.getElementById('smart-import-textarea-home');
+            var btn = document.getElementById('smart-import-expand-btn');
+            if (!ta || !overlay || !home) return;
+            if (!overlay.classList.contains('is-open')) return;   // already collapsed
+
+            var caret = ta.selectionStart;
+            home.appendChild(ta);
+            ta.classList.remove('is-expanded');
+            overlay.classList.remove('is-open');
+            if (btn) btn.setAttribute('aria-expanded', 'false');
+            if (!(opts && opts.silent) && document.getElementById('smart-import-modal')) {
+                ta.focus();
+                try { ta.setSelectionRange(caret, caret); } catch (e) { /* noop */ }
+            }
+        },
+
+        toggleSmartImportExpand: function() {
+            var overlay = document.getElementById('smart-import-expand-overlay');
+            if (overlay && overlay.classList.contains('is-open')) this.collapseSmartImportExpand();
+            else this.expandSmartImportField();
+        },
+
+        _smartImportWireExpand: function() {
+            if (this._smartImportExpandWired) return;
+            var self = this;
+            this._smartImportExpandWired = true;
+
+            var expandBtn = document.getElementById('smart-import-expand-btn');
+            var collapseBtn = document.getElementById('smart-import-collapse-btn');
+            var overlay = document.getElementById('smart-import-expand-overlay');
+
+            if (expandBtn) {
+                expandBtn.addEventListener('click', function() { self.expandSmartImportField(); });
+            }
+            if (collapseBtn) {
+                collapseBtn.addEventListener('click', function() { self.collapseSmartImportExpand(); });
+            }
+            if (overlay) {
+                // Click the backdrop (but not the panel) to dismiss.
+                overlay.addEventListener('mousedown', function(e) {
+                    if (e.target === overlay) self.collapseSmartImportExpand();
+                });
+            }
+            // Esc collapses from anywhere while the overlay is open. Bound once at
+            // the document and guarded on visibility so it cannot swallow an Esc
+            // that belongs to some other dialog.
+            document.addEventListener('keydown', function(e) {
+                if (e.key !== 'Escape') return;
+                var ov = document.getElementById('smart-import-expand-overlay');
+                if (ov && ov.classList.contains('is-open')) {
+                    e.preventDefault();
+                    self.collapseSmartImportExpand();
+                }
+            });
         },
         handleSmartFileSelect: function(e) {
             var files = e.target.files;
@@ -4719,6 +5029,9 @@ const EQ_SmartImportMethods = {
                 var lines = text.split(/\r?\n/);
                 var preamp = 0;
                 var mappedAny = false;
+                var mappedGains = [];
+                var rawThirdColumn = [];
+                var rawBranchRows = 0;
                 this._importFullWarned = false;
                 var mainVals = this.bands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
                 var advVals = this.advancedBands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
@@ -4771,6 +5084,12 @@ const EQ_SmartImportMethods = {
                         }
                     }
                     // Check for raw column arrays: "20 3.5 1.2" (Freq, Gain, Q)
+                    // The third column is unlabelled here, so it is only a Q if it
+                    // falls inside the range the app can actually apply: the Q
+                    // slider is min=0.1 max=10 (eq-core.js:838). A value outside
+                    // that is not a Q - it is a phase column, a bandwidth, a slope
+                    // or a score - and reading it as Q builds a fictional EQ out of
+                    // a measurement table. Recorded so parsePeaceFormat can tell.
                     else {
                         var parts = clean.split(/[\s,;\t]+/).map(Number);
                         if (parts.length >= 3 && !parts.some(isNaN)) {
@@ -4778,22 +5097,53 @@ const EQ_SmartImportMethods = {
                                 fc = Math.round(parts[0]);
                                 gain = parts[1];
                                 q = parts[2];
+                                rawThirdColumn.push(parts[2]);
+                                rawBranchRows++;
                             }
                         }
                     }
                     
                     if (fc !== null) {
                         mappedAny = true;
+                        mappedGains.push(gain);
                         self.mapSingleFilter(fc, gain, q, filterType, mainVals, advVals, usedMain, usedAdv);
                     }
                 });
-                
+
                 // Nothing recognizably parametric was parsed (e.g. a pasted
                 // frequency-response table with an extra phase column, or a
                 // 3-column measurement block). Bail out before loadValues wipes
                 // the current EQ, so processSmartImport can fall through to the
                 // raw curve importer instead.
                 if (preamp === 0 && !mappedAny) return false;
+
+                // Plausibility gate. The 3-column raw branch above accepts ANY numeric row
+                // whose third value lands in [0.01, 40], so a pasted measurement
+                // table (freq, dB, phase-degrees / bandwidth / score) is read as
+                // freq/gain/Q and mapped onto the bands. The only thing that used
+                // to stop this was the !mappedAny test above, which fires
+                // precisely when parsing SUCCEEDED - so the guard protected
+                // against the one case that was never a problem and let the
+                // destructive one through.
+                //
+                // Three checks, each using something we already know:
+                //  - The third column of an unlabelled row is only a Q if it is
+                //    inside the Q slider's own range (0.1-10). A phase column,
+                //    a bandwidth, a slope or a score is not, and reading it as Q
+                //    invents filters out of a measurement table.
+                //  - The app has 10 main + 10 advanced slots. More parsed rows
+                //    than that cannot be a filter set; they are a curve, and
+                //    mapping them was silently collapsing them onto the nearest
+                //    slots anyway (behind the "Import slots full" toast).
+                //  - If every parsed gain is 0 there is nothing to apply, and
+                //    loadValues would flatten all 20 bands to zero.
+                var slotCount = mainVals.length + advVals.length;
+                var nonZeroGains = mappedGains.filter(function(g) { return g !== 0; }).length;
+                var thirdTooWide = rawThirdColumn.some(function(v) { return v > 10 || v < 0.1; });
+                if (mappedAny && preamp === 0) {
+                    if (rawBranchRows > 0 && thirdTooWide) return false;
+                    if (mappedGains.length > slotCount || nonZeroGains === 0) return false;
+                }
 
                 // Preamp-only paste: apply just the preamp, leave all bands
                 // untouched (loading all-zero mainVals here would flatten 20
@@ -4808,8 +5158,22 @@ const EQ_SmartImportMethods = {
                     return true;
                 }
 
+                // Snapshot before the destructive write, and offer Undo on the
+                // toast that reports it. The gate above narrows what can reach
+                // here; this is what guarantees a wrong parse is recoverable.
+                var self2 = this;
+                var before = this.snapshotEQState();
                 this.loadValues({ preVal: preamp, mainVals: mainVals, advVals: advVals });
-                showToast("Parametric EQ profile processed!", "🪄");
+                showToast("Parametric EQ profile processed — " + mappedGains.length + " filter(s).", "🪄", {
+                    duration: 9000,
+                    action: {
+                        label: 'Undo',
+                        onClick: function () {
+                            self2.restoreEQState(before);
+                            showToast("EQ restored to before the import.", "↩️");
+                        }
+                    }
+                });
                 return true;
             },
         detectFilterType: function(raw) {
@@ -4890,6 +5254,59 @@ const EQ_SmartImportMethods = {
             this.loadValues({ preVal: 0, mainVals: mainVals, advVals: advVals });
         },
 };
+
+
+// ---- Ctrl+Z undo for EQ edits -------------------------------------------------
+// Reuses snapshotEQState / restoreEQState above. A snapshot of the CURRENT
+// state is taken just before each user gesture inside the EQ workspace
+// (pointer press or arrow-key nudge), so undo returns to the state from before
+// the gesture. Capped at 20, in memory only, EQ workspace only.
+(function () {
+    var stack = [];
+    var MAX = 20;
+    var ZONES = '#eq-col-db, #eq-col-graph, #eq-col-console';
+
+    function snap() {
+        var eq = window.EQ;
+        if (!eq || typeof eq.snapshotEQState !== 'function') return null;
+        var s = eq.snapshotEQState();
+        return { key: JSON.stringify(s), snap: s };
+    }
+    function record(e) {
+        try {
+            if (!e.target || !e.target.closest || !e.target.closest(ZONES)) return;
+            var cur = snap();
+            if (!cur) return;
+            var top = stack[stack.length - 1];
+            if (top && top.key === cur.key) return;
+            stack.push(cur);
+            if (stack.length > MAX) stack.shift();
+        } catch (_) {}
+    }
+    document.addEventListener('pointerdown', record, true);
+    document.addEventListener('keydown', function (e) {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (e.key && e.key.indexOf('Arrow') === 0) record(e);
+    }, true);
+
+    EQ_SmartImportMethods.undoEQ = function () {
+        try {
+            var zone = document.getElementById('eq-col-graph');
+            if (!zone || zone.offsetParent === null) return false;
+            var cur = snap();
+            if (!cur) return false;
+            var prev = null;
+            while (stack.length) {
+                var c = stack.pop();
+                if (c.key !== cur.key) { prev = c; break; }
+            }
+            if (!prev) return false;
+            this.restoreEQState(prev.snap);
+            if (typeof showToast === 'function') showToast('Undid last EQ change', '↩️');
+            return true;
+        } catch (err) { console.error('[EQ undo]', err); return false; }
+    };
+})();
 
 /* ===== app/js/eq-hearing-cal.js ===== */
 ﻿const EQ_HearingCalMethods = {
@@ -5242,30 +5659,38 @@ const EQ_VizFullscreenMethods = {
         this._onFullscreenChangeHandler = null;
     },
 
+    /* R4: the effect label is now DERIVED from vizModeIndex rather than only
+     * being rewritten when the user clicks. It used to live inline inside
+     * cycleVizEffect, so the button's text was a hard-coded string in the
+     * markup that only became correct after the first click - and any markup
+     * inside the button was destroyed on every cycle. Split out so init() can
+     * call it too, and so the control can hold real structure. */
+    _vizEffectName: function() {
+        const names = {
+            horizontalSpectrogram: '\u{1F4C8} Spectrogram',
+            fullScreenWaterfall: '\u{1F30A} Waterfall',
+            acousticTunnel: '\u{1F30C} Tunnel',
+            oledSpectrum: '\u{1F4CA} Spectrum',
+            oscilloscope: '\u{1F4C8} Waveform',
+            audioMesh: '\u{1F310} Mesh'
+        };
+        const id = this.vizModes[this.vizModeIndex];
+        let name = names[id];
+        if (!name && this.customEffectsList) {
+            const customMatch = this.customEffectsList.find(e => e.id === id);
+            if (customMatch) name = customMatch.emoji + ' ' + customMatch.name;
+        }
+        return name || 'Unknown';
+    },
+
+    _updateVizEffectLabel: function() {
+        const btn = document.getElementById('viz-effect-btn');
+        if (btn) btn.textContent = this._vizEffectName();
+    },
+
     cycleVizEffect: function() {
         this.vizModeIndex = (this.vizModeIndex + 1) % this.vizModes.length;
-        const btn = document.getElementById('viz-effect-btn');
-        if (btn) {
-            const names = {
-                horizontalSpectrogram: '🌅 Spectrogram',
-                fullScreenWaterfall: '⛰️ Waterfall',
-                acousticTunnel: '🌌 Tunnel',
-                oledSpectrum: '📊 Spectrum',
-                oscilloscope: '📈 Waveform',
-                audioMesh: '🌐 Mesh'
-            };
-
-            let activeName = names[this.vizModes[this.vizModeIndex]];
-
-            if (!activeName && this.customEffectsList) {
-                const customMatch = this.customEffectsList.find(e => e.id === this.vizModes[this.vizModeIndex]);
-                if (customMatch) {
-                    activeName = `${customMatch.emoji} ${customMatch.name}`;
-                }
-            }
-
-            btn.textContent = ` ${activeName || 'Unknown'}`;
-        }
+        this._updateVizEffectLabel();
     },
 };
 
@@ -6926,8 +7351,19 @@ const EQ_SquigGraphMethods = {
             const modeState = [
                 EQ_Module.graphMode,
                 EQ_Module.isTuningLabActive ? 1 : 0,
+                // The magnitude cache's identity: version, bypass set, the cheap
+                // key (which carries the frequency grid's endpoints) and the point
+                // count. Together those pin the exact curve this layer draws.
+                //
+                // A `_magCacheFreqKey` used to be listed here as well, but nothing
+                // in the codebase ever assigned it - it was always the string
+                // "undefined" in this signature, a dead slot that read as though
+                // the grid identity came from somewhere it did not. It is not
+                // needed: both callers build LOG grids (generateLogGrid and
+                // DSP.FREQS), so numPoints plus the two endpoints determines every
+                // point, and both of those are already in the key.
                 this._magCacheVersion, this._magCacheBypass, this._magCacheCheap,
-                this._magCacheFreqKey, this._magCacheNumPoints,
+                this._magCacheNumPoints,
                 preVal, w, h, minF, maxF, min, max,
                 PEQDB_Module.alignHz, PEQDB_Module.alignDb,
                 // Resonance shifts the target curve's evaluated frequencies
@@ -7998,7 +8434,16 @@ const App_Theme = {
                 });
             }
 
-            document.documentElement.className = 'theme-' + themeId;
+            // Swap the theme class instead of assigning className. Assigning
+            // wiped every other class on <html>, so any class another feature
+            // (or a future grid-pattern hook) relies on could be silently
+            // destroyed by a theme switch - which is a class of bug that shows
+            // up as "the theme only half applied".
+            const wanted = 'theme-' + themeId;
+            Array.from(root.classList)
+                .filter(c => c.startsWith('theme-') && c !== wanted)
+                .forEach(c => root.classList.remove(c));
+            root.classList.add(wanted);
 
             const accentColor = t.accent || (t.variables && t.variables['--accent-blue']) || '#787878';
             const rgbStr = (typeof PEQDB_Module !== 'undefined' && PEQDB_Module.hexToRgb) ? PEQDB_Module.hexToRgb(accentColor) : '120, 120, 120';
@@ -8007,26 +8452,24 @@ const App_Theme = {
             const expThemeSelector = document.getElementById('export-theme-selector');
             if (expThemeSelector) expThemeSelector.value = themeId;
 
-            ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings'].forEach(id => {
+            const TABS = ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings'];
+            const activeTabId = TABS.find(id => {
+                const pane = document.getElementById(`pane-${id}`);
+                return pane && !pane.classList.contains('hidden');
+            }) || 'find';
+            TABS.forEach(id => {
                 const b = document.getElementById(`tab-${id}-btn`);
                 if (b) {
+                    b.classList.toggle('is-active-tab', id === activeTabId);
+                    // Clear any inline colour a previous version wrote. The active
+                    // look now comes from .is-active-tab in the stylesheet, which
+                    // is token-driven and so cannot go stale across theme switches.
                     b.style.backgroundColor = '';
                     b.style.color = '';
                     b.style.boxShadow = '';
                     b.style.transform = '';
                 }
             });
-            const activeTabId = ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings'].find(id => {
-                const pane = document.getElementById(`pane-${id}`);
-                return pane && !pane.classList.contains('hidden');
-            }) || 'find';
-            const activeBtn = document.getElementById(`tab-${activeTabId}-btn`);
-            if (activeBtn) {
-                activeBtn.style.backgroundColor = accentColor;
-                activeBtn.style.color = window.App && App.getContrastTextColor ? App.getContrastTextColor(accentColor) : '#ffffff';
-                activeBtn.style.boxShadow = 'inset 2px 2px 0px 0px rgba(0, 0, 0, 0.35)';
-                activeBtn.style.transform = 'translate(1px, 1px)';
-            }
 
             const themeBtn = document.getElementById('theme-cycle-btn');
             if (themeBtn) {
@@ -8255,7 +8698,9 @@ const App_Theme = {
         }
     },
 
-    BASELINE_FONT_NAME: 'Silkscreen',
+    // Kept in sync with iem-module.js: R0 moved the metric baseline from
+    // 'Silkscreen' to 'JetBrains Mono' (the new default font).
+    BASELINE_FONT_NAME: 'JetBrains Mono',
 
     calculateFontMetrics: function(fontName, baselineFamily) {
         try {
@@ -8510,7 +8955,30 @@ const EventBinding = {
             return raw;
         }
 
-        const CMD_MODULE_ALIASES = { PEQDB_Module: 'PEQDB' };
+        // The only modules a data-cmd attribute may name, mapped to the global
+        // they resolve through.
+        //
+        // The old lookup was `window[modName] || window[CMD_MODULE_ALIASES[modName]]`,
+        // i.e. ANY property of window. A data-cmd attribute could therefore reach
+        // every global in the renderer - sessionStorage.clear, localStorage.setItem,
+        // history.back, location.assign, document.adoptNode, Notification,
+        // postMessage, fetch, Worker. The markup is app-authored today and the CSP
+        // (script-src 'self' 'wasm-unsafe-eval', so eval() is blocked) is a genuine
+        // second line, but neither fact should be what stands between a DOM
+        // attribute and the whole window object. Four modules is the complete set
+        // in use: measured across every data-cmd* attribute in a live DOM -
+        // EQ 120, FindEngine 60, IEM 733, PEQDB_Module 4715.
+        //
+        // PEQDB_Module -> PEQDB: iem-module.js init() exposes the PEQdb module as
+        // `window.PEQDB`, but the markup names it `PEQDB_Module`. The alias lives
+        // here rather than putting PEQDB_Module on window, because several
+        // `window.PEQDB_Module && ...` guards elsewhere would change meaning.
+        const CMD_MODULES = {
+            EQ: 'EQ',
+            FindEngine: 'FindEngine',
+            IEM: 'IEM',
+            PEQDB_Module: 'PEQDB',
+        };
 
         function runCommand(el, attrName) {
             const cmd = el.getAttribute(attrName);
@@ -8520,14 +8988,25 @@ const EventBinding = {
                 console.warn('[EventBinding] data-cmd must look like Module.method, got: ' + cmd);
                 return;
             }
-            // Top-level `const` bindings in classic scripts are NOT properties of
-            // window. iem-module.js init() exposes the PEQDB module as
-            // `window.PEQDB`, but the markup names it `PEQDB_Module`, so map the
-            // name here rather than putting PEQDB_Module on window (several
-            // `window.PEQDB_Module && ...` guards elsewhere would change meaning).
+            // Must be an OWN property. `mod[methodName]` alone also finds the
+            // Object.prototype members, and several of those are functions -
+            // data-cmd="IEM.constructor" resolved to Object and was callable,
+            // which walked straight past the module allowlist above.
             const modName = cmd.slice(0, dot);
-            const mod = window[modName] || window[CMD_MODULE_ALIASES[modName]];
-            const fn = mod && mod[cmd.slice(dot + 1)];
+            const globalName = Object.prototype.hasOwnProperty.call(CMD_MODULES, modName)
+                ? CMD_MODULES[modName]
+                : null;
+            if (globalName === null) {
+                console.warn('[EventBinding] data-cmd names a module that is not allowed: ' + cmd);
+                return;
+            }
+            const mod = window[globalName];
+            const methodName = cmd.slice(dot + 1);
+            if (!mod || !Object.prototype.hasOwnProperty.call(mod, methodName)) {
+                console.warn('[EventBinding] data-cmd target is not a function: ' + cmd);
+                return;
+            }
+            const fn = mod[methodName];
             if (typeof fn !== 'function') {
                 console.warn('[EventBinding] data-cmd target is not a function: ' + cmd);
                 return;
@@ -8600,6 +9079,33 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
     window.EventBinding = EventBinding;
 }
+/* ===== app/js/theme-tokens.js ===== */
+// The nine built-in themes, extracted verbatim from iem-module.js.
+//
+// This lives in its own file for ONE reason: App.setGlobalTheme() applies each
+// theme by writing `theme.variables` as INLINE custom properties on <html>. The
+// `.theme-*` blocks in app.css only supply the backdrop pattern (--tp) and a
+// set of accents that went stale when the accents were retuned - slate's is
+// still #5AA9E6 (light blue) even though the theme is named Black.
+//
+// Anything that needs the real per-theme tokens must therefore use THIS map,
+// not the CSS classes. app/export-backdrop.html does exactly that, which is why
+// the exported review card no longer comes out in the wrong colour.
+//
+// Keep the values here byte-identical to what the app applies. One copy, two
+// consumers: that is the whole point.
+const IEM_BUILTIN_THEMES = [
+            { "id": "slate", "name": "Black", "emoji": "\u{26AB}", "variables": { "--bg-body": "#000000", "--bg-window": "#0A0A0B", "--bg-card": "#0A0A0B", "--bg-sidebar": "#050506", "--bg-input": "#0E0E11", "--text-main": "#F2F3F5", "--text-secondary": "#9CA3AF", "--border-color": "#212126", "--accent-blue": "#A3A3AB", "--accent-blue-rgb": "163, 163, 171", "--accent": "#A3A3AB", "--accent-hi": "#D4D4D8", "--accent-rgb": "163, 163, 171" } },
+            { "id": "parchment", "name": "Brown", "emoji": "\u{1F7EB}", "variables": { "--bg-body": "#000000", "--bg-window": "#0A0A0B", "--bg-card": "#0A0A0B", "--bg-sidebar": "#050506", "--bg-input": "#0E0E11", "--text-main": "#F2F3F5", "--text-secondary": "#9CA3AF", "--border-color": "#212126", "--accent-blue": "#B07C50", "--accent-blue-rgb": "176, 124, 80", "--accent": "#B07C50", "--accent-hi": "#D9A066", "--accent-rgb": "176, 124, 80" } },
+            { "id": "ember", "name": "Red", "emoji": "\u{1F534}", "variables": { "--bg-body": "#000000", "--bg-window": "#0A0A0B", "--bg-card": "#0A0A0B", "--bg-sidebar": "#050506", "--bg-input": "#0E0E11", "--text-main": "#F2F3F5", "--text-secondary": "#9CA3AF", "--border-color": "#212126", "--accent-blue": "#EF4444", "--accent-blue-rgb": "239, 68, 68", "--accent": "#EF4444", "--accent-hi": "#F87171", "--accent-rgb": "239, 68, 68" } },
+            { "id": "circuit", "name": "Blue", "emoji": "\u{1F535}", "variables": { "--bg-body": "#000000", "--bg-window": "#0A0A0B", "--bg-card": "#0A0A0B", "--bg-sidebar": "#050506", "--bg-input": "#0E0E11", "--text-main": "#F2F3F5", "--text-secondary": "#9CA3AF", "--border-color": "#212126", "--accent-blue": "#60A5FA", "--accent-blue-rgb": "96, 165, 250", "--accent": "#60A5FA", "--accent-hi": "#93C5FD", "--accent-rgb": "96, 165, 250" } },
+            { "id": "byte", "name": "Green", "emoji": "\u{1F7E2}", "variables": { "--bg-body": "#000000", "--bg-window": "#0A0A0B", "--bg-card": "#0A0A0B", "--bg-sidebar": "#050506", "--bg-input": "#0E0E11", "--text-main": "#F2F3F5", "--text-secondary": "#9CA3AF", "--border-color": "#212126", "--accent-blue": "#34D399", "--accent-blue-rgb": "52, 211, 153", "--accent": "#34D399", "--accent-hi": "#6EE7B7", "--accent-rgb": "52, 211, 153" } },
+            { "id": "cartridge", "name": "Yellow", "emoji": "\u{1F7E1}", "variables": { "--bg-body": "#000000", "--bg-window": "#0A0A0B", "--bg-card": "#0A0A0B", "--bg-sidebar": "#050506", "--bg-input": "#0E0E11", "--text-main": "#F2F3F5", "--text-secondary": "#9CA3AF", "--border-color": "#212126", "--accent-blue": "#FBBF24", "--accent-blue-rgb": "251, 191, 36", "--accent": "#FBBF24", "--accent-hi": "#FCD34D", "--accent-rgb": "251, 191, 36" } },
+            { "id": "arcade", "name": "Purple", "emoji": "\u{1F7E3}", "variables": { "--bg-body": "#000000", "--bg-window": "#0A0A0B", "--bg-card": "#0A0A0B", "--bg-sidebar": "#050506", "--bg-input": "#0E0E11", "--text-main": "#F2F3F5", "--text-secondary": "#9CA3AF", "--border-color": "#212126", "--accent-blue": "#A78BFA", "--accent-blue-rgb": "167, 139, 250", "--accent": "#A78BFA", "--accent-hi": "#C4B5FD", "--accent-rgb": "167, 139, 250" } },
+            { "id": "blush", "name": "Pink", "emoji": "\u{1F338}", "variables": { "--bg-body": "#000000", "--bg-window": "#0A0A0B", "--bg-card": "#0A0A0B", "--bg-sidebar": "#050506", "--bg-input": "#0E0E11", "--text-main": "#F2F3F5", "--text-secondary": "#9CA3AF", "--border-color": "#212126", "--accent-blue": "#F472B6", "--accent-blue-rgb": "244, 114, 182", "--accent": "#F472B6", "--accent-hi": "#F9A8D4", "--accent-rgb": "244, 114, 182" } },
+            { "id": "bit", "name": "Orange", "emoji": "\u{1F7E0}", "variables": { "--bg-body": "#000000", "--bg-window": "#0A0A0B", "--bg-card": "#0A0A0B", "--bg-sidebar": "#050506", "--bg-input": "#0E0E11", "--text-main": "#F2F3F5", "--text-secondary": "#9CA3AF", "--border-color": "#212126", "--accent-blue": "#FB923C", "--accent-blue-rgb": "251, 146, 60", "--accent": "#FB923C", "--accent-hi": "#FDBA74", "--accent-rgb": "251, 146, 60" } }
+        ];
+
 /* ===== app/js/app-core-shared.js ===== */
 // Split out of the former monolithic app-core.js (2026 refactor).
 // Small shared top-level helpers (letter-scroll indicators, showDebugError,
@@ -9470,6 +9976,20 @@ var Mascot = window.Mascot || {
 };
 
 /* ===== app/js/iem-module.js ===== */
+// Width below which the workspace shows ONE section at a time instead of three
+// columns. This was hard-coded as `window.innerWidth < 1280` in four places
+// (setIemSection / setFindSection / setEqSection / setTestLabSection).
+// main.js opens the window at min(1600, screenWidth * 0.9), so on a 1366x768
+// display that is about 1229 CSS px - under 1280 - which meant ordinary laptops
+// silently got the phone layout: two of the three columns were set to
+// display:none, so only the left column appeared and every control inside the
+// hidden columns, including sliders, stopped painting.
+//
+// Raised to 1000 so the three-column workspace survives on laptops; narrower
+// than that (phones) keeps the single-section behaviour, which is what it was
+// written for. Must stay in step with the matching breakpoint in app.css 8.18.
+const RESPONSIVE_SECTION_BREAKPOINT_PX = 1000;
+
 // Split out of the former monolithic app-core.js (2026 refactor).
 // A few small shared helpers (getBandEnergy, debounce, rafThrottle, etc.)
 // followed by IEM_Module (the review-card / IEM-info builder tab). Kept
@@ -9580,7 +10100,11 @@ function getBandEnergy(dataArray, startBin, endBin) {
     window.toggleAudioMode = function() {
         window.isMonoMode = !window.isMonoMode;
         const btn = document.getElementById('a11y-audio-btn');
-        if (btn) btn.innerHTML = window.isMonoMode ? "🦻 Mono" : "🔊 Stereo";
+        // R3: textContent, not innerHTML, and no leading emoji. The settings row
+        // already carries a 🔊 icon, so repeating it inside the control was
+        // redundant, and rewriting markup wholesale is exactly what previously
+        // stopped this button from ever holding real structure.
+        if (btn) btn.textContent = window.isMonoMode ? 'Mono' : 'Stereo';
         if (SharedAudio.masterGain) {
             if (window.isMonoMode) {
                 SharedAudio.masterGain.channelCount = 1;
@@ -9706,8 +10230,14 @@ window.updateExpandedAutoHide = function() {
             // Reflect the restored profile in the Test Lab panel state.
             const genBtn = document.getElementById('hearing-eq-generate-btn');
             if (genBtn) {
-                genBtn.classList.remove('hidden', 'bg-zinc-800', 'text-zinc-500', 'cursor-not-allowed');
-                genBtn.classList.add('bg-emerald-500', 'text-white', 'hover:brightness-110', 'cursor-pointer');
+                // 7.5 moved this button off a hand-picked emerald pair onto the
+                // accent ramp plus .is-ready. Re-adding bg-emerald-500 here put
+                // the rejected ~2.4:1 fill back whenever a saved profile was
+                // restored, so the same button had two looks depending on how
+                // the session started.
+                genBtn.classList.remove('hidden', 'bg-emerald-500', 'text-white',
+                                        'hover:brightness-110', 'cursor-not-allowed');
+                genBtn.classList.add('is-ready', 'cursor-pointer');
                 genBtn.disabled = false;
             }
             const status = document.getElementById('hearing-test-status');
@@ -9716,8 +10246,8 @@ window.updateExpandedAutoHide = function() {
             if (hzDisp) hzDisp.textContent = 'SAVED';
             const pctDisp = document.getElementById('hearing-progress-pct');
             if (pctDisp) pctDisp.textContent = '100%';
-            const segs = document.querySelectorAll('.hearing-seg');
-            segs.forEach(seg => { seg.style.background = '#34d399'; });
+            const fill = document.getElementById('hearing-progress-fill');
+            if (fill) fill.style.width = '100%';
             const instr = document.getElementById('hearing-test-instruction');
             if (instr) {
                 instr.innerHTML = 'Saved correction active. <span class="text-white font-bold">Start Test</span> re-measures · <span class="text-white font-bold">Reset</span> clears.';
@@ -9756,24 +10286,82 @@ window.updateExpandedAutoHide = function() {
         isComicFont: false,
         themeMap: {},
 
-        builtInThemes: [
-            { "id": "slate", "name": "Slate", "emoji": "🕹️", "variables": { "--accent-blue": "#6488b0", "--bg-body": "#111115", "--bg-window": "#16161c", "--bg-card": "#202028", "--bg-sidebar": "#0d0d10", "--bg-input": "#181822", "--text-main": "#f0f0f4", "--text-secondary": "#8c8c9e", "--border-color": "#000000" } },
-            { "id": "parchment", "name": "Parchment", "emoji": "📜", "variables": { "--accent-blue": "#c85a0e", "--bg-body": "#cdb98c", "--bg-window": "#d4c093", "--bg-card": "#e2d2a8", "--bg-sidebar": "#bda87d", "--bg-input": "#e6d8b0", "--text-main": "#1a1105", "--text-secondary": "#4a3722", "--border-color": "#000000" } },
-            { "id": "ember", "name": "Ember", "emoji": "🔴", "variables": { "--accent-blue": "#c84b4b", "--bg-body": "#181111", "--bg-window": "#201616", "--bg-card": "#2c1e1e", "--bg-sidebar": "#130d0d", "--bg-input": "#171010", "--text-main": "#f5ecec", "--text-secondary": "#a88080", "--border-color": "#000000" } },
-            { "id": "circuit", "name": "Circuit", "emoji": "🔵", "variables": { "--accent-blue": "#457cb4", "--bg-body": "#101520", "--bg-window": "#161c2b", "--bg-card": "#20283b", "--bg-sidebar": "#0d111a", "--bg-input": "#121724", "--text-main": "#ecf2f8", "--text-secondary": "#788ca8", "--border-color": "#000000" } },
-            { "id": "byte", "name": "Byte", "emoji": "📟", "variables": { "--accent-blue": "#489a58", "--bg-body": "#111812", "--bg-window": "#162018", "--bg-card": "#202d23", "--bg-sidebar": "#0d130e", "--bg-input": "#121a13", "--text-main": "#ecf5ed", "--text-secondary": "#7ea383", "--border-color": "#000000" } },
-            { "id": "cartridge", "name": "Cartridge", "emoji": "🟠", "variables": { "--accent-blue": "#c8733a", "--bg-body": "#191410", "--bg-window": "#211a15", "--bg-card": "#2e251e", "--bg-sidebar": "#13100d", "--bg-input": "#18130f", "--text-main": "#f7f0eb", "--text-secondary": "#aa8e80", "--border-color": "#000000" } },
-            { "id": "arcade", "name": "Arcade", "emoji": "👾", "variables": { "--accent-blue": "#8262c8", "--bg-body": "#14111d", "--bg-window": "#1b1728", "--bg-card": "#272138", "--bg-sidebar": "#100e18", "--bg-input": "#14111f", "--text-main": "#f2edf8", "--text-secondary": "#9284a8", "--border-color": "#000000" } },
-            { "id": "blush", "name": "Blush", "emoji": "🌸", "variables": { "--accent-blue": "#c85a95", "--bg-body": "#1a1116", "--bg-window": "#22161d", "--bg-card": "#301e28", "--bg-sidebar": "#140e13", "--bg-input": "#191016", "--text-main": "#f8edf4", "--text-secondary": "#ac8497", "--border-color": "#000000" } },
-            { "id": "bit", "name": "Bit", "emoji": "🪙", "variables": { "--accent-blue": "#ca9f33", "--bg-body": "#18150d", "--bg-window": "#201c11", "--bg-card": "#2e2918", "--bg-sidebar": "#13110a", "--bg-input": "#18150d", "--text-main": "#f7f4e8", "--text-secondary": "#ab9d78", "--border-color": "#000000" } }
-        ],
+        /*
+         * === THE NINE THEMES (R0 — OLED reskin) =============================
+         *
+         * Display names are modernised; the `id` values are NOT, so every
+         * existing `settings_theme_id` in a user's localStorage keeps resolving
+         * and the legacy migration map in app-core-shared.js stays valid.
+         *
+         *   slate      -> Void       (default, True Black OLED)
+         *   parchment  -> Bone       (converted from the old LIGHT theme)
+         *   ember      -> Ember      circuit -> Circuit    byte -> Verdant
+         *   cartridge  -> Amber      arcade  -> Nova       blush -> Orchid
+         *   bit        -> Gold
+         *
+         * All nine share ONE base material: #000000 window, #0A0A0B cards,
+         * #0E0E11 inputs, #212126 hairlines, #F2F3F5 / #9CA3AF text. Only the
+         * accent differs, which is the point of an OLED palette.
+         *
+         * Every --accent below was measured against --bg-card #0A0A0B and
+         * clears WCAG AA with headroom (7.1:1 to 14.3:1). The previous table
+         * measured 2.22–7.39 and failed AA in five of nine themes, because
+         * --accent-blue doubled as the colour of every 9px section header.
+         *
+         * The base-material values are repeated per theme on purpose: the review
+         * card renderer reads `variables` directly, and repeating them keeps the
+         * export correct at every stage gate. R9 collapses this to a single read
+         * of the live computed style.
+         */
+        /* Themes are named for their accent colour, and each carries a distinct
+           backdrop pattern as well as its own hue, so the theme is identifiable
+           before you read a single label.
+
+           The ids are deliberately NOT the colour names. They are persisted
+           (localStorage settings_theme_id), referenced by the .theme-* selectors
+           in app.css that key every per-theme backdrop, and used to switch the
+           export-card renderer. Renaming them would silently reset every
+           existing user's saved theme and orphan nine CSS selectors, for no
+           user-visible gain - so id and display name are allowed to differ.
+
+           Four accents were retuned so the display name is accurate:
+             slate  was #5AA9E6 (light blue) and is named Black, so it took a
+                    neutral grey - a saturated accent glows against an OLED
+                    black and would read as a colour theme, not a monochrome one.
+             ember  was #F87171, a salmon that sat too close to Pink; deepened.
+             bit    was #E3B341 (gold), which reads as Yellow and collided with
+                    cartridge; moved to a true orange.
+             parchment was #E8DCC8, a cream so close to Black's grey that the two
+                    were hard to tell apart. It is now a muted, darker brown.
+                    Brown was preferred over Cyan because its hue (~35deg) sits
+                    between Orange (~28deg) and Yellow (~43deg): the collision
+                    is only a problem for a bright orange-brown, so the accent
+                    is deliberately desaturated and darker than both rather than
+                    a vivid hue. Cyan also wanted a Unicode 15.0 glyph (U+1FA75),
+                    the same version as the pink heart that had to be replaced.
+
+           Emoji are chosen for render coverage, not just looks: the pink heart
+           (U+1FA77) and cyan heart (U+1FA75) are Unicode 15.0 and fall back to
+           tofu on older Windows and some Linux font stacks, so Pink uses the
+           cherry blossom (U+1F338) instead. */
+          builtInThemes: IEM_BUILTIN_THEMES,
         loadDynamicThemes: function() {
 
         },
         fontMap: {},
         fontMeta: [],
 
-        BASELINE_FONT_NAME: 'Silkscreen',
+        /*
+         * Metric-normalisation baseline. R0 moved this from 'Silkscreen' to
+         * 'JetBrains Mono', which is now the out-of-the-box default font: the
+         * baseline font is the one whose calculated scale is pinned to 1.0, so
+         * moving it is what keeps the default UI from being auto-scaled.
+         *
+         * JetBrains Mono is monospaced, so it occupies the same metric role
+         * Silkscreen did — the dense numeric layout (92 spec chips, 60+ sliders,
+         * 40 number inputs) does not reflow when it becomes the default.
+         */
+    BASELINE_FONT_NAME: 'JetBrains Mono',
         calculateFontMetrics: function(fontName, baselineFamily) {
             try {
                 const testString = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -9919,17 +10507,28 @@ window.updateExpandedAutoHide = function() {
                 if (activeBtn) {
                     activeBtn.classList.remove('text-[var(--text-secondary)]', 'text-white');
                     activeBtn.classList.add('shadow-sm');
-
-                    const savedTheme = localStorage.getItem('settings_theme_id') || 'slate';
-                    const t = (this.themeMap && this.themeMap[savedTheme]) ? this.themeMap[savedTheme] :
-                              ((this.themeMap && this.themeMap['slate']) ? this.themeMap['slate'] : { accent: '#787878' });
-                    const accentColor = t.accent || '#787878';
-                    activeBtn.style.backgroundColor = accentColor;
-                    activeBtn.style.color = this.getContrastTextColor ? this.getContrastTextColor(accentColor) : '#ffffff';
-
-                    activeBtn.style.boxShadow = 'inset 2px 2px 0px 0px rgba(0, 0, 0, 0.35)';
-                    activeBtn.style.transform = 'translate(1px, 1px)';
                 }
+
+                // Active-tab appearance is driven by .is-active-tab in the
+                // stylesheet, not by inline styles written here.
+                //
+                // Two reasons. First, `.app-nav .app-tab` sets
+                // `background: transparent !important`, and an !important
+                // declaration in a stylesheet beats an inline style - so the
+                // accent written to style.backgroundColor here was computed
+                // straight back to transparent and the active tab showed no
+                // accent at all. Second, the inline value was captured from
+                // localStorage at switch time, so it could not track a theme
+                // change; the class plus tokens always reflects the live theme.
+                ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings'].forEach(id => {
+                    const b = document.getElementById(`tab-${id}-btn`);
+                    if (!b) return;
+                    b.classList.toggle('is-active-tab', id === tabId);
+                    b.style.backgroundColor = '';
+                    b.style.color = '';
+                    b.style.boxShadow = '';
+                    b.style.transform = '';
+                });
                 if (tabId === 'eq' && EQ_Module) {
                 setTimeout(() => {
                     const cv = document.getElementById("eq-squiglinkViz");
@@ -10099,9 +10698,20 @@ setGlobalTheme: function(themeId) {
 
                 document.documentElement.className = 'theme-' + themeId;
 
-                                const accentColor = t.accent || (t.variables && t.variables['--accent-blue']) || '#787878';
-                const rgbStr = (typeof PEQDB_Module !== 'undefined' && PEQDB_Module.hexToRgb) ? PEQDB_Module.hexToRgb(accentColor) : '120, 120, 120';
+                                const accentColor = t.accent || (t.variables && t.variables['--accent-blue']) || '#5AA9E6';
+                const rgbStr = (typeof PEQDB_Module !== 'undefined' && PEQDB_Module.hexToRgb) ? PEQDB_Module.hexToRgb(accentColor) : '90, 169, 230';
                 root.style.setProperty('--accent-blue-rgb', rgbStr);
+                // --accent-rgb drives the window bloom in app.css. Kept in sync
+                // with --accent-blue-rgb so a JS-applied theme and a
+                // class-applied theme produce the same texture.
+                root.style.setProperty('--accent-rgb', rgbStr);
+                // Retired-token bridge: --accent-ink is near-black on every one
+                // of the nine accents, so on-accent glyphs are always dark.
+                root.style.setProperty('--accent-ink', '#0A0A0B');
+                root.style.setProperty('--accent-glow',
+                    (t.variables && t.variables['--accent-glow']) || ('rgba(' + rgbStr + ', 0.16)'));
+                root.style.setProperty('--accent-soft',
+                    (t.variables && t.variables['--accent-soft']) || ('rgba(' + rgbStr + ', 0.08)'));
 
                 const expThemeSelector = document.getElementById('export-theme-selector');
                 if (expThemeSelector) expThemeSelector.value = themeId;
@@ -10111,6 +10721,7 @@ setGlobalTheme: function(themeId) {
                 if (b) {
                     b.style.backgroundColor = '';
                     b.style.color = '';
+                    b.style.borderColor = '';
                     b.style.boxShadow = '';
                     b.style.transform = '';
                 }
@@ -10121,10 +10732,14 @@ setGlobalTheme: function(themeId) {
             }) || 'find';
             const activeBtn = document.getElementById(`tab-${activeTabId}-btn`);
             if (activeBtn) {
-                activeBtn.style.backgroundColor = accentColor;
-                activeBtn.style.color = App.getContrastTextColor ? App.getContrastTextColor(accentColor) : '#ffffff';
-                activeBtn.style.boxShadow = 'inset 2px 2px 0px 0px rgba(0, 0, 0, 0.35)';
-                activeBtn.style.transform = 'translate(1px, 1px)';
+                // Selected nav pill: an accent wash + accent border, matching the
+                // .subtab-seg-btn.active / .retro-switch-btn.is-on language.
+                // Was a solid accent fill with a 2px inset black bevel.
+                activeBtn.style.backgroundColor = 'var(--accent-soft)';
+                activeBtn.style.borderColor = 'var(--accent)';
+                activeBtn.style.color = 'var(--accent-hi)';
+                activeBtn.style.boxShadow = '0 0 0 1px var(--accent-glow)';
+                activeBtn.style.transform = 'none';
             }
 
                 const themeBtn = document.getElementById('theme-cycle-btn');
@@ -10274,7 +10889,7 @@ setGlobalFont: function(fontId) {
             const colSliders = document.getElementById('iem-col-sliders');
 
             if (colSpecs && colRadar && colSliders) {
-                if (window.innerWidth < 1280) {
+                if (window.innerWidth < RESPONSIVE_SECTION_BREAKPOINT_PX) {
                     colSpecs.style.display = secId === 'specs' ? 'flex' : 'none';
                     colRadar.style.display = secId === 'radar' ? 'flex' : 'none';
                     colSliders.style.display = secId === 'sliders' ? 'flex' : 'none';
@@ -10307,7 +10922,7 @@ setGlobalFont: function(fontId) {
             const colMatches = document.getElementById('find-col-results');
             const colTools = document.getElementById('find-col-tools');
             if (colPrefs && colMatches && colTools) {
-                if (window.innerWidth < 1280) {
+                if (window.innerWidth < RESPONSIVE_SECTION_BREAKPOINT_PX) {
                     colPrefs.style.display = secId === 'prefs' ? 'flex' : 'none';
                     colMatches.style.display = secId === 'matches' ? 'flex' : 'none';
                     colTools.style.display = secId === 'tools' ? 'flex' : 'none';
@@ -10335,7 +10950,7 @@ setGlobalFont: function(fontId) {
             const colConsole = document.getElementById('eq-col-console');
 
             if (colDb && colGraph && colConsole) {
-                if (window.innerWidth < 1280) {
+                if (window.innerWidth < RESPONSIVE_SECTION_BREAKPOINT_PX) {
                     colDb.style.display = secId === 'db' ? 'flex' : 'none';
                     colGraph.style.display = secId === 'graph' ? 'flex' : 'none';
                     colConsole.style.display = secId === 'console' ? 'flex' : 'none';
@@ -10405,7 +11020,7 @@ setGlobalFont: function(fontId) {
             const colGenerators = document.getElementById('testlab-col-generators');
 
             if (colSweeps && colSpatial && colGenerators) {
-                if (window.innerWidth < 1280) {
+                if (window.innerWidth < RESPONSIVE_SECTION_BREAKPOINT_PX) {
                     colSweeps.style.display = secId === 'sweeps' ? 'flex' : 'none';
                     colSpatial.style.display = secId === 'spatial' ? 'flex' : 'none';
                     colGenerators.style.display = secId === 'generators' ? 'flex' : 'none';
@@ -10938,14 +11553,20 @@ setGlobalFont: function(fontId) {
                 e.stopPropagation();
             };
 
+            /* Arming toggles the documented `.is-armed` state class instead of
+               writing inline colours. The drop outline is declared
+               `border: var(--drop-outline) !important` (app.css 8.9), and an
+               inline `style.borderColor = ...` carries no priority, so it loses
+               to that shorthand - the drag highlight silently stopped appearing
+               the moment these zones were given the shared treatment. A state
+               class is also what lets the outline go SOLID while armed, which
+               the old inline hack could not do. */
             const addDragStyles = (el) => {
-                el.style.borderColor = 'var(--accent-blue)';
-                el.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+                el.classList.add('is-armed');
             };
 
             const removeDragStyles = (el) => {
-                el.style.borderColor = '';
-                el.style.backgroundColor = '';
+                el.classList.remove('is-armed');
             };
 
             const dockLabel = document.getElementById('eq-file-label');
@@ -11036,8 +11657,8 @@ setGlobalFont: function(fontId) {
                 const savedTheme = localStorage.getItem('settings_theme_id') || 'slate';
                 this.setGlobalTheme(this.themeMap[savedTheme] ? savedTheme : 'slate');
 
-                const savedFont = localStorage.getItem('settings_font_id') || 'Silkscreen';
-                this.setGlobalFont(this.fontMap[savedFont] ? savedFont : 'Silkscreen');
+const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
+        this.setGlobalFont(this.fontMap[savedFont] ? savedFont : 'JetBrains Mono');
 
                 const savedScale = localStorage.getItem('settings_reading_scale') || '1.00';
                 const sizeSlider = document.getElementById('reading-size-slider');
@@ -11080,6 +11701,34 @@ setGlobalFont: function(fontId) {
                 // with inline onclick attributes.
                 window.App = App; window.IEM = IEM_Module; window.EQ = EQ_Module; window.Tone = Tone_Module; window.TestLab = TestLab_Module; window.PEQDB = PEQDB_Module;
                 if (typeof FindEngine !== 'undefined') window.FindEngine = FindEngine;
+
+                // R1: bind the custom caption bar (minimise / maximize / close)
+                // and subscribe it to real window state. No-ops when the page is
+                // loaded outside Electron, e.g. by the tools/ screenshot harness.
+                if (window.UIKit && typeof UIKit.windowChrome === 'function') {
+                    UIKit.windowChrome();
+                }
+
+                // R3: Settings now renders Gapless / Crossfade / Blue light as
+                // real switches whose state is derived from localStorage rather
+                // than hard-coded in the markup. They used to carry a literal
+                // `is-on` class that was only corrected once the user toggled
+                // the control - so a user who had turned Gapless OFF saw it
+                // still lit up on every launch until they clicked it. Applying
+                // the state once at boot fixes that and makes localStorage the
+                // single source of truth.
+                try {
+                    if (window.EQ) {
+                        if (EQ._applyGaplessButton) EQ._applyGaplessButton();
+                        if (EQ._applyCrossfadeButton) EQ._applyCrossfadeButton();
+                        // R4: same principle for the visualiser's effect
+                        // button — derive the label from vizModeIndex on boot
+                        // instead of leaving a hard-coded string in the markup.
+                        if (EQ._updateVizEffectLabel) EQ._updateVizEffectLabel();
+                    }
+                } catch (e) {
+                    console.warn('[Settings] switch state init skipped:', e);
+                }
 
                 ['mousedown', 'mousemove', 'keydown', 'touchstart', 'wheel'].forEach(evt => {
                     window.addEventListener(evt, () => {
@@ -11228,6 +11877,12 @@ setGlobalFont: function(fontId) {
     })();
 
     const IEM_Module = {
+    // Width below which the workspace shows ONE section at a time instead of three
+    // columns. Previously hard-coded as window.innerWidth < 1280 in four
+    // places; on a 1366x768 display main.js opens the window at ~1229 CSS px,
+    // which is under 1280, so laptops were getting the phone layout and two of
+    // three columns were display:none. Must stay in step with the matching
+    // breakpoint in app.css (section 8.18).
         radarChart: null, selectedTags: new Set(), selectedGenres: new Set(), selectedBass: new Set(), currentImage: null, sliderNodes: [],
         selectedDriverTypes: {},
         exportTheme: null,
@@ -11260,16 +11915,19 @@ setGlobalFont: function(fontId) {
                     else panel.classList.add('hidden');
                 }
                 if (btn) {
-                    if (id === tabId) btn.classList.add('active');
-                    else btn.classList.remove('active');
+                    if (id === tabId) {
+                        btn.classList.add('active');
+                        btn.setAttribute('aria-selected', 'true');
+                    } else {
+                        btn.classList.remove('active');
+                        btn.setAttribute('aria-selected', 'false');
+                    }
                 }
             });
-
-            const stepperLabel = document.getElementById('iem-left-tab-stepper-label');
-            if (stepperLabel) {
-                const info = this.leftTabModes.find(m => m.id === tabId) || this.leftTabModes[0];
-                stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
-            }
+            // The ◀/▶ stepper label is gone (R6 replaced it with a 4-up segmented
+            // row). The lookup is removed rather than left behind: a stale
+            // getElementById for a deleted id would push the dead-ref ratchet
+            // over its baseline and fail the integrity gate.
         },
 
         rightTabModes: [
@@ -11293,16 +11951,17 @@ setGlobalFont: function(fontId) {
                     else panel.classList.add('hidden');
                 }
                 if (btn) {
-                    if (id === tabId) btn.classList.add('active');
-                    else btn.classList.remove('active');
+                    if (id === tabId) {
+                        btn.classList.add('active');
+                        btn.setAttribute('aria-selected', 'true');
+                    } else {
+                        btn.classList.remove('active');
+                        btn.setAttribute('aria-selected', 'false');
+                    }
                 }
             });
 
-            const stepperLabel = document.getElementById('iem-right-tab-stepper-label');
-            if (stepperLabel) {
-                const info = this.rightTabModes.find(m => m.id === tabId) || this.rightTabModes[0];
-                stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
-            }
+            // Stepper label removed in R6; see the note in switchLeftTab.
 
             if (tabId === 'photo' && this.renderImagePreview) {
                 setTimeout(() => this.renderImagePreview(), 50);
@@ -11398,7 +12057,11 @@ setGlobalFont: function(fontId) {
         },
 
         cycleExportThemeDirection: function(dir) {
-            const themes = ['slate', 'bit', 'byte', 'blush', 'arcade', 'circuit', 'cartridge', 'ember', 'parchment'];
+            // R0: derived from builtInThemes instead of a second hard-coded
+            // array. The old literal listed the same nine ids in a DIFFERENT
+            // order, so any add/remove/rename desynced the export stepper from
+            // the app's own theme list with no error.
+            const themes = App.builtInThemes.map(t => t.id);
             let curIdx = themes.indexOf(this.exportTheme);
             if (curIdx === -1) curIdx = 0;
             const total = themes.length;
@@ -12075,6 +12738,22 @@ onDbSearchInput: function(value) {
         removeWhiteBg: false,
         rawImageObj: null,
         processedCanvas: null,
+        // Background-removal state. Owned by iem-photo-matte.js, declared here
+        // so the shape is visible from the object literal:
+        //   _matteSourceCanvas - the downscaled ORIGINAL, before any matte. The
+        //     model runs on this and every re-composite starts from it, so the
+        //     matte can be rebuilt any number of times without re-inferring.
+        //   _matteBaseMask     - u2netp alpha at working resolution, 0..255.
+        //   _matteFills        - ordered fill seeds (the undo/redo log).
+        //   _matteRedoStack    - seeds popped by undo.
+        //   _matteStrength     - 0..1 aggressiveness, 0.5 = model output as-is.
+        //   _matteBusy         - an inference is in flight.
+        _matteSourceCanvas: null,
+        _matteBaseMask: null,
+        _matteFills: [],
+        _matteRedoStack: [],
+        _matteStrength: 0.5,
+        _matteBusy: false,
         imageDrawPending: false,
         dacTiers: ['Phone', 'Laptop', 'Dongle', 'Desktop'],
         dacDetails: {
@@ -12193,9 +12872,15 @@ onDbSearchInput: function(value) {
                                     };
                                     return emojiMap[label] || label;
                                 },
-                                label: function(context) {
-                                    return 'Score: ' + context.raw;
-                                }
+label: function(context) {
+                                            // context.raw is the unrounded axis
+                                            // value, so this rendered as
+                                            // "Score: 5.4399999999999995". A
+                                            // score readout does not need more
+                                            // than one decimal.
+                                            const n = Number(context.raw);
+                                            return 'Score: ' + (isFinite(n) ? n.toFixed(1) : '0.0');
+                                        }
                             }
                         }
                     },
@@ -12400,19 +13085,21 @@ onDbSearchInput: function(value) {
         },
         switchSoundCharTab: function(tabId) {
             this.activeSoundCharTab = tabId;
-            document.querySelectorAll('#sound-char-tabs button').forEach(btn => btn.classList.remove('active'));
+            // aria-selected moves with .active so the pill row is announced
+            // correctly rather than only looking selected.
+            document.querySelectorAll('#sound-char-tabs button').forEach(btn => {
+                btn.classList.remove('active');
+                btn.setAttribute('aria-selected', 'false');
+            });
             const activeTabBtn = document.getElementById('sc-tab-' + tabId);
-            if (activeTabBtn) activeTabBtn.classList.add('active');
+            if (activeTabBtn) {
+                activeTabBtn.classList.add('active');
+                activeTabBtn.setAttribute('aria-selected', 'true');
+            }
 
             document.querySelectorAll('.sound-char-panel').forEach(panel => panel.classList.add('hidden'));
             const activePanel = document.getElementById('sc-panel-' + tabId);
             if (activePanel) activePanel.classList.remove('hidden');
-
-            const stepperLabel = document.getElementById('sc-tab-stepper-label');
-            if (stepperLabel) {
-                const info = this.soundCharModes.find(m => m.id === tabId) || this.soundCharModes[0];
-                stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
-            }
         },
 
         allReviewTags: [
@@ -12580,8 +13267,19 @@ onDbSearchInput: function(value) {
                 document.body.appendChild(box);
             }
 
+            // data-cmd, not an attribute-form handler. This was
+            // `onmousedown="event.preventDefault(); ..."`, which Chromium refuses
+            // to compile under `script-src 'self' 'wasm-unsafe-eval'` (no
+            // 'unsafe-inline'): the rows rendered and clicking did nothing. See
+            // scripts/check-integrity.mjs check #4, which ratchets this form.
+            //
+            // click rather than mousedown: the #brand blur handler that hides
+            // this box is a 200ms setTimeout, and click lands well inside that
+            // window, so the suggestion is applied before the box closes. It
+            // also means no `preventDefault` is needed, so the dropdown no
+            // longer swallows the focus change.
             box.innerHTML = matches.map(b => `
-                <div class="p-1.5 text-xs font-bold text-zinc-200 cursor-pointer hover:bg-[var(--accent-blue)] hover:text-white select-none" onmousedown="event.preventDefault(); document.getElementById('brand').value='${escJs(b)}'; document.getElementById('brand-suggestions').classList.add('hidden');">${esc(b)}</div>
+                <div class="p-1.5 text-xs font-bold text-zinc-200 cursor-pointer hover:bg-[var(--accent-blue)] hover:text-white select-none" data-cmd="IEM.selectBrandSuggestion" data-arg-0="${esc(b)}">${esc(b)}</div>
             `).join('');
 
             const inputEl = document.getElementById('brand');
@@ -12596,6 +13294,20 @@ onDbSearchInput: function(value) {
             }
             box.classList.remove('hidden');
         },
+
+        // Backs the #brand-suggestions rows. Was an inline `onmousedown` string,
+        // so the whole autocomplete was dead under the shipped CSP.
+        selectBrandSuggestion: function(value) {
+            if (value === undefined || value === null) return;
+            const input = document.getElementById('brand');
+            if (input) input.value = String(value);
+            const box = document.getElementById('brand-suggestions');
+            if (box) {
+                box.classList.add('hidden');
+                box.innerHTML = '';
+            }
+        },
+
         incrementDriver: function(type) {
             if (!this.selectedDriverTypes) this.selectedDriverTypes = {};
             const cur = this.selectedDriverTypes[type] || 0;
@@ -12851,13 +13563,13 @@ onDbSearchInput: function(value) {
 
                 div.innerHTML = `
                     <div class="flex flex-col items-center leading-none overflow-visible">
-                        <img src="app/icons/${d.icon}" class="w-11 h-11 object-contain select-none transition-transform hover:scale-110 overflow-visible ${isRecentlyUpdated ? 'driver-pulse-active' : ''}" style="transform-origin: center;">
-                        <span class="text-xs font-black tracking-wide mt-1 transition-colors ${isActive ? 'text-[var(--accent-blue)]' : 'text-zinc-400'}">${count} ${d.type}</span>
+                        <img src="app/icons/${d.icon}" class="driver-icon ${isActive ? 'is-on' : ''} ${isRecentlyUpdated && isActive ? 'driver-pulse-active' : ''}" style="transform-origin: center;">
+                        <span class="driver-count ${isActive ? 'is-on' : ''}">${count} ${d.type}</span>
                     </div>
 
-                    <div class="flex items-center justify-center gap-1 w-full max-w-[64px] mt-1">
-                        <button type="button" data-cmd="IEM.decrementDriver" data-arg-0="${d.type}" class="w-7 h-6 flex items-center justify-center text-xs font-black text-red-400 bg-[var(--bg-card)] border-2 border-black active:translate-y-[1px] select-none cursor-pointer ${!isActive ? 'opacity-20 pointer-events-none' : ''}" style="box-shadow: 2px 2px 0px 0px #000000 !important;">−</button>
-                        <button type="button" data-cmd="IEM.incrementDriver" data-arg-0="${d.type}" class="w-7 h-6 flex items-center justify-center text-xs font-black text-emerald-400 bg-[var(--bg-card)] border-2 border-black active:translate-y-[1px] select-none cursor-pointer" style="box-shadow: 2px 2px 0px 0px #000000 !important;">+</button>
+                    <div class="driver-step">
+                        <button type="button" data-cmd="IEM.decrementDriver" data-arg-0="${d.type}" class="driver-step-btn driver-step-dec ${!isActive ? 'is-off' : ''}" aria-label="Fewer ${d.type} drivers">−</button>
+                        <button type="button" data-cmd="IEM.incrementDriver" data-arg-0="${d.type}" class="driver-step-btn driver-step-inc" aria-label="More ${d.type} drivers">+</button>
                     </div>
                 `;
                 container.appendChild(div);
@@ -12868,7 +13580,7 @@ onDbSearchInput: function(value) {
 
             this.lastUpdatedDriverType = null;
             const badge = document.getElementById('driver-header-count-badge');
-            if (badge) badge.textContent = totalDrivers + " Units";
+            if (badge) badge.textContent = totalDrivers + (totalDrivers === 1 ? " Unit" : " Units");
 
             this.renderReviewTagMenuOptions();
             this.updateAll();
@@ -13048,6 +13760,17 @@ onDbSearchInput: function(value) {
         this.currentImageBlob = null;
         this.rawImageObj = null;
         this.processedCanvas = null;
+        // Drop the matte with the photo. The u2netp SESSION is deliberately kept
+        // warm - it costs a few tens of MB of WASM heap to rebuild, and the next
+        // photo should not have to pay the load again.
+        this._matteSourceCanvas = null;
+        this._matteBaseMask = null;
+        this._matteFills = [];
+        this._matteRedoStack = [];
+        // Invalidate the packed-RGB cache with the canvas it belongs to.
+        this._matteRGB = null;
+        this._matteRGBSource = null;
+        if (typeof this.updatePhotoMatteControls === 'function') this.updatePhotoMatteControls();
         const uploadInput = document.getElementById('image-upload');
         if (uploadInput) uploadInput.value = '';
 
@@ -13148,6 +13871,14 @@ onDbSearchInput: function(value) {
             }, { passive: false });
         },
         handleZoomSlider: function(val) {
+            // ONE slider serves two meanings. While background removal is on it
+            // is edge STRENGTH, not zoom. Pan and zoom stay reachable on
+            // drag + wheel, so repurposing the slider costs nothing - and a
+            // second slider would mean two ranges fighting over one row.
+            if (this.removeWhiteBg) {
+                this.setPhotoMatteStrength(parseFloat(val) / 100);
+                return;
+            }
             this.imgScale = parseFloat(val);
             this.renderImagePreview();
         },
@@ -13185,136 +13916,59 @@ onDbSearchInput: function(value) {
             tempCtx.imageSmoothingQuality = 'high';
             tempCtx.drawImage(this.rawImageObj, 0, 0, w, h);
 
-            let imgData = tempCtx.getImageData(0, 0, w, h);
-            imgData = this.processWhiteBgRemoval(imgData);
-            tempCtx.putImageData(imgData, 0, 0);
+            // Keep the un-matted original. Everything downstream - the model, the
+            // strength slider, every fill, undo and redo - is derived from this
+            // one canvas, so nothing has to re-run inference to change the matte.
+            this._matteSourceCanvas = tempCanvas;
 
-            this.processedCanvas = tempCanvas;
-            this.renderImagePreview();
-        },
-        toggleBgRemoval: function(checked) {
-            this.removeWhiteBg = checked;
-            if (this.removeWhiteBg && !this.processedCanvas) {
-                this.preProcessImage();
+            if (this.removeWhiteBg) {
+                // Inference is async. Paint the original straight away so the
+                // photo appears immediately while the model works, then swap in
+                // the cutout when it lands.
+                this.processedCanvas = tempCanvas;
+                this._matteBaseMask = null;
+                this._matteFills = [];
+                this._matteRedoStack = [];
+                this.renderImagePreview();
+                this.applyPhotoMatte();
             } else {
+                this._matteBaseMask = null;
+                this._matteFills = [];
+                this._matteRedoStack = [];
+                this.processedCanvas = tempCanvas;
                 this.renderImagePreview();
             }
         },
-        processWhiteBgRemoval: function(imgData) {
-            const data = imgData.data;
-            const w = imgData.width;
-            const h = imgData.height;
-            const isBg = new Uint8Array(w * h);
-            const queue = [];
+        toggleBgRemoval: function(checked) {
+            this.removeWhiteBg = checked;
+            if (typeof this.updatePhotoMatteControls === 'function') this.updatePhotoMatteControls();
 
-            const isNearWhiteFlood = (r, g, b) => {
-                const distSq = (255 - r)**2 + (255 - g)**2 + (255 - b)**2;
-                return distSq < 8100;
-            };
-
-            const isGloballyWhite = (r, g, b) => {
-                const maxVal = Math.max(r, g, b);
-                return (255 - maxVal) < 22;
-            };
-
-            for (let x = 0; x < w; x++) {
-                let idxTop = x * 4;
-                if (isNearWhiteFlood(data[idxTop], data[idxTop+1], data[idxTop+2])) {
-                    isBg[x] = 1;
-                    queue.push(x);
-                }
-                let idxBot = ((h - 1) * w + x) * 4;
-                if (isNearWhiteFlood(data[idxBot], data[idxBot+1], data[idxBot+2])) {
-                    isBg[(h - 1) * w + x] = 1;
-                    queue.push((h - 1) * w + x);
-                }
+            if (checked) {
+                if (!this._matteSourceCanvas) this.preProcessImage();
+                else this.applyPhotoMatte();
+            } else {
+                // Off: fall back to the untouched original. The model session is
+                // kept warm so turning it back on is instant.
+                this._matteBaseMask = null;
+                this._matteFills = [];
+                this._matteRedoStack = [];
+                this.processedCanvas = this._matteSourceCanvas || this.processedCanvas;
+                this.renderImagePreview();
             }
-            for (let y = 1; y < h - 1; y++) {
-                let idxLeft = (y * w) * 4;
-                if (isNearWhiteFlood(data[idxLeft], data[idxLeft+1], data[idxLeft+2])) {
-                    isBg[y * w] = 1;
-                    queue.push(y * w);
-                }
-                let idxRight = (y * w + w - 1) * 4;
-                if (isNearWhiteFlood(data[idxRight], data[idxRight+1], data[idxRight+2])) {
-                    isBg[y * w + w - 1] = 1;
-                    queue.push(y * w + w - 1);
-                }
-            }
-
-            let qHead = 0;
-            while (qHead < queue.length) {
-                const curr = queue[qHead++];
-                const cx = curr % w;
-                const cy = Math.floor(curr / w);
-
-                for (let i = 0; i < 4; i++) {
-                    const nx = cx + (i === 0 ? -1 : i === 1 ? 1 : 0);
-                    const ny = cy + (i === 2 ? -1 : i === 3 ? 1 : 0);
-
-                    if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-                        const nIdx = ny * w + nx;
-                        if (isBg[nIdx] === 0) {
-                            const pixelIdx = nIdx * 4;
-                            if (isNearWhiteFlood(data[pixelIdx], data[pixelIdx+1], data[pixelIdx+2])) {
-                                isBg[nIdx] = 1;
-                                queue.push(nIdx);
-                            }
-                        }
-                    }
-                }
-            }
-
-            for (let i = 0; i < w * h; i++) {
-                if (isBg[i]) {
-                    data[i * 4 + 3] = 0;
-                }
-            }
-
-            const minThreshold = 15;
-            const maxThreshold = 55;
-            const range = maxThreshold - minThreshold;
-
-            for (let i = 0; i < w * h; i++) {
-                const pixelIdx = i * 4;
-                const r = data[pixelIdx];
-                const g = data[pixelIdx+1];
-                const b = data[pixelIdx+2];
-
-                const maxVal = Math.max(r, g, b);
-                const diffToWhite = 255 - maxVal;
-
-                if (diffToWhite <= minThreshold) {
-                    data[pixelIdx+3] = 0;
-                } else if (diffToWhite < maxThreshold) {
-                    const factor = (diffToWhite - minThreshold) / range;
-                    data[pixelIdx+3] = Math.min(data[pixelIdx+3], Math.round(factor * 255));
-                }
-            }
-
-            const tempAlpha = new Uint8Array(w * h);
-            for (let i = 0; i < w * h; i++) {
-                tempAlpha[i] = data[i * 4 + 3];
-            }
-
-            const horizontalBlurred = new Uint8Array(w * h);
-            for (let y = 0; y < h; y++) {
-                for (let x = 1; x < w - 1; x++) {
-                    const idx = y * w + x;
-                    horizontalBlurred[idx] = Math.round((tempAlpha[idx - 1] + tempAlpha[idx] + tempAlpha[idx + 1]) / 3);
-                }
-            }
-
-            for (let y = 1; y < h - 1; y++) {
-                for (let x = 1; x < w - 1; x++) {
-                    const idx = y * w + x;
-                    if (tempAlpha[idx] < 255) {
-                        data[idx * 4 + 3] = Math.round((horizontalBlurred[idx - w] + horizontalBlurred[idx] + horizontalBlurred[idx + w]) / 3);
-                    }
-                }
-            }
-            return imgData;
         },
+        /* True while u2netp is loading or running, so the UI can show progress
+           and refuse to queue overlapping runs. */
+        isPhotoMatteBusy: function() {
+            return !!this._matteBusy;
+        },
+        /* REMOVED: processWhiteBgRemoval (the old white-background flood fill).
+           It decided "background" from pixel brightness, so it could not tell a
+           white backdrop from a white highlight on the product, and its
+           brightness->alpha ramp ran across the whole image rather than just the
+           cut edge - which punched pale detail out of the subject and composited
+           it darker over the dark export card. Background removal now lives in
+           app/js/iem-photo-matte.js and runs u2netp through ONNX Runtime Web,
+           which writes ALPHA ONLY and never touches RGB. */
         renderImagePreview: function() {
             if (this.imageDrawPending) return;
             this.imageDrawPending = true;
@@ -13333,6 +13987,40 @@ onDbSearchInput: function(value) {
             canvas.height = rect.height;
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Transparency backdrop.
+            //
+            // Removing the backdrop from a DARK product leaves dark pixels on a
+            // dark well, so only the highlights survive visually - the cutout
+            // reads as "the remover ate my photo" when the matte was in fact
+            // fine. A neutral checkerboard underneath fixes that for any
+            // subject: it shows through wherever alpha is 0 and is covered
+            // wherever alpha is not.
+            //
+            // Drawn into the PREVIEW canvas only. The export path uses
+            // processedCanvas, so this can never reach a saved file - the
+            // checkerboard is a viewing aid, not part of the image.
+            if (this.removeWhiteBg && this.processedCanvas) {
+                const CELL = 16;
+                let tile = this._matteCheckerTile;
+                if (!tile) {
+                    tile = document.createElement('canvas');
+                    tile.width = CELL; tile.height = CELL;
+                    const tctx = tile.getContext('2d');
+                    // Two mid greys rather than the usual light/white: light
+                    // squares hide a white product, dark squares hide a black
+                    // one, and mid grey stays legible against both.
+                    tctx.fillStyle = '#8a8a8a';
+                    tctx.fillRect(0, 0, CELL, CELL);
+                    tctx.fillStyle = '#a8a8a8';
+                    tctx.fillRect(0, 0, CELL / 2, CELL / 2);
+                    tctx.fillRect(CELL / 2, CELL / 2, CELL / 2, CELL / 2);
+                    this._matteCheckerTile = tile;
+                }
+                const pattern = ctx.createPattern(tile, 'repeat');
+                ctx.fillStyle = pattern || '#8a8a8a';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
 
             const img = (this.removeWhiteBg && this.processedCanvas) ? this.processedCanvas : this.rawImageObj;
             const iw = img.width;
@@ -13356,10 +14044,25 @@ onDbSearchInput: function(value) {
             ctx.translate(-drawW / 2, -drawH / 2);
             ctx.drawImage(img, 0, 0, drawW, drawH);
             ctx.restore();
+
+            // Record the geometry that produced this frame. A double-click on the
+            // photo has to be inverted back through exactly this transform to
+            // find which pixel was hit, and recomputing the contain-fit here
+            // would be a second copy of these four lines free to drift out of
+            // step with them - which would put fills in the wrong place after a
+            // resize rather than fail loudly.
+            this._photoDrawRect = {
+                cw: cw, ch: ch,
+                drawW: drawW, drawH: drawH,
+                scale: this.imgScale,
+                offX: this.imgOffsetX, offY: this.imgOffsetY,
+                canvas: canvas
+            };
         },
         updateConfidence: function() {
         },
         updateAll: function() {
+            this.updateExportAvailability();
             let totalScore = 0; let count = 0; let valMap = {};
             const acousticSliders = [
                 'bass', 'sub-bass-extension', 'mid-bass-punch', 'bass-texture', 'bass-speed',
@@ -14103,46 +14806,114 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
             reader.readAsText(file);
             event.target.value = '';
         },
-        // Shared importer for the file input AND the window drop handler.
+// Shared importer for the file input AND the window drop handler.
         // The drop path previously called loadProfileData directly, which
-        // ignored the backup structure entirely — dropping the app's own
+        // ignored the backup structure entirely - dropping the app's own
         // _backup.json blanked the workspace without restoring any of it.
+        //
+        // Everything below runs against a JSON.parse() result, which is
+        // attacker-controlled in the sense that matters here: the user (or a
+        // file they were handed) chooses it. Three consequences, all of which
+        // were live bugs:
+        //
+        //  - data.hasOwnProperty(...) is a prototype-dependent call. A payload
+        //    of {"hasOwnProperty": 0} is valid JSON and made it throw a
+        //    TypeError, which the catch reported as "Failed to parse file."
+        //    even though the file parsed fine. Object.prototype.hasOwnProperty
+        //    .call() cannot be shadowed by the payload.
+        //  - A non-object payload (an array, a bare number, a string) was
+        //    accepted and reported as "Loaded <x> successfully!", which is not
+        //    true of any of them.
+        //  - DBCache.saveReview resolves false rather than rejecting when
+        //    IndexedDB is unavailable, and the old loops threw that result
+        //    away - so a full backup could report "restored successfully!" with
+        //    ZERO records written. That state is designed-for: DBCache.init()
+        //    is explicitly allowed to fail (see peqdb-module.js), and it also
+        //    happens in private mode and on quota exhaustion.
+        _isValidLibraryRecord: function(rec) {
+            if (!rec || typeof rec !== 'object' || Array.isArray(rec)) return false;
+            // id is the IndexedDB keyPath and the row lookup key downstream, so
+            // a record without a usable one can never be read back.
+            if (typeof rec.id !== 'string' || rec.id.length === 0) return false;
+            return true;
+        },
+
+        // Returns { saved, skipped } so the caller can report what actually
+        // happened instead of asserting success.
+        _importLibraryRecords: async function(records) {
+            if (!Array.isArray(records) || records.length === 0) return { saved: 0, skipped: 0 };
+            let saved = 0, skipped = 0;
+            for (let i = 0; i < records.length; i++) {
+                if (!this._isValidLibraryRecord(records[i])) { skipped++; continue; }
+                try {
+                    if (await DBCache.saveReview(records[i])) saved++;
+                    else skipped++;
+                } catch (e) {
+                    skipped++;
+                }
+            }
+            return { saved: saved, skipped: skipped };
+        },
+
+        // Honest wording for a library restore. Kept in one place so the two
+        // branches below cannot drift apart again.
+        _reportLibraryRestore: function(result, total, okMessage) {
+            if (total === 0) { showToast(okMessage, "📥"); return; }
+            if (result.saved === 0) {
+                showToast("Library could NOT be restored - storage is unavailable, so no records were saved.", "⚠️", { duration: 7000 });
+                return;
+            }
+            const skippedNote = result.skipped > 0
+                ? ` (${result.skipped} invalid or unwritable entr${result.skipped === 1 ? 'y' : 'ies'} skipped)`
+                : '';
+            showToast(`${okMessage} ${result.saved} of ${total} record(s) saved${skippedNote}.`, "📥", { duration: 6000 });
+        },
+
         _importParsedConfig: async function(data) {
             try {
-                if (data && data.backupType === undefined && data.hasOwnProperty('activeCurves') === false && (data.library !== undefined || data.eqData !== undefined || data.sliders !== undefined)) {
-                    if (data.eqData || data.sliders) {
-                        if (data.library && Array.isArray(data.library)) {
-                            for (let i = 0; i < data.library.length; i++) {
-                                await DBCache.saveReview(data.library[i]);
-                            }
-                        }
-                        const workspaceToLoad = data.activeWorkspace || data;
-                        this.loadProfileData(workspaceToLoad);
-                        await this.renderLibrary();
-                        showToast("Workspace and library restored!", "📥");
-                    } else {
-                        this.loadProfileData(data);
-                        showToast("Loaded profile successfully!", "📥");
-                    }
-                } else if (data && data.backupType === "full_workstation_backup" || (data && data.hasOwnProperty('library') && Array.isArray(data.library))) {
-                    if (data.library && Array.isArray(data.library)) {
-                        for (let i = 0; i < data.library.length; i++) {
-                            await DBCache.saveReview(data.library[i]);
-                        }
-                    }
-                    if (data.activeWorkspace) {
-                        this.loadProfileData(data.activeWorkspace);
-                    }
-                    await this.renderLibrary();
-                    showToast("Workstation backup restored successfully!", "📥");
-                } else {
-                    this.loadProfileData(data);
-                    const nameLabel = (data.brand || data.model) ? `${data.brand || ''} ${data.model || ''}` : "Profile";
-                    showToast(`Loaded ${nameLabel.trim()} successfully!`, "📥");
+                // Shape guard first. JSON.parse can hand back any JSON value,
+                // and a dropped file can be anything at all. Only a plain
+                // object can carry a profile; arrays and primitives cannot, and
+                // loadProfileData would either throw on them or silently do
+                // nothing while the toast claims success.
+                if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+                    showToast("That file is not a profile - expected a JSON object.", "⚠️");
+                    return;
                 }
+                const has = (k) => Object.prototype.hasOwnProperty.call(data, k);
+                // Note the explicit parens. The original relied on && binding
+                // tighter than || across an unparenthesised ternary chain.
+                const looksLikeBundle = has('activeCurves') === false
+                    && (has('library') || has('eqData') || has('sliders'));
+                const isFullBackup = data.backupType === "full_workstation_backup";
+
+                if (isFullBackup || (looksLikeBundle && has('library') && Array.isArray(data.library))) {
+                    const total = Array.isArray(data.library) ? data.library.length : 0;
+                    const result = await this._importLibraryRecords(data.library);
+                    if (has('activeWorkspace')) this.loadProfileData(data.activeWorkspace);
+                    await this.renderLibrary();
+                    this._reportLibraryRestore(result, total, "Workstation backup restored -");
+                    return;
+                }
+
+                if (looksLikeBundle && (data.eqData || data.sliders)) {
+                    const total = Array.isArray(data.library) ? data.library.length : 0;
+                    const result = await this._importLibraryRecords(data.library);
+                    const workspaceToLoad = has('activeWorkspace') ? data.activeWorkspace : data;
+                    this.loadProfileData(workspaceToLoad);
+                    await this.renderLibrary();
+                    this._reportLibraryRestore(result, total, "Workspace and library restored -");
+                    return;
+                }
+
+                this.loadProfileData(data);
+                const nameLabel = (data.brand || data.model) ? `${data.brand || ''} ${data.model || ''}` : "Profile";
+                showToast(`Loaded ${nameLabel.trim()} successfully!`, "📥");
             } catch (err) {
-                console.error("Import parsing crash:", err);
-                showToast("Failed to parse file.", "⚠️");
+                console.error("Import failed:", err);
+                // The file parsed (JSON.parse already succeeded); this is a
+                // failure further in, so do not claim the file was unreadable.
+                showToast("Import failed: " + (err && err.message ? err.message : String(err)), "⚠️", { duration: 6000 });
             }
         },
         exportColor: '#3b82f6',
@@ -14231,7 +15002,7 @@ exportReviewCard: async function() {
             const notes = document.getElementById('review-notes').value.trim() || "No custom impressions entered.";
 
             const selectedThemeId = IEM_Module.exportTheme || localStorage.getItem('settings_theme_id') || 'slate';
-            const selectedFontFamily = IEM_Module.exportFont || localStorage.getItem('settings_font_id') || 'Silkscreen';
+            const selectedFontFamily = IEM_Module.exportFont || localStorage.getItem('settings_font_id') || 'JetBrains Mono';
 
             const fontStack = App.fontMap[selectedFontFamily] || '"Silkscreen", monospace';
             const activeFont = fontStack;
@@ -14299,13 +15070,35 @@ exportReviewCard: async function() {
             const v = themeEntry ? (themeEntry.variables || {}) : {};
 
             const currentTheme = {
-                bgBody: v['--bg-window'] || v['--bg-body'] || '#111115',
-                bgCard: v['--bg-card'] || '#202028',
-                bgInput: v['--bg-input'] || '#181822',
-                textMain: v['--text-main'] || '#f0f0f4',
-                textSecondary: v['--text-secondary'] || '#8c8c9e',
-                accent: v['--accent-blue'] || '#6488b0',
-                border: '#000000'
+                bgBody: v['--bg-window'] || v['--bg-body'] || '#0A0A0B',
+                bgCard: v['--bg-card'] || '#0A0A0B',
+                bgInput: v['--bg-input'] || '#0E0E11',
+                bgInset: v['--bg-sidebar'] || '#050506',
+                // Panels need a surface that is actually DIFFERENT from the card
+                // body. In the Void theme --bg-card and --bg-window are both
+                // #0A0A0B, so a panel filled with bgCard is invisible and the
+                // old 3px black outline was doing all the separating - which is
+                // exactly why it looked heavy. bg-raised is one step up from the
+                // body, the same relationship an in-app card has to its pane.
+                bgPanel: v['--bg-raised'] || '#121215',
+                textMain: v['--text-main'] || '#F2F3F5',
+                textMid: v['--text-secondary'] || '#9CA3AF',
+                textLo: '#6B7280',
+                textSecondary: v['--text-secondary'] || '#9CA3AF',
+                accent: v['--accent-blue'] || '#5AA9E6',
+                accentHi: v['--accent-hi'] || '#8FD0FF',
+                ok: '#34D399',
+                danger: '#F87171',
+                // Was hard-coded '#000000'. On an OLED card that is not a border,
+                // it is a hole: it reads as a gap between panels rather than an
+                // edge, and it is invisible against the dark themes. The app
+                // draws every panel edge with this one value, so moving it to a
+                // real hairline restyles all 13 panels at once.
+                border: '#2E2E35',
+                // Card corner radius, in the card's own 1200x800 space (the
+                // canvas is 2x scaled). Matches --r-md in the UI.
+                radius: 10,
+                radiusSm: 6
             };
 
             const canvas = document.createElement('canvas');
@@ -14319,142 +15112,102 @@ exportReviewCard: async function() {
             ctx.fillStyle = currentTheme.bgBody;
             ctx.fillRect(0, 0, 1200, 800);
 
-            ctx.save();
-            ctx.lineWidth = 2;
+            // R9: the per-theme texture. This used to be nine hand-written
+            // branches keyed on selectedThemeId, each with its own hard-coded
+            // rgba() values - roughly 16 literals that no theme token could
+            // reach. Under Ember it painted diagonal red hatching at 15% alpha,
+            // under Verdant a green radial bloom, under Gold a dot grid; the
+            // exported card therefore looked like a different artefact per theme
+            // rather than one design in nine colours.
 
-            if (selectedThemeId === 'parchment') {
-                ctx.save();
-                ctx.strokeStyle = 'rgba(26, 17, 5, 0.15)';
-                ctx.lineWidth = 2;
-                for (let x = 0; x < 1200; x += 36) {
-                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 800); ctx.stroke();
+            // The theme backdrop is the app's REAL CSS, rasterised offscreen by
+            // the main process (theme:capture-backdrop). It used to be redrawn
+            // here by hand - square grids, hatch, trace grids, rays, all keyed
+            // on the theme id - and the two copies drifted: the cards showed
+            // textures the app had stopped using. The themes are now layered
+            // gradient stacks (--tp over --tp-floor) that canvas 2D simply
+            // cannot express, so mirroring them a second time would have
+            // reintroduced the same drift with a more elaborate set of wrong
+            // shapes. Capturing the stylesheet makes the card agree with the app
+            // by construction.
+            //
+            // Captured at the CARD size, not smaller: the texture tiles at a
+            // fixed pixel pitch, so a small capture scaled up would blur and
+            // stretch the pattern instead of showing the theme.
+            const W = 1200, H = 800;
+            let backdropPainted = false;
+            try {
+                if (window.appBridge && typeof window.appBridge.captureThemeBackdrop === 'function') {
+                    const dataUrl = await window.appBridge.captureThemeBackdrop(selectedThemeId, W, H);
+                    if (dataUrl) {
+                        const bmp = await new Promise((resolve, reject) => {
+                            const im = new Image();
+                            im.onload = () => resolve(im);
+                            im.onerror = () => reject(new Error('backdrop decode failed'));
+                            im.src = dataUrl;
+                        });
+                        ctx.drawImage(bmp, 0, 0, W, H);
+                        backdropPainted = true;
+                    }
                 }
-                for (let y = 0; y < 800; y += 36) {
-                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(1200, y); ctx.stroke();
+            } catch (err) {
+                console.error('Theme backdrop capture failed:', err);
+            }
+            if (!backdropPainted) {
+                // Degrade to the theme's own floor colour. A plain but themed
+                // card beats either a blank one or a card textured with
+                // something the app does not use.
+                ctx.fillStyle = currentTheme.bg || '#0A0A0B';
+                ctx.fillRect(0, 0, W, H);
+            }
+
+            // R9: one rounded-rect path helper plus the two panel primitives every box in
+            // the card is built from. Previously each panel was a hand-rolled
+            // fillRect + strokeRect pair with lineWidth 3 and a #000000 stroke,
+            // which is the pre-R0 raised look: square corners and a heavy black
+            // outline that reads as a hole rather than an edge on a dark theme.
+            const roundRectPath = (x, y, w, h, r) => {
+                const rr = Math.min(r, w / 2, h / 2);
+                ctx.beginPath();
+                if (ctx.roundRect) {
+                    ctx.roundRect(x, y, w, h, rr);
+                    return;
                 }
-                ctx.strokeStyle = 'rgba(26, 17, 5, 0.05)';
-                ctx.lineWidth = 2;
-                for (let i = -800; i < 2000; i += 8) {
-                    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + 800, 800); ctx.stroke();
+                // Manual fallback: ctx.roundRect is unavailable on older
+                // Electron, and silently drawing nothing would be worse.
+                ctx.moveTo(x + rr, y);
+                ctx.arcTo(x + w, y, x + w, y + h, rr);
+                ctx.arcTo(x + w, y + h, x, y + h, rr);
+                ctx.arcTo(x, y + h, x, y, rr);
+                ctx.arcTo(x, y, x + w, y, rr);
+                ctx.closePath();
+            };
+
+            // A card surface: rounded, filled, hairline edge. Optional soft
+            // elevation for the few panels that sit "above" the card.
+            const panel = (x, y, w, h, opts = {}) => {
+                const r = opts.radius === undefined ? currentTheme.radius : opts.radius;
+                const fill = opts.fill || currentTheme.bgPanel;
+                if (opts.elevate) {
+                    ctx.save();
+                    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+                    ctx.shadowBlur = 18;
+                    ctx.shadowOffsetY = 6;
+                    ctx.fillStyle = fill;
+                    roundRectPath(x, y, w, h, r);
+                    ctx.fill();
+                    ctx.restore();
                 }
-                ctx.restore();
-            } else if (selectedThemeId === 'ember') {
-                ctx.save();
-                ctx.strokeStyle = 'rgba(200, 75, 75, 0.15)';
-                ctx.lineWidth = 2;
-                for (let i = -800; i < 2000; i += 20) {
-                    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + 800, 800); ctx.stroke();
-                    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i - 800, 800); ctx.stroke();
-                }
-                ctx.restore();
-            } else if (selectedThemeId === 'circuit') {
-                ctx.save();
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.035)';
-                ctx.lineWidth = 1;
-                for (let r = 32; r < 1200; r += 32) {
-                    ctx.beginPath();
-                    ctx.ellipse(600, 400, r, r * 0.6, 0, 0, Math.PI * 2);
+                ctx.fillStyle = fill;
+                roundRectPath(x, y, w, h, r);
+                ctx.fill();
+                if (opts.stroke !== false) {
+                    ctx.strokeStyle = opts.strokeColor || currentTheme.border;
+                    ctx.lineWidth = 1;
+                    roundRectPath(x, y, w, h, r);
                     ctx.stroke();
                 }
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.025)';
-                ctx.lineWidth = 1;
-                for (let x = 0; x < 1200; x += 48) {
-                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 800); ctx.stroke();
-                }
-                for (let y = 0; y < 800; y += 48) {
-                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(1200, y); ctx.stroke();
-                }
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
-                for (let x = 0; x < 1200; x += 64) {
-                    for (let y = 0; y < 800; y += 64) {
-                        ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
-                    }
-                }
-                ctx.restore();
-            } else if (selectedThemeId === 'byte') {
-                ctx.save();
-                const radGrad = ctx.createRadialGradient(600, 400, 10, 600, 400, 600);
-                radGrad.addColorStop(0, 'rgba(80, 255, 100, 0.12)');
-                radGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-                ctx.fillStyle = radGrad;
-                ctx.fillRect(0, 0, 1200, 800);
-
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
-                for (let y = 0; y < 800; y += 5) {
-                    ctx.fillRect(0, y, 1200, 2);
-                }
-                ctx.restore();
-            } else if (selectedThemeId === 'cartridge') {
-                ctx.save();
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-                for (let i = -800; i < 2000; i += 24) {
-                    ctx.beginPath();
-                    ctx.moveTo(i, 0);
-                    ctx.lineTo(i + 12, 0);
-                    ctx.lineTo(i + 812, 800);
-                    ctx.lineTo(i + 800, 800);
-                    ctx.closePath();
-                    ctx.fill();
-                }
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-                for (let y = 0; y < 800; y += 4) {
-                    ctx.fillRect(0, y, 1200, 2);
-                }
-                ctx.restore();
-            } else if (selectedThemeId === 'arcade') {
-                ctx.save();
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
-                ctx.lineWidth = 2;
-                for (let y = 0; y < 800; y += 16) {
-                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(1200, y); ctx.stroke();
-                    const offset = (y / 16) % 2 === 0 ? 0 : 16;
-                    for (let x = offset; x < 1200; x += 32) {
-                        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 16); ctx.stroke();
-                    }
-                }
-                ctx.restore();
-            } else if (selectedThemeId === 'blush') {
-                ctx.save();
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.10)';
-                for (let x = 0; x < 1200; x += 20) {
-                    for (let y = 0; y < 800; y += 20) {
-                        if (((x / 20) + (y / 20)) % 2 === 0) {
-                            ctx.fillRect(x, y, 10, 10);
-                        }
-                    }
-                }
-                ctx.restore();
-            } else if (selectedThemeId === 'bit') {
-                ctx.save();
-                ctx.fillStyle = 'rgba(202, 159, 51, 0.14)';
-                for (let x = 0; x < 1200; x += 20) {
-                    ctx.fillRect(x, 0, 3, 800);
-                }
-                for (let y = 0; y < 800; y += 20) {
-                    ctx.fillRect(0, y, 1200, 3);
-                }
-                ctx.fillStyle = 'rgba(202, 159, 51, 0.35)';
-                for (let x = 0; x < 1200; x += 20) {
-                    for (let y = 10; y < 800; y += 20) {
-                        ctx.beginPath();
-                        ctx.arc(x + 11.5, y + 11.5, 2, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
-                }
-                ctx.restore();
-            } else {
-                ctx.save();
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-                ctx.lineWidth = 2;
-                for (let x = 0; x < 1200; x += 32) {
-                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 800); ctx.stroke();
-                }
-                for (let y = 0; y < 800; y += 32) {
-                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(1200, y); ctx.stroke();
-                }
-                ctx.restore();
-            }
-            ctx.restore();
+            };
 
             const drawFittedText = (txt, x, y, maxW, baseFontSize, isBold = false, align = 'left') => {
                 let size = baseFontSize;
@@ -14475,11 +15228,7 @@ exportReviewCard: async function() {
             drawFittedText(fullTitle, 60, 78, 980, 36, true, 'left');
 
             const drawLeftBox = (y, h, icon, label, val) => {
-                ctx.fillStyle = currentTheme.bgCard;
-                ctx.strokeStyle = currentTheme.border;
-                ctx.lineWidth = 3;
-                ctx.fillRect(40, y, 250, h);
-                ctx.strokeRect(40, y, 250, h);
+                panel(40, y, 250, h);
 
                 ctx.fillStyle = currentTheme.accent;
                 ctx.font = `20px ${activeFont}`;
@@ -14500,11 +15249,7 @@ exportReviewCard: async function() {
             drawLeftBox(120, 65, "💰", "PRICE", `$ ${price}`);
             drawLeftBox(195, 65, "🔌", "VOLUME", volume.toUpperCase());
 
-            ctx.fillStyle = currentTheme.bgCard;
-            ctx.strokeStyle = currentTheme.border;
-            ctx.lineWidth = 3;
-            ctx.fillRect(40, 270, 250, 85);
-            ctx.strokeRect(40, 270, 250, 85);
+            panel(40, 270, 250, 85);
 
             ctx.fillStyle = currentTheme.accent;
             ctx.font = `20px ${activeFont}`;
@@ -14527,11 +15272,7 @@ exportReviewCard: async function() {
             drawFittedText(impStr, 96, 325, 70, 13, true, 'left');
             drawFittedText(sensStr, 172, 325, 110, 13, true, 'left');
 
-            ctx.fillStyle = currentTheme.bgCard;
-            ctx.strokeStyle = currentTheme.border;
-            ctx.lineWidth = 3;
-            ctx.fillRect(40, 365, 250, 160);
-            ctx.strokeRect(40, 365, 250, 160);
+            panel(40, 365, 250, 160);
 
             ctx.fillStyle = currentTheme.textSecondary;
             ctx.font = `bold 9px ${activeFont}`;
@@ -14597,11 +15338,7 @@ exportReviewCard: async function() {
 
             ctx.restore();
 
-            ctx.fillStyle = currentTheme.bgCard;
-            ctx.strokeStyle = currentTheme.border;
-            ctx.lineWidth = 3;
-            ctx.fillRect(40, 535, 250, 225);
-            ctx.strokeRect(40, 535, 250, 225);
+            panel(40, 535, 250, 225);
 
             ctx.fillStyle = currentTheme.textSecondary;
             ctx.font = `bold 9px ${activeFont}`;
@@ -14665,11 +15402,7 @@ exportReviewCard: async function() {
                 notesY += noteLineHeight;
             }
 
-            ctx.fillStyle = currentTheme.bgCard;
-            ctx.strokeStyle = currentTheme.border;
-            ctx.lineWidth = 3;
-            ctx.fillRect(310, 120, 540, 640);
-            ctx.strokeRect(310, 120, 540, 640);
+            panel(310, 120, 540, 640);
 
             const liveBiasBadge = document.getElementById('bias-badge');
             const biasText = liveBiasBadge ? liveBiasBadge.textContent.trim() : '⚖️ Neutral';
@@ -14682,11 +15415,7 @@ exportReviewCard: async function() {
             const biasBoxX = 310 + (540 - biasBoxW) / 2;
             const biasBoxY = 132;
 
-            ctx.fillStyle = selectedThemeId === 'parchment' ? '#a39169' : (currentTheme.bgInput || currentTheme.bgCard);
-ctx.strokeStyle = currentTheme.border;
-ctx.lineWidth = 2;
-ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
-            ctx.strokeRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
+            panel(biasBoxX, biasBoxY, biasBoxW, biasBoxH, { fill: selectedThemeId === 'parchment' ? '#a39169' : (currentTheme.bgInput || currentTheme.bgCard) });
 
             ctx.fillStyle = currentTheme.textMain;
             ctx.textAlign = "center";
@@ -14785,11 +15514,7 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
             };
             radarImg.src = tempRadarSrc;
 
-            ctx.fillStyle = currentTheme.bgCard;
-            ctx.strokeStyle = currentTheme.border;
-            ctx.lineWidth = 3;
-            ctx.fillRect(870, 120, 290, 90);
-            ctx.strokeRect(870, 120, 290, 90);
+            panel(870, 120, 290, 90);
 
             ctx.fillStyle = currentTheme.accent;
             ctx.font = `bold 9px ${activeFont}`;
@@ -14810,17 +15535,14 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
             const gradeText = this.exportGrade || "A";
 
             ctx.save();
-            ctx.fillStyle = currentTheme.bgCard;
-            ctx.strokeStyle = currentTheme.accent;
-            ctx.lineWidth = 3;
-            ctx.fillRect(gx, gy, gw, gh);
-            ctx.strokeRect(gx, gy, gw, gh);
+            panel(gx, gy, gw, gh, { strokeColor: currentTheme.accent });
 
-            ctx.fillStyle = currentTheme.accent;
-            ctx.fillRect(gx - 3, gy - 3, 6, 6);
-            ctx.fillRect(gx + gw - 3, gy - 3, 6, 6);
-            ctx.fillRect(gx - 3, gy + gh - 3, 6, 6);
-            ctx.fillRect(gx + gw - 3, gy + gh - 3, 6, 6);
+            // The four accent corner marks that used to sit here were solid 6x6
+            // squares drawn OUTSIDE the panel bounds. On a rounded panel they read
+            // as crop/resize handles - "this image is selected" - rather than as
+            // part of the design, and being square they clashed with every
+            // rounded corner on the card. The accent-stroked panel already marks
+            // the grade clearly, so they were removed rather than restyled.
 
             ctx.fillStyle = currentTheme.textMain;
             ctx.font = `bold 24px ${activeFont}`;
@@ -14829,11 +15551,7 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
             ctx.fillText(gradeText, gx + gw / 2, gy + gh / 2);
             ctx.restore();
 
-            ctx.fillStyle = currentTheme.bgCard;
-            ctx.strokeStyle = currentTheme.border;
-            ctx.lineWidth = 3;
-            ctx.fillRect(870, 220, 290, 210);
-            ctx.strokeRect(870, 220, 290, 210);
+            panel(870, 220, 290, 210);
 
             const canvasPrev = document.getElementById('image-preview-canvas');
             const imgToDraw = (IEM_Module.removeWhiteBg && IEM_Module.processedCanvas) ? IEM_Module.processedCanvas : IEM_Module.rawImageObj;
@@ -14863,15 +15581,15 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
                 ctx.drawImage(imgToDraw, 0, 0, drawW, drawH);
                 ctx.restore();
 
+                // R9: the photo frame was the last square panel. Drawn as a stroke only,
+                // because the photo itself is painted first and the frame sits
+                // on top of it.
                 ctx.strokeStyle = currentTheme.border;
-                ctx.lineWidth = 2;
-                ctx.strokeRect(885, 235, 260, 180);
+                ctx.lineWidth = 1;
+                roundRectPath(885, 235, 260, 180, currentTheme.radiusSm);
+                ctx.stroke();
             } else {
-                ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
-                ctx.fillRect(885, 235, 260, 180);
-                ctx.strokeStyle = currentTheme.border;
-                ctx.lineWidth = 2;
-                ctx.strokeRect(885, 235, 260, 180);
+                panel(885, 235, 260, 180, { fill: 'rgba(0, 0, 0, 0.25)', radius: currentTheme.radiusSm });
 
                 ctx.fillStyle = currentTheme.textSecondary;
                 ctx.font = `32px ${activeFont}`;
@@ -14882,11 +15600,7 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
                 ctx.textBaseline = "alphabetic";
             }
 
-            ctx.fillStyle = currentTheme.bgCard;
-            ctx.strokeStyle = currentTheme.border;
-            ctx.lineWidth = 3;
-            ctx.fillRect(870, 440, 290, 160);
-            ctx.strokeRect(870, 440, 290, 160);
+            panel(870, 440, 290, 160);
 
             ctx.fillStyle = currentTheme.accent;
             ctx.font = `bold 9px ${activeFont}`;
@@ -14976,11 +15690,7 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
                 guideY += 26;
             });
 
-            ctx.fillStyle = currentTheme.bgCard;
-            ctx.strokeStyle = currentTheme.border;
-            ctx.lineWidth = 3;
-            ctx.fillRect(870, 610, 290, 150);
-            ctx.strokeRect(870, 610, 290, 150);
+            panel(870, 610, 290, 150);
 
             ctx.fillStyle = currentTheme.accent;
             ctx.font = `bold 9px ${activeFont}`;
@@ -15022,9 +15732,827 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
             a.href = dataStr;
             a.download = `${brand}-${model}-review-card.png`;
             a.click();
+        },
+
+        // Export was a permanent primary CTA, so the loudest button in the pane
+        // advertised something most users cannot do yet - the card still exports
+        // "Generic IEM" until a brand, model, driver or note exists. It now
+        // promotes itself only once there is something worth exporting, which is
+        // what a primary action is supposed to mean. Called from updateAll.
+        // Export is always clickable. An earlier pass disabled it while the
+        // review was empty, on the reasoning that a primary action should not
+        // advertise something unavailable. That was wrong: exporting a partially
+        // filled review is a legitimate thing to want (you often export a card
+        // mid-review, or export an empty one as a blank template), and silently
+        // taking the button away lost a capability that used to work.
+        //
+        // So only the emphasis is state-driven: quiet while there is nothing much
+        // to show, primary once the review has real content. Never disabled.
+        updateExportAvailability: function() {
+            const btn = document.querySelector('[data-action="click_233_IEM_showExportModal"]');
+            if (!btn) return;
+
+            // Bind a delegated listener once. updateAll() covers programmatic
+            // changes, but typing in the brand/model/price/notes fields fires
+            // only their own input handlers, so without this the button stayed
+            // greyed out while the user filled the form in front of it.
+            if (!this._exportAvailBound) {
+                this._exportAvailBound = true;
+                document.addEventListener('input', (e) => {
+                    const id = e.target && e.target.id;
+                    if (id === 'brand' || id === 'model' || id === 'price' || id === 'review-notes') {
+                        IEM.updateExportAvailability();
+                    }
+                });
+            }
+
+            const fieldText = (id) => {
+                const el = document.getElementById(id);
+                return el ? String(el.value || '').trim() : '';
+            };
+            const drivers = Object.values(this.selectedDriverTypes || {}).some(n => Number(n) > 0);
+            const tags = Array.isArray(this.signatureTags) ? this.signatureTags.length > 0 : false;
+            const ready =
+                fieldText('brand') !== '' ||
+                fieldText('model') !== '' ||
+                fieldText('price') !== '' ||
+                fieldText('review-notes') !== '' ||
+                drivers || tags;
+            btn.classList.toggle('is-ready', ready);
+            btn.title = ready
+                ? 'Export review card'
+                : 'Export review card (mostly empty)';
         }
     };
 
+/* ===== app/js/iem-photo-matte.js ===== */
+// Photo background remover - u2netp matte via ONNX Runtime Web.
+//
+// Replaces the old processWhiteBgRemoval flood-fill. That approach decided
+// "background" from pixel brightness, so it could not tell a white backdrop
+// from a white highlight on the product, and its brightness->alpha ramp ran over
+// every pixel in the image, punching pale detail out of the subject and
+// compositing it darker over the dark export card.
+//
+// u2netp is a real saliency model, so the matte is a per-pixel confidence
+// rather than a brightness guess, and only ALPHA is written - RGB is never
+// touched, which is why the darkening cannot come back.
+//
+// State is stored as an OPERATION LOG, not as pixels:
+//
+//     matte = strengthCurve( modelMask  minus  union(fill seeds) )
+//
+// Because a fill is just a seed, undo is "pop the last seed and recomposite" -
+// a few-millisecond pixel pass, no inference, no snapshot buffers, and no
+// memory ceiling on how many times the user can undo. Strength changes
+// re-derive from the same log, so undo survives moving the slider.
+//
+// Attaches to IEM_Module so it can override preProcessImage and
+// toggleBgRemoval, which live there. The old processWhiteBgRemoval it replaces
+// has been deleted rather than shadowed - leaving it would be dead code that
+// still looked callable.
+const IEM_PhotoMatteMethods = {
+
+    // ---------------------------------------------------------------- session
+
+    /* Bring in the ORT runtime on first use rather than from a <script> tag in
+       index.html. Two reasons: the photo tab is the only consumer, so loading
+       142KB of runtime (and later a 10.5MB wasm and a 4.4MB model) on every
+       app start is wasted; and a blocking script in front of the bundle sits on
+       the critical path for the whole UI, which showed up as a responsive
+       breakpoint assertion losing its race in verify:ui. */
+    loadPhotoMatteRuntime: function() {
+        if (typeof window !== 'undefined' && window.ort) return Promise.resolve(window.ort);
+        if (this._matteRuntimePromise) return this._matteRuntimePromise;
+        const self = this;
+        this._matteRuntimePromise = new Promise(function(resolve, reject) {
+            const el = document.createElement('script');
+            el.src = 'app/js/vendor/ort.wasm.min.js';
+            el.async = false;
+            el.onload = function() {
+                if (window.ort) resolve(window.ort);
+                else reject(new Error('ONNX Runtime script loaded but did not define window.ort'));
+            };
+            el.onerror = function() { reject(new Error('Could not load app/js/vendor/ort.wasm.min.js')); };
+            document.head.appendChild(el);
+        });
+        const clear = function() { self._matteRuntimePromise = null; };
+        this._matteRuntimePromise.then(clear, clear);
+        return this._matteRuntimePromise;
+    },
+
+    /* Load the u2netp session once and keep it.
+       ORT picks between four .wasm filenames at runtime based on SIMD and
+       thread support; numThreads/simd are pinned so exactly one file is ever
+       requested (ort-wasm-simd.wasm). Threads would need COOP/COEP
+       cross-origin isolation, which this app's local server does not send. */
+    ensurePhotoMatteSession: function(onProgress) {
+        if (this._matteSession) return Promise.resolve(this._matteSession);
+        if (this._matteSessionPromise) return this._matteSessionPromise;
+
+        const self = this;
+
+        this._matteSessionPromise = (async function() {
+            if (onProgress) onProgress(0, 'Loading background model');
+            const ort = await self.loadPhotoMatteRuntime();
+            if (typeof ort === 'undefined') throw new Error('ONNX Runtime is not available');
+
+            ort.env.wasm.wasmPaths = 'app/js/vendor/';
+            ort.env.wasm.numThreads = 1;
+            ort.env.wasm.simd = true;
+
+            const res = await fetch('app/models/u2netp.onnx');
+            if (!res.ok) throw new Error('Could not read u2netp.onnx (HTTP ' + res.status + ')');
+            const buf = await res.arrayBuffer();
+            if (onProgress) onProgress(0.6, 'Loading background model');
+            // Tensor names in this export are "input.1" and "1959", NOT
+            // "input" - read them off the session rather than hardcoding.
+            const session = await ort.InferenceSession.create(buf, { executionProviders: ['wasm'] });
+            self._matteSession = session;
+            if (onProgress) onProgress(1, 'Model ready');
+            return session;
+        })();
+
+        // A failed load must not poison every later attempt.
+        const clear = function() { self._matteSessionPromise = null; };
+        this._matteSessionPromise.then(clear, clear);
+        return this._matteSessionPromise;
+    },
+
+    /* True once the model is resident, so the UI can skip the loading state. */
+    isPhotoMatteReady: function() {
+        return !!this._matteSession;
+    },
+
+    /* Frees the WASM heap. The session is a few tens of MB and there is no
+       reason to hold it once the user is done with the photo. */
+    releasePhotoMatte: function() {
+        if (this._matteSession) {
+            try { this._matteSession.release(); } catch (e) { /* already gone */ }
+        }
+        this._matteSession = null;
+        this._matteSessionPromise = null;
+        this._matteBaseMask = null;
+        this._matteFills = [];
+        this._matteRedoStack = [];
+        this._matteStrength = 0.5;
+    },
+
+    // ------------------------------------------------------------- inference
+
+    /* Run u2netp over a canvas and return an alpha mask at that canvas's size.
+
+       The source app squashes any input into 320x320 with drawImage(img,0,0,S,S),
+       which distorts every non-square photo and then stretches the mask back.
+       Here the image is letterboxed into the square instead - padded with white,
+       because product photography is on white - and the mask is cropped and
+       resampled to match. The model sees undistorted pixels and the matte lines
+       up with the original. */
+    inferPhotoMatte: async function(sourceCanvas) {
+        const session = await this.ensurePhotoMatteSession();
+        const w = sourceCanvas.width;
+        const h = sourceCanvas.height;
+        if (!w || !h) throw new Error('Nothing to analyse');
+
+        const SIZE = 320;
+        const box = IEM_PhotoMatte_letterbox(sourceCanvas, SIZE);
+        const px = box.data;
+        const innerW = box.innerW, innerH = box.innerH, x0 = box.x0, y0 = box.y0;
+
+        // u2netp/silueta expect ImageNet normalisation, CHW, float32.
+        const meanR = 0.485, meanG = 0.456, meanB = 0.406;
+        const stdR = 0.229, stdG = 0.224, stdB = 0.225;
+        const plane = SIZE * SIZE;
+        const data = new Float32Array(3 * plane);
+        for (let i = 0; i < plane; i++) {
+            data[i] = (px[i * 4] / 255 - meanR) / stdR;
+            data[i + plane] = (px[i * 4 + 1] / 255 - meanG) / stdG;
+            data[i + 2 * plane] = (px[i * 4 + 2] / 255 - meanB) / stdB;
+        }
+
+        const ort = window.ort;
+        const tensor = new ort.Tensor('float32', data, [1, 3, SIZE, SIZE]);
+        const results = await session.run({ [session.inputNames[0]]: tensor });
+        const out = results[session.outputNames[0]];
+        const md = out.data;
+
+        // This export already emits a 0..1 mask, but sigmoid when the output
+        // looks like logits, so a differently-quantised model cannot silently
+        // produce a black or white matte.
+        let mn = Infinity, mx = -Infinity;
+        for (let i = 0; i < md.length; i++) { if (md[i] < mn) mn = md[i]; if (md[i] > mx) mx = md[i]; }
+        const needsSigmoid = mn < -0.1 || mx > 1.1;
+
+        // Crop the letterboxed square back out. BOTH offsets are required: the
+        // image is centred, so landscape photos have y0 rows of padding on top
+        // and portrait photos have x0 columns on the left. Dropping y0 here
+        // shifts the whole matte down by y0/scale source pixels on landscape
+        // photos while leaving portrait ones looking fine.
+        const src = new Float32Array(innerW * innerH);
+        for (let y = 0; y < innerH; y++) {
+            for (let x = 0; x < innerW; x++) {
+                const si = (y0 + y) * SIZE + (x0 + x);
+                let v = md[si];
+                if (needsSigmoid) v = 1 / (1 + Math.exp(-v));
+                src[y * innerW + x] = v;
+            }
+        }
+
+        return IEM_PhotoMatte_resizeMask(src, innerW, innerH, w, h);
+    },
+
+    // -------------------------------------------------------------- compositing
+
+    /* Rebuild processedCanvas from base mask + fill log + strength.
+       This is the only place the matte is materialised, and it is cheap enough
+       to re-run on every slider tick, fill, undo and redo. */
+    compositePhotoMatte: function() {
+        if (!this._matteSourceCanvas || !this._matteBaseMask) return null;
+
+        const src = this._matteSourceCanvas;
+        const w = src.width, h = src.height;
+        const out = document.createElement('canvas');
+        out.width = w; out.height = h;
+        const octx = out.getContext('2d', { willReadFrequently: true });
+        octx.drawImage(src, 0, 0);
+        const img = octx.getImageData(0, 0, w, h);
+
+        // The fill log is replayed through regionGrow, which indexes colour as
+        // rgb[i * 3]. img.data is RGBA - four bytes per pixel - so handing it
+        // over directly makes every sample read the wrong channel and shift by
+        // one pixel per step. The colour test then rejects the fill's own
+        // pixels and the fill silently does nothing, which is exactly the bug
+        // this used to have. Read a packed RGB buffer instead.
+        //
+        // Cached per source canvas because the photo's colours cannot change
+        // while it is loaded: this runs on every slider tick, and re-reading
+        // the pixels each time made a drag cost a full getImageData per frame.
+        if (this._matteRGBSource !== src) {
+            this._matteRGBSource = src;
+            this._matteRGB = IEM_PhotoMatte_sourceRGB(src, w, h);
+        }
+        const rgb = this._matteRGB;
+
+        const mask = new Uint8ClampedArray(this._matteBaseMask);
+
+        // Replay the operation log. Already-transparent pixels stay passable so
+        // a chain of clicks can grow across a removed region into adjacent
+        // background the model missed.
+        for (let f = 0; f < this._matteFills.length; f++) {
+            const seed = this._matteFills[f];
+            IEM_PhotoMatte_regionGrow(mask, rgb, w, h, seed.x, seed.y);
+        }
+
+        IEM_PhotoMatte_applyStrength(mask, this._matteStrength);
+
+        const d = img.data;
+        for (let i = 0, p = 3; i < mask.length; i++, p += 4) d[p] = mask[i];
+        octx.putImageData(img, 0, 0);
+
+        this.processedCanvas = out;
+        return out;
+    },
+
+    /* Entry point for the toggle: analyse, composite, repaint.
+       Guarded so a second toggle or a rapid photo change cannot start a second
+       inference while one is in flight - the stale result would otherwise land
+       on top of the newer photo. */
+    applyPhotoMatte: async function() {
+        if (!this._matteSourceCanvas) return;
+        if (this._matteBusy) return;
+        const self = this;
+        const source = this._matteSourceCanvas;
+        this._matteBusy = true;
+        if (typeof this.updatePhotoMatteControls === 'function') this.updatePhotoMatteControls();
+        try {
+            const mask = await this.inferPhotoMatte(source);
+            // The user may have cleared or swapped the photo mid-inference.
+            if (self._matteSourceCanvas !== source) return;
+            self._matteBaseMask = mask;
+            self._matteFills = [];
+            self._matteRedoStack = [];
+            self.compositePhotoMatte();
+            self.renderImagePreview();
+        } catch (err) {
+            console.error('Background removal failed:', err);
+            if (typeof showToast === 'function') {
+                showToast('Background removal failed: ' + (err && err.message ? err.message : err), '⚠️');
+            }
+        } finally {
+            self._matteBusy = false;
+            if (typeof self.updatePhotoMatteControls === 'function') self.updatePhotoMatteControls();
+        }
+    },
+
+    // ------------------------------------------------------------------ controls
+
+    setPhotoMatteStrength: function(value) {
+        const v = Math.max(0, Math.min(1, parseFloat(value)));
+        if (!isFinite(v)) return;
+        this._matteStrength = (this._matteStrength === undefined || this._matteStrength === null) ? 0.5 : this._matteStrength;
+        if (Math.abs(v - this._matteStrength) < 0.001) return;
+        this._matteStrength = v;
+        if (this._matteBaseMask) {
+            this.compositePhotoMatte();
+            this.renderImagePreview();
+        }
+    },
+
+    getPhotoMatteStrength: function() {
+        return (this._matteStrength === undefined || this._matteStrength === null) ? 0.5 : this._matteStrength;
+    },
+
+    /* Double-click fill. Only ever REMOVES; there is no restore mode, because
+       one undo step covers a mis-click and a second tool doubles the surface
+       area of the control bar for a case that undo already handles. */
+    addPhotoMatteFill: function(x, y) {
+        if (!this._matteBaseMask) return 0;
+        const w = this._matteSourceCanvas.width, h = this._matteSourceCanvas.height;
+        if (x < 0 || y < 0 || x >= w || y >= h) return 0;
+
+        this._matteFills = this._matteFills || [];
+        this._matteRedoStack = this._matteRedoStack || [];
+        const before = this._matteBaseMask;
+        // Same cached packed-RGB buffer compositePhotoMatte uses. The two must
+        // agree: if they read colour differently, a fill would register here
+        // and then vanish on the next composite, or vice versa.
+        if (this._matteRGBSource !== this._matteSourceCanvas) {
+            this._matteRGBSource = this._matteSourceCanvas;
+            this._matteRGB = IEM_PhotoMatte_sourceRGB(this._matteSourceCanvas, w, h);
+        }
+        const rgb = this._matteRGB;
+        const probe = new Uint8ClampedArray(this._matteBaseMask);
+        for (let f = 0; f < this._matteFills.length; f++) {
+            const s = this._matteFills[f];
+            IEM_PhotoMatte_regionGrow(probe, rgb, w, h, s.x, s.y);
+        }
+        const removed = IEM_PhotoMatte_regionGrow(probe, rgb, w, h, x, y);
+        if (removed === 0) return 0;
+
+        this._matteFills.push({ x: x, y: y });
+        this._matteRedoStack.length = 0;
+        this.compositePhotoMatte();
+        this.renderImagePreview();
+        return removed;
+    },
+
+    canUndoPhotoMatte: function() { return (this._matteFills && this._matteFills.length > 0); },
+    canRedoPhotoMatte: function() { return (this._matteRedoStack && this._matteRedoStack.length > 0); },
+
+    undoPhotoMatte: function() {
+        if (!this.canUndoPhotoMatte()) return false;
+        this._matteRedoStack.push(this._matteFills.pop());
+        this.compositePhotoMatte();
+        this.renderImagePreview();
+        return true;
+    },
+
+    redoPhotoMatte: function() {
+        if (!this.canRedoPhotoMatte()) return false;
+        this._matteFills.push(this._matteRedoStack.pop());
+        this.compositePhotoMatte();
+        this.renderImagePreview();
+        return true;
+    },
+
+    /* Discard manual fills but keep the model matte. The re-analyse button does
+       not call this - it re-runs the model instead - but it is the primitive to
+       reach for when the matte is good and only the fills are wrong. */
+    resetPhotoMatteFills: function() {
+        if (!this._matteFills || this._matteFills.length === 0) return false;
+        this._matteFills = [];
+        this._matteRedoStack = [];
+        this.compositePhotoMatte();
+        this.renderImagePreview();
+        return true;
+    },
+
+    /* ------------------------------------------------------------ UI wiring
+       Every DOM concern lives here rather than in the maths above, so the mask
+       pipeline stays testable in isolation (verify-photo-matte.js exercises
+       these same methods with no DOM at all). */
+
+    /* Single place that decides what the photo bar looks like. Called from
+       toggle, apply (start and end), fills, undo/redo, strength and clear.
+       Idempotent: it reads state and writes the DOM to match, so calling it
+       twice cannot drift. */
+    updatePhotoMatteControls: function() {
+        const active = !!this.removeWhiteBg;
+        const busy = this.isPhotoMatteBusy();
+        // Rebinding the slider changes its value without firing `input`, so the
+        // --range-fill that paints the coloured track would keep the ZOOM
+        // percentage. The knob would jump to 50% while the fill stayed at
+        // whatever the zoom was - the "knob not connected to the bar" symptom.
+        const refreshFill = (el) => {
+            if (el && typeof window !== 'undefined' && typeof window.IEM_updateRangeFill === 'function') {
+                window.IEM_updateRangeFill(el);
+            }
+        };
+
+        // Contextual buttons: present only while the feature is on, so the
+        // default photo bar is untouched for everyone who does not use it.
+        ['photo-matte-rerun', 'photo-matte-undo', 'photo-matte-redo'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.toggle('hidden', !active);
+        });
+        const rerun = document.getElementById('photo-matte-rerun');
+        if (rerun) rerun.disabled = busy || !this._matteSourceCanvas;
+        const undo = document.getElementById('photo-matte-undo');
+        if (undo) undo.disabled = busy || !this.canUndoPhotoMatte();
+        const redo = document.getElementById('photo-matte-redo');
+        if (redo) redo.disabled = busy || !this.canRedoPhotoMatte();
+
+        // Slider meaning swap. The zoom range is remembered on first bind and
+        // restored on unbind, so a round trip through the feature does not
+        // leave the slider at 0..100 and silently clamp the zoom to 5.
+        const slider = document.getElementById('image-zoom-slider');
+        const icon = document.getElementById('image-slider-icon');
+        if (slider) {
+            if (active) {
+                if (slider.dataset.matteBound !== '1') {
+                    slider.dataset.zoomMin = slider.min;
+                    slider.dataset.zoomMax = slider.max;
+                    slider.dataset.zoomStep = slider.step;
+                    slider.dataset.matteBound = '1';
+                    slider.min = '0';
+                    slider.max = '100';
+                    slider.step = '1';
+                }
+                slider.value = String(Math.round(this.getPhotoMatteStrength() * 100));
+                slider.setAttribute('data-tooltip', '✂️ Edge strength');
+                refreshFill(slider);
+            } else if (slider.dataset.matteBound === '1') {
+                delete slider.dataset.matteBound;
+                slider.min = slider.dataset.zoomMin;
+                slider.max = slider.dataset.zoomMax;
+                slider.step = slider.dataset.zoomStep;
+                delete slider.dataset.zoomMin;
+                delete slider.dataset.zoomMax;
+                delete slider.dataset.zoomStep;
+                slider.value = String(this.imgScale);
+                slider.setAttribute('data-tooltip', '🔍 Zoom the image');
+                refreshFill(slider);
+            }
+        }
+        if (icon) icon.textContent = active ? '✂️' : '🔍';
+
+        const container = document.getElementById('image-preview-container');
+        if (container) container.classList.toggle('is-matte-target', active && !busy);
+
+        const status = document.getElementById('photo-matte-status');
+        if (status) {
+            if (!active) {
+                status.classList.add('hidden');
+                status.classList.remove('is-busy', 'is-error');
+                status.textContent = '';
+            } else if (busy) {
+                status.classList.remove('hidden');
+                status.classList.add('is-busy');
+                status.classList.remove('is-error');
+                status.textContent = this.isPhotoMatteReady() ? 'Analyzing…' : 'Loading model…';
+            } else {
+                status.classList.add('hidden');
+                status.classList.remove('is-busy');
+                status.textContent = '';
+            }
+        }
+    },
+
+    /* Invert the preview transform to find which pixel was clicked.
+       renderImagePreviewInternal stores the exact geometry it drew with, so this
+       does not re-derive the contain-fit: a second copy of that arithmetic
+       would be free to drift, and the symptom would be fills landing in the
+       wrong place after a resize instead of failing. */
+    handlePhotoMatteDoubleClick: function(ev) {
+        if (!this.removeWhiteBg || this.isPhotoMatteBusy()) return;
+        const geo = this._photoDrawRect;
+        const src = this._matteSourceCanvas;
+        if (!geo || !src || !this._matteBaseMask) return;
+
+        const canvasRect = geo.canvas.getBoundingClientRect();
+        if (!canvasRect.width || !canvasRect.height) return;
+        // Client px -> backing-store px. The canvas is sized from its parent's
+        // box, so normalising through its own rect keeps the two in step even
+        // if they ever stop matching.
+        const nx = (ev.clientX - canvasRect.left) / canvasRect.width * geo.cw;
+        const ny = (ev.clientY - canvasRect.top) / canvasRect.height * geo.ch;
+
+        const px = (nx - (geo.cw / 2 + geo.offX)) / geo.scale + geo.drawW / 2;
+        const py = (ny - (geo.ch / 2 + geo.offY)) / geo.scale + geo.drawH / 2;
+
+        const ix = Math.floor(px / geo.drawW * src.width);
+        const iy = Math.floor(py / geo.drawH * src.height);
+        if (ix < 0 || iy < 0 || ix >= src.width || iy >= src.height) return;
+
+        if (this.addPhotoMatteFill(ix, iy)) this.flashPhotoMatteTarget();
+        this.updatePhotoMatteControls();
+    },
+
+    /* Brief accent ring so a precision double-click registers visually - the
+       fill can be a handful of pixels and is easy to miss. */
+    flashPhotoMatteTarget: function() {
+        const el = document.getElementById('image-preview-container');
+        if (!el) return;
+        el.classList.add('is-matte-pulse');
+        clearTimeout(this._mattePulseTimer);
+        this._mattePulseTimer = setTimeout(() => el.classList.remove('is-matte-pulse'), 220);
+    },
+
+    /* Re-run the model. Also the way to throw away manual fills, which is why
+       it is its own button instead of something you do by toggling off and on. */
+    rerunPhotoMatte: function() {
+        if (!this.removeWhiteBg || !this._matteSourceCanvas) return;
+        if (this.isPhotoMatteBusy()) return;
+        this.applyPhotoMatte();
+    },
+
+    undoPhotoMatteUI: function() {
+        const r = this.undoPhotoMatte();
+        this.updatePhotoMatteControls();
+        return r;
+    },
+    redoPhotoMatteUI: function() {
+        const r = this.redoPhotoMatte();
+        this.updatePhotoMatteControls();
+        return r;
+    },
+
+    /* One-time listener attachment. Direct listeners rather than data-action
+       dispatch: these are photo-only affordances and adding entries to the
+       generated handler table would make a JS-only control depend on a
+       generated file staying in sync. */
+    wirePhotoMatteUI: function() {
+        if (this._matteUIWired) return;
+        this._matteUIWired = true;
+        const self = this;
+
+        const container = document.getElementById('image-preview-container');
+        if (container) {
+            container.addEventListener('dblclick', function(ev) {
+                self.handlePhotoMatteDoubleClick(ev);
+            });
+        }
+        const rerun = document.getElementById('photo-matte-rerun');
+        if (rerun) rerun.addEventListener('click', function() { self.rerunPhotoMatte(); });
+        const undo = document.getElementById('photo-matte-undo');
+        if (undo) undo.addEventListener('click', function() { self.undoPhotoMatteUI(); });
+        const redo = document.getElementById('photo-matte-redo');
+        if (redo) redo.addEventListener('click', function() { self.redoPhotoMatteUI(); });
+
+        document.addEventListener('keydown', function(ev) {
+            if (!self.removeWhiteBg) return;
+            if ((ev.key || '').toLowerCase() !== 'z') return;
+            if (!ev.ctrlKey && !ev.metaKey) return;
+            // Leave text-entry undo alone: this shortcut is for photo fills, and
+            // stealing Ctrl+Z from a focused text field would be a data-loss bug.
+            const t = ev.target;
+            const tag = t && t.tagName;
+            if (t && (t.isContentEditable || tag === 'TEXTAREA' ||
+                (tag === 'INPUT' && t.type !== 'range' && t.type !== 'checkbox' && t.type !== 'button'))) return;
+            ev.preventDefault();
+            if (ev.shiftKey) self.redoPhotoMatteUI();
+            else self.undoPhotoMatteUI();
+        });
+
+        this.updatePhotoMatteControls();
+    }
+};
+
+// ---------------------------------------------------------------- pure helpers
+
+/* Fit a whole image into a SIZE x SIZE square, centred, padded with white.
+
+   The model input is square but product photos are not, so the image has to be
+   scaled to fit and the remainder padded. Squashing it to fill (drawImage with
+   width and height both SIZE) would distort every non-square photo; cropping to
+   the centre would throw away part of the subject.
+
+   The subtlety that bit us: canvas drawImage has two forms.
+
+       drawImage(img, dx, dy, dW, dH)                        - 5 args, scale whole image
+       drawImage(img, sx, sy, sW, sH, dx, dy, dW, dH)        - 9 args, crop then scale
+
+   Passing the *destination* size into the *source* slots of the 9-arg form
+   silently succeeds - it is a valid crop, just the wrong rectangle. The model
+   then receives the top-left corner of the photo blown up to fill the frame, and
+   its perfectly good matte gets stretched back across the entire image on the
+   way out. The cutout looks like the right shape in the wrong place, which is
+   exactly the "it cropped correctly then moved it" symptom. Hence the 5-arg form
+   here, and letterbox() being a named, tested function rather than four inline
+   lines inside inferPhotoMatte. */
+function IEM_PhotoMatte_letterbox(sourceCanvas, SIZE) {
+    const w = sourceCanvas.width, h = sourceCanvas.height;
+    if (!w || !h) throw new Error('Nothing to analyse');
+
+    const tmp = document.createElement('canvas');
+    tmp.width = SIZE; tmp.height = SIZE;
+    const ctx = tmp.getContext('2d', { willReadFrequently: true });
+
+    const scale = Math.min(SIZE / w, SIZE / h);
+    const innerW = Math.max(1, Math.round(w * scale));
+    const innerH = Math.max(1, Math.round(h * scale));
+    const x0 = Math.floor((SIZE - innerW) / 2);
+    const y0 = Math.floor((SIZE - innerH) / 2);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, SIZE, SIZE);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    // 5-argument form: the WHOLE source, scaled into the centred inner rect.
+    ctx.drawImage(sourceCanvas, x0, y0, innerW, innerH);
+
+    return {
+        data: ctx.getImageData(0, 0, SIZE, SIZE).data,
+        innerW: innerW, innerH: innerH, x0: x0, y0: y0
+    };
+}
+
+/* Bilinear resample of a float mask. Bilinear rather than nearest so the matte
+   edge lands smoothly instead of stair-stepping at working resolution. */
+function IEM_PhotoMatte_resizeMask(src, sw, sh, dw, dh) {
+    const out = new Uint8ClampedArray(dw * dh);
+    if (!src || !sw || !sh || !dw || !dh) return out;
+    const xRatio = sw / dw;
+    const yRatio = sh / dh;
+    for (let y = 0; y < dh; y++) {
+        const sy = Math.min(sh - 1, Math.max(0, (y + 0.5) * yRatio - 0.5));
+        const y0 = Math.floor(sy);
+        const y1 = Math.min(sh - 1, y0 + 1);
+        const fy = sy - y0;
+        for (let x = 0; x < dw; x++) {
+            const sx = Math.min(sw - 1, Math.max(0, (x + 0.5) * xRatio - 0.5));
+            const x0 = Math.floor(sx);
+            const x1 = Math.min(sw - 1, x0 + 1);
+            const fx = sx - x0;
+            const a = src[y0 * sw + x0], b = src[y0 * sw + x1];
+            const c = src[y1 * sw + x0], d = src[y1 * sw + x1];
+            const top = a + (b - a) * fx;
+            const bot = c + (d - c) * fx;
+            out[y * dw + x] = Math.round((top + (bot - top) * fy) * 255);
+        }
+    }
+    return out;
+}
+
+/* Strength is AGGRESSIVENESS of the removal, which is how the word reads:
+   low  = conservative, keeps more of the subject, softer edge
+   high = cuts deeper, crisper edge, eats further into the subject
+   0.5  = the model's own output, untouched.
+
+   Modelled as a bias plus a contrast around 0.5 so 0.5 is an exact identity
+   and the slider is symmetric about it. */
+function IEM_PhotoMatte_applyStrength(mask, strength) {
+    const s = Math.max(0, Math.min(1, typeof strength === 'number' ? strength : 0.5));
+    if (Math.abs(s - 0.5) < 0.0005) return mask;
+    const bias = (0.5 - s) * 0.7;            // >0 keeps more, <0 cuts more
+    const contrast = 1 + Math.abs(s - 0.5) * 2.4;
+    for (let i = 0; i < mask.length; i++) {
+        const a = mask[i] / 255;
+        let v = (a - 0.5) * contrast + 0.5 + bias;
+        if (v < 0) v = 0; else if (v > 1) v = 1;
+        mask[i] = Math.round(v * 255);
+    }
+    return mask;
+}
+
+/* Pull the source RGB once so repeated fills do not re-read the canvas. */
+function IEM_PhotoMatte_sourceRGB(canvas, w, h) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(canvas, 0, 0);
+    const d = ctx.getImageData(0, 0, w, h).data;
+    const rgb = new Uint8ClampedArray(w * h * 3);
+    for (let i = 0, p = 0; i < rgb.length; i += 3, p += 4) {
+        rgb[i] = d[p]; rgb[i + 1] = d[p + 1]; rgb[i + 2] = d[p + 2];
+    }
+    return rgb;
+}
+
+/* Magic-wand region grow, restricted to pixels that already read as
+   background OR match the seed's colour.
+
+   The colour test is the whole safety mechanism: clicking a missed backdrop
+   removes only backdrop-coloured pixels, so it cannot eat the subject unless
+   the subject is genuinely the same colour as the backdrop - which is inherent
+   to this kind of tool and is what the undo log is for.
+
+   Tolerance is derived from the local neighbourhood rather than exposed as a
+   control, so the fill stays "smart" with no extra UI to explain. */
+function IEM_PhotoMatte_regionGrow(mask, rgb, w, h, seedX, seedY) {
+    if (!mask || !rgb || seedX < 0 || seedY < 0 || seedX >= w || seedY >= h) return 0;
+
+    const R = 3;                       // sample radius
+    let sr = 0, sg = 0, sb = 0, n = 0;
+    for (let y = seedY - R; y <= seedY + R; y++) {
+        if (y < 0 || y >= h) continue;
+        for (let x = seedX - R; x <= seedX + R; x++) {
+            if (x < 0 || x >= w) continue;
+            const i = y * w + x;
+            if (mask[i] === 0) continue;   // already background, ignore for stats
+            const p = i * 3;
+            sr += rgb[p]; sg += rgb[p + 1]; sb += rgb[p + 2]; n++;
+        }
+    }
+
+    let sd = 0;
+    if (n > 0) {
+        sr /= n; sg /= n; sb /= n;
+        let vr = 0, vg = 0, vb = 0;
+        for (let y = seedY - R; y <= seedY + R; y++) {
+            if (y < 0 || y >= h) continue;
+            for (let x = seedX - R; x <= seedX + R; x++) {
+                if (x < 0 || x >= w) continue;
+                const i = y * w + x;
+                if (mask[i] === 0) continue;
+                const p = i * 3;
+                vr += Math.abs(rgb[p] - sr);
+                vg += Math.abs(rgb[p + 1] - sg);
+                vb += Math.abs(rgb[p + 2] - sb);
+            }
+        }
+        sd = (vr + vg + vb) / (3 * n);
+    } else {
+        // Every pixel around the seed is already transparent. Returning here
+        // would make a second click inside a removed region a permanent no-op,
+        // so the user could never extend a removal into adjacent background the
+        // same tool had not reached. Fall back to the seed's own colour with the
+        // default tolerance instead.
+        const p = (seedY * w + seedX) * 3;
+        sr = rgb[p]; sg = rgb[p + 1]; sb = rgb[p + 2];
+    }
+    const tol = Math.max(14, Math.min(70, sd * 2.2 + 14));
+
+    const stack = new Int32Array(w * h);
+    let sp = 0;
+    const seen = new Uint8Array(w * h);
+    const seedIdx = seedY * w + seedX;
+    stack[sp++] = seedIdx;
+    // Mark seen at PUSH, not on pop. Marking on pop lets the same cell be pushed
+    // once per neighbour that reaches it, so the stack can exceed w*h; writes
+    // past the end of a TypedArray are silently discarded, so pixels would go
+    // missing with no error. Marking at push bounds sp to w*h exactly.
+    seen[seedIdx] = 1;
+    let removed = 0;
+
+    while (sp > 0) {
+        const idx = stack[--sp];
+        const wasOpaque = mask[idx] !== 0;
+        if (wasOpaque) {
+            const p = idx * 3;
+            const dist = (Math.abs(rgb[p] - sr) + Math.abs(rgb[p + 1] - sg) + Math.abs(rgb[p + 2] - sb)) / 3;
+            if (dist > tol) continue;
+        }
+        mask[idx] = 0;
+        // Count only pixels that were actually opaque. Counting every visited
+        // pixel would report a non-zero result for a region that was already
+        // transparent, and the caller uses a zero return to decide whether the
+        // click changed anything - so re-clicking a removed area would keep
+        // appending no-op steps to the undo history.
+        if (wasOpaque) removed++;
+        const x = idx % w, y = (idx - x) / w;
+        if (x > 0     && !seen[idx - 1]) { seen[idx - 1] = 1; stack[sp++] = idx - 1; }
+        if (x < w - 1 && !seen[idx + 1]) { seen[idx + 1] = 1; stack[sp++] = idx + 1; }
+        if (y > 0     && !seen[idx - w]) { seen[idx - w] = 1; stack[sp++] = idx - w; }
+        if (y < h - 1 && !seen[idx + w]) { seen[idx + w] = 1; stack[sp++] = idx + w; }
+    }
+    return removed;
+}
+
+// Attached to IEM_Module so the photo methods below can call these, and so the
+// data-cmd dispatcher can reach them by name. IEM_Module is a top-level const in
+// iem-module.js, which this file is loaded after.
+if (typeof IEM_Module !== 'undefined') {
+    Object.assign(IEM_Module, IEM_PhotoMatteMethods);
+}
+
+// Expose the pure helpers for the unit verifier.
+if (typeof window !== 'undefined') {
+    window.IEM_PhotoMatte_test = {
+        letterbox: IEM_PhotoMatte_letterbox,
+        resizeMask: IEM_PhotoMatte_resizeMask,
+        applyStrength: IEM_PhotoMatte_applyStrength,
+        regionGrow: IEM_PhotoMatte_regionGrow,
+        sourceRGB: IEM_PhotoMatte_sourceRGB
+    };
+}
+
+// Attach the photo-bar listeners once the DOM can be queried. The bundle is a
+// plain concatenation, so this file may be evaluated before or after parsing has
+// finished depending on where the <script> sits; readyState covers both.
+(function() {
+    function boot() {
+        if (typeof IEM_Module === 'undefined') return;
+        if (typeof IEM_Module.wirePhotoMatteUI !== 'function') return;
+        IEM_Module.wirePhotoMatteUI();
+    }
+    if (typeof document === 'undefined') return;
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot, { once: true });
+    } else {
+        boot();
+    }
+})();
 /* ===== app/js/tone-module.js ===== */
 // Split out of the former monolithic app-core.js (2026 refactor).
 // Tone_Module: the simple tone-sweep/tone-generator test.
@@ -15062,6 +16590,31 @@ ctx.fillRect(biasBoxX, biasBoxY, biasBoxW, biasBoxH);
         updateToneVolume: function() { const volEl = document.getElementById('tone-volume'); const vol = volEl ? parseFloat(volEl.value) : 50; const disp = document.getElementById('tone-vol-display'); if (disp) disp.innerText = vol + '%'; if(this.gain) { setAudioParamSmooth(this.gain.gain, vol / 100 * 0.2); } },
         toneTogglePlay: async function() {
             if(this.osc) { this.toneStop(); return; }
+            // Re-entrancy guard.
+            //
+            // The check above is `if (this.osc)`, but this.osc is only assigned
+            // after TWO awaits - ensureDSPGraph() and ctx.resume(). Every click
+            // that lands before those settle therefore sees osc === null and
+            // proceeds. A double-click created two oscillators, and the module
+            // kept only the second: the first stayed connected to the input gain,
+            // kept sounding, and became unreachable, so toneStop() could never
+            // silence it. Measured: 2 clicks -> 2 oscillators and 1 stop() call;
+            // 3 clicks -> 3 oscillators.
+            //
+            // Join the in-flight start instead of starting again. A double-click
+            // on Play means "play", not "play then immediately stop".
+            if (this._toneStartInFlight) return this._toneStartInFlight;
+            this._toneStartInFlight = this._toneStart();
+            try {
+                return await this._toneStartInFlight;
+            } finally {
+                // Cleared in finally so a rejected start (no audio device, denied
+                // autoplay) cannot wedge the button permanently.
+                this._toneStartInFlight = null;
+            }
+        },
+        // The body of toneTogglePlay, run at most once per in-flight start.
+        _toneStart: async function() {
             await EQ_Module.ensureDSPGraph();
             const ctx = SharedAudio.init(); await ctx.resume();
 
@@ -15115,6 +16668,21 @@ btnStop.classList.remove('is-on');
 }
 return;
 }
+            // Same re-entrancy problem as toneTogglePlay: sweepTimer is only
+            // assigned after `await this.toneTogglePlay()`, so two clicks both
+            // saw it as null and both called setInterval. The second overwrote
+            // the first, leaving an interval nothing can clear - it kept
+            // mutating this.current and the frequency slider after the sweep was
+            // stopped, forever.
+            if (this._toneSweepInFlight) return this._toneSweepInFlight;
+            this._toneSweepInFlight = this._toneSweepStart();
+            try {
+                return await this._toneSweepInFlight;
+            } finally {
+                this._toneSweepInFlight = null;
+            }
+        },
+        _toneSweepStart: async function() {
             if (!this.osc) {
                 await this.toneTogglePlay();
             }
@@ -15748,13 +17316,19 @@ const EQ_Module = {
     switchAcousticsSubTab: function(subTabId) {
         this.activeAcousticsSubTab = subTabId;
         document.querySelectorAll('.acoustics-sub-panel').forEach(p => p.classList.add('hidden'));
-        document.querySelectorAll('#acoustics-sub-tabs button').forEach(b => b.classList.remove('active'));
+document.querySelectorAll('#acoustics-sub-tabs button').forEach(b => {
+                b.classList.remove('active');
+                b.setAttribute('aria-selected', 'false');
+            });
 
-        const panel = document.getElementById('as-panel-' + subTabId);
-        if (panel) panel.classList.remove('hidden');
+            const panel = document.getElementById('as-panel-' + subTabId);
+            if (panel) panel.classList.remove('hidden');
 
-        const btn = document.getElementById('as-tab-' + subTabId);
-        if (btn) btn.classList.add('active');
+            const btn = document.getElementById('as-tab-' + subTabId);
+            if (btn) {
+                btn.classList.add('active');
+                btn.setAttribute('aria-selected', 'true');
+            }
 
         const stepperLabel = document.getElementById('acoustics-sub-stepper-label');
         if (stepperLabel) {
@@ -16008,13 +17582,13 @@ vizModalActive: false,
                 if (tabId === 'standard') {
                     pStd.classList.remove('hidden');
                     pAdv.classList.add('hidden');
-                    if (tStd) tStd.classList.add('active');
-                    if (tAdv) tAdv.classList.remove('active');
+                    if (tStd) { tStd.classList.add('active'); tStd.setAttribute('aria-selected', 'true'); }
+                    if (tAdv) { tAdv.classList.remove('active'); tAdv.setAttribute('aria-selected', 'false'); }
                 } else {
                     pStd.classList.add('hidden');
                     pAdv.classList.remove('hidden');
-                    if (tStd) tStd.classList.remove('active');
-                    if (tAdv) tAdv.classList.add('active');
+                    if (tStd) { tStd.classList.remove('active'); tStd.setAttribute('aria-selected', 'false'); }
+                    if (tAdv) { tAdv.classList.add('active'); tAdv.setAttribute('aria-selected', 'true'); }
                 }
             }
 
@@ -16141,19 +17715,23 @@ vizModalActive: false,
             this.drawCurve();
         },
 
-        buildStandardEQ: function() {
-            const container = document.getElementById("eq-panel-standard");
-            if (!container) return;
-            container.innerHTML = "";
+buildStandardEQ: function() {
+        const container = document.getElementById("eq-panel-standard");
+        if (!container) return;
+        container.innerHTML = "";
 
-            const bandColors = ['#ef4444', '#f97316', '#f59e0b', '#10b981', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e'];
-
-            this.bands.forEach((b, i) => {
-                const color = bandColors[i % bandColors.length];
-                const card = document.createElement("div");
-                card.id = `standard_card_m${i}`;
-                card.className = "eq-band-card flex flex-col gap-1 p-2";
-                card.style.setProperty('--band-color', color);
+        this.bands.forEach((b, i) => {
+            // Resolved through CSS custom properties rather than a JS array of
+            // hexes. The array used to be duplicated verbatim in buildEQ (they
+            // would inevitably drift), and the hexes ignored all nine themes.
+            // -hi is the text-safe step; the fill step is for the track/badge.
+            const color = `var(--band-${(i % 10) + 1})`;
+            const colorHi = `var(--band-${(i % 10) + 1}-hi)`;
+            const card = document.createElement("div");
+            card.id = `standard_card_m${i}`;
+            card.className = "eq-band-card flex flex-col gap-1 p-2";
+            card.style.setProperty('--band-color', color);
+            card.style.setProperty('--band-color-hi', colorHi);
 
                 card.innerHTML = `
                     <div class="flex items-center justify-between text-[10px] select-none font-bold" draggable="false">
@@ -16191,18 +17769,22 @@ vizModalActive: false,
 
             mainContainer.innerHTML = "";
 
-            if (window.bypassedBands === undefined) window.bypassedBands = new Set();
-            const bandColors = ['#ef4444', '#f97316', '#f59e0b', '#10b981', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e'];
+if (window.bypassedBands === undefined) window.bypassedBands = new Set();
 
-            this.buildStandardEQ();
+        this.buildStandardEQ();
 
-            this.bands.forEach((b, i) => {
-                const color = bandColors[i % bandColors.length];
-                const isBypassed = window.bypassedBands.has("m" + i);
-                const bandDiv = document.createElement("div");
-                bandDiv.id = `card_m${i}`;
-                bandDiv.className = `eq-band-card flex flex-col gap-1.5 ${isBypassed ? 'bypassed' : ''}`;
-                bandDiv.style.setProperty('--band-color', color);
+        this.bands.forEach((b, i) => {
+            // See buildStandardEQ: the band ramp lives in CSS as
+            // --band-N / --band-N-hi. The array of hexes this replaced used to be
+            // duplicated verbatim in both builders.
+            const color = `var(--band-${(i % 10) + 1})`;
+            const colorHi = `var(--band-${(i % 10) + 1}-hi)`;
+            const isBypassed = window.bypassedBands.has("m" + i);
+            const bandDiv = document.createElement("div");
+            bandDiv.id = `card_m${i}`;
+            bandDiv.className = `eq-band-card flex flex-col gap-1.5 ${isBypassed ? 'bypassed' : ''}`;
+            bandDiv.style.setProperty('--band-color', color);
+            bandDiv.style.setProperty('--band-color-hi', colorHi);
 
                 const labelMap = { peaking: 'PK', lowshelf: 'LS', highshelf: 'HS', highpass: 'HP', lowpass: 'LP', notch: 'Notch' };
                 const currentLabel = labelMap[b.type || 'peaking'] || 'PK';
@@ -16633,10 +18215,14 @@ switchCategory: function(catId) {
                 categoryContainers.forEach(pill => {
                     if (pill && (pill.id.startsWith('cat-') || pill.id === 'cat-custom')) {
                         pill.classList.remove('active');
+                        pill.setAttribute('aria-selected', 'false');
                     }
                 });
                 const activePill = document.getElementById('cat-' + catId);
-                if (activePill) activePill.classList.add('active');
+                if (activePill) {
+                    activePill.classList.add('active');
+                    activePill.setAttribute('aria-selected', 'true');
+                }
 
                 const grid = document.getElementById('preset-grid-content');
                 if (!grid) return;
@@ -17253,8 +18839,8 @@ getLiveFiltersState: function() {
             // on the pre-zoom shape until the next slider change.
             const gridKey = (numPoints > 0 && freqs && freqs.length >= numPoints)
                 ? (Math.round(freqs[0] * 100) + '-' + Math.round(freqs[numPoints - 1] * 100)) : 'x';
-            const viewRange = (window.PEQDB_Module && PEQDB_Module.viewMinF !== undefined)
-                ? (PEQDB_Module.viewMinF + '-' + PEQDB_Module.viewMaxF) : 'x';
+            const viewRange = (window.PEQDB && window.PEQDB.viewMinF !== undefined)
+                ? (window.PEQDB.viewMinF + '-' + window.PEQDB.viewMaxF) : 'x';
 
             const cheapKey = [simStrength, loudnessVol, Number.isFinite(deEsserFreq) ? +deEsserFreq.toFixed(2) : 0,
                 this.deEsserEnabled ? 1 : 0,
@@ -17569,6 +19155,9 @@ getLiveFiltersState: function() {
 const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false, listOpen: false, selectedIdx: -1 }, game: { open: false, listOpen: false, selectedIdx: -1 } },
 
         toggleGenreTargetPicker: function(side) {
+            // Bind the outside-click/Escape dismiss on first open. Idempotent, so
+            // this needs no wiring into the module's boot sequence.
+            this.initGenreTargetDismiss();
             const st = this._genreTargetState[side];
             st.open = !st.open;
             const panel = document.getElementById(`${side}-genre-target-panel`);
@@ -17590,6 +19179,47 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
             if (panel) panel.classList.add('hidden');
             const list = document.getElementById(`${side}-genre-target-list`);
             if (list) list.classList.add('hidden');
+        },
+
+        // Dismiss on outside click / Escape.
+        //
+        // The picker is a popover, not a modal dialog, and popovers are expected
+        // to dismiss when you click elsewhere. Previously the ONLY ways out were
+        // the tick (which applies) and the X (which discards) - so clicking the
+        // graph, another tab, or empty space left it hanging open, which reads
+        // as the panel being stuck rather than the user's click being ignored.
+        //
+        // Both the Apply and Discard controls remain: they still mean "apply"
+        // and "discard", whereas an outside click means "neither, just close".
+        initGenreTargetDismiss: function() {
+            if (this._genreDismissBound) return;
+            this._genreDismissBound = true;
+            const self = this;
+
+            const isInside = (side, target) => {
+                const panel = document.getElementById(`${side}-genre-target-panel`);
+                if (panel && panel.contains(target)) return true;
+                // the badge button that opens it lives outside the panel
+                const btn = document.querySelector(
+                    `[data-action$="EQ_toggleGenreTargetPicker__${side}"]`);
+                return !!(btn && btn.contains(target));
+            };
+
+            document.addEventListener('click', (e) => {
+                for (const side of ['music', 'game']) {
+                    const st = self._genreTargetState[side];
+                    if (!st.open) continue;
+                    if (isInside(side, e.target)) continue;
+                    self.closeGenreTargetPicker(side);
+                }
+            }, true);
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape') return;
+                for (const side of ['music', 'game']) {
+                    if (self._genreTargetState[side].open) self.closeGenreTargetPicker(side);
+                }
+            });
         },
 
         toggleGenreTargetList: function(side) {
@@ -19486,14 +21116,51 @@ startVisualizer: function() {
                         if (excessDb > 0.1) {
                             const preampSlider = document.getElementById("eq-preampSlider");
                             if (preampSlider) {
-                                // Never fight the user. This watchdog runs every
-                                // 30ms; writing .value while the pointer was on the
-                                // slider made the user's next input event read OUR
-                                // value instead of theirs.
-                                if (preampSlider === document.activeElement || preampSlider.matches(':active')) return;
-
+                                // The old code returned before any of this when
+                                //   preampSlider === document.activeElement || :active
+                                // document.activeElement is far broader than "the user
+                                // is dragging": focus lingers after one click, or one
+                                // Tab, indefinitely. Measured on the old code, with
+                                // the slider merely focused and playback clipping
+                                // continuously at 99% peak, autoDb stayed 0 for
+                                // 900ms+ - Anti-Clip silently did nothing and said
+                                // nothing. So the baseline work happens first, and the
+                                // guard below is narrowed to real interaction.
                                 const currentPreamp = parseFloat(preampSlider.value) || 0;
+
+                                // Baseline bookkeeping happens FIRST, before the
+                                // interaction guard below - that ordering is the fix.
+                                //
+                                // Single value the watchdog has accounted for, whether it wrote it
+                                // itself or observed the user write it. Anything different on
+                                // the next tick is a user edit.
+                                if (currentPreamp !== EQ_Module._agcLastSeenValue) {
+                                    EQ_Module._agcUserAdjustAt = performance.now();
+                                    // The user has moved on from the baseline we
+                                    // captured, so the old auto-reduction no longer
+                                    // describes their setting.
+                                    if (Number.isFinite(EQ_Module._agcUserPreamp)
+                                        && currentPreamp !== EQ_Module._agcUserPreamp) {
+                                        EQ_Module._agcUserPreamp = currentPreamp;
+                                        EQ_Module._agcAutoDb = 0;
+                                        EQ_Module._agcNotified = false;
+                                        EQ_Module._agcAnnouncedDb = 0;
+                                    }
+                                }
+                                EQ_Module._agcLastSeenValue = currentPreamp;
                                 if (!Number.isFinite(EQ_Module._agcUserPreamp)) EQ_Module._agcUserPreamp = currentPreamp;
+
+                                // Never fight the user WHILE they are adjusting. This
+                                // now means an active drag, or a change within the
+                                // last 500ms - not merely "this element has focus".
+                                // The 500ms window is what protects keyboard nudges,
+                                // which never set :active.
+                                const recentlyAdjusted =
+                                    (performance.now() - (Number.isFinite(EQ_Module._agcUserAdjustAt)
+                                        ? EQ_Module._agcUserAdjustAt : -1e9)) < 500;
+                                if (preampSlider.matches(':active')
+                                    || (preampSlider === document.activeElement && recentlyAdjusted)) return;
+
                                 const userPreamp = EQ_Module._agcUserPreamp;
                                 const autoDb = Number.isFinite(EQ_Module._agcAutoDb) ? EQ_Module._agcAutoDb : 0;
 
@@ -19508,6 +21175,7 @@ startVisualizer: function() {
                                 EQ_Module._agcAutoDb = newAutoDb;
 
                                 preampSlider.value = target.toFixed(1);
+                                EQ_Module._agcLastSeenValue = parseFloat(preampSlider.value);
                                 // try/finally: a throw from updatePreamp() used to
                                 // leave isProgrammaticPreampUpdate stuck true, which
                                 // silently disabled the preamp dead-zone snap and
@@ -19520,8 +21188,17 @@ startVisualizer: function() {
                                 } finally {
                                     window.isProgrammaticPreampUpdate = false;
                                 }
-                                if (!EQ_Module._agcNotified) {
+                                // The old one-shot toast reported whatever the
+                                // reduction happened to be on the FIRST tick, while
+                                // the reduction kept growing after it - measured 0.6 dB
+                                // announced, 5.1 dB actually applied. Re-announce each
+                                // further whole dB so the number the user sees is the
+                                // number in force.
+                                const announcedDb = Number.isFinite(EQ_Module._agcAnnouncedDb)
+                                    ? EQ_Module._agcAnnouncedDb : 0;
+                                if (!EQ_Module._agcNotified || newAutoDb - announcedDb >= 1.0) {
                                     EQ_Module._agcNotified = true;
+                                    EQ_Module._agcAnnouncedDb = newAutoDb;
                                     showToast('Anti-Clip lowered your preamp ' +
                                         newAutoDb.toFixed(1) +
                                         ' dB to stop clipping. Your own setting is restored when you turn CLIP off.', '🛡️');
@@ -20884,11 +22561,36 @@ const DBCache = {
                     }).sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
                 },
 
+                // Truthful progress for the indexing bar.
+                //
+                // The bar used to be derived by counting dataset entries whose
+                // `data` was non-null. That is not a measure of work in
+                // progress: the catalogue is built with `data` already populated
+                // from cache for most entries, and the entries still being
+                // fetched do not flip that field one at a time in a way the UI
+                // can observe, so the count sat at 0 and then the container was
+                // hidden. Hence a bar frozen at 0% for the whole index.
+                //
+                // Counting here instead - one increment per curve this function
+                // actually finishes with, success or failure - measures the real
+                // work. Failures count too, because a file that errors is still
+                // finished work; otherwise the bar would stall on a bad file.
+                _progress: { done: 0, total: 0, active: false },
+
+                getIndexProgress: function() {
+                    return { done: this._progress.done, total: this._progress.total, active: this._progress.active };
+                },
+
+                beginIndexProgress: function(total) {
+                    this._progress = { done: 0, total: total || 0, active: true };
+                },
+
                 loadCurve: async function(item, fileIndex = 0) {
                     const targetFile = item.files && item.files[fileIndex] ? item.files[fileIndex] : item.primaryFilePath;
                     if (!targetFile) return false;
 
                     if (fileIndex === 0 && item.data && Array.isArray(item.data) && item.data.length >= 2) {
+                        this._progress.done++;
                         return true;
                     }
 
@@ -20924,9 +22626,11 @@ const DBCache = {
                             ...this._encodeCurve(parsed),
                             indexedAt: Date.now()
                         });
+                        this._progress.done++;
                         return true;
                     } catch (e) {
                         console.warn(`[CurveIndexer] Could not load "${targetFile}":`, e.message);
+                        this._progress.done++;
                         if (fileIndex === 0) {
                             item.data = null;
                             item.cachedInterp = null;
@@ -20937,10 +22641,52 @@ const DBCache = {
                 },
 
                 _bgRunning: false,
-                startBackgroundWarmup: function(dataset) {
+                startBackgroundWarmup: async function(dataset) {
 
-                    PEQDB_Module.databaseFullyLoaded = true;
-                    localStorage.setItem('squig_db_indexed', 'true');
+                    // This used to be an empty body that immediately set
+                    // databaseFullyLoaded = true and hid the progress panel. So
+                    // the app claimed to be indexing the measurement database,
+                    // showed a bar pinned at 0%, and then removed the bar before
+                    // any indexing had happened - the work was never done by
+                    // this function at all, only asserted to be finished.
+                    //
+                    // It now actually indexes: each entry's primary curve is
+                    // loaded, loadCurve tallies every completion, and the flag
+                    // is only set once the run really finishes. Entries that fail
+                    // still count as finished work, so one bad file cannot stall
+                    // the bar or prevent the app from becoming ready.
+                    if (this._bgRunning) return;
+                    this._bgRunning = true;
+                    const list = Array.isArray(dataset) ? dataset : [];
+                    const notify = () => {
+                        if (typeof FindEngine !== 'undefined' && FindEngine.updateIndexingProgressBar) {
+                            FindEngine.updateIndexingProgressBar();
+                        }
+                    };
+                    notify();
+
+                    try {
+                        for (let i = 0; i < list.length; i++) {
+                            // Yield periodically so the ticker and the UI can
+                            // actually paint; a tight await-per-item loop still
+                            // starves rendering on a large catalogue.
+                            if (i % 4 === 0) {
+                                await new Promise(r => setTimeout(r, 0));
+                            }
+                            try {
+                                await this.loadCurve(list[i], 0);
+                            } catch (e) {
+                                this._progress.done++;
+                            }
+                            if (i % 5 === 0) notify();
+                        }
+                    } finally {
+                        this._bgRunning = false;
+                        PEQDB_Module.databaseFullyLoaded = true;
+                        localStorage.setItem('squig_db_indexed', 'true');
+                        notify();
+                    }
+
                     const indicator = document.getElementById('peqdb-indexing-indicator');
                     if (indicator) indicator.classList.add('hidden');
                     const progressContainer = document.getElementById('find-progress-container');
@@ -21133,6 +22879,11 @@ const DBCache = {
         startBackgroundLoading: function() {
             if (this.databaseFullyLoaded) return;
             const dataset = this.STATE.dataset;
+            // Arm the progress tally with the real work total before any curve
+            // is fetched, so the bar has a denominator from the first tick.
+            if (dataset && dataset.length && CurveIndexer.beginIndexProgress) {
+                CurveIndexer.beginIndexProgress(dataset.length);
+            }
             if (!dataset || dataset.length === 0) {
                 // This branch means the catalogue load FAILED and the fallback
                 // path installed its handful of built-in targets. It used to
@@ -21714,10 +23465,34 @@ const DBCache = {
 
             if (suggestions.length === 0) { box.classList.add('hidden'); box.innerHTML = ''; return; }
 
+            // data-cmd, not an attribute-form handler. This was `onmousedown="..."`, which
+            // Chromium refuses to compile under `script-src 'self'
+            // 'wasm-unsafe-eval'`, so the chips rendered and clicking did
+            // nothing. Ratcheted by scripts/check-integrity.mjs check #4.
+            //
+            // click rather than mousedown: the #peqdb-search blur handler that
+            // hides this box is a 150ms setTimeout, and click lands inside that
+            // window, so insertSearchSuggestion runs before the box closes.
             box.innerHTML = suggestions.map(s => `
-                <span class="spec-icon-badge" style="width:auto !important; height:24px !important; padding:0 8px; font-size:11px !important; font-weight:800; background:var(--bg-input); border:2px solid #000;" data-tooltip="Search: click to insert" onmousedown="event.preventDefault(); document.getElementById('peqdb-search').value='${escJs(s)}'; document.getElementById('peqdb-search').dispatchEvent(new Event('input')); document.getElementById('peqdb-search-suggestions').classList.add('hidden');">${esc(s)}</span>
+                <span class="spec-icon-badge" style="width:auto !important; height:24px !important; padding:0 8px; font-size:11px !important; font-weight:800; background:var(--bg-input); border:2px solid #000;" data-tooltip="Search: click to insert" data-cmd="PEQDB_Module.insertSearchSuggestion" data-arg-0="${esc(s)}">${esc(s)}</span>
             `).join('');
             box.classList.remove('hidden');
+        },
+
+        // Backs the #peqdb-search-suggestions chips. Extracted from the inline
+        // handler string above. Note the input event is dispatched with
+        // `bubbles: true` - the search input is wired with a delegated
+        // capture-phase listener (peqdb-module.js:1327-1340), which needs the
+        // event to bubble to reach it.
+        insertSearchSuggestion: function(value) {
+            if (value === undefined || value === null) return;
+            const input = document.getElementById('peqdb-search');
+            if (input) {
+                input.value = String(value);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            const box = document.getElementById('peqdb-search-suggestions');
+            if (box) { box.classList.add('hidden'); box.innerHTML = ''; }
         },
 
                 DATA: {
@@ -22334,7 +24109,7 @@ const savedDb = localStorage.getItem('settings_align_db');
                     fileRowHtml = `
                         <div class="flex items-center gap-1.5 mt-1">
                             <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
-                            <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
+                            <div class="db-file-name flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                                 <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
                             </div>
                             <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
@@ -22342,7 +24117,7 @@ const savedDb = localStorage.getItem('settings_align_db');
                     `;
                 } else {
                     fileRowHtml = `
-                        <div class="mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
+                        <div class="db-file-name mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                             <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
                         </div>
                     `;
@@ -22953,7 +24728,14 @@ const savedDb = localStorage.getItem('settings_align_db');
                 item.setAttribute('data-uid', c.uid);
                 item.title = "Drag to Base / Target / Reference slot to change role";
                 const roleLabel = c.role==='base'?'BASE':(c.role==='target'?'TARGET':'REF');
-                item.innerHTML = `<div class="flex items-center justify-between w-full h-6 select-none" draggable="false"><span class="px-2 py-0.5 text-[8.5px] font-black tracking-wider text-white uppercase bg-black/60 border border-white/10 flex-shrink-0" title="Drag to rearrange" draggable="false">${roleLabel}</span><div class="flex items-center gap-1.5" draggable="false"><button data-cmd="PEQDB_Module.toggleVisible" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 text-white text-[11px] flex items-center justify-center border border-white/10 cursor-pointer" title="Show or hide this curve" draggable="false">${c.visible?'👁️':'🙈'}</button><button data-cmd="PEQDB_Module.cycleColor" data-arg-0="@from:uid" class="w-5 h-5 border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style="background-color:${c.color}" title="Change this curve's color" draggable="false"></button><button data-cmd="PEQDB_Module.removeCurve" data-arg-0="@from:uid" class="w-6 h-6 bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-black text-[11px] flex items-center justify-center cursor-pointer" title="Remove this curve" draggable="false">✕</button></div></div><div data-cmd="PEQDB_Module.renameCurve" data-arg-0="@from:uid" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5" draggable="false"><div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none"><span id="marquee-${esc(c.uid)}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span></div></div><div class="flex justify-between items-center w-full h-6" draggable="false"><div class="flex items-center gap-1.5 h-6 decibel-stepper flex-shrink-0 select-none" style="width:110px !important;min-width:110px !important;max-width:110px !important;" draggable="false"><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="-1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve down 1 dB" draggable="false">◄</button><button type="button" data-stop-propagation class="flex-1 h-6 bg-[var(--bg-input)] border-2 border-black text-[#c85a0e] font-mono font-black text-[9px] flex items-center justify-center text-center cursor-default select-none focus:outline-none px-0 min-w-0" draggable="false">${(c.offset||0)>=0?'+':''}${c.offset||0}dB</button><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve up 1 dB" draggable="false">►</button></div><div class="flex items-center gap-1.5" draggable="false"><button data-cmd="PEQDB_Module.exportCurveByUid" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Export this curve as a text file" draggable="false">📥</button><button data-cmd="PEQDB_Module.findMatchesFromDock" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Find similar curves" draggable="false">🔍</button></div></div>`;
+                /* The three header controls carry flex-shrink-0. As flex children they
+           defaulted to shrink:1, so a wide chip (a long role label, or a wide
+           font) squeezed the button row and the 24px controls rendered at 19px -
+           which is exactly the "swatch is smaller than its neighbours"
+           symptom, and it came and went with the curve name rather than
+           reporting itself as a bug. Pinning the size makes the row
+           deterministic. */
+item.innerHTML = `<div class="flex items-center justify-between w-full h-6 select-none" draggable="false"><span class="curve-role-chip px-2 py-0.5 text-[8.5px] font-black tracking-wider text-white uppercase bg-black/60 border border-white/10 flex-shrink-0" title="Drag to rearrange" draggable="false">${roleLabel}</span><div class="flex items-center gap-1.5 flex-shrink-0" draggable="false"><button data-cmd="PEQDB_Module.toggleVisible" data-arg-0="@from:uid" class="w-6 h-6 flex-shrink-0 bg-black/50 hover:bg-black/80 text-white text-[11px] flex items-center justify-center border border-white/10 cursor-pointer" title="Show or hide this curve" draggable="false">${c.visible?'👁️':'🙈'}</button><button data-cmd="PEQDB_Module.cycleColor" data-arg-0="@from:uid" class="curve-card-swatch w-6 h-6 flex-shrink-0 border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style="background-color:${c.color}" title="Change this curve's color" draggable="false">🎨</button><button data-cmd="PEQDB_Module.removeCurve" data-arg-0="@from:uid" class="w-6 h-6 flex-shrink-0 bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-black text-[11px] flex items-center justify-center cursor-pointer" title="Remove this curve" draggable="false">✕</button></div></div><div data-cmd="PEQDB_Module.renameCurve" data-arg-0="@from:uid" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5" draggable="false"><div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none"><span id="marquee-${esc(c.uid)}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span></div></div><div class="flex justify-between items-center w-full h-6" draggable="false"><div class="flex items-center gap-1.5 h-6 decibel-stepper flex-shrink-0 select-none" style="width:110px !important;min-width:110px !important;max-width:110px !important;" draggable="false"><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="-1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve down 1 dB" draggable="false">◄</button><button type="button" data-stop-propagation class="flex-1 h-6 bg-[var(--bg-input)] border-2 border-black text-[#c85a0e] font-mono font-black text-[9px] flex items-center justify-center text-center cursor-default select-none focus:outline-none px-0 min-w-0" draggable="false">${(c.offset||0)>=0?'+':''}${c.offset||0}dB</button><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve up 1 dB" draggable="false">►</button></div><div class="flex items-center gap-1.5" draggable="false"><button data-cmd="PEQDB_Module.exportCurveByUid" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Export this curve as a text file" draggable="false">📥</button><button data-cmd="PEQDB_Module.findMatchesFromDock" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Find similar curves" draggable="false">🔍</button></div></div>`;
                 if (c.role==='base') { baseSlot.appendChild(item); baseCount++; }
                 else if (c.role==='target') { targetSlot.appendChild(item); targetCount++; }
                 else { referencePile.appendChild(item); refCount++; }
@@ -23522,8 +25304,17 @@ setSearchMode: function(mode) {
             updateSearchModeButtons: function() {
                 const sim = document.getElementById('btn-sim-mode');
                 const db = document.getElementById('btn-db-mode');
-                if (sim) sim.classList.toggle('active', this.searchMode === 'similar');
-                if (db) db.classList.toggle('active', this.searchMode !== 'similar');
+                const simOn = this.searchMode === 'similar';
+                if (sim) {
+                    sim.classList.toggle('active', simOn);
+                    // R8: aria-selected follows .active so the row is announced
+                    // correctly rather than only looking selected.
+                    sim.setAttribute('aria-selected', simOn ? 'true' : 'false');
+                }
+                if (db) {
+                    db.classList.toggle('active', !simOn);
+                    db.setAttribute('aria-selected', simOn ? 'false' : 'true');
+                }
             },
 
         handleSimilarityResults: function(matches, fingerprint) {
@@ -23994,7 +25785,7 @@ const countEl = document.getElementById('peqdb-result-count');
                 fileRowHtml = `
                     <div class="flex items-center gap-1.5 mt-1">
                         <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
-                        <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
+                        <div class="db-file-name flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                             <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
                         </div>
                         <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
@@ -24002,7 +25793,7 @@ const countEl = document.getElementById('peqdb-result-count');
                 `;
             } else {
                 fileRowHtml = `
-                    <div class="mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
+                    <div class="db-file-name mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                         <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
                     </div>
                 `;
@@ -24033,7 +25824,27 @@ const countEl = document.getElementById('peqdb-result-count');
             // JS property (div.onclick = ...) — property handlers are
             // invisible to .outerHTML and get silently dropped once the
             // markup is re-parsed from the string.
-            div.setAttribute('onclick', `PEQDB_Module.toggleCurveSelection('${escJs(item.id)}', ${activeFileIdx})`);
+            //
+            // It must NOT be an attribute-form `onclick` either: script-src has
+            // no 'unsafe-inline', so Chromium refused to compile it and the card
+            // rendered as clickable but did nothing. `data-cmd` + `data-arg-N`
+            // satisfies the outerHTML requirement (they are plain attributes)
+            // AND is dispatched by the capture-phase document listener in
+            // events.js, so it survives the round-trip without re-binding.
+            div.setAttribute('data-cmd', 'PEQDB_Module.toggleCurveSelection');
+            // esc, NOT escJs. escJs escapes for a JS string literal inside an
+            // attribute (it turns ' into \'), but an attribute read back with
+            // getAttribute decodes HTML entities and leaves backslashes as
+            // literal characters - so escJs would hand the handler "Lil\' Jamz"
+            // instead of "Lil' Jamz". No id in database.json contains an
+            // apostrophe today, so this is not a live break; esc is simply the
+            // correct escaper for a data-arg-N. (16 other data-arg sites still
+            // use escJs for the same reason - filed separately as a latent bug.)
+            div.setAttribute('data-arg-0', esc(item.id));
+            // String, because it arrives via getAttribute; events.js coerceArg
+            // turns a numeric string back into a Number, which is what
+            // toggleCurveSelection expects as its second argument.
+            div.setAttribute('data-arg-1', String(activeFileIdx));
             div.innerHTML = similarHeader + `
                 <div class="db-title-row overflow-hidden whitespace-nowrap">
                     <span class="db-title-text font-black text-stone-200 text-xs inline-block whitespace-nowrap">${esc(item.name)}</span>
@@ -24266,6 +26077,13 @@ const countEl = document.getElementById('peqdb-result-count');
         abxRenderTrials: function() {
             const lbl = document.getElementById('abx-trial-count');
             if (lbl) lbl.textContent = String(this.abxTotalTrials);
+            /* Drives the readout colour ramp in CSS 8.21. Kept as an attribute
+               rather than a class so the palette stays in the stylesheet - the
+               same split the rest of the app uses (JS owns state, CSS owns
+               colour). Without this the whole "N Trials" would sit on the
+               default tier no matter which option was picked. */
+            const stepper = document.getElementById('abx-trials-stepper');
+            if (stepper) stepper.dataset.trials = String(this.abxTotalTrials);
         },
         activeLeftTab: 'resonance',
         leftTabModes: [
@@ -24289,16 +26107,19 @@ const countEl = document.getElementById('peqdb-result-count');
                     else panel.classList.add('hidden');
                 }
                 if (btn) {
-                    if (id === tabId) btn.classList.add('active');
-                    else btn.classList.remove('active');
+                    if (id === tabId) {
+                        btn.classList.add('active');
+                        btn.setAttribute('aria-selected', 'true');
+                    } else {
+                        btn.classList.remove('active');
+                        btn.setAttribute('aria-selected', 'false');
+                    }
                 }
             });
-
-            const stepperLabel = document.getElementById('tl-left-tab-stepper-label');
-            if (stepperLabel) {
-                const info = this.leftTabModes.find(m => m.id === tabId) || this.leftTabModes[0];
-                stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
-            }
+            // The ◀/▶ stepper label was removed in R7 when this became a 3-up
+            // segmented row. The lookup is deleted rather than left behind: a
+            // stale getElementById for a removed id would push the dead-ref
+            // ratchet over its baseline.
         },
 
         activeRightTab: 'tone',
@@ -24323,15 +26144,57 @@ const countEl = document.getElementById('peqdb-result-count');
                     else panel.classList.add('hidden');
                 }
                 if (btn) {
-                    if (id === tabId) btn.classList.add('active');
-                    else btn.classList.remove('active');
+                    if (id === tabId) {
+                        btn.classList.add('active');
+                        btn.setAttribute('aria-selected', 'true');
+                    } else {
+                        btn.classList.remove('active');
+                        btn.setAttribute('aria-selected', 'false');
+                    }
                 }
             });
+            // See the note in switchLeftTab about the removed stepper label.
+        },
 
-            const stepperLabel = document.getElementById('tl-right-tab-stepper-label');
-            if (stepperLabel) {
-                const info = this.rightTabModes.find(m => m.id === tabId) || this.rightTabModes[0];
-                stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
+        /* Blind-test panel visibility, in one place.
+           Three states:
+             'idle'  - nothing has run yet. Only the trial stepper, START and a
+                        hint. The A/B chooser and the scoreboard are hidden
+                        because before any trial they can only read as a run of
+                        zeros the user never asked for.
+             'active'- a test is running. Chooser enabled, scoreboard live.
+             'done'  - finished. Chooser disabled, scoreboard kept (that is the
+                        result), START available again.
+
+           Previously each of abxStart / abxEndGame / abxReset poked
+           #abx-choices-row's inline pointerEvents/opacity directly and nothing
+           ever hid the scoreboard, so "Correct: 0 Wrong: 0 / Conf: 0.0%
+           (No Trials)" was on screen from first paint. */
+        setABXPanelState: function(state) {
+            const choices = document.getElementById('abx-choices-row');
+            const stats = document.getElementById('abx-stats-row');
+            const hint = document.getElementById('abx-idle-hint');
+
+            if (stats) stats.classList.toggle('hidden', state === 'idle');
+            if (hint) hint.classList.toggle('hidden', state !== 'idle');
+
+            if (choices) {
+                if (state === 'idle') {
+                    /* Collapsed, not just faded. opacity:0 kept the row's 29px of
+                       layout, which left a dead gap between the hint and the
+                       footer on a panel that has nothing to show there. */
+                    choices.style.display = 'none';
+                    choices.style.pointerEvents = 'none';
+                } else {
+                    choices.style.display = '';           /* back to Tailwind's grid */
+                    if (state === 'active') {
+                        choices.style.pointerEvents = 'auto';
+                        choices.style.opacity = '1.0';
+                    } else {
+                        choices.style.pointerEvents = 'none';
+                        choices.style.opacity = '0.5';
+                    }
+                }
             }
         },
 
@@ -24368,12 +26231,11 @@ const countEl = document.getElementById('peqdb-result-count');
             const startBtn = document.getElementById('abx-start-btn');
             if (startBtn) {
                 startBtn.textContent = 'STOP TEST';
-                startBtn.className = "bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/15 font-bold text-[10px] px-2.5 h-7 shadow whitespace-nowrap flex-shrink-0";
+                startBtn.className = 'abx-start-btn is-stop';
                 startBtn.onclick = () => this.abxReset();
             }
 
-            document.getElementById('abx-choices-row').style.pointerEvents = 'auto';
-            document.getElementById('abx-choices-row').style.opacity = '1.0';
+            this.setABXPanelState('active');
 
             this.setABXControlsEnabled(false);
 
@@ -24502,13 +26364,12 @@ const countEl = document.getElementById('peqdb-result-count');
                 status.className = "text-[9px] text-emerald-400 font-black uppercase tracking-wider";
             }
 
-            document.getElementById('abx-choices-row').style.pointerEvents = 'none';
-            document.getElementById('abx-choices-row').style.opacity = '0.5';
+            this.setABXPanelState('done');
 
             const startBtn = document.getElementById('abx-start-btn');
             if (startBtn) {
                 startBtn.textContent = 'START TEST';
-                startBtn.className = "bg-indigo-600/15 border border-indigo-500/40 text-indigo-400 hover:bg-indigo-600/20 font-bold text-[10px] px-2.5 h-7 shadow whitespace-nowrap flex-shrink-0";
+                startBtn.className = 'abx-start-btn';
                 startBtn.onclick = () => this.abxStart();
             }
             this.setABXControlsEnabled(true);
@@ -24530,7 +26391,7 @@ const countEl = document.getElementById('peqdb-result-count');
             const startBtn = document.getElementById('abx-start-btn');
             if (startBtn) {
                 startBtn.textContent = 'START TEST';
-                startBtn.className = "bg-indigo-600/15 border border-indigo-500/40 text-indigo-400 hover:bg-indigo-600/20 font-bold text-[10px] px-2.5 h-7 shadow whitespace-nowrap flex-shrink-0";
+                startBtn.className = 'abx-start-btn';
                 startBtn.onclick = () => this.abxStart();
             }
 
@@ -24551,8 +26412,7 @@ const countEl = document.getElementById('peqdb-result-count');
                 confWrap.className = 'text-zinc-500';
             }
 
-            document.getElementById('abx-choices-row').style.pointerEvents = 'none';
-            document.getElementById('abx-choices-row').style.opacity = '0.5';
+            this.setABXPanelState('idle');
 
             const audioA = document.getElementById('ab-audio-a');
             const audioB = document.getElementById('ab-audio-b');
@@ -25014,39 +26874,17 @@ setABXControlsEnabled: function(enabled) {
             const status = document.getElementById('hearing-test-status');
             const hzDisp = document.getElementById('hearing-test-hz');
             const pctDisp = document.getElementById('hearing-progress-pct');
+            const fill = document.getElementById('hearing-progress-fill');
             const calRow = document.getElementById('hearing-cal-row');
-            const SEG_COLORS = {
-                done: '#34d399',    // emerald-400
-                active: '#06b6d4',   // cyan-500
-                pending: '#18181b'   // zinc-900
-            };
 
             if (o.progress !== undefined) {
-                // o.progress is a FRACTION 0..1 of the whole 8-tone test,
-                // already including partial credit for the current tone.
+                // o.progress is a FRACTION 0..1 of the whole 8-tone test.
+                // Drives the width of the shared pill track; the discrete tone
+                // count is carried by the status line ("Tone 3 of 8").
                 const frac = Math.max(0, Math.min(1, o.progress));
                 const pct = Math.round(frac * 100);
                 if (pctDisp) pctDisp.textContent = pct + '%';
-
-                const segs = document.querySelectorAll('.hearing-seg');
-                const totalSegs = segs.length || 8;
-                const segSize = 1 / totalSegs;
-                segs.forEach(seg => {
-                    const idx = parseInt(seg.getAttribute('data-seg'), 10);
-                    if (idx === undefined || isNaN(idx)) return;
-                    const segStart = idx * segSize;
-                    let color;
-                    if (frac >= 1) {
-                        color = SEG_COLORS.done;
-                    } else if (frac >= segStart + segSize - 1e-9) {
-                        color = SEG_COLORS.done;      // this tone fully complete
-                    } else if (frac >= segStart) {
-                        color = SEG_COLORS.active;   // this tone in progress (>= not >: at tone start frac === segStart exactly)
-                    } else {
-                        color = SEG_COLORS.pending;
-                    }
-                    seg.style.background = color;
-                });
+                if (fill) fill.style.width = pct + '%';
             }
             if (o.showSlider === true && calRow) calRow.classList.remove('hidden');
             if (o.showSlider === false && calRow) calRow.classList.add('hidden');
@@ -25123,6 +26961,9 @@ setABXControlsEnabled: function(enabled) {
             if (btn) btn.textContent = 'HEARD (+)';
             const notHeardBtn = document.getElementById('hearing-not-heard-btn');
             if (notHeardBtn) notHeardBtn.classList.remove('hidden');
+            // Switch the action row to two columns now that there are two answers.
+            const actions = document.getElementById('hearing-actions');
+            if (actions) actions.classList.add('is-running');
 
             const freq = this.hearingTestFreqs[stepIdx];
             this._updateHearingTestUI({
@@ -25130,7 +26971,7 @@ setABXControlsEnabled: function(enabled) {
                 hz: `${freq} Hz`,
                 progress: this._hearingTestFraction(),
                 showSlider: false, // locked in — hide the calibration row
-                instruction: `Hear the <span class="text-white font-bold">${freq} Hz</span> tone? Answer honestly — it homes in on your limit.`
+                instruction: `Heard it? Answer <span class="text-white font-bold">${freq} Hz</span> honestly.`
             });
         },
 
@@ -25273,13 +27114,15 @@ setABXControlsEnabled: function(enabled) {
             if (btn) btn.textContent = 'Start Test';
             const notHeardBtn = document.getElementById('hearing-not-heard-btn');
             if (notHeardBtn) notHeardBtn.classList.add('hidden');
+            const actions = document.getElementById('hearing-actions');
+            if (actions) actions.classList.remove('is-running');
 
             this._updateHearingTestUI({
                 status: 'Done — correction applied ✔',
                 hz: 'DONE',
                 progress: 1,
                 showSlider: true, // test over — calibration row can come back
-                instruction: 'Saved & active on the EQ. Reloads with the app until Reset.'
+                instruction: 'Saved to the EQ until Reset.'
             });
 
             this.calculateHearingCorrection();
@@ -25363,7 +27206,7 @@ setABXControlsEnabled: function(enabled) {
                     setAudioParamSmooth(this.hearingGain.gain, Math.max(0.0001, safeVol), 0.02);
                 }
                 this._updateHearingTestUI({
-                    instruction: `Previewing 1 kHz at ${Math.round(vol)}% — lock this in with Start Test.`
+                    instruction: `Preview 1 kHz at ${Math.round(vol)}% — then start.`
                 });
             }
 
@@ -25433,17 +27276,22 @@ setABXControlsEnabled: function(enabled) {
             this._updateHearingTestUI({
                 progress: 0,
                 showSlider: true,
-                instruction: 'Set the level so the preview tone is comfortable, then Start Test.'
+                instruction: 'Set a comfortable level, then start.'
             });
-            // Segments back to pending color (inline styles — not classes).
-            document.querySelectorAll('.hearing-seg').forEach(seg => {
-                seg.style.background = '#18181b';
-            });
+            // Back to a single full-width primary (mirrors the is-running toggle
+            // in _beginHearingFrequency).
+            const hearingActions = document.getElementById('hearing-actions');
+            if (hearingActions) hearingActions.classList.remove('is-running');
 
             if (generateBtn) {
                 generateBtn.disabled = true;
-                generateBtn.classList.add('hidden', 'bg-zinc-800', 'text-zinc-500', 'cursor-not-allowed');
-                generateBtn.classList.remove('bg-emerald-500', 'text-white', 'hover:brightness-110', 'cursor-pointer');
+                // R7: state is now carried by [disabled] plus a token-driven
+                // .tl-eq-bake style rather than swapped Tailwind classes. The old
+                // pair was bg-emerald-500 (#10B981) with text-white, which is
+                // ~2.4:1 - it failed WCAG AA for the button's own label and was
+                // the single brightest object in the pane on an OLED theme.
+                generateBtn.classList.remove('is-ready');
+                generateBtn.classList.add('hidden');
             }
 
             const el = document.getElementById('brand-icon-emoji');
@@ -25483,8 +27331,8 @@ setABXControlsEnabled: function(enabled) {
 
             const generateBtn = document.getElementById('hearing-eq-generate-btn');
             if (generateBtn) {
-                generateBtn.classList.remove('hidden', 'bg-zinc-800', 'text-zinc-500', 'cursor-not-allowed');
-                generateBtn.classList.add('bg-emerald-500', 'text-white', 'hover:brightness-110', 'cursor-pointer');
+                generateBtn.classList.add('is-ready');
+                generateBtn.classList.remove('hidden');
                 generateBtn.disabled = false;
             }
 
@@ -26658,8 +28506,7 @@ toggleChannelSwap: function() {
                     startBtn.textContent = 'START TEST';
                     startBtn.onclick = () => this.abxStart();
                 }
-                const choicesRow = document.getElementById('abx-choices-row');
-                if (choicesRow) { choicesRow.style.pointerEvents = 'none'; choicesRow.style.opacity = '0.5'; }
+                this.setABXPanelState('idle');
                 this.setABXControlsEnabled(true);
 
                 const abxStatus = document.getElementById('abx-status-lbl');
@@ -27553,8 +29400,38 @@ loadSoundLibrary: async function() {
         },
                 startSpatialAudio: async function() {
             if (this.spatialActive || !this.playbackActive) return;
-
-                        const ctx = SharedAudio.init(); ctx.resume();
+            // Re-entrancy guard.
+            //
+            // spatialActive is only set at the very bottom of this function, after
+            // `await this.getAudioFileBuffer(...)` has fetched and decoded the
+            // clip. So `if (this.spatialActive)` above is false for every start
+            // still in flight, and the space between the guard and the assignment
+            // is exactly where two clicks land.
+            //
+            // Measured with the decode held open: two concurrent starts built two
+            // complete spatial graphs (14 AudioNodes), and because both runs
+            // mutate the SAME this.spatialSourceNode, start() was called on it
+            // twice - InvalidStateError, thrown inside an async function, so it
+            // surfaced only as an unhandled rejection while the rest of the losing
+            // start's body (activeNodes bookkeeping, pad positioning) never ran.
+            // Three clicks produced three graphs and start() called three times.
+            // Nodes were also left in activeNodes that stopSpatialAudio, which only
+            // knows the tracked node, could not remove.
+            //
+            // The existing isDecoding check in toggleSpatialPlay only covers the
+            // custom-file import path; a built-in sound goes through
+            // getAudioFileBuffer with no such flag.
+            if (this._spatialStartInFlight) return this._spatialStartInFlight;
+            this._spatialStartInFlight = this._startSpatialAudio();
+            try {
+                return await this._spatialStartInFlight;
+            } finally {
+                // Cleared in finally: a failed decode must not wedge the button.
+                this._spatialStartInFlight = null;
+            }
+        },
+        _startSpatialAudio: async function() {
+            const ctx = SharedAudio.init(); ctx.resume();
             this.spatialSourceNode = ctx.createBufferSource();
 
             let startOffset = 0;
@@ -28067,91 +29944,153 @@ loadSoundLibrary: async function() {
         (function() {
             let tooltipEl = null;
 
+            // R0: appearance moved from an inline cssText string to the
+            // .ui-tooltip class in app/css/app.css. The old inline block
+            // hard-coded #000000 fill, a 2px solid accent border and a 2px hard
+            // black shadow, which bypassed every design token and kept the
+            // tooltip square while the rest of the app became rounded. Only
+            // position and visibility stay inline, because those are computed.
             function getTooltip() {
                 if (!tooltipEl) {
                     tooltipEl = document.createElement('div');
                     tooltipEl.id = 'global-floating-tooltip';
-                    tooltipEl.style.cssText = `
-                        position: fixed;
-                        z-index: 999999;
-                        pointer-events: none;
-                        display: none;
-                        background: #000000;
-                        color: #ffffff;
-                        font-size: 9.5px;
-                        font-weight: 800;
-                        white-space: nowrap;
-                        padding: 3px 8px;
-                        border: 2px solid var(--accent-blue);
-                        box-shadow: 2px 2px 0px #000000;
-                        opacity: 0;
-                        transition: opacity 0.1s ease-out;
-                    `;
+                    tooltipEl.className = 'ui-tooltip';
+                    tooltipEl.setAttribute('role', 'tooltip');
                     document.body.appendChild(tooltipEl);
                 }
                 return tooltipEl;
             }
 
-            document.addEventListener('mouseover', (e) => {
-                const target = e.target.closest('[data-tooltip], [title]');
-                if (!target) return;
-                if (target.hasAttribute('title')) {
-                    target.setAttribute('data-tooltip', target.getAttribute('title'));
-                    target.removeAttribute('title');
+            // The element the tooltip is currently describing, and the title we
+            // temporarily blanked to suppress the browser's native tooltip.
+            let activeOwner = null;
+            let suppressed = null;
+
+            function restoreSuppressedTitle() {
+                if (!suppressed) return;
+                suppressed.el.setAttribute('title', suppressed.text);
+                suppressed = null;
+            }
+
+            function hideTooltip() {
+                restoreSuppressedTitle();
+                if (activeOwner) {
+                    activeOwner.removeAttribute('aria-describedby');
+                    activeOwner = null;
                 }
-                const text = target.getAttribute('data-tooltip');
-                if (!text || !text.trim()) return;
+                if (!tooltipEl) return;
+                tooltipEl.classList.remove('is-visible');
+                // IEM.removeReviewTag used to do this with inline styles, which
+                // then outranked .is-visible forever after: one tag removal
+                // killed the tooltip for the rest of the session. Visibility is
+                // the stylesheet's job, so clear any stale inline leftovers.
+                tooltipEl.style.display = '';
+                tooltipEl.style.opacity = '';
+            }
+
+            function showTooltip(target) {
+                // data-tooltip wins; title is the fallback so that the ~73
+                // elements in index.html which only carry a title still work.
+                const text = (target.getAttribute('data-tooltip')
+                    || target.getAttribute('title') || '').trim();
+                if (!text) return;
+                if (activeOwner === target) return;
+
+                hideTooltip();
+                activeOwner = target;
 
                 const tt = getTooltip();
                 tt.textContent = text;
-                tt.style.display = 'block';
+                tt.classList.add('is-visible');
+                // role="tooltip" is only meaningful if something points at it.
+                target.setAttribute('aria-describedby', tt.id);
+
+                // Suppress the NATIVE tooltip only while ours is up. The old
+                // code called removeAttribute('title') and never put it back,
+                // which silently deleted the accessible name of every element
+                // whose only label was its title - 73 of the 81 title-bearing
+                // elements in index.html have no aria-label to fall back on. It
+                // also made the name depend on input device: hover and you lose
+                // the name, tab to it and you keep it.
+                const title = target.getAttribute('title');
+                if (title) {
+                    suppressed = { el: target, text: title };
+                    target.setAttribute('title', '');
+                }
 
                 const rect = target.getBoundingClientRect();
                 const ttW = tt.offsetWidth;
                 const ttH = tt.offsetHeight;
 
                 let left = rect.left + (rect.width / 2) - (ttW / 2);
-                let top = rect.top - ttH - 6;
+                let top = rect.top - ttH - 8;
 
                 if (left < 8) left = 8;
                 if (left + ttW > window.innerWidth - 8) {
                     left = window.innerWidth - ttW - 8;
                 }
                 if (top < 8) {
-                    top = rect.bottom + 6;
+                    // No room above: flip below. Clamped so a tooltip on a
+                    // bottom-edge control (the transport bar) cannot be pushed
+                    // off-screen, which is where the old fixed 6px offset
+                    // clipped it.
+                    top = Math.min(rect.bottom + 8, window.innerHeight - ttH - 8);
                 }
+                if (left < 8) left = 8;
 
                 tt.style.left = `${left}px`;
-                tt.style.top = `${top}px`;
-                tt.style.opacity = '1';
+                tt.style.top = `${Math.max(8, top)}px`;
+            }
+
+            function tooltipTargetFrom(e) {
+                return e.target.closest('[data-tooltip], [title]');
+            }
+
+            // Still leaving? Crossing from a button to one of its own child
+            // spans used to tear the tooltip down and immediately rebuild it -
+            // a visible flicker on every icon button that wraps a glyph.
+            function stillInside(target, related) {
+                return !!(related && target.contains(related));
+            }
+
+            document.addEventListener('mouseover', (e) => {
+                const target = tooltipTargetFrom(e);
+                if (target) showTooltip(target);
+            });
+
+            // Keyboard parity. Without this the tooltip was mouse-only: 73
+            // elements carried their entire label in a title that no keyboard
+            // user could ever surface.
+            document.addEventListener('focusin', (e) => {
+                const target = tooltipTargetFrom(e);
+                if (target) showTooltip(target);
             });
 
             document.addEventListener('mouseout', (e) => {
-                const target = e.target.closest('[data-tooltip]');
-                if (target && tooltipEl) {
-                    tooltipEl.style.opacity = '0';
-                    tooltipEl.style.display = 'none';
-                }
+                const target = tooltipTargetFrom(e);
+                if (!target) return;
+                if (stillInside(target, e.relatedTarget)) return;
+                hideTooltip();
             });
 
-            window.addEventListener('scroll', () => {
-                if (tooltipEl) {
-                    tooltipEl.style.opacity = '0';
-                    tooltipEl.style.display = 'none';
-                }
+            document.addEventListener('focusout', (e) => {
+                const target = tooltipTargetFrom(e);
+                if (!target) return;
+                if (stillInside(target, e.relatedTarget)) return;
+                hideTooltip();
+            });
+
+            window.addEventListener('scroll', hideTooltip, true);
+            document.addEventListener('click', (e) => {
+                // Hide after a pointer click so no stale tooltip is left over
+                // the UI, but NOT after a keyboard activation: detail === 0 is
+                // how the browser marks a click synthesised from Enter/Space,
+                // and killing the tooltip there would strip the keyboard user
+                // of the text they just tabbed to.
+                if (e.detail === 0) return;
+                hideTooltip();
             }, true);
-            document.addEventListener('click', () => {
-                if (tooltipEl) {
-                    tooltipEl.style.opacity = '0';
-                    tooltipEl.style.display = 'none';
-                }
-            }, true);
-            window.hideGlobalTooltip = () => {
-                if (tooltipEl) {
-                    tooltipEl.style.opacity = '0';
-                    tooltipEl.style.display = 'none';
-                }
-            };
+            window.hideGlobalTooltip = hideTooltip;
         })();
 
     // Boot entry point. index.html injects this bundle via a dynamically
@@ -29092,16 +31031,16 @@ loadSoundLibrary: async function() {
                     const pickSection = document.getElementById('find-pick-section');
 
                     if (mode === 'filters') {
-                        if (tuningBtn) tuningBtn.classList.remove('active');
-                        if (filtersBtn) filtersBtn.classList.add('active');
+                        if (tuningBtn) { tuningBtn.classList.remove('active'); tuningBtn.setAttribute('aria-selected', 'false'); }
+                        if (filtersBtn) { filtersBtn.classList.add('active'); filtersBtn.setAttribute('aria-selected', 'true'); }
                         tuningControls.classList.add('hidden');
                         filterControls.classList.remove('hidden');
                         if (targetCurveBlock) targetCurveBlock.classList.add('hidden');
                         if (pickSection) pickSection.classList.remove('hidden');
                         this.fitPickGrid();
                     } else {
-                        if (filtersBtn) filtersBtn.classList.remove('active');
-                        if (tuningBtn) tuningBtn.classList.add('active');
+                        if (filtersBtn) { filtersBtn.classList.remove('active'); filtersBtn.setAttribute('aria-selected', 'false'); }
+                        if (tuningBtn) { tuningBtn.classList.add('active'); tuningBtn.setAttribute('aria-selected', 'true'); }
                         filterControls.classList.add('hidden');
                         tuningControls.classList.remove('hidden');
                         if (targetCurveBlock) targetCurveBlock.classList.remove('hidden');
@@ -29228,7 +31167,7 @@ loadSoundLibrary: async function() {
                 populateBrandSuggestions: function() {
                     const sources = [
                         this.iemDatabase,
-                        (window.PEQDB_Module && PEQDB_Module.STATE && PEQDB_Module.STATE.dataset),
+                        (window.PEQDB && window.PEQDB.STATE && window.PEQDB.STATE.dataset),
                         (typeof CurveIndexer !== 'undefined' && CurveIndexer.catalog) ? CurveIndexer.catalog : null
                     ];
                     const seen = new Set();
@@ -29263,6 +31202,16 @@ loadSoundLibrary: async function() {
                     this._brandSearchTimer = setTimeout(() => { this.doBrandFilter(query || ''); }, 130);
                 },
 
+                // NOTE: this whole brand-suggestion block is currently
+                // unreachable - `handleBrandSearch`, `doBrandFilter` and
+                // `selectBrandName` have no caller, and both ids they need
+                // (`#find-brand-suggestions-box`, `#find-filter-brand`) are absent
+                // from index.html, verified against the live DOM. It is kept
+                // rather than deleted because `populateBrandSuggestions` is live
+                // (called at :743 and :1101) and shares brandSuggestionsList.
+                // The markup is now data-cmd rather than an attribute-form
+                // onmousedown, which Chromium refused to compile under the
+                // shipped CSP.
                 doBrandFilter: function(query) {
                     const container = document.getElementById('find-brand-suggestions-box');
                     if (!container) return;
@@ -29296,7 +31245,7 @@ loadSoundLibrary: async function() {
                     }
 
                     container.innerHTML = matches.map(b => `
-                        <div onmousedown="event.preventDefault(); FindEngine.selectBrandName('${escJs(b)}')" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
+                        <div data-cmd="FindEngine.selectBrandName" data-arg-0="${esc(b)}" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
                             ${esc(b)}
                         </div>
                     `).join('');
@@ -30426,18 +32375,79 @@ loadSoundLibrary: async function() {
                     }
                 },
 
+                _indexProgressTicker: null,
+
+                // Drives the bar while curves are being fetched.
+                //
+                // This used to be called only twice: once at startup and once
+                // when the warmup finished. Each individual curve load did not
+                // report in, so the bar was painted at 0%, the fetch loop ran to
+                // completion without touching it, and then the container was
+                // hidden - it looked like a progress bar that never moved.
+                //
+                // It is now self-sustaining: if indexing is in flight and nothing
+                // is polling, start a ticker. It samples the same real counters
+                // as before (curves with data / total), so the percentage is
+                // still measured rather than faked, and it stops itself as soon
+                // as the database reports fully loaded.
+                _ensureIndexProgressTicker: function() {
+                    if (PEQDB_Module.databaseFullyLoaded) {
+                        if (this._indexProgressTicker) {
+                            clearInterval(this._indexProgressTicker);
+                            this._indexProgressTicker = null;
+                        }
+                        return;
+                    }
+                    if (this._indexProgressTicker) return;
+                    const self = this;
+                    this._indexProgressTicker = setInterval(function() {
+                        if (PEQDB_Module.databaseFullyLoaded) {
+                            clearInterval(self._indexProgressTicker);
+                            self._indexProgressTicker = null;
+                            return;
+                        }
+                        self.updateIndexingProgressBar();
+                    }, 120);
+                },
+
                 updateIndexingProgressBar: function() {
                     const progressContainer = document.getElementById('find-progress-container');
+                    this._ensureIndexProgressTicker();
+
                     if (PEQDB_Module.databaseFullyLoaded) {
                         if (progressContainer) progressContainer.classList.add('hidden');
                         return;
                     }
 
                     const dataset = PEQDB_Module.STATE.dataset;
-                    if (!dataset || dataset.length === 0) return;
+                    // Shown before the dataset exists so the panel does not sit
+                    // blank, and because a zero-length dataset cannot produce a
+                    // meaningful percentage.
+                    if (!dataset || dataset.length === 0) {
+                        if (progressContainer) progressContainer.classList.remove('hidden');
+                        const bar0 = document.getElementById('find-progress-bar');
+                        const text0 = document.getElementById('find-progress-text');
+                        const status0 = document.getElementById('find-progress-status');
+                        if (bar0) bar0.style.width = '100%';
+                        if (text0) text0.textContent = '';
+                        if (status0) status0.textContent = '⏳ Reading database index...';
+                        return;
+                    }
 
-                    const indexedCount = dataset.filter(item => item.data !== null).length;
-                    const totalCount = dataset.length;
+                    // Prefer the loader's own tally of finished curves. Deriving
+                    // progress from the dataset instead cannot work: entries are
+                    // created with `data` already populated from cache, so the
+                    // observable count does not climb while files are fetched.
+                    let indexedCount, totalCount;
+                    const prog = (typeof PEQDB_Module.getIndexProgress === 'function')
+                        ? PEQDB_Module.getIndexProgress() : null;
+                    if (prog && prog.total > 0) {
+                        indexedCount = Math.min(prog.done, prog.total);
+                        totalCount = prog.total;
+                    } else {
+                        indexedCount = dataset.filter(item => item.data !== null).length;
+                        totalCount = dataset.length;
+                    }
                     const percent = Math.round((indexedCount / totalCount) * 100);
 
                     const bar = document.getElementById('find-progress-bar');
@@ -30451,7 +32461,7 @@ loadSoundLibrary: async function() {
                         if (progressContainer) progressContainer.classList.add('hidden');
                     } else {
                         if (progressContainer) progressContainer.classList.remove('hidden');
-                        if (status) status.textContent = `⚡ Indexing: ${indexedCount}/${totalCount} files cached...`;
+                        if (status) status.textContent = `⚡ Indexing: ${indexedCount}/${totalCount} curves cached`;
                     }
                 },
 
@@ -32196,8 +34206,13 @@ applyGenreFilters: function(matches) {
                             else panel.classList.add('hidden');
                         }
                         if (btn) {
-                            if (id === tabId) btn.classList.add('active');
-                            else btn.classList.remove('active');
+                            if (id === tabId) {
+                                btn.classList.add('active');
+                                btn.setAttribute('aria-selected', 'true');
+                            } else {
+                                btn.classList.remove('active');
+                                btn.setAttribute('aria-selected', 'false');
+                            }
                         }
                     });
 
@@ -32288,7 +34303,15 @@ applyGenreFilters: function(matches) {
                     const baseSlot = document.getElementById('find-upgrade-base-slot');
 
                     if (baseSlot) {
-                        baseSlot.className = "w-full h-9 border-2 border-dashed border-black bg-black/10 flex items-center justify-center select-none";
+                        // Same class list as the boot markup (index.html), so
+                        // clearing back to the placeholder is not a second visual
+                        // state. The old `border-2 border-dashed border-black`
+                        // wrote raw Tailwind here: black dashes on a near-black
+                        // card, i.e. an invisible outline, and no radius, so the
+                        // box snapped from rounded to square-cored the moment you
+                        // hit the change button. `slot-empty` carries the tokenised
+                        // dashed outline + --r-md radius that every other slot uses.
+                        baseSlot.className = "slot-empty w-full h-9 flex items-center justify-center select-none mt-1.5";
                         baseSlot.innerHTML = `<span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Select Base IEM</span>`;
                     }
                 },
@@ -33742,20 +35765,26 @@ applyGenreFilters: function(matches) {
                         const f = this.tasteFavorites[i];
                         if (f) {
                             const div = document.createElement('div');
-                            div.className = 'bg-[var(--bg-card)] border-2 border-[var(--border-color)] px-2.5 py-1 flex items-center justify-between gap-2 select-none w-full h-9 relative';
-                            div.style.cssText = 'box-shadow: 2px 2px 0px 0px var(--border-color) !important;';
+                            // R2: was an inline `box-shadow: 2px 2px 0 #000`
+                            // plus a 2px border — a hard square slab. Now a
+                            // raised row with a hairline and a rounded corner,
+                            // matching every other list row in the app.
+                            div.className = 'flex items-center justify-between gap-2 select-none w-full h-9 relative px-3';
+                            div.style.cssText = 'background: var(--bg-raised); border: 1px solid var(--line); border-radius: var(--r-md);';
                             div.innerHTML = `
                                 <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                                     <span class="emoji-font vibrant-emoji text-lg flex-shrink-0 overflow-visible" style="line-height: 1.25;">❤️</span>
-                                    <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(f.name)}</span>
+                                    <span class="text-xs font-semibold truncate" style="color: var(--text-hi);">${esc(f.name)}</span>
                                 </div>
-                                <button type="button" data-cmd="FindEngine.removeTasteFavorite" data-arg-0="${escJs(f.id)}" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${esc(f.name)}">✕</button>
+                                <button type="button" data-cmd="FindEngine.removeTasteFavorite" data-arg-0="${escJs(f.id)}" class="w-6 h-6 flex items-center justify-center transition-colors cursor-pointer flex-shrink-0" style="border-radius: var(--r-xs); background: transparent; color: var(--text-lo); border: 1px solid transparent;" title="Remove ${esc(f.name)}">✕</button>
                             `;
                             container.appendChild(div);
                         } else {
+                            // R2: was `border-2 border-dashed border-black` with
+                            // square corners. Now the shared .slot-empty well.
                             const div = document.createElement('div');
-                            div.className = 'border-2 border-dashed border-black h-9 flex items-center justify-center select-none w-full bg-black/10';
-                            div.innerHTML = `<span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Favorite ${i + 1}</span>`;
+                            div.className = 'slot-empty w-full h-9 flex items-center justify-center select-none';
+                            div.innerHTML = `<span class="text-[9px] font-semibold uppercase tracking-wider">+ Favorite ${i + 1}</span>`;
                             container.appendChild(div);
                         }
                     }
@@ -34231,6 +36260,35 @@ const handlers = {
             this.style.borderColor = '';
             PEQDB_Module.handleDrop(event, this.getAttribute('data-drop-slot'));
         },
+        // R5: the Find pane's two multi-option steppers became segmented pill
+        // rows. Each pill now addresses one option directly instead of stepping
+        // through the list, so these six handlers replace the two cycle
+        // handlers the arrows used to call. The underlying module functions
+        // (setFindMode / switchRightTab) are unchanged and already own the
+        // `.active` class on these very ids.
+        "click_310_FindEngine_setFindMode__tuning": function(event, element) { FindEngine.setFindMode('tuning'); },
+        "click_311_FindEngine_setFindMode__filters": function(event, element) { FindEngine.setFindMode('filters'); },
+        "click_312_FindEngine_switchRightTab__taste": function(event, element) { FindEngine.switchRightTab('taste'); },
+        "click_313_FindEngine_switchRightTab__upgrade": function(event, element) { FindEngine.switchRightTab('upgrade'); },
+        "click_314_FindEngine_switchRightTab__giantkiller": function(event, element) { FindEngine.switchRightTab('giantkiller'); },
+        "click_315_FindEngine_switchRightTab__endgame": function(event, element) { FindEngine.switchRightTab('endgame'); },
+        // R6: the Review pane's ◀/▶ tab steppers became segmented pill rows, so
+        // each pill needs a direct handler rather than relying on cycle(dir).
+        "click_316_IEM_switchLeftTab__search": function(event, element) { IEM.switchLeftTab('search'); },
+        "click_317_IEM_switchLeftTab__info": function(event, element) { IEM.switchLeftTab('info'); },
+        "click_318_IEM_switchLeftTab__drivers": function(event, element) { IEM.switchLeftTab('drivers'); },
+        "click_319_IEM_switchLeftTab__power": function(event, element) { IEM.switchLeftTab('power'); },
+        "click_320_IEM_switchRightTab__sound": function(event, element) { IEM.switchRightTab('sound'); },
+        "click_321_IEM_switchRightTab__photo": function(event, element) { IEM.switchRightTab('photo'); },
+        "click_322_IEM_switchRightTab__impressions": function(event, element) { IEM.switchRightTab('impressions'); },
+        // R7: the Test Lab's ◀/▶ sub-tab steppers became segmented pill rows, so
+        // each pill needs a direct handler rather than relying on cycle(dir).
+        "click_323_TestLab_switchLeftTab__resonance": function(event, element) { TestLab.switchLeftTab('resonance'); },
+        "click_324_TestLab_switchLeftTab__balance": function(event, element) { TestLab.switchLeftTab('balance'); },
+        "click_325_TestLab_switchLeftTab__burnin": function(event, element) { TestLab.switchLeftTab('burnin'); },
+        "click_326_TestLab_switchRightTab__tone": function(event, element) { TestLab.switchRightTab('tone'); },
+        "click_327_TestLab_switchRightTab__ab": function(event, element) { TestLab.switchRightTab('ab'); },
+        "click_328_TestLab_switchRightTab__hearing": function(event, element) { TestLab.switchRightTab('hearing'); },
     };
 
     // Register all handlers
@@ -34238,6 +36296,7 @@ const handlers = {
         EventBinding.register(action, handlers[action]);
     });
     console.log('[HandlerRegistry] Registered ' + Object.keys(handlers).length + ' handlers');
+
 /* ===== app/js/app-init.js ===== */
 
         (function() {
@@ -34253,18 +36312,70 @@ const handlers = {
                 const target = pct + '%';
                 if (_lastFill.get(el) === val + '|' + target) return;
                 _lastFill.set(el, val + '|' + target);
+                // Write BOTH names. --range-fill is the one the stylesheet reads
+                // (app.css: the input[type=range] track rule); --track-percent
+                // is still read by the EQ band cards and anything else that
+                // sets it directly. They were the same idea under two names and
+                // never met, which is why no slider showed a fill.
                 if (el.style.getPropertyValue('--range-fill') !== target) {
                     el.style.setProperty('--range-fill', target);
+                }
+                if (el.style.getPropertyValue('--track-percent') !== target) {
+                    el.style.setProperty('--track-percent', target);
                 }
             }
             document.addEventListener('input', (e) => {
                 if (e.target && e.target.matches && e.target.matches('input[type="range"]')) updateFill(e.target);
             }, true);
+            // updateFill normally runs from an `input` event or from the boot
+            // sweep below. Neither covers code that assigns el.value directly:
+            // no event fires, so --range-fill keeps whatever percentage the
+            // slider had before, and the knob ends up sitting somewhere the
+            // coloured fill does not reach - which reads as a detached knob.
+            // Anything that moves a slider programmatically should call this.
+            window.IEM_updateRangeFill = updateFill;
             function initAll() {
-                if (document.hidden || !document.hasFocus()) return;
+                // Do NOT gate on document.hasFocus(). That guard made the initial
+                // pass a no-op whenever the window was not focused - which is
+                // every launch, and any harness run - so no slider had a fill
+                // until the user happened to drag it. This is one pass over the
+                // ranges; there is nothing to protect against.
                 document.querySelectorAll('input[type="range"]').forEach(updateFill);
             }
-            window.addEventListener('DOMContentLoaded', initAll);
+            // Bind with a readyState check, like setup() at the bottom of this
+            // file. The bundle is loaded at the end of <body> and can execute
+            // AFTER DOMContentLoaded has already fired, in which case a bare
+            // addEventListener never runs and no slider is ever painted
+            // initially. That was the real reason sliders showed a bare track:
+            // only the ones the user happened to drag got a fill.
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initAll, { once: true });
+            } else {
+                initAll();
+            }
+
+            // Several sliders are created by JS after boot (driver tiles, review
+            // cards, per-band graph rows), so a single boot pass misses them and
+            // they stay empty until touched.
+            const _rangeObserver = new MutationObserver((muts) => {
+                for (const m of muts) {
+                    for (const node of m.addedNodes) {
+                        if (node.nodeType !== 1) continue;
+                        if (node.matches && node.matches('input[type="range"]')) updateFill(node);
+                        if (node.querySelectorAll) {
+                            node.querySelectorAll('input[type="range"]').forEach(updateFill);
+                        }
+                    }
+                }
+            });
+            const _observeRanges = () => {
+                if (document.body) _rangeObserver.observe(document.body, { childList: true, subtree: true });
+            };
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', _observeRanges, { once: true });
+            } else {
+                _observeRanges();
+            }
 
             // 3s polling removed: input listener + visibilitychange + syncGlobalSliders
             // already keep fill bars coherent. The interval was waking the tab every

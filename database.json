@@ -4254,6 +4254,32 @@
     ]
   },
   {
+    "id": "aful_miracle_one",
+    "brand": "AFUL",
+    "model": "Miracle One",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 1000,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 38,
+    "sensitivity": 103,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Smooth",
+      "Warm",
+      "Wide-Stage",
+      "Premium"
+    ],
+    "files": [
+      "data/SUPER REVIEW/AFUL ACOUSTICS MIRACLEONE.txt"
+    ]
+  },
+  {
     "id": "aful_performer_5",
     "brand": "AFUL",
     "model": "Performer 5",
@@ -14650,6 +14676,32 @@
     ],
     "files": [
       "data/ORATORY1990/AUSTRIAN AUDIO HI X65.txt"
+    ]
+  },
+  {
+    "id": "austrian_audio_the_arranger",
+    "brand": "Austrian Audio",
+    "model": "The Arranger",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 1300,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 25,
+    "sensitivity": 112,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Reference",
+      "Resolving",
+      "Studio-Monitoring",
+      "Wide-Stage",
+      "Premium"
+    ],
+    "files": [
+      "data/SUPER REVIEW/AUSTRIAN AUDIO THE ARRANGER.txt"
     ]
   },
   {
@@ -39773,6 +39825,31 @@
     ]
   },
   {
+    "id": "fiio_fh3_lumi",
+    "brand": "FiiO",
+    "model": "FH3",
+    "variant": "Lumi",
+    "year": 2026,
+    "price_usd": 105,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+2BA",
+    "impedance": 27,
+    "sensitivity": 106,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Smooth",
+      "Vocal-Focused",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/FAXEPREMIUM/FIIO SNOWSKY FH3 LUMI.txt"
+    ]
+  },
+  {
     "id": "fiio_fh5",
     "brand": "FiiO",
     "model": "FH5",
@@ -40949,6 +41026,32 @@
     ],
     "files": [
       "data/ORATORY1990/FINAL AUDIO D8000 PRO EDITION.txt"
+    ]
+  },
+  {
+    "id": "final_audio_dx4000cl",
+    "brand": "Final Audio",
+    "model": "DX4000CL",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 1200,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 98,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Smooth",
+      "Warm",
+      "Wide-Stage",
+      "Premium"
+    ],
+    "files": [
+      "data/ADEN/FINAL DX4000CL.txt"
     ]
   },
   {
@@ -51612,6 +51715,31 @@
     "files": [
       "data/REGAN CIPHER/HUAWEI FREEBUDS PRO 4.txt",
       "data/DHRME/HUAWEI FREE BUDS PRO 4.txt"
+    ]
+  },
+  {
+    "id": "huawei_freebuds_pro_5",
+    "brand": "Huawei",
+    "model": "FreeBuds",
+    "variant": "Pro 5",
+    "year": 2026,
+    "price_usd": 210,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+1Planar",
+    "impedance": 0,
+    "sensitivity": 0,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Earbuds (TWS)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Good-Imaging",
+      "Resolving",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/IEM OCEAN/HUAWEI FREEBUDS PRO 5.txt"
     ]
   },
   {
@@ -92915,6 +93043,58 @@
     ]
   },
   {
+    "id": "rossi_wing_first_light",
+    "brand": "Rossi & Wing",
+    "model": "First Light",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 6600,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+12BA",
+    "impedance": 14,
+    "sensitivity": 113,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Flagship",
+      "Balanced",
+      "Warm",
+      "Detailed",
+      "Resolving",
+      "Wide-Stage",
+      "Good-Imaging"
+    ],
+    "files": [
+      "data/DCINSIDE/ROSSI WING FIRST LIGHT.txt"
+    ]
+  },
+  {
+    "id": "rossi_wing_four_winds",
+    "brand": "Rossi & Wing",
+    "model": "Four Winds",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 3980,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+4BA",
+    "impedance": 26,
+    "sensitivity": 107,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Smooth",
+      "Warm",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/DCINSIDE/ROSSI WINGS FOUR WINDS.txt"
+    ]
+  },
+  {
     "id": "rosson_audio_design_rad_0",
     "brand": "Rosson Audio Design",
     "model": "RAD-0",
@@ -97914,6 +98094,32 @@
       "data/DHRME/SENNHEISER MOMENTUM TRUE WIRELESS 4.txt",
       "data/ORATORY1990/SENNHEISER MOMENTUM TRUE WIRELESS 4.txt",
       "data/RTINGS/SENNHEISER MOMENTUM TRUE WIRELESS 4.txt"
+    ]
+  },
+  {
+    "id": "sennheiser_momentum_true_wireless_5",
+    "brand": "Sennheiser",
+    "model": "Momentum",
+    "variant": "True Wireless 5",
+    "year": 2026,
+    "price_usd": 300,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 0,
+    "sensitivity": 0,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Earbuds (TWS)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Good-Imaging",
+      "Resolving",
+      "Smooth",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/SUPER REVIEW/SENNHEISER MOMENTUM 5 WIRELESS (ANC ON).txt",
+      "data/SUPER REVIEW/SENNHEISER MOMENTUM 5 WIRELESS (ANC OFF).txt"
     ]
   },
   {
@@ -113955,6 +114161,31 @@
     ]
   },
   {
+    "id": "tangzu_yu_xuan_ji_year_of_the_snake",
+    "brand": "Tangzu",
+    "model": "Yu Xuan Ji",
+    "variant": "Year of the Snake",
+    "year": 2025,
+    "price_usd": 60,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 16,
+    "sensitivity": 105,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Good-Imaging",
+      "Limited-Edition",
+      "Smooth",
+      "Budget"
+    ],
+    "files": [
+      "data/CSI-ZONE/TANGZU YU XUAN JI SNAEK.txt"
+    ]
+  },
+  {
     "id": "tangzu_yuan_li",
     "brand": "Tangzu",
     "model": "Yuan Li",
@@ -122991,6 +123222,31 @@
     ]
   },
   {
+    "id": "ucotech_e1",
+    "brand": "Ucotech",
+    "model": "E1",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 100,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 70,
+    "sensitivity": 120,
+    "connector": "MMCX",
+    "form_factor": "Earbuds (Wired)",
+    "tags": [
+      "Balanced",
+      "Relaxed",
+      "Smooth",
+      "Warm",
+      "Wide-Stage",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/EARPHONES ARCHIVE/UCOTECH E1.txt"
+    ]
+  },
+  {
     "id": "ucotech_re_2",
     "brand": "Ucotech",
     "model": "RE-2",
@@ -129333,6 +129589,32 @@
     ]
   },
   {
+    "id": "yamaha_yh_c3000",
+    "brand": "Yamaha",
+    "model": "YH-C3000",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 1700,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 34,
+    "sensitivity": 94,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Good-Imaging",
+      "Punchy Bass",
+      "Resolving",
+      "U-Shaped",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/KUULOKENURKKA/YAMAHA YH-C3000.txt"
+    ]
+  },
+  {
     "id": "yamaha_yh_e700a",
     "brand": "Yamaha",
     "model": "YH-E700A",
@@ -130983,6 +131265,32 @@
     ],
     "files": [
       "data/HAWAII BAY BOY/ZIIGAAT RUMBA.txt"
+    ]
+  },
+  {
+    "id": "ziigaat_seraphim",
+    "brand": "ZiiGaat",
+    "model": "Seraphim",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 250,
+    "driver_type": "Hybrid",
+    "driver_config": "2DD+3BA",
+    "impedance": 16,
+    "sensitivity": 106,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Collab",
+      "Detailed",
+      "Gaming",
+      "Punchy Bass",
+      "Resolving",
+      "V-Shaped",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/HANGOUT.AUDIO/ZIIGAAT SERAPHIM.txt"
     ]
   },
   {

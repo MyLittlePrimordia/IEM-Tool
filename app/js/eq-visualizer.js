@@ -81,14 +81,51 @@ startVisualizer: function() {
                         if (excessDb > 0.1) {
                             const preampSlider = document.getElementById("eq-preampSlider");
                             if (preampSlider) {
-                                // Never fight the user. This watchdog runs every
-                                // 30ms; writing .value while the pointer was on the
-                                // slider made the user's next input event read OUR
-                                // value instead of theirs.
-                                if (preampSlider === document.activeElement || preampSlider.matches(':active')) return;
-
+                                // The old code returned before any of this when
+                                //   preampSlider === document.activeElement || :active
+                                // document.activeElement is far broader than "the user
+                                // is dragging": focus lingers after one click, or one
+                                // Tab, indefinitely. Measured on the old code, with
+                                // the slider merely focused and playback clipping
+                                // continuously at 99% peak, autoDb stayed 0 for
+                                // 900ms+ - Anti-Clip silently did nothing and said
+                                // nothing. So the baseline work happens first, and the
+                                // guard below is narrowed to real interaction.
                                 const currentPreamp = parseFloat(preampSlider.value) || 0;
+
+                                // Baseline bookkeeping happens FIRST, before the
+                                // interaction guard below - that ordering is the fix.
+                                //
+                                // Single value the watchdog has accounted for, whether it wrote it
+                                // itself or observed the user write it. Anything different on
+                                // the next tick is a user edit.
+                                if (currentPreamp !== EQ_Module._agcLastSeenValue) {
+                                    EQ_Module._agcUserAdjustAt = performance.now();
+                                    // The user has moved on from the baseline we
+                                    // captured, so the old auto-reduction no longer
+                                    // describes their setting.
+                                    if (Number.isFinite(EQ_Module._agcUserPreamp)
+                                        && currentPreamp !== EQ_Module._agcUserPreamp) {
+                                        EQ_Module._agcUserPreamp = currentPreamp;
+                                        EQ_Module._agcAutoDb = 0;
+                                        EQ_Module._agcNotified = false;
+                                        EQ_Module._agcAnnouncedDb = 0;
+                                    }
+                                }
+                                EQ_Module._agcLastSeenValue = currentPreamp;
                                 if (!Number.isFinite(EQ_Module._agcUserPreamp)) EQ_Module._agcUserPreamp = currentPreamp;
+
+                                // Never fight the user WHILE they are adjusting. This
+                                // now means an active drag, or a change within the
+                                // last 500ms - not merely "this element has focus".
+                                // The 500ms window is what protects keyboard nudges,
+                                // which never set :active.
+                                const recentlyAdjusted =
+                                    (performance.now() - (Number.isFinite(EQ_Module._agcUserAdjustAt)
+                                        ? EQ_Module._agcUserAdjustAt : -1e9)) < 500;
+                                if (preampSlider.matches(':active')
+                                    || (preampSlider === document.activeElement && recentlyAdjusted)) return;
+
                                 const userPreamp = EQ_Module._agcUserPreamp;
                                 const autoDb = Number.isFinite(EQ_Module._agcAutoDb) ? EQ_Module._agcAutoDb : 0;
 
@@ -103,6 +140,7 @@ startVisualizer: function() {
                                 EQ_Module._agcAutoDb = newAutoDb;
 
                                 preampSlider.value = target.toFixed(1);
+                                EQ_Module._agcLastSeenValue = parseFloat(preampSlider.value);
                                 // try/finally: a throw from updatePreamp() used to
                                 // leave isProgrammaticPreampUpdate stuck true, which
                                 // silently disabled the preamp dead-zone snap and
@@ -115,8 +153,17 @@ startVisualizer: function() {
                                 } finally {
                                     window.isProgrammaticPreampUpdate = false;
                                 }
-                                if (!EQ_Module._agcNotified) {
+                                // The old one-shot toast reported whatever the
+                                // reduction happened to be on the FIRST tick, while
+                                // the reduction kept growing after it - measured 0.6 dB
+                                // announced, 5.1 dB actually applied. Re-announce each
+                                // further whole dB so the number the user sees is the
+                                // number in force.
+                                const announcedDb = Number.isFinite(EQ_Module._agcAnnouncedDb)
+                                    ? EQ_Module._agcAnnouncedDb : 0;
+                                if (!EQ_Module._agcNotified || newAutoDb - announcedDb >= 1.0) {
                                     EQ_Module._agcNotified = true;
+                                    EQ_Module._agcAnnouncedDb = newAutoDb;
                                     showToast('Anti-Clip lowered your preamp ' +
                                         newAutoDb.toFixed(1) +
                                         ' dB to stop clipping. Your own setting is restored when you turn CLIP off.', '🛡️');

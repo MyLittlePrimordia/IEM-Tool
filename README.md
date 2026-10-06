@@ -5,7 +5,7 @@
 Find budget clones of $1,000 flagships, tune any set with 1-click AutoEQ, pinpoint harsh treble peaks, and test your gear—100% offline with zero signups or tracking.
 
 [📥 **Download Latest Release (Windows / macOS / Linux)**](https://github.com/MyLittlePrimordia/IEM-Tool/releases/latest)  
-*100% Free • Portable • Works completely offline*
+*100% Free • Portable (no installer) • Works completely offline*
 
 ---
 
@@ -15,7 +15,7 @@ Find budget clones of $1,000 flagships, tune any set with 1-click AutoEQ, pinpoi
 - 🎛️ **1-Click AutoEQ:** Instantly tune your IEMs to match target sound signatures or music genres. Export presets straight to **Wavelet**, **Peace EQ**, **Qudelix**, **Poweramp**, and **FxSound**.
 - 🔬 **Acoustic Ear Lab:** Sweep audio frequencies to find your unique ear canal resonance peak, balance uneven left/right channels, and blind test audio tracks.
 - ⚡ **Power & Dongle Calculator:** Find out if your phone, dongle, or desktop DAC/amp has enough power to drive your IEMs.
-- 🎨 **Retro Themes & Visualizers:** 6 live audio visualizers and 9 retro skins with matching pixel fonts.
+- 🎨 **Colour Themes & Visualizers:** 6 live audio visualizers and 9 colour themes, each with its own backdrop pattern.
 
 ---
 
@@ -59,28 +59,47 @@ Calculate exact voltage and mW requirements for your gear, take notes, and compa
 
 ## 🎨 Themes
 
-Switch between 9 retro styles anytime from the settings:
+Switch between 9 colour themes anytime from the settings. Each one has its own accent colour *and* its own backdrop pattern:
 
-| Slate (Default) | Ember | Circuit |
+| ⚫ Black | 🟤 Brown | 🔴 Red |
 | :---: | :---: | :---: |
-| <img src="screenshots/SLATE.png" width="260" alt="Slate"> | <img src="screenshots/EMBER.png" width="260" alt="Ember"> | <img src="screenshots/CIRCUIT.png" width="260" alt="Circuit"> |
-| **Arcade** | **Cartridge** | **Byte** |
-| <img src="screenshots/ARCADE.png" width="260" alt="Arcade"> | <img src="screenshots/CARTRIDGE.png" width="260" alt="Cartridge"> | <img src="screenshots/BYTE.png" width="260" alt="Byte"> |
+| <img src="screenshots/black.png" width="260" alt="Black theme"> | <img src="screenshots/brown.png" width="260" alt="Brown theme"> | <img src="screenshots/red.png" width="260" alt="Red theme"> |
+| **🔵 Blue** | **🟢 Green** | **🟡 Yellow** |
+| <img src="screenshots/blue.png" width="260" alt="Blue theme"> | <img src="screenshots/green.png" width="260" alt="Green theme"> | <img src="screenshots/yellow.png" width="260" alt="Yellow theme"> |
+| **🟣 Purple** | **🌸 Pink** | **🟠 Orange** |
+| <img src="screenshots/purple.png" width="260" alt="Purple theme"> | <img src="screenshots/pink.png" width="260" alt="Pink theme"> | <img src="screenshots/orange.png" width="260" alt="Orange theme"> |
 
-*(Also includes Parchment, Blush, and Bit)*
+---
+
+## 🚀 Running It (Portable - Nothing to Install)
+
+| Platform | File | How |
+| :--- | :--- | :--- |
+| **Windows** | `IEM-Tool.exe` | Double-click. No installer, no admin rights. |
+| **Linux** | `IEM-Tool.appimage` | `chmod +x IEM-Tool.appimage`, then run it. (Needs FUSE 2; if it won't start, run it with `--appimage-extract-and-run`.) |
+| **macOS** | `IEM-Tool.dmg` | Open the DMG and drag the app to Applications. macOS has no portable mode. |
+
+On Windows and Linux the app keeps everything in two folders **next to the file you launched**, so you can run it from a USB stick and it leaves nothing behind on the PC:
+
+- `IEM-Profile/` - your settings, themes and saved reviews.
+- `IEM-Data/` - optional database updates (see below).
+
+If the folder isn't writable (for example a read-only drive) it quietly falls back to the normal per-user location.
 
 ---
 
 ## 🔄 Updating IEM Data (Without Reinstalling)
 
-You don't need to reinstall the app to get newly measured IEMs:
+You don't need a new app version to get newly measured IEMs:
 
 1. Download the latest data from the **[📦 Database Repo](https://github.com/MyLittlePrimordia/Database/archive/refs/heads/main.zip)**.
-2. Extract and drop `database.json` and the `data/` folder into your app directory:
-   - **Windows:** Drop into the same folder as `IEM Tool.exe`.
-   - **macOS:** Right-click `IEM Tool.app` → *Show Package Contents* → `Contents/Resources/`.
-   - **Linux:** Drop in the same directory as the `AppImage`.
-3. Restart **IEM Tool** to see the new gear and curves.
+2. Extract it and drop `database.json` (and `database.json.gz` if included) plus the `data/` folder into an **`IEM-Data`** folder:
+   - **Windows:** create `IEM-Data` next to `IEM-Tool.exe`.
+   - **Linux:** create `IEM-Data` next to the AppImage.
+   - **macOS:** `~/Library/Application Support/IEM Tool/IEM-Data/`
+3. Restart **IEM Tool**.
+
+Files in `IEM-Data` win over the database built into the app, and anything missing there is still read from the built-in copy. To go back to the built-in database, delete the `IEM-Data` folder.
 
 ---
 

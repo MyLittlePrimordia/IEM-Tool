@@ -1,11 +1,48 @@
-const { app, BrowserWindow, screen } = require('electron');
+const { app, BrowserWindow, screen, ipcMain } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
+const { captureThemeBackdrop } = require('./theme-backdrop.js');
+
+// ---------------------------------------------------------------------------
+// Portable mode.
+//
+// When the app is launched as the Windows portable .exe (electron-builder sets
+// PORTABLE_EXECUTABLE_DIR) or as a Linux AppImage (APPIMAGE), everything the
+// app writes lives in two folders NEXT TO the executable, so the whole thing
+// can sit on a USB stick and leaves nothing behind in %APPDATA% / ~/.config:
+//
+//   IEM-Data/     optional database update (database.json + data/), see below
+//   IEM-Profile/  settings, saved reviews, crash.log (Chromium's user-data dir)
+//
+// If that folder is not writable (read-only media, Program Files) we silently
+// fall back to the normal per-user locations. macOS (.dmg) has no portable
+// mode: it always uses ~/Library/Application Support/IEM Tool.
+// ---------------------------------------------------------------------------
+function portableBaseDir() {
+  const dir = process.env.PORTABLE_EXECUTABLE_DIR ||
+    (process.env.APPIMAGE ? path.dirname(process.env.APPIMAGE) : null);
+  if (!dir) return null;
+  try { fs.accessSync(dir, fs.constants.W_OK); return dir; } catch (_) { return null; }
+}
+const PORTABLE_BASE = portableBaseDir();
+if (PORTABLE_BASE) {
+  try { app.setPath('userData', path.join(PORTABLE_BASE, 'IEM-Profile')); } catch (_) {}
+}
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  // ONNX Runtime Web needs two of these to work at all:
+  //  - .wasm MUST be application/wasm. WebAssembly.instantiateStreaming rejects
+  //    any other type, and falls back to arrayBuffer only if streaming is
+  //    unavailable - which is not something to rely on.
+  //  - .mjs is the ES-module glue some ORT builds load lazily.
+  // Without them both fall through to application/octet-stream and session
+  // creation fails with an opaque MIME error.
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.wasm': 'application/wasm',
+  '.onnx': 'application/octet-stream',
   '.json': 'application/json; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8',
@@ -206,6 +243,45 @@ function getDataRoot() {
   return app.isPackaged ? process.resourcesPath : getAppRoot();
 }
 
+// Writable, user-updatable copy of the curve database. Looked up BEFORE the
+// copy that ships inside the app, so dropping a newer database.json + data/
+// into this folder updates the app without reinstalling or re-downloading it.
+// Deleting the folder reverts to the database that shipped with the build.
+//   Windows portable : <folder of the .exe>/IEM-Data
+//   Linux AppImage   : <folder of the AppImage>/IEM-Data
+//   macOS / installed: <userData>/IEM-Data
+function getExternalDataDir() {
+  if (!app.isPackaged) return null;
+  return path.join(PORTABLE_BASE || app.getPath('userData'), 'IEM-Data');
+}
+
+function isFile(p) {
+  try { return fs.statSync(p).isFile(); } catch (_) { return false; }
+}
+
+// Resolves a data-root-relative path to a real file: external folder first,
+// bundled copy second. database.json and database.json.gz are treated as ONE
+// unit - if the external folder supplies either of them, only the external
+// pair is served. Otherwise a stale bundled .gz (which the app prefers) would
+// silently shadow a freshly dropped database.json.
+function resolveDataFile(relativePath, relPosix) {
+  const bundledRoot = getDataRoot();
+  const extRoot = getExternalDataDir();
+  if (extRoot) {
+    const isDbIndex = relPosix === 'database.json' || relPosix === 'database.json.gz';
+    const extHasIndex = isFile(path.join(extRoot, 'database.json')) || isFile(path.join(extRoot, 'database.json.gz'));
+    const extPath = path.normalize(path.join(extRoot, relativePath));
+    const extRel = path.relative(extRoot, extPath);
+    const extSafe = extRel !== '' && !extRel.startsWith('..') && !path.isAbsolute(extRel);
+    if (extSafe && isFile(extPath)) return extPath;
+    if (isDbIndex && extHasIndex) return null; // do not fall back to the bundled index
+  }
+  const bundledPath = path.normalize(path.join(bundledRoot, relativePath));
+  const bRel = path.relative(bundledRoot, bundledPath);
+  const bSafe = bRel === '' || (!bRel.startsWith('..') && !path.isAbsolute(bRel));
+  return bSafe ? bundledPath : null;
+}
+
 const DATA_ROOT_RELATIVE = new Set(['database.json', 'database.json.gz']);
 function isDataRootPath(relPosix) {
   return DATA_ROOT_RELATIVE.has(relPosix) || relPosix === 'data' || relPosix.startsWith('data/');
@@ -246,15 +322,12 @@ function startLocalServer(rootDir) {
         // base directory than the one relativePath/isSafe were just checked
         // against.
         if (isDataRootPath(relPosix)) {
-          const dataRoot = getDataRoot();
-          const dataFilePath = path.normalize(path.join(dataRoot, relativePath));
-          const dataRelative = path.relative(dataRoot, dataFilePath);
-          const dataSafe = (dataRelative === '') || (!dataRelative.startsWith('..') && !path.isAbsolute(dataRelative));
-          if (!dataSafe) {
-            sendEmpty(res, 403);
+          const resolved = resolveDataFile(relativePath, relPosix);
+          if (!resolved) {
+            sendEmpty(res, 404);
             return;
           }
-          filePath = dataFilePath;
+          filePath = resolved;
         }
 
         fs.stat(filePath, (err, stats) => {
@@ -281,8 +354,23 @@ function startLocalServer(rootDir) {
       }
     });
 
-    server.listen(0, '127.0.0.1', () => resolve(server.address().port));
-    server.on('error', (e) => { logCrash(e); reject(e); });
+    // localStorage and IndexedDB (settings, themes, saved reviews) are keyed by
+    // origin, and the origin includes the port. A random port per launch meant
+    // a brand-new, empty origin every time, so nothing persisted. Prefer one
+    // fixed port; only if it is taken fall back to a random one.
+    const PREFERRED_PORT = 49617;
+    let triedFallback = false;
+    server.on('error', (e) => {
+      if (e && e.code === 'EADDRINUSE' && !triedFallback) {
+        triedFallback = true;
+        server.listen(0, '127.0.0.1');
+        return;
+      }
+      logCrash(e);
+      reject(e);
+    });
+    server.on('listening', () => resolve(server.address().port));
+    server.listen(PREFERRED_PORT, '127.0.0.1');
   });
 }
 
@@ -290,17 +378,41 @@ async function createWindow() {
   const rootDir = getAppRoot();
   const port = await startLocalServer(rootDir);
 
+  // R1: the window is no longer maximized on launch.
+  //
+  // Two reasons, both user-visible:
+  //  1. Windows draws a MAXIMIZED window with SQUARE corners. `roundedCorners`
+  //     only applies to a restored window, so auto-maximizing meant the rounded
+  //     frame the reskin asks for was never visible on startup.
+  //  2. The custom caption buttons are part of the design; maximizing on launch
+  //     hid the thing the user opens the app to see.
+  //
+  // Sized to 90% of the work area (and capped at 1600x900 so it does not become
+  // a wall of black on a 4K panel) and centred. The user can still maximize
+  // with the button, double-click on the drag region, or Win+Up.
   const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
+  const winWidth = Math.min(1600, Math.round(screenWidth * 0.9));
+  const winHeight = Math.min(900, Math.round(screenHeight * 0.9));
 
   mainWindow = new BrowserWindow({
-    width: screenWidth,
-    height: screenHeight,
-    x: 0,
-    y: 0,
+    width: winWidth,
+    height: winHeight,
+    x: Math.round((screenWidth - winWidth) / 2),
+    y: Math.round((screenHeight - winHeight) / 2),
     minWidth: 360,
     minHeight: 360,
     autoHideMenuBar: true,
     show: false,
+    // R1: frameless, so index.html draws its own caption bar. Paired with
+    // titleBarStyle:'hidden' so Chromium does not also reserve space for a
+    // caption it will not paint.
+    frame: false,
+    titleBarStyle: 'hidden',
+    // Must match --bg-base in app/css/app.css. Electron uses it to paint the
+    // window before the first frame renders, which is what makes the launch
+    // fade in from black instead of flashing white.
+    backgroundColor: '#000000',
+    roundedCorners: true,
     icon: path.join(__dirname, 'app', 'icon.png'),
     webPreferences: {
       contextIsolation: true,
@@ -319,8 +431,18 @@ async function createWindow() {
     if (!url.startsWith(`http://127.0.0.1:${port}/`)) e.preventDefault();
   });
 
+  // R1: tell the renderer when maximize/restore changes so the caption button
+  // can swap its glyph. Fires for the button, for double-click on the drag
+  // region, and for Win+Up / Win+Down, so all three stay in sync.
+  const pushMaximizeState = () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('win:maximized-changed', mainWindow.isMaximized());
+    }
+  };
+  mainWindow.on('maximize', pushMaximizeState);
+  mainWindow.on('unmaximize', pushMaximizeState);
+
   mainWindow.once('ready-to-show', () => {
-    mainWindow.maximize();
     mainWindow.show();
   });
 
@@ -328,6 +450,31 @@ async function createWindow() {
     mainWindow = null;
   });
 }
+
+// R1: custom caption-bar commands. Three channels only, each handled here
+// rather than in the renderer, so a compromised page still cannot reach
+// anything beyond minimise / toggle-maximise / close.
+ipcMain.on('win:minimize', () => { if (mainWindow) mainWindow.minimize(); });
+ipcMain.on('win:toggle-maximize', () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  else mainWindow.maximize();
+});
+ipcMain.on('win:close', () => { if (mainWindow) mainWindow.close(); });
+ipcMain.on('win:is-maximized', (event) => {
+  event.returnValue = mainWindow ? mainWindow.isMaximized() : false;
+});
+
+// Review-card export backdrop. The rasterising itself lives in theme-backdrop.js
+// so it can be required directly by tools/verify-theme-backdrop-export.js and
+// tested as the production function rather than as a re-implementation.
+//
+// Scope: takes a theme id and two integers, returns a PNG data URL (or null),
+// touches nothing on disk, and passes no renderer-supplied markup or path.
+ipcMain.handle('theme:capture-backdrop', (_event, payload) => {
+  const req = payload && typeof payload === 'object' ? payload : {};
+  return captureThemeBackdrop(req.themeId, req.width, req.height);
+});
 
 // Enforce a single running instance: re-launching just focuses the existing window.
 if (!app.requestSingleInstanceLock()) {

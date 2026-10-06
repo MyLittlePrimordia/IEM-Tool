@@ -150,29 +150,37 @@ const EQ_VizFullscreenMethods = {
         this._onFullscreenChangeHandler = null;
     },
 
+    /* R4: the effect label is now DERIVED from vizModeIndex rather than only
+     * being rewritten when the user clicks. It used to live inline inside
+     * cycleVizEffect, so the button's text was a hard-coded string in the
+     * markup that only became correct after the first click - and any markup
+     * inside the button was destroyed on every cycle. Split out so init() can
+     * call it too, and so the control can hold real structure. */
+    _vizEffectName: function() {
+        const names = {
+            horizontalSpectrogram: '\u{1F4C8} Spectrogram',
+            fullScreenWaterfall: '\u{1F30A} Waterfall',
+            acousticTunnel: '\u{1F30C} Tunnel',
+            oledSpectrum: '\u{1F4CA} Spectrum',
+            oscilloscope: '\u{1F4C8} Waveform',
+            audioMesh: '\u{1F310} Mesh'
+        };
+        const id = this.vizModes[this.vizModeIndex];
+        let name = names[id];
+        if (!name && this.customEffectsList) {
+            const customMatch = this.customEffectsList.find(e => e.id === id);
+            if (customMatch) name = customMatch.emoji + ' ' + customMatch.name;
+        }
+        return name || 'Unknown';
+    },
+
+    _updateVizEffectLabel: function() {
+        const btn = document.getElementById('viz-effect-btn');
+        if (btn) btn.textContent = this._vizEffectName();
+    },
+
     cycleVizEffect: function() {
         this.vizModeIndex = (this.vizModeIndex + 1) % this.vizModes.length;
-        const btn = document.getElementById('viz-effect-btn');
-        if (btn) {
-            const names = {
-                horizontalSpectrogram: '🌅 Spectrogram',
-                fullScreenWaterfall: '⛰️ Waterfall',
-                acousticTunnel: '🌌 Tunnel',
-                oledSpectrum: '📊 Spectrum',
-                oscilloscope: '📈 Waveform',
-                audioMesh: '🌐 Mesh'
-            };
-
-            let activeName = names[this.vizModes[this.vizModeIndex]];
-
-            if (!activeName && this.customEffectsList) {
-                const customMatch = this.customEffectsList.find(e => e.id === this.vizModes[this.vizModeIndex]);
-                if (customMatch) {
-                    activeName = `${customMatch.emoji} ${customMatch.name}`;
-                }
-            }
-
-            btn.textContent = ` ${activeName || 'Unknown'}`;
-        }
+        this._updateVizEffectLabel();
     },
 };

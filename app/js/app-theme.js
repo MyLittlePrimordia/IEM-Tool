@@ -40,7 +40,16 @@ const App_Theme = {
                 });
             }
 
-            document.documentElement.className = 'theme-' + themeId;
+            // Swap the theme class instead of assigning className. Assigning
+            // wiped every other class on <html>, so any class another feature
+            // (or a future grid-pattern hook) relies on could be silently
+            // destroyed by a theme switch - which is a class of bug that shows
+            // up as "the theme only half applied".
+            const wanted = 'theme-' + themeId;
+            Array.from(root.classList)
+                .filter(c => c.startsWith('theme-') && c !== wanted)
+                .forEach(c => root.classList.remove(c));
+            root.classList.add(wanted);
 
             const accentColor = t.accent || (t.variables && t.variables['--accent-blue']) || '#787878';
             const rgbStr = (typeof PEQDB_Module !== 'undefined' && PEQDB_Module.hexToRgb) ? PEQDB_Module.hexToRgb(accentColor) : '120, 120, 120';
@@ -49,26 +58,24 @@ const App_Theme = {
             const expThemeSelector = document.getElementById('export-theme-selector');
             if (expThemeSelector) expThemeSelector.value = themeId;
 
-            ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings'].forEach(id => {
+            const TABS = ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings'];
+            const activeTabId = TABS.find(id => {
+                const pane = document.getElementById(`pane-${id}`);
+                return pane && !pane.classList.contains('hidden');
+            }) || 'find';
+            TABS.forEach(id => {
                 const b = document.getElementById(`tab-${id}-btn`);
                 if (b) {
+                    b.classList.toggle('is-active-tab', id === activeTabId);
+                    // Clear any inline colour a previous version wrote. The active
+                    // look now comes from .is-active-tab in the stylesheet, which
+                    // is token-driven and so cannot go stale across theme switches.
                     b.style.backgroundColor = '';
                     b.style.color = '';
                     b.style.boxShadow = '';
                     b.style.transform = '';
                 }
             });
-            const activeTabId = ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings'].find(id => {
-                const pane = document.getElementById(`pane-${id}`);
-                return pane && !pane.classList.contains('hidden');
-            }) || 'find';
-            const activeBtn = document.getElementById(`tab-${activeTabId}-btn`);
-            if (activeBtn) {
-                activeBtn.style.backgroundColor = accentColor;
-                activeBtn.style.color = window.App && App.getContrastTextColor ? App.getContrastTextColor(accentColor) : '#ffffff';
-                activeBtn.style.boxShadow = 'inset 2px 2px 0px 0px rgba(0, 0, 0, 0.35)';
-                activeBtn.style.transform = 'translate(1px, 1px)';
-            }
 
             const themeBtn = document.getElementById('theme-cycle-btn');
             if (themeBtn) {
@@ -297,7 +304,9 @@ const App_Theme = {
         }
     },
 
-    BASELINE_FONT_NAME: 'Silkscreen',
+    // Kept in sync with iem-module.js: R0 moved the metric baseline from
+    // 'Silkscreen' to 'JetBrains Mono' (the new default font).
+    BASELINE_FONT_NAME: 'JetBrains Mono',
 
     calculateFontMetrics: function(fontName, baselineFamily) {
         try {

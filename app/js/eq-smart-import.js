@@ -1,9 +1,127 @@
 const EQ_SmartImportMethods = {
     parsedEQData: null,
+
+    // ---- Destructive-import safety -------------------------------------------
+    // parsePeaceFormat() commits by calling loadValues(), which overwrites the
+    // preamp and ALL 20 band slots with whatever it managed to parse. Nothing
+    // in that path kept a snapshot, so a misparse destroyed the user's mix with
+    // no undo. Two independent guards now:
+    //
+    //   1. snapshotEQState / restoreEQState + an Undo affordance on the toast
+    //      that announces the import. This is the one that fixes the CLASS of
+    //      bug: even a parse we get wrong cannot lose work.
+    //   2. The plausibility gate in parsePeaceFormat, which refuses to commit
+    //      to a "this is a filter set" reading of an ambiguous paste at all.
+    //
+    // Snapshot/restore has to read the DOM, not the band model, because the DOM
+    // is the source of truth for the main bank: updateAudioConnections()
+    // (eq-dsp-graph.js:414-421) reads eq-f{i} / eq-s{i} / eq-q_m{i} and only
+    // falls back to the model when those are absent. They are always present.
+    // The advanced bank is the mirror image - #eq-panel-advanced is an empty
+    // container with no inputs built for it, so eq-a{i} / eq-q_a{i} never exist
+    // and eq-dsp-graph.js:457-466 falls back to advancedBands[i].hz / .g / .q.
+
+    snapshotEQState: function() {
+        var snap = {
+            preamp: null,
+            activePreset: this.activePreset,
+            main: [],
+            adv: [],
+            bypassed: []
+        };
+        var preSlider = document.getElementById('eq-preampSlider');
+        snap.preamp = preSlider ? preSlider.value : this.preVal;
+        for (var i = 0; i < this.bands.length; i++) {
+            var b = this.bands[i];
+            var f = document.getElementById('eq-f' + i);
+            var fs = document.getElementById('eq-fs_m' + i);
+            var g = document.getElementById('eq-s' + i);
+            var gn = document.getElementById('eq-s' + i + '_num');
+            var q = document.getElementById('eq-q_m' + i);
+            var qn = document.getElementById('eq-q_m' + i + '_num');
+            snap.main.push({
+                hz: f ? f.value : b.hz,
+                fs: fs ? fs.value : null,
+                g: g ? g.value : 0,
+                gn: gn ? gn.value : null,
+                q: q ? q.value : b.defaultQ,
+                qn: qn ? qn.value : null,
+                type: b.type || 'peaking',
+                slope: b.slope
+            });
+        }
+        for (var j = 0; j < this.advancedBands.length; j++) {
+            var ab = this.advancedBands[j];
+            snap.adv.push({ hz: ab.hz, g: ab.g, q: ab.q, type: ab.type, slope: ab.slope });
+        }
+        if (window.bypassedBands && typeof window.bypassedBands.forEach === 'function') {
+            window.bypassedBands.forEach(function(k) { snap.bypassed.push(k); });
+        }
+        return snap;
+    },
+
+    restoreEQState: function(snap) {
+        if (!snap) return false;
+        var self = this;
+        var preValEl = document.getElementById('eq-preampVal');
+        var preSlider = document.getElementById('eq-preampSlider');
+        if (preValEl && snap.preamp != null) preValEl.value = Number(snap.preamp).toFixed(1);
+        if (preSlider && snap.preamp != null) {
+            preSlider.value = Math.max(-20, Math.min(20, Number(snap.preamp)));
+        }
+        function setVal(id, v) { var e = document.getElementById(id); if (e && v != null) e.value = v; }
+        snap.main.forEach(function(m, i) {
+            var b = self.bands[i];
+            if (!b) return;
+            b.type = m.type;
+            if (m.slope !== undefined) b.slope = m.slope;
+            setVal('eq-f' + i, m.hz);
+            setVal('eq-fs_m' + i, m.fs);
+            setVal('eq-s' + i, m.g);
+            setVal('eq-s' + i + '_num', m.gn);
+            setVal('eq-q_m' + i, m.q);
+            setVal('eq-q_m' + i + '_num', m.qn);
+        });
+        snap.adv.forEach(function(a, i) {
+            var b = self.advancedBands[i];
+            if (!b) return;
+            b.hz = a.hz; b.g = a.g; b.q = a.q; b.type = a.type;
+            if (a.slope !== undefined) b.slope = a.slope;
+        });
+        if (window.bypassedBands) {
+            window.bypassedBands.clear();
+            snap.bypassed.forEach(function(k) { window.bypassedBands.add(k); });
+        }
+        this.activePreset = snap.activePreset || null;
+        // Re-drive every band through the normal update path. The DOM values we
+        // just wrote are what updateAudioConnections() reads, so this is what
+        // actually pushes the restored curve back to the worklet - without it
+        // the audio would keep playing the imported curve while the sliders
+        // appeared restored.
+        var prevFlag = this.isProgrammaticSliderUpdate;
+        this.isProgrammaticSliderUpdate = true;
+        try {
+            for (var i = 0; i < this.bands.length; i++) this.updateSlider(i);
+            for (var j = 0; j < this.advancedBands.length; j++) this.updateSlider(j, 'adv');
+            if (this.updatePreamp) this.updatePreamp();
+        } finally {
+            this.isProgrammaticSliderUpdate = prevFlag;
+        }
+        if (this.updateAudioConnections) this.updateAudioConnections();
+        if (this.renderCustomPresets) this.renderCustomPresets();
+        if (this.drawCurve) this.drawCurve();
+        return true;
+    },
+
             showSmartImportModal: function() {
             var modal = document.getElementById('smart-import-modal');
             if (modal) { modal.classList.remove('hidden'); Mascot.update(); }
             var textarea = document.getElementById('smart-import-textarea');
+            // Wire the expand/collapse controls HERE, on open. Doing it lazily from
+            // inside expandSmartImportField cannot work: the only thing that calls
+            // that is the button's own click listener, which is what is not wired
+            // yet, so the button would never do anything.
+            this._smartImportWireExpand();
             if (textarea) { textarea.value = ''; setTimeout(function() { textarea.focus(); }, 50); }
             var dz = document.getElementById('smart-import-dropzone');
             if (dz && !dz._init) {
@@ -22,9 +140,104 @@ const EQ_SmartImportMethods = {
             }
         },
         closeSmartImportModal: function() {
+            // Collapse first: the textarea lives in the expanded overlay while it
+            // is open, so closing the modal underneath it would hide the text
+            // and then the next open would restore a detached node.
+            this.collapseSmartImportExpand({ silent: true });
             var modal = document.getElementById('smart-import-modal');
             if (modal) modal.classList.add('hidden');
             Mascot.update();
+        },
+
+        /* Expand / collapse the paste field.
+           The SAME textarea element is moved between the collapsed row and the
+           expanded overlay instead of being copied into a second one. That keeps
+           a single source of truth: the value, the caret position, the selection,
+           the native undo history and the #smart-import-textarea id that
+           processSmartImport() reads all survive the move untouched. A mirrored
+           pair would need two-way sync on every input event plus paste, and
+           would have two undo stacks that disagree.
+
+           Listeners are attached once here rather than through data-action,
+           because these two controls are created with the modal and are not part
+           of the generated action table. */
+        expandSmartImportField: function() {
+            var ta = document.getElementById('smart-import-textarea');
+            var overlay = document.getElementById('smart-import-expand-overlay');
+            var slot = document.getElementById('smart-import-expand-slot');
+            var btn = document.getElementById('smart-import-expand-btn');
+            if (!ta || !overlay || !slot) return;
+
+            this._smartImportWireExpand();
+
+            var caret = ta.selectionStart;
+            slot.appendChild(ta);
+            ta.classList.add('is-expanded');
+            overlay.classList.add('is-open');
+            if (btn) btn.setAttribute('aria-expanded', 'true');
+            // Moving an element drops focus and, in Chromium, can reset the
+            // caret to the end - which would be very wrong for a long paste.
+            ta.focus();
+            try { ta.setSelectionRange(caret, caret); } catch (e) { /* noop */ }
+        },
+
+        collapseSmartImportExpand: function(opts) {
+            var ta = document.getElementById('smart-import-textarea');
+            var overlay = document.getElementById('smart-import-expand-overlay');
+            var home = document.getElementById('smart-import-textarea-home');
+            var btn = document.getElementById('smart-import-expand-btn');
+            if (!ta || !overlay || !home) return;
+            if (!overlay.classList.contains('is-open')) return;   // already collapsed
+
+            var caret = ta.selectionStart;
+            home.appendChild(ta);
+            ta.classList.remove('is-expanded');
+            overlay.classList.remove('is-open');
+            if (btn) btn.setAttribute('aria-expanded', 'false');
+            if (!(opts && opts.silent) && document.getElementById('smart-import-modal')) {
+                ta.focus();
+                try { ta.setSelectionRange(caret, caret); } catch (e) { /* noop */ }
+            }
+        },
+
+        toggleSmartImportExpand: function() {
+            var overlay = document.getElementById('smart-import-expand-overlay');
+            if (overlay && overlay.classList.contains('is-open')) this.collapseSmartImportExpand();
+            else this.expandSmartImportField();
+        },
+
+        _smartImportWireExpand: function() {
+            if (this._smartImportExpandWired) return;
+            var self = this;
+            this._smartImportExpandWired = true;
+
+            var expandBtn = document.getElementById('smart-import-expand-btn');
+            var collapseBtn = document.getElementById('smart-import-collapse-btn');
+            var overlay = document.getElementById('smart-import-expand-overlay');
+
+            if (expandBtn) {
+                expandBtn.addEventListener('click', function() { self.expandSmartImportField(); });
+            }
+            if (collapseBtn) {
+                collapseBtn.addEventListener('click', function() { self.collapseSmartImportExpand(); });
+            }
+            if (overlay) {
+                // Click the backdrop (but not the panel) to dismiss.
+                overlay.addEventListener('mousedown', function(e) {
+                    if (e.target === overlay) self.collapseSmartImportExpand();
+                });
+            }
+            // Esc collapses from anywhere while the overlay is open. Bound once at
+            // the document and guarded on visibility so it cannot swallow an Esc
+            // that belongs to some other dialog.
+            document.addEventListener('keydown', function(e) {
+                if (e.key !== 'Escape') return;
+                var ov = document.getElementById('smart-import-expand-overlay');
+                if (ov && ov.classList.contains('is-open')) {
+                    e.preventDefault();
+                    self.collapseSmartImportExpand();
+                }
+            });
         },
         handleSmartFileSelect: function(e) {
             var files = e.target.files;
@@ -127,6 +340,9 @@ const EQ_SmartImportMethods = {
                 var lines = text.split(/\r?\n/);
                 var preamp = 0;
                 var mappedAny = false;
+                var mappedGains = [];
+                var rawThirdColumn = [];
+                var rawBranchRows = 0;
                 this._importFullWarned = false;
                 var mainVals = this.bands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
                 var advVals = this.advancedBands.map(function(b, i) { return { hz: b.hz, g: 0, q: b.defaultQ }; });
@@ -179,6 +395,12 @@ const EQ_SmartImportMethods = {
                         }
                     }
                     // Check for raw column arrays: "20 3.5 1.2" (Freq, Gain, Q)
+                    // The third column is unlabelled here, so it is only a Q if it
+                    // falls inside the range the app can actually apply: the Q
+                    // slider is min=0.1 max=10 (eq-core.js:838). A value outside
+                    // that is not a Q - it is a phase column, a bandwidth, a slope
+                    // or a score - and reading it as Q builds a fictional EQ out of
+                    // a measurement table. Recorded so parsePeaceFormat can tell.
                     else {
                         var parts = clean.split(/[\s,;\t]+/).map(Number);
                         if (parts.length >= 3 && !parts.some(isNaN)) {
@@ -186,22 +408,53 @@ const EQ_SmartImportMethods = {
                                 fc = Math.round(parts[0]);
                                 gain = parts[1];
                                 q = parts[2];
+                                rawThirdColumn.push(parts[2]);
+                                rawBranchRows++;
                             }
                         }
                     }
                     
                     if (fc !== null) {
                         mappedAny = true;
+                        mappedGains.push(gain);
                         self.mapSingleFilter(fc, gain, q, filterType, mainVals, advVals, usedMain, usedAdv);
                     }
                 });
-                
+
                 // Nothing recognizably parametric was parsed (e.g. a pasted
                 // frequency-response table with an extra phase column, or a
                 // 3-column measurement block). Bail out before loadValues wipes
                 // the current EQ, so processSmartImport can fall through to the
                 // raw curve importer instead.
                 if (preamp === 0 && !mappedAny) return false;
+
+                // Plausibility gate. The 3-column raw branch above accepts ANY numeric row
+                // whose third value lands in [0.01, 40], so a pasted measurement
+                // table (freq, dB, phase-degrees / bandwidth / score) is read as
+                // freq/gain/Q and mapped onto the bands. The only thing that used
+                // to stop this was the !mappedAny test above, which fires
+                // precisely when parsing SUCCEEDED - so the guard protected
+                // against the one case that was never a problem and let the
+                // destructive one through.
+                //
+                // Three checks, each using something we already know:
+                //  - The third column of an unlabelled row is only a Q if it is
+                //    inside the Q slider's own range (0.1-10). A phase column,
+                //    a bandwidth, a slope or a score is not, and reading it as Q
+                //    invents filters out of a measurement table.
+                //  - The app has 10 main + 10 advanced slots. More parsed rows
+                //    than that cannot be a filter set; they are a curve, and
+                //    mapping them was silently collapsing them onto the nearest
+                //    slots anyway (behind the "Import slots full" toast).
+                //  - If every parsed gain is 0 there is nothing to apply, and
+                //    loadValues would flatten all 20 bands to zero.
+                var slotCount = mainVals.length + advVals.length;
+                var nonZeroGains = mappedGains.filter(function(g) { return g !== 0; }).length;
+                var thirdTooWide = rawThirdColumn.some(function(v) { return v > 10 || v < 0.1; });
+                if (mappedAny && preamp === 0) {
+                    if (rawBranchRows > 0 && thirdTooWide) return false;
+                    if (mappedGains.length > slotCount || nonZeroGains === 0) return false;
+                }
 
                 // Preamp-only paste: apply just the preamp, leave all bands
                 // untouched (loading all-zero mainVals here would flatten 20
@@ -216,8 +469,22 @@ const EQ_SmartImportMethods = {
                     return true;
                 }
 
+                // Snapshot before the destructive write, and offer Undo on the
+                // toast that reports it. The gate above narrows what can reach
+                // here; this is what guarantees a wrong parse is recoverable.
+                var self2 = this;
+                var before = this.snapshotEQState();
                 this.loadValues({ preVal: preamp, mainVals: mainVals, advVals: advVals });
-                showToast("Parametric EQ profile processed!", "🪄");
+                showToast("Parametric EQ profile processed — " + mappedGains.length + " filter(s).", "🪄", {
+                    duration: 9000,
+                    action: {
+                        label: 'Undo',
+                        onClick: function () {
+                            self2.restoreEQState(before);
+                            showToast("EQ restored to before the import.", "↩️");
+                        }
+                    }
+                });
                 return true;
             },
         detectFilterType: function(raw) {
@@ -298,3 +565,56 @@ const EQ_SmartImportMethods = {
             this.loadValues({ preVal: 0, mainVals: mainVals, advVals: advVals });
         },
 };
+
+
+// ---- Ctrl+Z undo for EQ edits -------------------------------------------------
+// Reuses snapshotEQState / restoreEQState above. A snapshot of the CURRENT
+// state is taken just before each user gesture inside the EQ workspace
+// (pointer press or arrow-key nudge), so undo returns to the state from before
+// the gesture. Capped at 20, in memory only, EQ workspace only.
+(function () {
+    var stack = [];
+    var MAX = 20;
+    var ZONES = '#eq-col-db, #eq-col-graph, #eq-col-console';
+
+    function snap() {
+        var eq = window.EQ;
+        if (!eq || typeof eq.snapshotEQState !== 'function') return null;
+        var s = eq.snapshotEQState();
+        return { key: JSON.stringify(s), snap: s };
+    }
+    function record(e) {
+        try {
+            if (!e.target || !e.target.closest || !e.target.closest(ZONES)) return;
+            var cur = snap();
+            if (!cur) return;
+            var top = stack[stack.length - 1];
+            if (top && top.key === cur.key) return;
+            stack.push(cur);
+            if (stack.length > MAX) stack.shift();
+        } catch (_) {}
+    }
+    document.addEventListener('pointerdown', record, true);
+    document.addEventListener('keydown', function (e) {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (e.key && e.key.indexOf('Arrow') === 0) record(e);
+    }, true);
+
+    EQ_SmartImportMethods.undoEQ = function () {
+        try {
+            var zone = document.getElementById('eq-col-graph');
+            if (!zone || zone.offsetParent === null) return false;
+            var cur = snap();
+            if (!cur) return false;
+            var prev = null;
+            while (stack.length) {
+                var c = stack.pop();
+                if (c.key !== cur.key) { prev = c; break; }
+            }
+            if (!prev) return false;
+            this.restoreEQState(prev.snap);
+            if (typeof showToast === 'function') showToast('Undid last EQ change', '↩️');
+            return true;
+        } catch (err) { console.error('[EQ undo]', err); return false; }
+    };
+})();

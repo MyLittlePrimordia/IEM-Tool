@@ -190,7 +190,30 @@ const EventBinding = {
             return raw;
         }
 
-        const CMD_MODULE_ALIASES = { PEQDB_Module: 'PEQDB' };
+        // The only modules a data-cmd attribute may name, mapped to the global
+        // they resolve through.
+        //
+        // The old lookup was `window[modName] || window[CMD_MODULE_ALIASES[modName]]`,
+        // i.e. ANY property of window. A data-cmd attribute could therefore reach
+        // every global in the renderer - sessionStorage.clear, localStorage.setItem,
+        // history.back, location.assign, document.adoptNode, Notification,
+        // postMessage, fetch, Worker. The markup is app-authored today and the CSP
+        // (script-src 'self' 'wasm-unsafe-eval', so eval() is blocked) is a genuine
+        // second line, but neither fact should be what stands between a DOM
+        // attribute and the whole window object. Four modules is the complete set
+        // in use: measured across every data-cmd* attribute in a live DOM -
+        // EQ 120, FindEngine 60, IEM 733, PEQDB_Module 4715.
+        //
+        // PEQDB_Module -> PEQDB: iem-module.js init() exposes the PEQdb module as
+        // `window.PEQDB`, but the markup names it `PEQDB_Module`. The alias lives
+        // here rather than putting PEQDB_Module on window, because several
+        // `window.PEQDB_Module && ...` guards elsewhere would change meaning.
+        const CMD_MODULES = {
+            EQ: 'EQ',
+            FindEngine: 'FindEngine',
+            IEM: 'IEM',
+            PEQDB_Module: 'PEQDB',
+        };
 
         function runCommand(el, attrName) {
             const cmd = el.getAttribute(attrName);
@@ -200,14 +223,25 @@ const EventBinding = {
                 console.warn('[EventBinding] data-cmd must look like Module.method, got: ' + cmd);
                 return;
             }
-            // Top-level `const` bindings in classic scripts are NOT properties of
-            // window. iem-module.js init() exposes the PEQDB module as
-            // `window.PEQDB`, but the markup names it `PEQDB_Module`, so map the
-            // name here rather than putting PEQDB_Module on window (several
-            // `window.PEQDB_Module && ...` guards elsewhere would change meaning).
+            // Must be an OWN property. `mod[methodName]` alone also finds the
+            // Object.prototype members, and several of those are functions -
+            // data-cmd="IEM.constructor" resolved to Object and was callable,
+            // which walked straight past the module allowlist above.
             const modName = cmd.slice(0, dot);
-            const mod = window[modName] || window[CMD_MODULE_ALIASES[modName]];
-            const fn = mod && mod[cmd.slice(dot + 1)];
+            const globalName = Object.prototype.hasOwnProperty.call(CMD_MODULES, modName)
+                ? CMD_MODULES[modName]
+                : null;
+            if (globalName === null) {
+                console.warn('[EventBinding] data-cmd names a module that is not allowed: ' + cmd);
+                return;
+            }
+            const mod = window[globalName];
+            const methodName = cmd.slice(dot + 1);
+            if (!mod || !Object.prototype.hasOwnProperty.call(mod, methodName)) {
+                console.warn('[EventBinding] data-cmd target is not a function: ' + cmd);
+                return;
+            }
+            const fn = mod[methodName];
             if (typeof fn !== 'function') {
                 console.warn('[EventBinding] data-cmd target is not a function: ' + cmd);
                 return;

@@ -1,13 +1,36 @@
 // Captures the computed border-radius of EVERY element in the app, across all
-// tabs, as a sorted multiset. Run before and after removing the dead `rounded-*`
-// class tokens: if the two sets are identical, the removal provably changed
-// nothing visually.
+// tabs and carousel sub-panels, as a sorted multiset.
+//
+//   node tools/radius-snapshot.js [outfile.json]
+//
+// R0 CHANGED THIS TOOL'S CONTRACT. It used to exist only to prove that deleting
+// the dead `rounded-*` Tailwind tokens was visually inert; the CSS then carried
+// a single global `border-radius: 0px !important`, so the expected result was
+// exactly one distinct value, 0px, across 1,386,676 elements. That global rule
+// is gone (see the POL-001 removal note at the top of app.css).
+//
+// It is now the standing guard on the radius SCALE. The app.css :root declares
+// seven steps --r-xs 4, --r-sm 6, --r-md 8, --r-lg 12, --r-xl 16, --r-2xl 20,
+// --r-pill 999. Anything outside that set means a one-off pixel radius crept
+// back in, which is the exact failure mode the scale exists to prevent.
+//
+// Exit code 0 = every resolved radius is a declared scale step (0px included:
+// square is still a legitimate answer for a slider track or a canvas).
+// Exit code 1 = at least one off-scale radius; they are listed.
 const { app, BrowserWindow } = require('electron');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const APP_ROOT = path.join(__dirname, '..');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.ttf': 'font/ttf', '.woff2': 'font/woff2', '.gz': 'application/gzip', '.txt': 'text/plain; charset=utf-8' };
+
+// The declared scale, plus 0 and the 50% shorthand that border-radius:50%
+// computes to. Anything else is off-scale.
+const ALLOWED = new Set(['0px', '2px', '3px', '4px', '6px', '8px', '12px', '16px', '20px', '999px']);
+// --r-half: the semicircular resonance gauge cap. Its element is 38px wide, so a
+// 38px top radius is the geometry, not a scale step. Keyed on the full
+// 4-corner string because only the two top corners are rounded.
+const ALLOWED_SHAPES = new Set(['38px 38px 0px 0px']);
 
 const SNAP = `(() => {
   const tally = {};
@@ -75,8 +98,27 @@ app.whenReady().then(async () => {
   fs.writeFileSync(out, JSON.stringify(merged, Object.keys(merged).sort(), 1));
   const radii = Object.keys(merged).filter(k => k.startsWith('r=')).map(k => k + ' x' + merged[k]);
   console.log('wrote ' + out);
-  console.log('distinct computed radius values across all 5 tabs:');
+  console.log('distinct computed radius values across all tabs:');
   radii.forEach(r => console.log('   ' + r));
+
+  // R0 gate: every resolved radius must be a declared scale step.
+  const offScale = Object.keys(merged)
+    .filter(k => k.startsWith('r='))
+    .map(k => k.slice(2))
+    .filter(v => !ALLOWED.has(v) && !ALLOWED_SHAPES.has(v));
+  const total = Object.keys(merged).filter(k => k.startsWith('r='))
+    .reduce((n, k) => n + merged[k], 0);
+  if (offScale.length) {
+    console.error('');
+    console.error('RADIUS SCALE VIOLATION — ' + offScale.length + ' off-scale value(s):');
+    offScale.forEach(v => console.error('   ' + v + '  x' + merged['r=' + v]));
+    console.error('Declare a new step in :root (app/css/app.css) or reuse an existing one.');
+    process.exitCode = 1;
+    app.exit(1);
+    return;
+  }
+  console.log('');
+  console.log('RADIUS SCALE OK — all ' + radii.length + ' distinct values are declared steps (' + total + ' elements)');
   app.exit(0);
 });
 setTimeout(() => app.exit(2), 180000);

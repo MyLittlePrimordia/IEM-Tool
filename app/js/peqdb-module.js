@@ -270,11 +270,36 @@
                     }).sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
                 },
 
+                // Truthful progress for the indexing bar.
+                //
+                // The bar used to be derived by counting dataset entries whose
+                // `data` was non-null. That is not a measure of work in
+                // progress: the catalogue is built with `data` already populated
+                // from cache for most entries, and the entries still being
+                // fetched do not flip that field one at a time in a way the UI
+                // can observe, so the count sat at 0 and then the container was
+                // hidden. Hence a bar frozen at 0% for the whole index.
+                //
+                // Counting here instead - one increment per curve this function
+                // actually finishes with, success or failure - measures the real
+                // work. Failures count too, because a file that errors is still
+                // finished work; otherwise the bar would stall on a bad file.
+                _progress: { done: 0, total: 0, active: false },
+
+                getIndexProgress: function() {
+                    return { done: this._progress.done, total: this._progress.total, active: this._progress.active };
+                },
+
+                beginIndexProgress: function(total) {
+                    this._progress = { done: 0, total: total || 0, active: true };
+                },
+
                 loadCurve: async function(item, fileIndex = 0) {
                     const targetFile = item.files && item.files[fileIndex] ? item.files[fileIndex] : item.primaryFilePath;
                     if (!targetFile) return false;
 
                     if (fileIndex === 0 && item.data && Array.isArray(item.data) && item.data.length >= 2) {
+                        this._progress.done++;
                         return true;
                     }
 
@@ -310,9 +335,11 @@
                             ...this._encodeCurve(parsed),
                             indexedAt: Date.now()
                         });
+                        this._progress.done++;
                         return true;
                     } catch (e) {
                         console.warn(`[CurveIndexer] Could not load "${targetFile}":`, e.message);
+                        this._progress.done++;
                         if (fileIndex === 0) {
                             item.data = null;
                             item.cachedInterp = null;
@@ -323,10 +350,52 @@
                 },
 
                 _bgRunning: false,
-                startBackgroundWarmup: function(dataset) {
+                startBackgroundWarmup: async function(dataset) {
 
-                    PEQDB_Module.databaseFullyLoaded = true;
-                    localStorage.setItem('squig_db_indexed', 'true');
+                    // This used to be an empty body that immediately set
+                    // databaseFullyLoaded = true and hid the progress panel. So
+                    // the app claimed to be indexing the measurement database,
+                    // showed a bar pinned at 0%, and then removed the bar before
+                    // any indexing had happened - the work was never done by
+                    // this function at all, only asserted to be finished.
+                    //
+                    // It now actually indexes: each entry's primary curve is
+                    // loaded, loadCurve tallies every completion, and the flag
+                    // is only set once the run really finishes. Entries that fail
+                    // still count as finished work, so one bad file cannot stall
+                    // the bar or prevent the app from becoming ready.
+                    if (this._bgRunning) return;
+                    this._bgRunning = true;
+                    const list = Array.isArray(dataset) ? dataset : [];
+                    const notify = () => {
+                        if (typeof FindEngine !== 'undefined' && FindEngine.updateIndexingProgressBar) {
+                            FindEngine.updateIndexingProgressBar();
+                        }
+                    };
+                    notify();
+
+                    try {
+                        for (let i = 0; i < list.length; i++) {
+                            // Yield periodically so the ticker and the UI can
+                            // actually paint; a tight await-per-item loop still
+                            // starves rendering on a large catalogue.
+                            if (i % 4 === 0) {
+                                await new Promise(r => setTimeout(r, 0));
+                            }
+                            try {
+                                await this.loadCurve(list[i], 0);
+                            } catch (e) {
+                                this._progress.done++;
+                            }
+                            if (i % 5 === 0) notify();
+                        }
+                    } finally {
+                        this._bgRunning = false;
+                        PEQDB_Module.databaseFullyLoaded = true;
+                        localStorage.setItem('squig_db_indexed', 'true');
+                        notify();
+                    }
+
                     const indicator = document.getElementById('peqdb-indexing-indicator');
                     if (indicator) indicator.classList.add('hidden');
                     const progressContainer = document.getElementById('find-progress-container');
@@ -519,6 +588,11 @@
         startBackgroundLoading: function() {
             if (this.databaseFullyLoaded) return;
             const dataset = this.STATE.dataset;
+            // Arm the progress tally with the real work total before any curve
+            // is fetched, so the bar has a denominator from the first tick.
+            if (dataset && dataset.length && CurveIndexer.beginIndexProgress) {
+                CurveIndexer.beginIndexProgress(dataset.length);
+            }
             if (!dataset || dataset.length === 0) {
                 // This branch means the catalogue load FAILED and the fallback
                 // path installed its handful of built-in targets. It used to
@@ -1100,10 +1174,34 @@
 
             if (suggestions.length === 0) { box.classList.add('hidden'); box.innerHTML = ''; return; }
 
+            // data-cmd, not an attribute-form handler. This was `onmousedown="..."`, which
+            // Chromium refuses to compile under `script-src 'self'
+            // 'wasm-unsafe-eval'`, so the chips rendered and clicking did
+            // nothing. Ratcheted by scripts/check-integrity.mjs check #4.
+            //
+            // click rather than mousedown: the #peqdb-search blur handler that
+            // hides this box is a 150ms setTimeout, and click lands inside that
+            // window, so insertSearchSuggestion runs before the box closes.
             box.innerHTML = suggestions.map(s => `
-                <span class="spec-icon-badge" style="width:auto !important; height:24px !important; padding:0 8px; font-size:11px !important; font-weight:800; background:var(--bg-input); border:2px solid #000;" data-tooltip="Search: click to insert" onmousedown="event.preventDefault(); document.getElementById('peqdb-search').value='${escJs(s)}'; document.getElementById('peqdb-search').dispatchEvent(new Event('input')); document.getElementById('peqdb-search-suggestions').classList.add('hidden');">${esc(s)}</span>
+                <span class="spec-icon-badge" style="width:auto !important; height:24px !important; padding:0 8px; font-size:11px !important; font-weight:800; background:var(--bg-input); border:2px solid #000;" data-tooltip="Search: click to insert" data-cmd="PEQDB_Module.insertSearchSuggestion" data-arg-0="${esc(s)}">${esc(s)}</span>
             `).join('');
             box.classList.remove('hidden');
+        },
+
+        // Backs the #peqdb-search-suggestions chips. Extracted from the inline
+        // handler string above. Note the input event is dispatched with
+        // `bubbles: true` - the search input is wired with a delegated
+        // capture-phase listener (peqdb-module.js:1327-1340), which needs the
+        // event to bubble to reach it.
+        insertSearchSuggestion: function(value) {
+            if (value === undefined || value === null) return;
+            const input = document.getElementById('peqdb-search');
+            if (input) {
+                input.value = String(value);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            const box = document.getElementById('peqdb-search-suggestions');
+            if (box) { box.classList.add('hidden'); box.innerHTML = ''; }
         },
 
                 DATA: {
@@ -1720,7 +1818,7 @@ const savedDb = localStorage.getItem('settings_align_db');
                     fileRowHtml = `
                         <div class="flex items-center gap-1.5 mt-1">
                             <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
-                            <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
+                            <div class="db-file-name flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                                 <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
                             </div>
                             <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
@@ -1728,7 +1826,7 @@ const savedDb = localStorage.getItem('settings_align_db');
                     `;
                 } else {
                     fileRowHtml = `
-                        <div class="mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
+                        <div class="db-file-name mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                             <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
                         </div>
                     `;
@@ -2339,7 +2437,14 @@ const savedDb = localStorage.getItem('settings_align_db');
                 item.setAttribute('data-uid', c.uid);
                 item.title = "Drag to Base / Target / Reference slot to change role";
                 const roleLabel = c.role==='base'?'BASE':(c.role==='target'?'TARGET':'REF');
-                item.innerHTML = `<div class="flex items-center justify-between w-full h-6 select-none" draggable="false"><span class="px-2 py-0.5 text-[8.5px] font-black tracking-wider text-white uppercase bg-black/60 border border-white/10 flex-shrink-0" title="Drag to rearrange" draggable="false">${roleLabel}</span><div class="flex items-center gap-1.5" draggable="false"><button data-cmd="PEQDB_Module.toggleVisible" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 text-white text-[11px] flex items-center justify-center border border-white/10 cursor-pointer" title="Show or hide this curve" draggable="false">${c.visible?'👁️':'🙈'}</button><button data-cmd="PEQDB_Module.cycleColor" data-arg-0="@from:uid" class="w-5 h-5 border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style="background-color:${c.color}" title="Change this curve's color" draggable="false"></button><button data-cmd="PEQDB_Module.removeCurve" data-arg-0="@from:uid" class="w-6 h-6 bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-black text-[11px] flex items-center justify-center cursor-pointer" title="Remove this curve" draggable="false">✕</button></div></div><div data-cmd="PEQDB_Module.renameCurve" data-arg-0="@from:uid" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5" draggable="false"><div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none"><span id="marquee-${esc(c.uid)}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span></div></div><div class="flex justify-between items-center w-full h-6" draggable="false"><div class="flex items-center gap-1.5 h-6 decibel-stepper flex-shrink-0 select-none" style="width:110px !important;min-width:110px !important;max-width:110px !important;" draggable="false"><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="-1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve down 1 dB" draggable="false">◄</button><button type="button" data-stop-propagation class="flex-1 h-6 bg-[var(--bg-input)] border-2 border-black text-[#c85a0e] font-mono font-black text-[9px] flex items-center justify-center text-center cursor-default select-none focus:outline-none px-0 min-w-0" draggable="false">${(c.offset||0)>=0?'+':''}${c.offset||0}dB</button><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve up 1 dB" draggable="false">►</button></div><div class="flex items-center gap-1.5" draggable="false"><button data-cmd="PEQDB_Module.exportCurveByUid" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Export this curve as a text file" draggable="false">📥</button><button data-cmd="PEQDB_Module.findMatchesFromDock" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Find similar curves" draggable="false">🔍</button></div></div>`;
+                /* The three header controls carry flex-shrink-0. As flex children they
+           defaulted to shrink:1, so a wide chip (a long role label, or a wide
+           font) squeezed the button row and the 24px controls rendered at 19px -
+           which is exactly the "swatch is smaller than its neighbours"
+           symptom, and it came and went with the curve name rather than
+           reporting itself as a bug. Pinning the size makes the row
+           deterministic. */
+item.innerHTML = `<div class="flex items-center justify-between w-full h-6 select-none" draggable="false"><span class="curve-role-chip px-2 py-0.5 text-[8.5px] font-black tracking-wider text-white uppercase bg-black/60 border border-white/10 flex-shrink-0" title="Drag to rearrange" draggable="false">${roleLabel}</span><div class="flex items-center gap-1.5 flex-shrink-0" draggable="false"><button data-cmd="PEQDB_Module.toggleVisible" data-arg-0="@from:uid" class="w-6 h-6 flex-shrink-0 bg-black/50 hover:bg-black/80 text-white text-[11px] flex items-center justify-center border border-white/10 cursor-pointer" title="Show or hide this curve" draggable="false">${c.visible?'👁️':'🙈'}</button><button data-cmd="PEQDB_Module.cycleColor" data-arg-0="@from:uid" class="curve-card-swatch w-6 h-6 flex-shrink-0 border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style="background-color:${c.color}" title="Change this curve's color" draggable="false">🎨</button><button data-cmd="PEQDB_Module.removeCurve" data-arg-0="@from:uid" class="w-6 h-6 flex-shrink-0 bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-black text-[11px] flex items-center justify-center cursor-pointer" title="Remove this curve" draggable="false">✕</button></div></div><div data-cmd="PEQDB_Module.renameCurve" data-arg-0="@from:uid" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5" draggable="false"><div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none"><span id="marquee-${esc(c.uid)}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span></div></div><div class="flex justify-between items-center w-full h-6" draggable="false"><div class="flex items-center gap-1.5 h-6 decibel-stepper flex-shrink-0 select-none" style="width:110px !important;min-width:110px !important;max-width:110px !important;" draggable="false"><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="-1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve down 1 dB" draggable="false">◄</button><button type="button" data-stop-propagation class="flex-1 h-6 bg-[var(--bg-input)] border-2 border-black text-[#c85a0e] font-mono font-black text-[9px] flex items-center justify-center text-center cursor-default select-none focus:outline-none px-0 min-w-0" draggable="false">${(c.offset||0)>=0?'+':''}${c.offset||0}dB</button><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve up 1 dB" draggable="false">►</button></div><div class="flex items-center gap-1.5" draggable="false"><button data-cmd="PEQDB_Module.exportCurveByUid" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Export this curve as a text file" draggable="false">📥</button><button data-cmd="PEQDB_Module.findMatchesFromDock" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Find similar curves" draggable="false">🔍</button></div></div>`;
                 if (c.role==='base') { baseSlot.appendChild(item); baseCount++; }
                 else if (c.role==='target') { targetSlot.appendChild(item); targetCount++; }
                 else { referencePile.appendChild(item); refCount++; }
@@ -2908,8 +3013,17 @@ setSearchMode: function(mode) {
             updateSearchModeButtons: function() {
                 const sim = document.getElementById('btn-sim-mode');
                 const db = document.getElementById('btn-db-mode');
-                if (sim) sim.classList.toggle('active', this.searchMode === 'similar');
-                if (db) db.classList.toggle('active', this.searchMode !== 'similar');
+                const simOn = this.searchMode === 'similar';
+                if (sim) {
+                    sim.classList.toggle('active', simOn);
+                    // R8: aria-selected follows .active so the row is announced
+                    // correctly rather than only looking selected.
+                    sim.setAttribute('aria-selected', simOn ? 'true' : 'false');
+                }
+                if (db) {
+                    db.classList.toggle('active', !simOn);
+                    db.setAttribute('aria-selected', simOn ? 'false' : 'true');
+                }
             },
 
         handleSimilarityResults: function(matches, fingerprint) {
@@ -3380,7 +3494,7 @@ const countEl = document.getElementById('peqdb-result-count');
                 fileRowHtml = `
                     <div class="flex items-center gap-1.5 mt-1">
                         <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
-                        <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
+                        <div class="db-file-name flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                             <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
                         </div>
                         <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
@@ -3388,7 +3502,7 @@ const countEl = document.getElementById('peqdb-result-count');
                 `;
             } else {
                 fileRowHtml = `
-                    <div class="mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
+                    <div class="db-file-name mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
                         <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
                     </div>
                 `;
@@ -3419,7 +3533,27 @@ const countEl = document.getElementById('peqdb-result-count');
             // JS property (div.onclick = ...) — property handlers are
             // invisible to .outerHTML and get silently dropped once the
             // markup is re-parsed from the string.
-            div.setAttribute('onclick', `PEQDB_Module.toggleCurveSelection('${escJs(item.id)}', ${activeFileIdx})`);
+            //
+            // It must NOT be an attribute-form `onclick` either: script-src has
+            // no 'unsafe-inline', so Chromium refused to compile it and the card
+            // rendered as clickable but did nothing. `data-cmd` + `data-arg-N`
+            // satisfies the outerHTML requirement (they are plain attributes)
+            // AND is dispatched by the capture-phase document listener in
+            // events.js, so it survives the round-trip without re-binding.
+            div.setAttribute('data-cmd', 'PEQDB_Module.toggleCurveSelection');
+            // esc, NOT escJs. escJs escapes for a JS string literal inside an
+            // attribute (it turns ' into \'), but an attribute read back with
+            // getAttribute decodes HTML entities and leaves backslashes as
+            // literal characters - so escJs would hand the handler "Lil\' Jamz"
+            // instead of "Lil' Jamz". No id in database.json contains an
+            // apostrophe today, so this is not a live break; esc is simply the
+            // correct escaper for a data-arg-N. (16 other data-arg sites still
+            // use escJs for the same reason - filed separately as a latent bug.)
+            div.setAttribute('data-arg-0', esc(item.id));
+            // String, because it arrives via getAttribute; events.js coerceArg
+            // turns a numeric string back into a Number, which is what
+            // toggleCurveSelection expects as its second argument.
+            div.setAttribute('data-arg-1', String(activeFileIdx));
             div.innerHTML = similarHeader + `
                 <div class="db-title-row overflow-hidden whitespace-nowrap">
                     <span class="db-title-text font-black text-stone-200 text-xs inline-block whitespace-nowrap">${esc(item.name)}</span>

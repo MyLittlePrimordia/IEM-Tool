@@ -345,6 +345,35 @@ const handlers = {
             this.style.borderColor = '';
             PEQDB_Module.handleDrop(event, this.getAttribute('data-drop-slot'));
         },
+        // R5: the Find pane's two multi-option steppers became segmented pill
+        // rows. Each pill now addresses one option directly instead of stepping
+        // through the list, so these six handlers replace the two cycle
+        // handlers the arrows used to call. The underlying module functions
+        // (setFindMode / switchRightTab) are unchanged and already own the
+        // `.active` class on these very ids.
+        "click_310_FindEngine_setFindMode__tuning": function(event, element) { FindEngine.setFindMode('tuning'); },
+        "click_311_FindEngine_setFindMode__filters": function(event, element) { FindEngine.setFindMode('filters'); },
+        "click_312_FindEngine_switchRightTab__taste": function(event, element) { FindEngine.switchRightTab('taste'); },
+        "click_313_FindEngine_switchRightTab__upgrade": function(event, element) { FindEngine.switchRightTab('upgrade'); },
+        "click_314_FindEngine_switchRightTab__giantkiller": function(event, element) { FindEngine.switchRightTab('giantkiller'); },
+        "click_315_FindEngine_switchRightTab__endgame": function(event, element) { FindEngine.switchRightTab('endgame'); },
+        // R6: the Review pane's ◀/▶ tab steppers became segmented pill rows, so
+        // each pill needs a direct handler rather than relying on cycle(dir).
+        "click_316_IEM_switchLeftTab__search": function(event, element) { IEM.switchLeftTab('search'); },
+        "click_317_IEM_switchLeftTab__info": function(event, element) { IEM.switchLeftTab('info'); },
+        "click_318_IEM_switchLeftTab__drivers": function(event, element) { IEM.switchLeftTab('drivers'); },
+        "click_319_IEM_switchLeftTab__power": function(event, element) { IEM.switchLeftTab('power'); },
+        "click_320_IEM_switchRightTab__sound": function(event, element) { IEM.switchRightTab('sound'); },
+        "click_321_IEM_switchRightTab__photo": function(event, element) { IEM.switchRightTab('photo'); },
+        "click_322_IEM_switchRightTab__impressions": function(event, element) { IEM.switchRightTab('impressions'); },
+        // R7: the Test Lab's ◀/▶ sub-tab steppers became segmented pill rows, so
+        // each pill needs a direct handler rather than relying on cycle(dir).
+        "click_323_TestLab_switchLeftTab__resonance": function(event, element) { TestLab.switchLeftTab('resonance'); },
+        "click_324_TestLab_switchLeftTab__balance": function(event, element) { TestLab.switchLeftTab('balance'); },
+        "click_325_TestLab_switchLeftTab__burnin": function(event, element) { TestLab.switchLeftTab('burnin'); },
+        "click_326_TestLab_switchRightTab__tone": function(event, element) { TestLab.switchRightTab('tone'); },
+        "click_327_TestLab_switchRightTab__ab": function(event, element) { TestLab.switchRightTab('ab'); },
+        "click_328_TestLab_switchRightTab__hearing": function(event, element) { TestLab.switchRightTab('hearing'); },
     };
 
     // Register all handlers

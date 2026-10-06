@@ -771,16 +771,16 @@
                     const pickSection = document.getElementById('find-pick-section');
 
                     if (mode === 'filters') {
-                        if (tuningBtn) tuningBtn.classList.remove('active');
-                        if (filtersBtn) filtersBtn.classList.add('active');
+                        if (tuningBtn) { tuningBtn.classList.remove('active'); tuningBtn.setAttribute('aria-selected', 'false'); }
+                        if (filtersBtn) { filtersBtn.classList.add('active'); filtersBtn.setAttribute('aria-selected', 'true'); }
                         tuningControls.classList.add('hidden');
                         filterControls.classList.remove('hidden');
                         if (targetCurveBlock) targetCurveBlock.classList.add('hidden');
                         if (pickSection) pickSection.classList.remove('hidden');
                         this.fitPickGrid();
                     } else {
-                        if (filtersBtn) filtersBtn.classList.remove('active');
-                        if (tuningBtn) tuningBtn.classList.add('active');
+                        if (filtersBtn) { filtersBtn.classList.remove('active'); filtersBtn.setAttribute('aria-selected', 'false'); }
+                        if (tuningBtn) { tuningBtn.classList.add('active'); tuningBtn.setAttribute('aria-selected', 'true'); }
                         filterControls.classList.add('hidden');
                         tuningControls.classList.remove('hidden');
                         if (targetCurveBlock) targetCurveBlock.classList.remove('hidden');
@@ -907,7 +907,7 @@
                 populateBrandSuggestions: function() {
                     const sources = [
                         this.iemDatabase,
-                        (window.PEQDB_Module && PEQDB_Module.STATE && PEQDB_Module.STATE.dataset),
+                        (window.PEQDB && window.PEQDB.STATE && window.PEQDB.STATE.dataset),
                         (typeof CurveIndexer !== 'undefined' && CurveIndexer.catalog) ? CurveIndexer.catalog : null
                     ];
                     const seen = new Set();
@@ -942,6 +942,16 @@
                     this._brandSearchTimer = setTimeout(() => { this.doBrandFilter(query || ''); }, 130);
                 },
 
+                // NOTE: this whole brand-suggestion block is currently
+                // unreachable - `handleBrandSearch`, `doBrandFilter` and
+                // `selectBrandName` have no caller, and both ids they need
+                // (`#find-brand-suggestions-box`, `#find-filter-brand`) are absent
+                // from index.html, verified against the live DOM. It is kept
+                // rather than deleted because `populateBrandSuggestions` is live
+                // (called at :743 and :1101) and shares brandSuggestionsList.
+                // The markup is now data-cmd rather than an attribute-form
+                // onmousedown, which Chromium refused to compile under the
+                // shipped CSP.
                 doBrandFilter: function(query) {
                     const container = document.getElementById('find-brand-suggestions-box');
                     if (!container) return;
@@ -975,7 +985,7 @@
                     }
 
                     container.innerHTML = matches.map(b => `
-                        <div onmousedown="event.preventDefault(); FindEngine.selectBrandName('${escJs(b)}')" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
+                        <div data-cmd="FindEngine.selectBrandName" data-arg-0="${esc(b)}" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
                             ${esc(b)}
                         </div>
                     `).join('');
@@ -2105,18 +2115,79 @@
                     }
                 },
 
+                _indexProgressTicker: null,
+
+                // Drives the bar while curves are being fetched.
+                //
+                // This used to be called only twice: once at startup and once
+                // when the warmup finished. Each individual curve load did not
+                // report in, so the bar was painted at 0%, the fetch loop ran to
+                // completion without touching it, and then the container was
+                // hidden - it looked like a progress bar that never moved.
+                //
+                // It is now self-sustaining: if indexing is in flight and nothing
+                // is polling, start a ticker. It samples the same real counters
+                // as before (curves with data / total), so the percentage is
+                // still measured rather than faked, and it stops itself as soon
+                // as the database reports fully loaded.
+                _ensureIndexProgressTicker: function() {
+                    if (PEQDB_Module.databaseFullyLoaded) {
+                        if (this._indexProgressTicker) {
+                            clearInterval(this._indexProgressTicker);
+                            this._indexProgressTicker = null;
+                        }
+                        return;
+                    }
+                    if (this._indexProgressTicker) return;
+                    const self = this;
+                    this._indexProgressTicker = setInterval(function() {
+                        if (PEQDB_Module.databaseFullyLoaded) {
+                            clearInterval(self._indexProgressTicker);
+                            self._indexProgressTicker = null;
+                            return;
+                        }
+                        self.updateIndexingProgressBar();
+                    }, 120);
+                },
+
                 updateIndexingProgressBar: function() {
                     const progressContainer = document.getElementById('find-progress-container');
+                    this._ensureIndexProgressTicker();
+
                     if (PEQDB_Module.databaseFullyLoaded) {
                         if (progressContainer) progressContainer.classList.add('hidden');
                         return;
                     }
 
                     const dataset = PEQDB_Module.STATE.dataset;
-                    if (!dataset || dataset.length === 0) return;
+                    // Shown before the dataset exists so the panel does not sit
+                    // blank, and because a zero-length dataset cannot produce a
+                    // meaningful percentage.
+                    if (!dataset || dataset.length === 0) {
+                        if (progressContainer) progressContainer.classList.remove('hidden');
+                        const bar0 = document.getElementById('find-progress-bar');
+                        const text0 = document.getElementById('find-progress-text');
+                        const status0 = document.getElementById('find-progress-status');
+                        if (bar0) bar0.style.width = '100%';
+                        if (text0) text0.textContent = '';
+                        if (status0) status0.textContent = '⏳ Reading database index...';
+                        return;
+                    }
 
-                    const indexedCount = dataset.filter(item => item.data !== null).length;
-                    const totalCount = dataset.length;
+                    // Prefer the loader's own tally of finished curves. Deriving
+                    // progress from the dataset instead cannot work: entries are
+                    // created with `data` already populated from cache, so the
+                    // observable count does not climb while files are fetched.
+                    let indexedCount, totalCount;
+                    const prog = (typeof PEQDB_Module.getIndexProgress === 'function')
+                        ? PEQDB_Module.getIndexProgress() : null;
+                    if (prog && prog.total > 0) {
+                        indexedCount = Math.min(prog.done, prog.total);
+                        totalCount = prog.total;
+                    } else {
+                        indexedCount = dataset.filter(item => item.data !== null).length;
+                        totalCount = dataset.length;
+                    }
                     const percent = Math.round((indexedCount / totalCount) * 100);
 
                     const bar = document.getElementById('find-progress-bar');
@@ -2130,7 +2201,7 @@
                         if (progressContainer) progressContainer.classList.add('hidden');
                     } else {
                         if (progressContainer) progressContainer.classList.remove('hidden');
-                        if (status) status.textContent = `⚡ Indexing: ${indexedCount}/${totalCount} files cached...`;
+                        if (status) status.textContent = `⚡ Indexing: ${indexedCount}/${totalCount} curves cached`;
                     }
                 },
 
@@ -3875,8 +3946,13 @@ applyGenreFilters: function(matches) {
                             else panel.classList.add('hidden');
                         }
                         if (btn) {
-                            if (id === tabId) btn.classList.add('active');
-                            else btn.classList.remove('active');
+                            if (id === tabId) {
+                                btn.classList.add('active');
+                                btn.setAttribute('aria-selected', 'true');
+                            } else {
+                                btn.classList.remove('active');
+                                btn.setAttribute('aria-selected', 'false');
+                            }
                         }
                     });
 
@@ -3967,7 +4043,15 @@ applyGenreFilters: function(matches) {
                     const baseSlot = document.getElementById('find-upgrade-base-slot');
 
                     if (baseSlot) {
-                        baseSlot.className = "w-full h-9 border-2 border-dashed border-black bg-black/10 flex items-center justify-center select-none";
+                        // Same class list as the boot markup (index.html), so
+                        // clearing back to the placeholder is not a second visual
+                        // state. The old `border-2 border-dashed border-black`
+                        // wrote raw Tailwind here: black dashes on a near-black
+                        // card, i.e. an invisible outline, and no radius, so the
+                        // box snapped from rounded to square-cored the moment you
+                        // hit the change button. `slot-empty` carries the tokenised
+                        // dashed outline + --r-md radius that every other slot uses.
+                        baseSlot.className = "slot-empty w-full h-9 flex items-center justify-center select-none mt-1.5";
                         baseSlot.innerHTML = `<span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Select Base IEM</span>`;
                     }
                 },
@@ -5421,20 +5505,26 @@ applyGenreFilters: function(matches) {
                         const f = this.tasteFavorites[i];
                         if (f) {
                             const div = document.createElement('div');
-                            div.className = 'bg-[var(--bg-card)] border-2 border-[var(--border-color)] px-2.5 py-1 flex items-center justify-between gap-2 select-none w-full h-9 relative';
-                            div.style.cssText = 'box-shadow: 2px 2px 0px 0px var(--border-color) !important;';
+                            // R2: was an inline `box-shadow: 2px 2px 0 #000`
+                            // plus a 2px border — a hard square slab. Now a
+                            // raised row with a hairline and a rounded corner,
+                            // matching every other list row in the app.
+                            div.className = 'flex items-center justify-between gap-2 select-none w-full h-9 relative px-3';
+                            div.style.cssText = 'background: var(--bg-raised); border: 1px solid var(--line); border-radius: var(--r-md);';
                             div.innerHTML = `
                                 <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                                     <span class="emoji-font vibrant-emoji text-lg flex-shrink-0 overflow-visible" style="line-height: 1.25;">❤️</span>
-                                    <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(f.name)}</span>
+                                    <span class="text-xs font-semibold truncate" style="color: var(--text-hi);">${esc(f.name)}</span>
                                 </div>
-                                <button type="button" data-cmd="FindEngine.removeTasteFavorite" data-arg-0="${escJs(f.id)}" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Remove ${esc(f.name)}">✕</button>
+                                <button type="button" data-cmd="FindEngine.removeTasteFavorite" data-arg-0="${escJs(f.id)}" class="w-6 h-6 flex items-center justify-center transition-colors cursor-pointer flex-shrink-0" style="border-radius: var(--r-xs); background: transparent; color: var(--text-lo); border: 1px solid transparent;" title="Remove ${esc(f.name)}">✕</button>
                             `;
                             container.appendChild(div);
                         } else {
+                            // R2: was `border-2 border-dashed border-black` with
+                            // square corners. Now the shared .slot-empty well.
                             const div = document.createElement('div');
-                            div.className = 'border-2 border-dashed border-black h-9 flex items-center justify-center select-none w-full bg-black/10';
-                            div.innerHTML = `<span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Favorite ${i + 1}</span>`;
+                            div.className = 'slot-empty w-full h-9 flex items-center justify-center select-none';
+                            div.innerHTML = `<span class="text-[9px] font-semibold uppercase tracking-wider">+ Favorite ${i + 1}</span>`;
                             container.appendChild(div);
                         }
                     }

@@ -8,8 +8,9 @@
 // Linux CI has no display by default; run it under xvfb:
 //   xvfb-run -a npm run verify:ui
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
@@ -68,6 +69,25 @@ console.log('Electron: ' + bin);
 const extraFlags = (process.env.IEM_VERIFY_CHROMIUM_FLAGS || '').split(/\s+/).filter(Boolean);
 if (extraFlags.length) console.log('Chromium flags: ' + extraFlags.join(' '));
 
+// ISOLATE THE USER PROFILE. Every suite drives the real app, and
+// smoke-runtime.js in particular clicks every data-action / data-cmd control in
+// the UI. That persists whatever those controls write - theme, font, graph
+// alignment, gapless, crossfade, the safety limiter - into localStorage and
+// IndexedDB under %APPDATA%/iem-tool. Running the suite therefore silently
+// reconfigures the developer's or user's actual app: a run on 2026-10-05 flipped
+// settings_theme_id slate->parchment, settings_font_id JetBrains Mono->Rubik and
+// set --font-scale-modifier to 0.99, which visibly changed the layout (footer
+// bar overlapping the 3-column panes) with nothing in the code having changed.
+//
+// Chromium honours --user-data-dir for the whole profile, so pointing every
+// suite at a throwaway directory stops a verification run from ever touching the
+// real one. Set IEM_VERIFY_USER_DATA to override the location.
+const verifyProfile = process.env.IEM_VERIFY_USER_DATA
+  || join(tmpdir(), 'iem-tool-verify-profile');
+mkdirSync(verifyProfile, { recursive: true });
+const isolationFlags = ['--user-data-dir=' + verifyProfile];
+console.log('User profile: ' + verifyProfile + '  (the real one is NOT touched)');
+
 let failed = 0;
 for (const suite of SUITES) {
   if (!existsSync(join(root, suite.file))) {
@@ -76,7 +96,7 @@ for (const suite of SUITES) {
     continue;
   }
   console.log(`\n=== ${suite.what}  (${suite.file})`);
-  const res = spawnSync(bin, [...extraFlags, suite.file], { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  const res = spawnSync(bin, [...isolationFlags, ...extraFlags, suite.file], { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   const out = `${res.stdout || ''}${res.stderr || ''}`;
   for (const line of out.split(/\r?\n/)) {
     if (/PASS|FAIL|^\[|SMOKE|CHECK|ERR |Error|error:/i.test(line)) console.log('  ' + line.trim());

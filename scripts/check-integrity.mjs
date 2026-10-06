@@ -38,7 +38,7 @@
 //    This was only achievable once BOTH sources of inline script were gone: the
 //    13 on*= attributes in the HTML, and the ~5,600 the JS modules injected at
 //    runtime through markup strings. The runtime ones moved to data-cmd /
-//    data-cmd-input / data-cmd-change (see tools/convert-to-data-cmd.js and the
+//    data-cmd-input / data-cmd-change (see the data-cmd dispatcher and the
 //    dispatcher in events.js), and the bundle loader moved to
 //    app/js/boot-bundle.js.
 //
@@ -52,6 +52,38 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(root, p), 'utf8');
 const problems = [];
 const notes = [];
+
+// Every event name an attribute-form handler can legally use. Shared by
+// checks #3 (index.html) and #4 (JS template strings) so the two cannot drift.
+//
+// This list previously read `click|input|change|focus|blur|keydown|dragover|
+// drop|dragleave|mouseover|mouseout` in both places, which omitted `mousedown`.
+// Three live sites shipped with `onmousedown="..."` and were therefore blocked
+// at runtime by `script-src 'self' 'wasm-unsafe-eval'` (no 'unsafe-inline') —
+// the brand autocomplete, the PEQdb search chips and the Find brand filter all
+// rendered and did nothing on click, while this check reported
+// "runtime inline-handler sites: 0".
+const ON_ATTR_EVENTS = [
+  'click', 'dblclick', 'auxclick',
+  'input', 'change', 'submit', 'reset',
+  'focus', 'blur', 'focusin', 'focusout',
+  'keydown', 'keyup', 'keypress',
+  'mousedown', 'mouseup', 'mousemove', 'mouseover', 'mouseout', 'mouseenter', 'mouseleave',
+  'pointerdown', 'pointerup', 'pointermove', 'pointerover', 'pointerout', 'pointerenter', 'pointerleave',
+  'touchstart', 'touchend', 'touchmove', 'touchcancel',
+  'dragstart', 'dragend', 'dragover', 'dragleave', 'drop',
+  'wheel', 'contextmenu',
+  'animationstart', 'animationend', 'animationiteration',
+  'transitionstart', 'transitionend', 'transitionrun', 'transitioncancel',
+  'load', 'error', 'scroll', 'resize', 'select', 'toggle', 'beforeinput', 'inputcapture', 'copy', 'cut', 'paste',
+];
+
+// Builds the matcher. `quote` selects `"` only (the markup case) or either
+// quote (the template-string case).
+const ON_ATTR_RE = (events, quote) => {
+  const tail = quote === '"' ? '"' : "['\\\"]";
+  return new RegExp('\\bon(?:' + events.join('|') + ')\\s*=\\s*' + tail, 'g');
+};
 
 // ---------------------------------------------------------------- 1
 {
@@ -131,7 +163,11 @@ const notes = [];
 // ---------------------------------------------------------------- 3
 {
   const html = read('index.html');
-  const inline = [...html.matchAll(/\son(?:click|input|change|focus|blur|keydown|dragover|drop|dragleave|mouseover|mouseout)\s*=\s*"/g)];
+  // Shares ON_ATTR_EVENTS with check #4 below. They were two separate literals
+  // with the same blind spot: `mousedown` was in neither, so an onmousedown
+  // attribute in the markup passed both checks. One constant so they cannot
+  // drift apart again.
+  const inline = [...html.matchAll(ON_ATTR_RE(ON_ATTR_EVENTS, '"'))];
   const BASELINE = 0; // all 13 migrated to data-action-*; must stay at zero
   if (inline.length > BASELINE) {
     problems.push(
@@ -145,9 +181,19 @@ const notes = [];
 // ---------------------------------------------------------------- 4
 {
   const jsDir = join(root, 'app', 'js');
-  const ATTR = /\bon(click|input|change|focus|blur|keydown|dragover|drop|dragleave|mouseover|mouseout)\s*=\s*["']/g;
+  // Same shared event list as check #3. This used to be its own literal that
+  // omitted `mousedown`, which is how 3 onmousedown sites shipped past a check
+  // reporting 0 (see ON_ATTR_EVENTS above).
+  const ATTR = ON_ATTR_RE(ON_ATTR_EVENTS, 'both');
+  // Property assignments (`el.onclick = fn`) are ordinary DOM scripting and are
+  // NOT subject to CSP. Only the attribute form needs 'unsafe-inline'. Guard
+  // against `setAttribute('onclick', ...)` producing the attribute form at
+  // runtime, which is exactly what peqdb-module.js:3512 used to do.
+  const SETATTR = /\bsetAttribute\(\s*['"](on[a-z]+)['"]/g;
   let sites = 0;
+  let setAttrSites = 0;
   const byFile = [];
+  const setAttrByFile = [];
 
   for (const f of readdirSync(jsDir).sort()) {
     if (!f.endsWith('.js')) continue;
@@ -155,6 +201,7 @@ const notes = [];
     const src = readFileSync(join(jsDir, f), 'utf8');
 
     let n = 0;
+    let ns = 0;
     src.split(/\r?\n/).forEach((line) => {
       const trimmed = line.trim();
       if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return;
@@ -163,31 +210,119 @@ const notes = [];
       // A selector that *looks* for an existing handler, e.g.
       // querySelector('button[onclick="Tone.toneSweep()"]') - not an injection.
       const hits = [...line.matchAll(ATTR)];
-      if (!hits.length) return;
-      for (const h of hits) {
-        const at = h.index;
-        // Skip occurrences that sit inside an attribute selector `[onclick="`.
-        const before = line.slice(0, at);
-        if (/\[\s*$/.test(before)) continue;
-        n++;
+      if (hits.length) {
+        for (const h of hits) {
+          const at = h.index;
+          // Skip occurrences that sit inside an attribute selector `[onclick="`.
+          const before = line.slice(0, at);
+          if (/\[\s*$/.test(before)) continue;
+          n++;
+        }
       }
+      ns += [...line.matchAll(SETATTR)].length;
     });
     if (n) { sites += n; byFile.push(`${f}:${n}`); }
+    if (ns) { setAttrSites += ns; setAttrByFile.push(`${f}:${ns}`); }
   }
 
-  // Pinned at 0. All 60 attribute-form sites were migrated to data-cmd /
-  // data-cmd-input / data-cmd-change, handled by the dispatcher in events.js
-  // (see tools/convert-to-data-cmd.js). Verified by tools/verify-data-cmd.js:
-  // the live DOM went from 5,508 inline handlers to 0.
+  // Pinned at 0. The 60 original attribute-form sites were migrated to data-cmd
+  // / data-cmd-input / data-cmd-change (see the data-cmd dispatcher), then
+  // FOUR more were found still shipping in 2026-10 and fixed: three onmousedown
+  // template strings (iem-module.js brand autocomplete, peqdb-module.js search
+  // chips, find-engine.js brand filter) and one setAttribute('onclick') in
+  // peqdb-module.js buildDbModelCard. All four rendered and did nothing, because
+  // script-src has no 'unsafe-inline'. The regex above is what missed them.
   const BASELINE = 0;
   notes.push(
     `runtime inline-handler sites: ${sites} (ratchet baseline ${BASELINE})` +
-    `\n                 ^ attribute-form onclick= in JS template strings; all migrated to data-cmd.`
+    `\n                 ^ attribute-form onX= in JS template strings; all migrated to data-cmd.`
   );
   if (sites > BASELINE) {
     problems.push(
       `RUNTIME INLINE HANDLERS  ${sites} inline on*= template sites (ratchet baseline ${BASELINE}). ` +
       `Use data-cmd / data-cmd-input / data-cmd-change with data-arg-N instead of onclick="...".`
+    );
+  }
+
+  const SETATTR_BASELINE = 0;
+  notes.push(`runtime setAttribute('onX') sites: ${setAttrSites} (ratchet baseline ${SETATTR_BASELINE})`);
+  if (setAttrSites > SETATTR_BASELINE) {
+    problems.push(
+      `RUNTIME setAttribute ON*  ${setAttrSites} setAttribute('on<event>', ...) sites (ratchet baseline ${SETATTR_BASELINE})` +
+      (setAttrByFile.length ? ` in ${setAttrByFile.join(', ')}` : '') +
+      `. setAttribute('onclick', ...) compiles to an attribute-form EventHandler, which CSP ` +
+      `blocks exactly like onclick="..." - it renders but never runs. Use data-cmd + data-arg-N, ` +
+      `which is a plain attribute and therefore also survives .outerHTML round-trips.`
+    );
+  }
+}
+
+// ---------------------------------------------------------------- 4b
+// Negative test for the data-cmd module allowlist in events.js.
+//
+// The dispatcher used to resolve `window[modName] || window[alias]`, i.e. any
+// global in the renderer. The runtime allowlist now refuses unknown modules,
+// but a refusal only helps if the codebase cannot silently start naming a
+// fifth one - a typo, or a new global someone reaches for, would fail at click
+// time and only as a console warning nobody reads. So the source is scanned
+// here, where a mistake is a build failure instead.
+//
+// Mirrors CMD_MODULES in app/js/events.js. A new module must be added to both.
+{
+  const ALLOWED_CMD_MODULES = new Set(['EQ', 'FindEngine', 'IEM', 'PEQDB_Module']);
+
+  // Matches the attribute form in both index.html and JS template strings,
+  // including the data-cmd-<event> variants. Values are read as source text, so
+  // a template literal like data-cmd="EQ.cycleBandType" and a concatenation
+  // like 'data-cmd="' + x + '"' are not both catchable; only the first is,
+  // which is the overwhelmingly common form.
+  const CMD_RE = /\bdata-cmd(?:-click|-input|-change)?\s*=\s*(["'])([A-Za-z_$][\w$]*)\.[\w$]+\1/g;
+
+  const files = [join(root, 'index.html')];
+  const jsDir = join(root, 'app', 'js');
+  for (const f of readdirSync(jsDir).sort()) {
+    if (!f.endsWith('.js')) continue;
+    if (/chart\.js$|bundle|\.min\.js$/.test(f)) continue; // vendored, not ours
+    files.push(join(jsDir, f));
+  }
+
+  const seen = new Map(); // module -> count
+  const bad = [];
+  for (const file of files) {
+    const src = readFileSync(file, 'utf8');
+    for (const m of src.matchAll(CMD_RE)) {
+      const modName = m[2];
+      seen.set(modName, (seen.get(modName) || 0) + 1);
+      if (!ALLOWED_CMD_MODULES.has(modName)) {
+        const line = src.slice(0, m.index).split(/\r?\n/).length;
+        bad.push(`${file.replace(root + '\\', '').replace(root + '/', '')}:${line}  ${m[0]}`);
+      }
+    }
+  }
+
+  const total = [...seen.values()].reduce((a, b) => a + b, 0);
+  notes.push(
+    `data-cmd module allowlist: ${total} sites, ${seen.size} distinct module(s) ` +
+    `[${[...seen.keys()].sort().join(', ')}]`
+  );
+
+  // The allowlist and the dispatcher must not drift apart.
+  const eventsSrc = read('app/js/events.js');
+  for (const modName of ALLOWED_CMD_MODULES) {
+    if (!new RegExp(`^\\s*${modName}:\\s*'`, 'm').test(eventsSrc)) {
+      problems.push(
+        `CMD MODULE ALLOWLIST  check #4b allows "${modName}" but events.js CMD_MODULES has no such entry. ` +
+        `Update both together.`
+      );
+    }
+  }
+
+  if (bad.length) {
+    problems.push(
+      `CMD MODULE ALLOWLIST  ${bad.length} data-cmd site(s) name a module that events.js will refuse:\n` +
+      bad.map(b => '                 ' + b).join('\n') +
+      `\n                 Allowed: ${[...ALLOWED_CMD_MODULES].join(', ')}. ` +
+      `The dispatcher resolves only these modules; anything else is a click that does nothing.`
     );
   }
 }

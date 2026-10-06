@@ -419,8 +419,19 @@ const EQ_SquigGraphMethods = {
             const modeState = [
                 EQ_Module.graphMode,
                 EQ_Module.isTuningLabActive ? 1 : 0,
+                // The magnitude cache's identity: version, bypass set, the cheap
+                // key (which carries the frequency grid's endpoints) and the point
+                // count. Together those pin the exact curve this layer draws.
+                //
+                // A `_magCacheFreqKey` used to be listed here as well, but nothing
+                // in the codebase ever assigned it - it was always the string
+                // "undefined" in this signature, a dead slot that read as though
+                // the grid identity came from somewhere it did not. It is not
+                // needed: both callers build LOG grids (generateLogGrid and
+                // DSP.FREQS), so numPoints plus the two endpoints determines every
+                // point, and both of those are already in the key.
                 this._magCacheVersion, this._magCacheBypass, this._magCacheCheap,
-                this._magCacheFreqKey, this._magCacheNumPoints,
+                this._magCacheNumPoints,
                 preVal, w, h, minF, maxF, min, max,
                 PEQDB_Module.alignHz, PEQDB_Module.alignDb,
                 // Resonance shifts the target curve's evaluated frequencies

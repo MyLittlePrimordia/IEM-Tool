@@ -100,6 +100,13 @@
         abxRenderTrials: function() {
             const lbl = document.getElementById('abx-trial-count');
             if (lbl) lbl.textContent = String(this.abxTotalTrials);
+            /* Drives the readout colour ramp in CSS 8.21. Kept as an attribute
+               rather than a class so the palette stays in the stylesheet - the
+               same split the rest of the app uses (JS owns state, CSS owns
+               colour). Without this the whole "N Trials" would sit on the
+               default tier no matter which option was picked. */
+            const stepper = document.getElementById('abx-trials-stepper');
+            if (stepper) stepper.dataset.trials = String(this.abxTotalTrials);
         },
         activeLeftTab: 'resonance',
         leftTabModes: [
@@ -123,16 +130,19 @@
                     else panel.classList.add('hidden');
                 }
                 if (btn) {
-                    if (id === tabId) btn.classList.add('active');
-                    else btn.classList.remove('active');
+                    if (id === tabId) {
+                        btn.classList.add('active');
+                        btn.setAttribute('aria-selected', 'true');
+                    } else {
+                        btn.classList.remove('active');
+                        btn.setAttribute('aria-selected', 'false');
+                    }
                 }
             });
-
-            const stepperLabel = document.getElementById('tl-left-tab-stepper-label');
-            if (stepperLabel) {
-                const info = this.leftTabModes.find(m => m.id === tabId) || this.leftTabModes[0];
-                stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
-            }
+            // The ◀/▶ stepper label was removed in R7 when this became a 3-up
+            // segmented row. The lookup is deleted rather than left behind: a
+            // stale getElementById for a removed id would push the dead-ref
+            // ratchet over its baseline.
         },
 
         activeRightTab: 'tone',
@@ -157,15 +167,57 @@
                     else panel.classList.add('hidden');
                 }
                 if (btn) {
-                    if (id === tabId) btn.classList.add('active');
-                    else btn.classList.remove('active');
+                    if (id === tabId) {
+                        btn.classList.add('active');
+                        btn.setAttribute('aria-selected', 'true');
+                    } else {
+                        btn.classList.remove('active');
+                        btn.setAttribute('aria-selected', 'false');
+                    }
                 }
             });
+            // See the note in switchLeftTab about the removed stepper label.
+        },
 
-            const stepperLabel = document.getElementById('tl-right-tab-stepper-label');
-            if (stepperLabel) {
-                const info = this.rightTabModes.find(m => m.id === tabId) || this.rightTabModes[0];
-                stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
+        /* Blind-test panel visibility, in one place.
+           Three states:
+             'idle'  - nothing has run yet. Only the trial stepper, START and a
+                        hint. The A/B chooser and the scoreboard are hidden
+                        because before any trial they can only read as a run of
+                        zeros the user never asked for.
+             'active'- a test is running. Chooser enabled, scoreboard live.
+             'done'  - finished. Chooser disabled, scoreboard kept (that is the
+                        result), START available again.
+
+           Previously each of abxStart / abxEndGame / abxReset poked
+           #abx-choices-row's inline pointerEvents/opacity directly and nothing
+           ever hid the scoreboard, so "Correct: 0 Wrong: 0 / Conf: 0.0%
+           (No Trials)" was on screen from first paint. */
+        setABXPanelState: function(state) {
+            const choices = document.getElementById('abx-choices-row');
+            const stats = document.getElementById('abx-stats-row');
+            const hint = document.getElementById('abx-idle-hint');
+
+            if (stats) stats.classList.toggle('hidden', state === 'idle');
+            if (hint) hint.classList.toggle('hidden', state !== 'idle');
+
+            if (choices) {
+                if (state === 'idle') {
+                    /* Collapsed, not just faded. opacity:0 kept the row's 29px of
+                       layout, which left a dead gap between the hint and the
+                       footer on a panel that has nothing to show there. */
+                    choices.style.display = 'none';
+                    choices.style.pointerEvents = 'none';
+                } else {
+                    choices.style.display = '';           /* back to Tailwind's grid */
+                    if (state === 'active') {
+                        choices.style.pointerEvents = 'auto';
+                        choices.style.opacity = '1.0';
+                    } else {
+                        choices.style.pointerEvents = 'none';
+                        choices.style.opacity = '0.5';
+                    }
+                }
             }
         },
 
@@ -202,12 +254,11 @@
             const startBtn = document.getElementById('abx-start-btn');
             if (startBtn) {
                 startBtn.textContent = 'STOP TEST';
-                startBtn.className = "bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/15 font-bold text-[10px] px-2.5 h-7 shadow whitespace-nowrap flex-shrink-0";
+                startBtn.className = 'abx-start-btn is-stop';
                 startBtn.onclick = () => this.abxReset();
             }
 
-            document.getElementById('abx-choices-row').style.pointerEvents = 'auto';
-            document.getElementById('abx-choices-row').style.opacity = '1.0';
+            this.setABXPanelState('active');
 
             this.setABXControlsEnabled(false);
 
@@ -336,13 +387,12 @@
                 status.className = "text-[9px] text-emerald-400 font-black uppercase tracking-wider";
             }
 
-            document.getElementById('abx-choices-row').style.pointerEvents = 'none';
-            document.getElementById('abx-choices-row').style.opacity = '0.5';
+            this.setABXPanelState('done');
 
             const startBtn = document.getElementById('abx-start-btn');
             if (startBtn) {
                 startBtn.textContent = 'START TEST';
-                startBtn.className = "bg-indigo-600/15 border border-indigo-500/40 text-indigo-400 hover:bg-indigo-600/20 font-bold text-[10px] px-2.5 h-7 shadow whitespace-nowrap flex-shrink-0";
+                startBtn.className = 'abx-start-btn';
                 startBtn.onclick = () => this.abxStart();
             }
             this.setABXControlsEnabled(true);
@@ -364,7 +414,7 @@
             const startBtn = document.getElementById('abx-start-btn');
             if (startBtn) {
                 startBtn.textContent = 'START TEST';
-                startBtn.className = "bg-indigo-600/15 border border-indigo-500/40 text-indigo-400 hover:bg-indigo-600/20 font-bold text-[10px] px-2.5 h-7 shadow whitespace-nowrap flex-shrink-0";
+                startBtn.className = 'abx-start-btn';
                 startBtn.onclick = () => this.abxStart();
             }
 
@@ -385,8 +435,7 @@
                 confWrap.className = 'text-zinc-500';
             }
 
-            document.getElementById('abx-choices-row').style.pointerEvents = 'none';
-            document.getElementById('abx-choices-row').style.opacity = '0.5';
+            this.setABXPanelState('idle');
 
             const audioA = document.getElementById('ab-audio-a');
             const audioB = document.getElementById('ab-audio-b');
@@ -848,39 +897,17 @@ setABXControlsEnabled: function(enabled) {
             const status = document.getElementById('hearing-test-status');
             const hzDisp = document.getElementById('hearing-test-hz');
             const pctDisp = document.getElementById('hearing-progress-pct');
+            const fill = document.getElementById('hearing-progress-fill');
             const calRow = document.getElementById('hearing-cal-row');
-            const SEG_COLORS = {
-                done: '#34d399',    // emerald-400
-                active: '#06b6d4',   // cyan-500
-                pending: '#18181b'   // zinc-900
-            };
 
             if (o.progress !== undefined) {
-                // o.progress is a FRACTION 0..1 of the whole 8-tone test,
-                // already including partial credit for the current tone.
+                // o.progress is a FRACTION 0..1 of the whole 8-tone test.
+                // Drives the width of the shared pill track; the discrete tone
+                // count is carried by the status line ("Tone 3 of 8").
                 const frac = Math.max(0, Math.min(1, o.progress));
                 const pct = Math.round(frac * 100);
                 if (pctDisp) pctDisp.textContent = pct + '%';
-
-                const segs = document.querySelectorAll('.hearing-seg');
-                const totalSegs = segs.length || 8;
-                const segSize = 1 / totalSegs;
-                segs.forEach(seg => {
-                    const idx = parseInt(seg.getAttribute('data-seg'), 10);
-                    if (idx === undefined || isNaN(idx)) return;
-                    const segStart = idx * segSize;
-                    let color;
-                    if (frac >= 1) {
-                        color = SEG_COLORS.done;
-                    } else if (frac >= segStart + segSize - 1e-9) {
-                        color = SEG_COLORS.done;      // this tone fully complete
-                    } else if (frac >= segStart) {
-                        color = SEG_COLORS.active;   // this tone in progress (>= not >: at tone start frac === segStart exactly)
-                    } else {
-                        color = SEG_COLORS.pending;
-                    }
-                    seg.style.background = color;
-                });
+                if (fill) fill.style.width = pct + '%';
             }
             if (o.showSlider === true && calRow) calRow.classList.remove('hidden');
             if (o.showSlider === false && calRow) calRow.classList.add('hidden');
@@ -957,6 +984,9 @@ setABXControlsEnabled: function(enabled) {
             if (btn) btn.textContent = 'HEARD (+)';
             const notHeardBtn = document.getElementById('hearing-not-heard-btn');
             if (notHeardBtn) notHeardBtn.classList.remove('hidden');
+            // Switch the action row to two columns now that there are two answers.
+            const actions = document.getElementById('hearing-actions');
+            if (actions) actions.classList.add('is-running');
 
             const freq = this.hearingTestFreqs[stepIdx];
             this._updateHearingTestUI({
@@ -964,7 +994,7 @@ setABXControlsEnabled: function(enabled) {
                 hz: `${freq} Hz`,
                 progress: this._hearingTestFraction(),
                 showSlider: false, // locked in — hide the calibration row
-                instruction: `Hear the <span class="text-white font-bold">${freq} Hz</span> tone? Answer honestly — it homes in on your limit.`
+                instruction: `Heard it? Answer <span class="text-white font-bold">${freq} Hz</span> honestly.`
             });
         },
 
@@ -1107,13 +1137,15 @@ setABXControlsEnabled: function(enabled) {
             if (btn) btn.textContent = 'Start Test';
             const notHeardBtn = document.getElementById('hearing-not-heard-btn');
             if (notHeardBtn) notHeardBtn.classList.add('hidden');
+            const actions = document.getElementById('hearing-actions');
+            if (actions) actions.classList.remove('is-running');
 
             this._updateHearingTestUI({
                 status: 'Done — correction applied ✔',
                 hz: 'DONE',
                 progress: 1,
                 showSlider: true, // test over — calibration row can come back
-                instruction: 'Saved & active on the EQ. Reloads with the app until Reset.'
+                instruction: 'Saved to the EQ until Reset.'
             });
 
             this.calculateHearingCorrection();
@@ -1197,7 +1229,7 @@ setABXControlsEnabled: function(enabled) {
                     setAudioParamSmooth(this.hearingGain.gain, Math.max(0.0001, safeVol), 0.02);
                 }
                 this._updateHearingTestUI({
-                    instruction: `Previewing 1 kHz at ${Math.round(vol)}% — lock this in with Start Test.`
+                    instruction: `Preview 1 kHz at ${Math.round(vol)}% — then start.`
                 });
             }
 
@@ -1267,17 +1299,22 @@ setABXControlsEnabled: function(enabled) {
             this._updateHearingTestUI({
                 progress: 0,
                 showSlider: true,
-                instruction: 'Set the level so the preview tone is comfortable, then Start Test.'
+                instruction: 'Set a comfortable level, then start.'
             });
-            // Segments back to pending color (inline styles — not classes).
-            document.querySelectorAll('.hearing-seg').forEach(seg => {
-                seg.style.background = '#18181b';
-            });
+            // Back to a single full-width primary (mirrors the is-running toggle
+            // in _beginHearingFrequency).
+            const hearingActions = document.getElementById('hearing-actions');
+            if (hearingActions) hearingActions.classList.remove('is-running');
 
             if (generateBtn) {
                 generateBtn.disabled = true;
-                generateBtn.classList.add('hidden', 'bg-zinc-800', 'text-zinc-500', 'cursor-not-allowed');
-                generateBtn.classList.remove('bg-emerald-500', 'text-white', 'hover:brightness-110', 'cursor-pointer');
+                // R7: state is now carried by [disabled] plus a token-driven
+                // .tl-eq-bake style rather than swapped Tailwind classes. The old
+                // pair was bg-emerald-500 (#10B981) with text-white, which is
+                // ~2.4:1 - it failed WCAG AA for the button's own label and was
+                // the single brightest object in the pane on an OLED theme.
+                generateBtn.classList.remove('is-ready');
+                generateBtn.classList.add('hidden');
             }
 
             const el = document.getElementById('brand-icon-emoji');
@@ -1317,8 +1354,8 @@ setABXControlsEnabled: function(enabled) {
 
             const generateBtn = document.getElementById('hearing-eq-generate-btn');
             if (generateBtn) {
-                generateBtn.classList.remove('hidden', 'bg-zinc-800', 'text-zinc-500', 'cursor-not-allowed');
-                generateBtn.classList.add('bg-emerald-500', 'text-white', 'hover:brightness-110', 'cursor-pointer');
+                generateBtn.classList.add('is-ready');
+                generateBtn.classList.remove('hidden');
                 generateBtn.disabled = false;
             }
 
@@ -2492,8 +2529,7 @@ toggleChannelSwap: function() {
                     startBtn.textContent = 'START TEST';
                     startBtn.onclick = () => this.abxStart();
                 }
-                const choicesRow = document.getElementById('abx-choices-row');
-                if (choicesRow) { choicesRow.style.pointerEvents = 'none'; choicesRow.style.opacity = '0.5'; }
+                this.setABXPanelState('idle');
                 this.setABXControlsEnabled(true);
 
                 const abxStatus = document.getElementById('abx-status-lbl');
@@ -3387,8 +3423,38 @@ loadSoundLibrary: async function() {
         },
                 startSpatialAudio: async function() {
             if (this.spatialActive || !this.playbackActive) return;
-
-                        const ctx = SharedAudio.init(); ctx.resume();
+            // Re-entrancy guard.
+            //
+            // spatialActive is only set at the very bottom of this function, after
+            // `await this.getAudioFileBuffer(...)` has fetched and decoded the
+            // clip. So `if (this.spatialActive)` above is false for every start
+            // still in flight, and the space between the guard and the assignment
+            // is exactly where two clicks land.
+            //
+            // Measured with the decode held open: two concurrent starts built two
+            // complete spatial graphs (14 AudioNodes), and because both runs
+            // mutate the SAME this.spatialSourceNode, start() was called on it
+            // twice - InvalidStateError, thrown inside an async function, so it
+            // surfaced only as an unhandled rejection while the rest of the losing
+            // start's body (activeNodes bookkeeping, pad positioning) never ran.
+            // Three clicks produced three graphs and start() called three times.
+            // Nodes were also left in activeNodes that stopSpatialAudio, which only
+            // knows the tracked node, could not remove.
+            //
+            // The existing isDecoding check in toggleSpatialPlay only covers the
+            // custom-file import path; a built-in sound goes through
+            // getAudioFileBuffer with no such flag.
+            if (this._spatialStartInFlight) return this._spatialStartInFlight;
+            this._spatialStartInFlight = this._startSpatialAudio();
+            try {
+                return await this._spatialStartInFlight;
+            } finally {
+                // Cleared in finally: a failed decode must not wedge the button.
+                this._spatialStartInFlight = null;
+            }
+        },
+        _startSpatialAudio: async function() {
+            const ctx = SharedAudio.init(); ctx.resume();
             this.spatialSourceNode = ctx.createBufferSource();
 
             let startOffset = 0;
@@ -3901,91 +3967,153 @@ loadSoundLibrary: async function() {
         (function() {
             let tooltipEl = null;
 
+            // R0: appearance moved from an inline cssText string to the
+            // .ui-tooltip class in app/css/app.css. The old inline block
+            // hard-coded #000000 fill, a 2px solid accent border and a 2px hard
+            // black shadow, which bypassed every design token and kept the
+            // tooltip square while the rest of the app became rounded. Only
+            // position and visibility stay inline, because those are computed.
             function getTooltip() {
                 if (!tooltipEl) {
                     tooltipEl = document.createElement('div');
                     tooltipEl.id = 'global-floating-tooltip';
-                    tooltipEl.style.cssText = `
-                        position: fixed;
-                        z-index: 999999;
-                        pointer-events: none;
-                        display: none;
-                        background: #000000;
-                        color: #ffffff;
-                        font-size: 9.5px;
-                        font-weight: 800;
-                        white-space: nowrap;
-                        padding: 3px 8px;
-                        border: 2px solid var(--accent-blue);
-                        box-shadow: 2px 2px 0px #000000;
-                        opacity: 0;
-                        transition: opacity 0.1s ease-out;
-                    `;
+                    tooltipEl.className = 'ui-tooltip';
+                    tooltipEl.setAttribute('role', 'tooltip');
                     document.body.appendChild(tooltipEl);
                 }
                 return tooltipEl;
             }
 
-            document.addEventListener('mouseover', (e) => {
-                const target = e.target.closest('[data-tooltip], [title]');
-                if (!target) return;
-                if (target.hasAttribute('title')) {
-                    target.setAttribute('data-tooltip', target.getAttribute('title'));
-                    target.removeAttribute('title');
+            // The element the tooltip is currently describing, and the title we
+            // temporarily blanked to suppress the browser's native tooltip.
+            let activeOwner = null;
+            let suppressed = null;
+
+            function restoreSuppressedTitle() {
+                if (!suppressed) return;
+                suppressed.el.setAttribute('title', suppressed.text);
+                suppressed = null;
+            }
+
+            function hideTooltip() {
+                restoreSuppressedTitle();
+                if (activeOwner) {
+                    activeOwner.removeAttribute('aria-describedby');
+                    activeOwner = null;
                 }
-                const text = target.getAttribute('data-tooltip');
-                if (!text || !text.trim()) return;
+                if (!tooltipEl) return;
+                tooltipEl.classList.remove('is-visible');
+                // IEM.removeReviewTag used to do this with inline styles, which
+                // then outranked .is-visible forever after: one tag removal
+                // killed the tooltip for the rest of the session. Visibility is
+                // the stylesheet's job, so clear any stale inline leftovers.
+                tooltipEl.style.display = '';
+                tooltipEl.style.opacity = '';
+            }
+
+            function showTooltip(target) {
+                // data-tooltip wins; title is the fallback so that the ~73
+                // elements in index.html which only carry a title still work.
+                const text = (target.getAttribute('data-tooltip')
+                    || target.getAttribute('title') || '').trim();
+                if (!text) return;
+                if (activeOwner === target) return;
+
+                hideTooltip();
+                activeOwner = target;
 
                 const tt = getTooltip();
                 tt.textContent = text;
-                tt.style.display = 'block';
+                tt.classList.add('is-visible');
+                // role="tooltip" is only meaningful if something points at it.
+                target.setAttribute('aria-describedby', tt.id);
+
+                // Suppress the NATIVE tooltip only while ours is up. The old
+                // code called removeAttribute('title') and never put it back,
+                // which silently deleted the accessible name of every element
+                // whose only label was its title - 73 of the 81 title-bearing
+                // elements in index.html have no aria-label to fall back on. It
+                // also made the name depend on input device: hover and you lose
+                // the name, tab to it and you keep it.
+                const title = target.getAttribute('title');
+                if (title) {
+                    suppressed = { el: target, text: title };
+                    target.setAttribute('title', '');
+                }
 
                 const rect = target.getBoundingClientRect();
                 const ttW = tt.offsetWidth;
                 const ttH = tt.offsetHeight;
 
                 let left = rect.left + (rect.width / 2) - (ttW / 2);
-                let top = rect.top - ttH - 6;
+                let top = rect.top - ttH - 8;
 
                 if (left < 8) left = 8;
                 if (left + ttW > window.innerWidth - 8) {
                     left = window.innerWidth - ttW - 8;
                 }
                 if (top < 8) {
-                    top = rect.bottom + 6;
+                    // No room above: flip below. Clamped so a tooltip on a
+                    // bottom-edge control (the transport bar) cannot be pushed
+                    // off-screen, which is where the old fixed 6px offset
+                    // clipped it.
+                    top = Math.min(rect.bottom + 8, window.innerHeight - ttH - 8);
                 }
+                if (left < 8) left = 8;
 
                 tt.style.left = `${left}px`;
-                tt.style.top = `${top}px`;
-                tt.style.opacity = '1';
+                tt.style.top = `${Math.max(8, top)}px`;
+            }
+
+            function tooltipTargetFrom(e) {
+                return e.target.closest('[data-tooltip], [title]');
+            }
+
+            // Still leaving? Crossing from a button to one of its own child
+            // spans used to tear the tooltip down and immediately rebuild it -
+            // a visible flicker on every icon button that wraps a glyph.
+            function stillInside(target, related) {
+                return !!(related && target.contains(related));
+            }
+
+            document.addEventListener('mouseover', (e) => {
+                const target = tooltipTargetFrom(e);
+                if (target) showTooltip(target);
+            });
+
+            // Keyboard parity. Without this the tooltip was mouse-only: 73
+            // elements carried their entire label in a title that no keyboard
+            // user could ever surface.
+            document.addEventListener('focusin', (e) => {
+                const target = tooltipTargetFrom(e);
+                if (target) showTooltip(target);
             });
 
             document.addEventListener('mouseout', (e) => {
-                const target = e.target.closest('[data-tooltip]');
-                if (target && tooltipEl) {
-                    tooltipEl.style.opacity = '0';
-                    tooltipEl.style.display = 'none';
-                }
+                const target = tooltipTargetFrom(e);
+                if (!target) return;
+                if (stillInside(target, e.relatedTarget)) return;
+                hideTooltip();
             });
 
-            window.addEventListener('scroll', () => {
-                if (tooltipEl) {
-                    tooltipEl.style.opacity = '0';
-                    tooltipEl.style.display = 'none';
-                }
+            document.addEventListener('focusout', (e) => {
+                const target = tooltipTargetFrom(e);
+                if (!target) return;
+                if (stillInside(target, e.relatedTarget)) return;
+                hideTooltip();
+            });
+
+            window.addEventListener('scroll', hideTooltip, true);
+            document.addEventListener('click', (e) => {
+                // Hide after a pointer click so no stale tooltip is left over
+                // the UI, but NOT after a keyboard activation: detail === 0 is
+                // how the browser marks a click synthesised from Enter/Space,
+                // and killing the tooltip there would strip the keyboard user
+                // of the text they just tabbed to.
+                if (e.detail === 0) return;
+                hideTooltip();
             }, true);
-            document.addEventListener('click', () => {
-                if (tooltipEl) {
-                    tooltipEl.style.opacity = '0';
-                    tooltipEl.style.display = 'none';
-                }
-            }, true);
-            window.hideGlobalTooltip = () => {
-                if (tooltipEl) {
-                    tooltipEl.style.opacity = '0';
-                    tooltipEl.style.display = 'none';
-                }
-            };
+            window.hideGlobalTooltip = hideTooltip;
         })();
 
     // Boot entry point. index.html injects this bundle via a dynamically

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>theme backdrop</title>
+<!--
+  Renders one theme's backdrop at exactly the size asked for, so the review-card
+  export can lay it down instead of redrawing the patterns by hand.
+
+  Why this page exists: the nine theme backdrops are CSS gradient stacks
+  (--tp / --tp-pos / --tp-size over --tp-floor) that canvas 2D cannot express.
+  The export used to mirror them by hand, and the comment in iem-module.js
+  admits they drifted once already - the card showed a pattern the app no
+  longer used. Capturing the real thing makes them identical by construction
+  and stops the drift recurring.
+
+  app-theme.js puts the theme class on documentElement; the background itself
+  is painted on body, which inherits the custom properties. So the class goes
+  on <html> here too, set before first paint so there is no unthemed flash.
+-->
+<link rel="stylesheet" href="css/app.css">
+<script src="js/theme-tokens.js"></script>
+<script>
+  (function () {
+    var id = new URLSearchParams(location.search).get('theme') || 'slate';
+    var list = (typeof IEM_BUILTIN_THEMES !== 'undefined') ? IEM_BUILTIN_THEMES : [];
+    var t = null;
+    for (var i = 0; i < list.length; i++) { if (list[i].id === id) { t = list[i]; break; } }
+    if (!t) t = list[0];
+
+    // Mirror App.setGlobalTheme(): the class supplies the backdrop pattern
+    // (--tp), but the theme's real tokens have to be written as INLINE custom
+    // properties or they are simply absent here - and then --tp's
+    // `color-mix(... var(--accent) ...)` falls back to the stale accents still
+    // sitting in app.css. That is what made the exported Black card render
+    // slate-blue while the app showed it grey.
+    var root = document.documentElement;
+    if (t) {
+      Object.keys(t.variables).forEach(function (k) {
+        root.style.setProperty(k, t.variables[k]);
+      });
+    }
+    root.className = t ? ('theme-' + t.id) : ('theme-' + id);
+  })();
+</script>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+</style>
+</head>
+<body></body>
+</html>

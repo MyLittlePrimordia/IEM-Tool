@@ -9,6 +9,13 @@ const EQ_DynamicsMethods = {
             this._agcUserPreamp = undefined;
             this._agcAutoDb = 0;
             this._agcNotified = false;
+            // The watchdog tracks the slider value it has accounted for so it can
+            // tell a user edit from its own write. Clear it so the first tick after
+            // a toggle treats the current slider as the user's, and so the
+            // reduction toast starts counting from zero again.
+            this._agcLastSeenValue = undefined;
+            this._agcAnnouncedDb = 0;
+            this._agcUserAdjustAt = undefined;
             showToast("Anti-Clip Headroom Limiter Enabled", "🛡️");
         } else {
             // Restore the user's own preamp. The watchdog lowers the slider to
@@ -30,11 +37,22 @@ const EQ_DynamicsMethods = {
                         window.isProgrammaticPreampUpdate = false;
                     }
                     showToast('Preamp restored to ' + restore.toFixed(1) + ' dB (Anti-Clip released ' + autoDb.toFixed(1) + ' dB).', '🛡️');
+                } else {
+                    // Reduction happened but there is no baseline to go back to,
+                    // or no slider to put it on. Say so: the old code fell
+                    // through to a bare "Disabled" toast, leaving the user with a
+                    // permanently lowered preamp and no explanation for it.
+                    showToast('Anti-Clip released ' + autoDb.toFixed(1) +
+                        ' dB, but your original preamp could not be recovered - it is still at ' +
+                        (slider ? (parseFloat(slider.value) || 0).toFixed(1) : '?') + ' dB.', '⚠️', { duration: 8000 });
                 }
             }
             this._agcUserPreamp = undefined;
             this._agcAutoDb = 0;
             this._agcNotified = false;
+            this._agcLastSeenValue = undefined;
+            this._agcAnnouncedDb = 0;
+            this._agcUserAdjustAt = undefined;
             showToast("Anti-Clip Headroom Limiter Disabled", "🛡️");
         }
     },

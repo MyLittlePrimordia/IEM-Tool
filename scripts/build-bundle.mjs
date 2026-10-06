@@ -34,8 +34,22 @@ const src = [
   'app/js/eq-playlist.js','app/js/eq-reverb.js','app/js/eq-crossfeed.js','app/js/eq-crossover.js','app/js/eq-dynamics.js',
   'app/js/eq-loudness.js','app/js/eq-tempo.js','app/js/eq-smart-import.js','app/js/eq-hearing-cal.js','app/js/eq-viz-fullscreen.js',
   'app/js/eq-source-sim.js','app/js/eq-presets.js','app/js/eq-band-handlers.js','app/js/eq-draw-curve.js','app/js/eq-squig-graph.js',
-  'app/js/eq-math-utils.js','app/js/iem-search.js','app/js/eq-sculptor.js','app/js/app-theme.js','app/js/events.js',
-  'app/js/app-core-shared.js','app/js/mascot-module.js','app/js/iem-module.js','app/js/tone-module.js',
+    'app/js/eq-math-utils.js','app/js/iem-search.js','app/js/eq-sculptor.js','app/js/app-theme.js','app/js/events.js',
+    // The nine built-in themes and their token maps. Declared as a top-level
+    // const that iem-module.js reads, so it MUST be concatenated first - a
+    // `const` is in the temporal dead zone until its declaration is evaluated,
+    // and iem-module.js evaluates `builtInThemes: IEM_BUILTIN_THEMES` while its
+    // own object literal is being built. It also has to be a plain file rather
+    // than inline data so app/export-backdrop.html can load the SAME map.
+    'app/js/theme-tokens.js',
+    'app/js/app-core-shared.js','app/js/mascot-module.js','app/js/iem-module.js',
+  // Photo background remover (u2netp). MUST come after iem-module.js: it does
+  // Object.assign(IEM_Module, ...) to override preProcessImage /
+  // toggleBgRemoval / processWhiteBgRemoval, and IEM_Module is a top-level
+  // const declared inside iem-module.js. Attaching to window.IEM instead would
+  // be too early - window.IEM is only assigned later, inside IEM_Module.init().
+  'app/js/iem-photo-matte.js',
+  'app/js/tone-module.js',
   // eq-core.js god-file split (Phase 7): data + method-set files extracted
   // from eq-core.js. eq-presets-data.js loads BEFORE the trunk (pure data,
   // no deps); the method-set files load AFTER the trunk and BEFORE

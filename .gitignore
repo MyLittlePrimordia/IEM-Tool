@@ -5,12 +5,12 @@ dist-electron/
 .DS_Store
 Thumbs.db
 
-# Screenshot working directories produced by the verification tooling.
-# tools/shots-current/ is deliberately NOT ignored: it is the visual baseline
-# that tools/diff-shots.js compares against.
-tools/shots-before/
-tools/shots-after/
-tools/shots-pol001-before/
-tools/shots-pol001-after/
-tools/shots-pol006/
-tools/shots-text/
+# Verification tooling writes screenshots / scratch output here. Never commit it.
+tools/shots-*/
+tools/shots*/
+
+# Stray files that AI-assisted sessions and shell typos have left behind before.
+/npm
+/1536
+app/js/_snippet.txt
+*.py

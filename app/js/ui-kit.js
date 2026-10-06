@@ -1,8 +1,13 @@
-/* ===== ui-kit.js =====
+/* ===== app/js/ui-kit.js =====
  * Small drop-in UI primitives shared across workspaces.
- * Currently: UIKit.confirm() — a themed replacement for window.confirm()
- * that matches the existing modal styling (rename-modal, save-preset-modal,
- * etc.) instead of popping the unstyled native browser dialog.
+ *   UIKit.confirm(opts)  — themed replacement for window.confirm()
+ *   UIKit.windowChrome()  — R1 custom caption bar (minimise / maximize / close)
+ *
+ * The window became frameless in R1 so the app could draw its own title bar
+ * with rounded corners and Windows-convention red / amber / green buttons, which
+ * means the renderer owns three operations that used to be free. They are
+ * routed through preload.js, which exposes exactly three named commands and no
+ * generic IPC passthrough.
  *
  * Usage:
  *   const ok = await UIKit.confirm({
@@ -16,6 +21,7 @@
 const UIKit = {
     _modalEl: null,
     _resolver: null,
+    _chromeBound: false,
 
     _ensureModal: function () {
         if (this._modalEl) return this._modalEl;
@@ -24,15 +30,15 @@ const UIKit = {
         wrap.id = 'uikit-confirm-modal';
         wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden flex items-center justify-center p-4';
         wrap.innerHTML = `
-            <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm shadow-2xl flex flex-col overflow-hidden p-4 select-none">
-                <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
-                    <span id="uikit-confirm-title" class="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">⚠️ Confirm</span>
-                    <button id="uikit-confirm-x" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
+            <div class="bg-[var(--bg-card)] border border-[var(--line)] w-full max-w-sm flex flex-col overflow-hidden p-5 select-none" style="border-radius: var(--r-xl); box-shadow: var(--sh-3);">
+                <div class="flex justify-between items-center mb-3 pb-3 border-b border-[var(--line)]">
+                    <span id="uikit-confirm-title" class="text-[13px] font-semibold uppercase tracking-wide flex items-center gap-2" style="color: var(--text-hi);">⚠️ Confirm</span>
+                    <button id="uikit-confirm-x" class="app-caption-btn" style="width:28px;height:28px;" aria-label="Cancel">✕</button>
                 </div>
-                <p id="uikit-confirm-msg" class="text-[10px] text-zinc-500 mb-4 leading-normal"></p>
+                <p id="uikit-confirm-msg" class="text-[12px] mb-4 leading-relaxed" style="color: var(--text-mid);"></p>
                 <div class="grid grid-cols-2 gap-2">
-                    <button id="uikit-confirm-cancel" class="py-2 text-xs font-bold btn-clear cursor-pointer">Cancel</button>
-                    <button id="uikit-confirm-ok" class="py-2 text-xs font-bold hover:brightness-110 text-white transition-all cursor-pointer text-center"></button>
+                    <button id="uikit-confirm-cancel" class="btn-clear cursor-pointer" style="height:36px;border-radius: var(--r-md);">Cancel</button>
+                    <button id="uikit-confirm-ok" class="font-semibold text-white transition-all cursor-pointer text-center" style="height:36px;border-radius: var(--r-md);"></button>
                 </div>
             </div>`;
         document.body.appendChild(wrap);
@@ -60,7 +66,7 @@ const UIKit = {
     // Shared per-dialog keydown handler: attached on every confirm() and
     // removed by _finish(), so a stale handler never survives a dismissed
     // dialog and a reopened one always responds to Esc/Enter.
-    _attachKeyHandler: function(wrap) {
+    _attachKeyHandler: function (wrap) {
         if (this._keyHandler) {
             document.removeEventListener('keydown', this._keyHandler);
             this._keyHandler = null;
@@ -76,7 +82,7 @@ const UIKit = {
         document.addEventListener('keydown', this._keyHandler);
     },
 
-    _finish: function(result, wrap) {
+    _finish: function (result, wrap) {
         wrap.classList.add('hidden');
         if (this._keyHandler) {
             document.removeEventListener('keydown', this._keyHandler);
@@ -96,8 +102,12 @@ const UIKit = {
         wrap.querySelector('#uikit-confirm-msg').textContent = opts.message || '';
         const okBtn = wrap.querySelector('#uikit-confirm-ok');
         okBtn.textContent = opts.confirmLabel || 'Confirm';
-        okBtn.className = 'py-2 text-xs font-bold hover:brightness-110 text-white transition-all cursor-pointer text-center' +
-            (opts.danger ? 'bg-red-600' : 'bg-[var(--accent-blue)]');
+        // Primary action carries the accent halo; a destructive one gets the
+        // danger token. Both use --accent-ink / #fff for the label.
+        okBtn.style.background = opts.danger
+            ? 'var(--danger)'
+            : 'var(--accent)';
+        okBtn.style.color = opts.danger ? '#FFFFFF' : 'var(--accent-ink)';
 
         wrap.classList.remove('hidden');
         wrap.classList.add('flex');
@@ -109,6 +119,55 @@ const UIKit = {
             if (this._resolver) this._resolver(false);
             this._resolver = resolve;
         });
+    },
+
+    /* --- R1: window caption bar ------------------------------------------
+     * Binds minimise / maximise / close and keeps the maximise glyph in sync
+     * with the real window state, so double-clicking the title bar or using
+     * Win+Up also updates the button.
+     *
+     * A no-op outside Electron (the tools/ screenshot harness runs the page in a
+     * plain BrowserWindow with no preload), which is why every call is guarded.
+     * Idempotent: safe to call on every boot. */
+    windowChrome: function () {
+        if (this._chromeBound) return;
+        const bridge = window.appBridge;
+        if (!bridge || !bridge.windowMinimize) return;
+
+        const minBtn = document.getElementById('win-minimize');
+        const maxBtn = document.getElementById('win-maximize');
+        const closeBtn = document.getElementById('win-close');
+
+        const setMaxGlyph = (isMax) => {
+            if (!maxBtn) return;
+            maxBtn.title = isMax ? 'Restore' : 'Maximize';
+            maxBtn.setAttribute('aria-label', isMax ? 'Restore' : 'Maximize');
+            // Restore = two overlapping squares; Maximize = one square.
+            maxBtn.innerHTML = isMax
+                ? '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="2.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1"/><path d="M2.5 2.5V0.5H9.5V7.5H7.5" fill="none" stroke="currentColor" stroke-width="1"/></svg>'
+                : '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1"/></svg>';
+        };
+
+        if (minBtn) minBtn.addEventListener('click', () => bridge.windowMinimize());
+        if (maxBtn) maxBtn.addEventListener('click', () => bridge.windowToggleMaximize());
+        if (closeBtn) closeBtn.addEventListener('click', () => bridge.windowClose());
+
+        // A maximized window draws square corners on Windows, so the caption
+        // cluster is inset rather than hard against the frame while maximized.
+        const applyMaxFrame = (isMax) => {
+            setMaxGlyph(isMax);
+            document.documentElement.classList.toggle('win-maximized', !!isMax);
+        };
+        applyMaxFrame(bridge.windowIsMaximized());
+
+        // main.js pushes this on maximize / unmaximize, which also covers
+        // double-click on the drag region and Win+Up / Win+Down. Subscribing
+        // (rather than polling) means zero cost when the state never changes.
+        if (typeof bridge.onWindowStateChanged === 'function') {
+            bridge.onWindowStateChanged(applyMaxFrame);
+        }
+
+        this._chromeBound = true;
     }
 };
 

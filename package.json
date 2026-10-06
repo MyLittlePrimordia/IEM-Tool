@@ -40,10 +40,14 @@
     "files": [
       "main.js",
       "preload.js",
+      "theme-backdrop.js",
       "package.json",
       "index.html",
+      "app/export-backdrop.html",
       "app/css/**/*",
       "app/js/**/*",
+      "!app/js/app.bundle.js",
+      "app/models/**/*",
       "app/icons/**/*",
       "app/fonts/**/*",
       "app/audio/**/*",
@@ -56,15 +60,15 @@
       "output": "dist"
     },
     "win": {
-      "target": "nsis",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "app/icon.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "IEM Tool"
     },
     "mac": {
       "target": [
@@ -82,9 +86,8 @@
     },
     "linux": {
       "target": [
-        "AppImage",
         {
-          "target": "tar.gz",
+          "target": "AppImage",
           "arch": [
             "x64"
           ]
@@ -92,7 +95,8 @@
       ],
       "icon": "app/icon.png",
       "category": "Utility",
-      "syncDesktopName": true
+      "syncDesktopName": true,
+      "artifactName": "IEM-Tool-${version}-x86_64.${ext}"
     },
     "extraResources": [
       {
@@ -107,7 +111,10 @@
         "from": "data",
         "to": "data"
       }
-    ]
+    ],
+    "portable": {
+      "artifactName": "IEM-Tool-${version}-Portable.${ext}"
+    }
   },
   "allowScripts": {
     "electron@43.4.0": true

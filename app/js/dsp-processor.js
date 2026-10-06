@@ -421,10 +421,22 @@ class DspProcessor extends AudioWorkletProcessor {
         // mirroring the renderer's mergerLimiterEnabled default).
         this.lookaheadLimiter = new LookaheadLimiter(this.sampleRate);
         this.lookaheadEnabled = true;
-        // Set the first time the renderer sends a state CHANGE (not the initial
-        // routing push). From then on the limiter's delay line is never removed
-        // from the signal path, so toggling it cannot click.
+        // Set the first time the renderer sends a genuine state CHANGE. From then
+        // on the limiter's delay line is never removed from the signal path, so
+        // toggling it cannot click. Users who never touch the button keep zero
+        // added latency.
         this.limiterHasToggled = false;
+        // The FIRST updateLimiter message is the renderer's initial routing push,
+        // not a user action, so it must not latch limiterHasToggled.
+        //
+        // eq-dsp-graph.js builds mergerLimiterEnabled from
+        // localStorage.getItem('settings_merger_limiter') !== '0' and pushes it
+        // at graph-build time. A user who had previously switched the limiter OFF
+        // therefore starts with enabled:false - which differs from this worklet's
+        // default of true. The old `next !== this.lookaheadEnabled` test read that
+        // as a toggle, so exactly the users who never touch the button were the
+        // ones who got the delay line forced in.
+        this._limiterStateInitialised = false;
 
         this.xoEnabled = false;
         this.xoType = '3way';
@@ -539,14 +551,20 @@ class DspProcessor extends AudioWorkletProcessor {
         else if (data.type === 'updateLimiter') {
             // F-6: renderer-controlled threshold + on/off for the lookahead
             // limiter. The GR meter polls via 'getGainReduction' messages.
-            if (data.enabled !== undefined) {
+if (data.enabled !== undefined) {
                 const next = !!data.enabled;
-                // A genuine state change (not the initial routing push that
+                // A genuine state CHANGE (not the initial routing push that
                 // _buildDSPGraph always sends). From the first real toggle the
                 // delay line stays permanently in the signal path so the
                 // transition cannot step the waveform and click. Users who
                 // never touch the button keep zero added latency.
-                if (next !== this.lookaheadEnabled) this.limiterHasToggled = true;
+                //
+                // The first message is the initial state by definition, so it is
+                // excluded - see _limiterStateInitialised in the constructor.
+                if (this._limiterStateInitialised && next !== this.lookaheadEnabled) {
+                    this.limiterHasToggled = true;
+                }
+                this._limiterStateInitialised = true;
                 this.lookaheadEnabled = next;
             }
             if (Number.isFinite(data.thresholdDb)) this.lookaheadLimiter.setThreshold(data.thresholdDb);
@@ -652,7 +670,18 @@ class DspProcessor extends AudioWorkletProcessor {
         else if (useLimiter) this.lookaheadLimiter.setBypass(false);
         const limiter = this.lookaheadLimiter;
         // Reused stereo out pair for the limiter call (no per-sample alloc).
-        if (useLimiter && (!this._limOut || this._limOut.length < 2)) this._limOut = new Float32Array(2);
+        //
+        // Must be keyed on keepDelay, NOT useLimiter: the block below CONSUMES
+        // _limOut under `if (keepDelay)`, and keepDelay is also true in the one
+        // state useLimiter is not - bypassed after a toggle, which is the only
+        // state this feature ever creates. Allocating on useLimiter left _limOut
+        // undefined there, so `limOut[0] = ...` threw
+        // "Cannot set properties of undefined (setting '0')" on the audio thread
+        // every render quantum. process() catches it and zeroes the output, so it
+        // presented as total silence plus a flood of processorError messages
+        // rather than an obvious crash - and it never recovered, because the
+        // throw happened before anything could re-allocate the buffer.
+        if (keepDelay && (!this._limOut || this._limOut.length < 2)) this._limOut = new Float32Array(2);
 
         for (let i = 0; i < bufferSize; i++) {
             this.preampGain += (this.targetPreampGain - this.preampGain) * this.smoothingFactor;

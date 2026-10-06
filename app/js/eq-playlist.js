@@ -693,17 +693,19 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             }
         },
 
-        _applyGaplessButton: function() {
-            const btn = document.getElementById("a11y-gapless-btn");
-            if (!btn) return;
-            if (this.gaplessEnabled()) {
-                btn.classList.add('is-on');
-                btn.textContent = "🔗 Gapless: On";
-            } else {
-                btn.classList.remove('is-on');
-                btn.textContent = "🔗 Gapless: Off";
-            }
-        },
+_applyGaplessButton: function() {
+    const btn = document.getElementById("a11y-gapless-btn");
+    if (!btn) return;
+    // R3: the button no longer rewrites its own textContent. It used to set
+    // "🔗 Gapless: On" / "🔗 Gapless: Off" wholesale, which is incompatible with
+    // a real switch - any markup inside the button would be destroyed on the
+    // first state change. The switch track, knob and colour are now driven
+    // purely by the `is-on` class, and the visible wording lives in the row
+    // label beside it. aria-checked carries the state to assistive tech.
+    const on = this.gaplessEnabled();
+    btn.classList.toggle('is-on', on);
+    btn.setAttribute('aria-checked', on ? 'true' : 'false');
+    },
 
         // Toggle crossfade playback (Settings -> Accessibility panel button).
         // Takes over from the gapless seam with a longer, user-adjustable
@@ -735,13 +737,11 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             const btn = document.getElementById("a11y-crossfade-btn");
             if (!btn) return;
             const on = this.crossfadeEnabled();
-            if (on) {
-                btn.classList.add('is-on');
-                btn.textContent = "🎚️ Crossfade: On";
-            } else {
-                btn.classList.remove('is-on');
-                btn.textContent = "🎚️ Crossfade: Off";
-            }
+            // R3: state only. This used to rewrite textContent wholesale, which
+            // destroys any markup inside the button - the reason a real switch
+            // could not be built here. See _applyGaplessButton.
+            btn.classList.toggle('is-on', on);
+            btn.setAttribute('aria-checked', on ? 'true' : 'false');
             const slider = document.getElementById("a11y-crossfade-slider");
             if (slider) {
                 slider.disabled = !on;

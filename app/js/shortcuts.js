@@ -20,6 +20,7 @@ const Shortcuts = {
         { key: '5', label: 'Switch to Visualizer', group: 'Workspace', action: () => App.switchTab('visualizer') },
         { key: '6', label: 'Switch to Settings', group: 'Workspace', action: () => App.switchTab('settings') },
         { key: ' ', displayKey: 'Space', label: 'Play / Pause', group: 'Playback', action: () => { if (typeof EQ !== 'undefined' && EQ.togglePlayState) EQ.togglePlayState(); } },
+        { key: 'z', ctrl: true, label: 'Undo last EQ change', group: 'EQ', action: () => { if (typeof EQ !== 'undefined' && EQ.undoEQ) EQ.undoEQ(); } },
         { key: 'e', ctrl: true, label: 'Export EQ Profile', group: 'EQ', action: () => { if (typeof EQ !== 'undefined' && EQ.showExportModal) EQ.showExportModal(); } },
         { key: '?', label: 'Show this shortcuts list', group: 'General', action: () => Shortcuts.toggleHelp() },
         { key: 'escape', label: 'Close open modal', group: 'General', action: null } // handled natively by each modal; listed for discoverability only
@@ -34,6 +35,15 @@ const Shortcuts = {
     _handleKeydown: function (e) {
         // Respect handlers that already consumed the event (e.g. a modal).
         if (e.defaultPrevented) return;
+        // Undo must work while a slider/button still has focus after a drag or
+        // click, but never while typing in a text or number field.
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key || '').toLowerCase() === 'z') {
+            const t = e.target;
+            const textual = t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable ||
+                (t.tagName === 'INPUT' && !/^(range|checkbox|radio|button)$/.test(t.type)));
+            if (!textual && typeof EQ !== 'undefined' && EQ.undoEQ && EQ.undoEQ()) e.preventDefault();
+            return;
+        }
         if (Shortcuts._isTypingTarget(e.target)) return;
         // Don't hijack keys while an interactive control (button, link) has
         // focus: Space would otherwise both activate the control (native

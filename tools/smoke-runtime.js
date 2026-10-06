@@ -193,6 +193,39 @@ app.whenReady().then(async () => {
     return 'clicked ' + clicked;
   })()`, 2500);
 
+  // The assertion that would have caught the 2026-10 CSP regression.
+  //
+  // Every step above fires events only on elements carrying data-action or
+  // data-cmd. Four elements shipped with attribute-form handlers instead
+  // (three onmousedown template strings, one setAttribute('onclick')), so they
+  // rendered, were never touched by the harness, and did nothing when a real
+  // user clicked them - because script-src has no 'unsafe-inline' and Chromium
+  // refuses to compile an attribute-form EventHandler. Green build, green
+  // suite, three dead features.
+  //
+  // So scan the live DOM for any remaining on* attribute regardless of how it
+  // got there. Run it LAST: the click-everything step above legitimately
+  // mutates the DOM, and this asserts on the settled state.
+  await step('no inline on* handler attributes in the live DOM', `(() => {
+    const bad = [];
+    const all = document.querySelectorAll('*');
+    for (let i = 0; i < all.length; i++) {
+      const attrs = all[i].attributes;
+      for (let j = 0; j < attrs.length; j++) {
+        const n = attrs[j].name;
+        if (n.indexOf('on') === 0) {
+          bad.push(n + ' on <' + all[i].tagName.toLowerCase()
+            + (all[i].id ? '#' + all[i].id : '')
+            + (all[i].className ? '.' + String(all[i].className).split(' ').filter(Boolean).slice(0,2).join('.') : '') + '>');
+        }
+      }
+    }
+    if (bad.length) {
+      throw new Error('LIVE DOM HAS ' + bad.length + ' INLINE HANDLER ATTRIBUTE(S):\\n  ' + bad.slice(0, 12).join('\\n  '));
+    }
+    return '0 of ' + all.length + ' elements carry on* attributes';
+  })()`, 400);
+
   console.log('\n--- back to a clean tab ---');
   await step("switchTab('find')", "App.switchTab('find')", 900);
 
