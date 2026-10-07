@@ -214,48 +214,70 @@ jobs:
         run: npm ci
 
       - name: Build macOS
-        timeout-minutes: 30
+        # ONE universal DMG. electron-builder builds x64 and arm64 separately and
+        # merges them with lipo, so a single IEM-Tool.dmg runs on both Intel and
+        # Apple Silicon Macs. That is what lets the release ship exactly one file
+        # per OS instead of one per architecture.
+        #
+        # `identity: null` in package.json stops electron-builder hunting for a
+        # signing certificate it will never find - the app is unsigned, and the
+        # universal merge step fails outright if it decides to codesign.
+        #
+        # This is the slowest of the three builds (two architectures plus a
+        # merge), hence the extra headroom on the timeout.
+        timeout-minutes: 45
         run: npm run dist-mac
 
-      - name: Rename to exact file names
-        # The mac target builds BOTH arm64 and x64 DMGs, so `ls | head -n 1`
-        # would pick one by alphabetical accident and silently ship only that
-        # architecture - Intel Mac users would get a DMG that cannot run, while
-        # the job still reported success. Select each arch explicitly and fail
-        # loudly if either is missing.
+      - name: Verify and rename to exact file name
+        # Fail loudly unless EXACTLY one DMG was produced, then prove the merged
+        # app really carries both architectures.
+        #
+        # Both checks exist because the failure they catch is silent. A glob like
+        # `ls dist/*.dmg | head -n 1` would happily publish an arm64-only DMG
+        # after someone reverted package.json's arch list - every Apple Silicon
+        # user is fine, every Intel Mac gets "app can't be opened", and the job
+        # still reports success. Counting to exactly 1 plus a lipo probe makes
+        # that a red build instead.
         run: |
           set -euo pipefail
-          for arch in arm64 x64; do
-            src=$(ls dist/*-"$arch".dmg 2>/dev/null | head -n 1 || true)
-            if [ -z "$src" ]; then
-              echo "::error::no $arch DMG was produced; dist contains:"
-              ls -la dist/
-              exit 1
-            fi
-            cp "$src" "dist/IEM-Tool-$arch.dmg"
-          done
-          # Keep the unsuffixed name pointing at the arm64 build, which is the
-          # large majority of Macs, for anyone linking to it directly.
-          cp dist/IEM-Tool-arm64.dmg dist/IEM-Tool.dmg
-          ls -la dist/IEM-Tool.dmg dist/IEM-Tool-arm64.dmg dist/IEM-Tool-x64.dmg
+          shopt -s nullglob
+          dmgs=(dist/*.dmg)
+          if [ ${#dmgs[@]} -ne 1 ]; then
+            echo "::error::expected exactly 1 universal DMG, found ${#dmgs[@]}; dist contains:"
+            ls -la dist/
+            exit 1
+          fi
+          cp "${dmgs[0]}" "dist/IEM-Tool.dmg"
+
+          # The built .app is left beside the DMG. If we can find its executable,
+          # require both slices; if the layout is unrecognisable, say so loudly
+          # rather than passing the check silently.
+          app=$(find dist -maxdepth 3 -name '*.app' -type d | head -n 1)
+          exe=""
+          if [ -n "$app" ]; then
+            exe=$(find "$app/Contents/MacOS" -maxdepth 1 -type f | head -n 1)
+          fi
+          if [ -n "$exe" ]; then
+            archs=$(lipo -archs "$exe")
+            echo "macOS app architectures: $archs"
+            echo "$archs" | grep -q x86_64 || { echo "::error::the DMG app is missing x86_64 (Intel Macs would break)"; exit 1; }
+            echo "$archs" | grep -q arm64  || { echo "::error::the DMG app is missing arm64 (Apple Silicon Macs would break)"; exit 1; }
+          else
+            echo "::warning::could not locate the built .app executable to verify universal slices; DMG was still published"
+          fi
+          ls -la dist/IEM-Tool.dmg
 
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v5
         with:
           name: IEM-Tool-macOS
-          path: |
-            dist/IEM-Tool.dmg
-            dist/IEM-Tool-arm64.dmg
-            dist/IEM-Tool-x64.dmg
+          path: dist/IEM-Tool.dmg
 
       - name: Upload to Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/IEM-Tool.dmg
-            dist/IEM-Tool-arm64.dmg
-            dist/IEM-Tool-x64.dmg
+          files: dist/IEM-Tool.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -274,8 +296,10 @@ jobs:
         with:
           tag: latest
           name: Latest Build
-          body: Automatically rebuilt on every push to main. Contains IEM-Tool-Setup.exe (Windows installer), IEM-Tool.dmg (Apple Silicon), IEM-Tool-x64.dmg (Intel) and IEM-Tool.appimage (portable; run chmod +x first).
+          # Plain YAML scalar, so no ": " anywhere in it - a colon-space inside
+          # an unquoted value is a mapping delimiter and fails to parse the file.
+          body: Automatically rebuilt on every push to main. Exactly one file per operating system - IEM-Tool-Setup.exe (Windows installer), IEM-Tool.dmg (macOS, runs on both Intel and Apple Silicon) and IEM-Tool.appimage (Linux; run chmod +x first).
           allowUpdates: true
           replacesArtifacts: true
           makeLatest: true
-          artifacts: release-files/IEM-Tool-Windows/IEM-Tool-Setup.exe,release-files/IEM-Tool-macOS/IEM-Tool.dmg,release-files/IEM-Tool-macOS/IEM-Tool-x64.dmg,release-files/IEM-Tool-Linux/IEM-Tool.appimage
+          artifacts: release-files/IEM-Tool-Windows/IEM-Tool-Setup.exe,release-files/IEM-Tool-macOS/IEM-Tool.dmg,release-files/IEM-Tool-Linux/IEM-Tool.appimage

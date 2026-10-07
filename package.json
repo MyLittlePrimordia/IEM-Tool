@@ -75,12 +75,12 @@
         {
           "target": "dmg",
           "arch": [
-            "x64",
-            "arm64"
+            "universal"
           ]
         }
       ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "artifactName": "${productName}-${version}.${ext}",
+      "identity": null,
       "icon": "app/icon.icns",
       "category": "public.app-category.utilities"
     },

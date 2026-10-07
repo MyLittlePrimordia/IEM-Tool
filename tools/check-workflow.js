@@ -79,12 +79,18 @@ for (const b of ['build-linux', 'build-windows', 'build-macos']) {
 const verifyRuns = (jobs.verify?.steps || []).map(x => x.run || '').join('\n');
 check('verify job runs check:workflow on itself', /check:workflow/.test(verifyRuns), 'true');
 
-// The mac target builds arm64 AND x64. Selecting one with `ls *.dmg | head -n 1`
-// picks by alphabetical accident and ships only that architecture, so Intel Mac
-// users get a DMG that cannot run while the job still reports success.
+// The mac target builds ONE universal DMG (x64 + arm64 merged with lipo), so the
+// release carries a single file per OS. Both failure modes here are silent, so
+// both are policed:
+//  - a glob like `ls dist/*.dmg | head -n 1` would publish an arm64-only DMG if
+//    someone reverted package.json's arch list: Apple Silicon is fine, every
+//    Intel Mac breaks, and the job still reports success;
+//  - shipping per-arch DMGs again puts four files on the release page, which is
+//    exactly the confusion this setup exists to avoid.
 const macSteps = (jobs['build-macos']?.steps || []).map(x => [x.run || '', JSON.stringify(x.with || {})].join('\n')).join('\n');
-check('build-macos selects each mac arch explicitly', /arm64/.test(macSteps) && /x64/.test(macSteps), 'true');
-check('build-macos does not pick one DMG by accident', /head -n 1 \|\| true\)|\*-"\$\{?arch/.test(macSteps) || !/ls dist\/\*\.dmg \| head -n 1/.test(macSteps), 'true');
+check('build-macos requires exactly one DMG', /-ne 1/.test(macSteps), 'true');
+check('build-macos proves the DMG is universal', /lipo -archs/.test(macSteps) && /x86_64/.test(macSteps) && /arm64/.test(macSteps), 'true');
+check('build-macos publishes no per-arch DMG', !/IEM-Tool-(arm64|x64)\.dmg/.test(macSteps), 'true');
 
 // The rolling release must actually carry every shipped binary. This has to read
 // the `artifacts` input specifically - matching the filename anywhere in the
@@ -96,11 +102,15 @@ const releaseArtifacts = String(releaseStep?.with?.artifacts || '')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
-for (const f of ['IEM-Tool-Setup.exe', 'IEM-Tool.dmg', 'IEM-Tool-x64.dmg', 'IEM-Tool.appimage']) {
+for (const f of ['IEM-Tool-Setup.exe', 'IEM-Tool.dmg', 'IEM-Tool.appimage']) {
   // Entries are full paths (release-files/<artifact>/<file>), so match on the
   // trailing filename rather than requiring exact list membership.
   check(`rolling release includes ${f}`, releaseArtifacts.some(p => p === f || p.endsWith('/' + f)), 'true');
 }
+// The whole point of this layout: a user opening the release page sees three
+// files and picks their OS. A fourth entry - a stray portable exe or a per-arch
+// DMG - reintroduces the guesswork, so pin the count as well as the names.
+check('rolling release publishes exactly 3 files', releaseArtifacts.length, '3');
 
 console.log(failures === 0 ? '\nWORKFLOW OK' : `\n${failures} WORKFLOW PROBLEM(S)`);
 process.exit(failures === 0 ? 0 : 1);
