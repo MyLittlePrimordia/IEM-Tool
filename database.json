@@ -65470,6 +65470,31 @@
     ]
   },
   {
+    "id": "kz_axas_gaming",
+    "brand": "KZ",
+    "model": "Axas",
+    "variant": "Gaming",
+    "year": 2026,
+    "price_usd": 25,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 20,
+    "sensitivity": 107,
+    "connector": "QDC",
+    "form_factor": "IEM",
+    "tags": [
+      "Competitive-Gaming",
+      "Gaming",
+      "Good-Imaging",
+      "Warm",
+      "Wide-Stage",
+      "Budget"
+    ],
+    "files": [
+      "data/DIGAO REVIEWS/KZ AXAS GAMING.txt"
+    ]
+  },
+  {
     "id": "kz_ba10",
     "brand": "KZ",
     "model": "BA10",
