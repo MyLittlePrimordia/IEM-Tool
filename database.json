@@ -75807,6 +75807,31 @@
     ]
   },
   {
+    "id": "moondrop_position",
+    "brand": "Moondrop",
+    "model": "Position",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 35,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 18,
+    "sensitivity": 119,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Competitive-Gaming",
+      "Detailed",
+      "Gaming",
+      "Good-Imaging",
+      "Budget"
+    ],
+    "files": [
+      "data/SUPER REVIEW/MOONDROP POSITION.txt"
+    ]
+  },
+  {
     "id": "moondrop_psyche",
     "brand": "Moondrop",
     "model": "Psyche",
@@ -76458,6 +76483,30 @@
       "data/SQUIGLINK/MOONDROP STARFIELD 2.txt",
       "data/SUPER REVIEW/MOONDROP STARFIELD 2.txt",
       "data/JAY'S AUDIO/MOONDROP STARFIELD II FOAM.txt"
+    ]
+  },
+  {
+    "id": "moondrop_starfield_iii",
+    "brand": "Moondrop",
+    "model": "Starfield",
+    "variant": "III",
+    "year": 2026,
+    "price_usd": 150,
+    "driver_type": "DD",
+    "driver_config": "2DD",
+    "impedance": 8,
+    "sensitivity": 119,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Smooth",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/SUPER REVIEW/MOONDROP STARFIELD 3.txt"
     ]
   },
   {
