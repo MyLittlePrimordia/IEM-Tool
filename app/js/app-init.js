@@ -34,6 +34,46 @@
             // coloured fill does not reach - which reads as a detached knob.
             // Anything that moves a slider programmatically should call this.
             window.IEM_updateRangeFill = updateFill;
+
+            // ROOT-CAUSE FIX for "the coloured bar does not follow the knob".
+            // The stylesheet paints the fill from --range-fill, but that variable
+            // was only refreshed by `input` events (user drags) and the boot sweep.
+            // Code that moves a slider with `el.value = x` (Clear, presets, AutoEQ,
+            // undo, Smart import, remembered EQ, graph-node drags...) fires no
+            // event, so the knob jumped while the bar stayed at its old position.
+            // Callers were meant to remember to call a repaint helper and many did
+            // not (or called an older painter whose output the stylesheet ignores).
+            // Instead of auditing every present and future caller, repaint whenever
+            // a range input's value is assigned. updateFill is memoised, so repeat
+            // writes of an unchanged value cost one WeakMap lookup.
+            (function hookRangeValueWrites() {
+                const proto = window.HTMLInputElement && window.HTMLInputElement.prototype;
+                if (!proto) return;
+                ['value', 'valueAsNumber'].forEach(function (prop) {
+                    const desc = Object.getOwnPropertyDescriptor(proto, prop);
+                    if (!desc || typeof desc.set !== 'function' || typeof desc.get !== 'function') return;
+                    Object.defineProperty(proto, prop, {
+                        configurable: true,
+                        enumerable: desc.enumerable,
+                        get: desc.get,
+                        set: function (v) {
+                            desc.set.call(this, v);
+                            if (this.type === 'range') updateFill(this);
+                        }
+                    });
+                });
+            })();
+            // A changed min/max moves the knob's relative position too.
+            const _rangeBoundsObserver = new MutationObserver(function (muts) {
+                for (const m of muts) {
+                    if (m.target && m.target.matches && m.target.matches('input[type="range"]')) updateFill(m.target);
+                }
+            });
+            const _observeRangeBounds = function () {
+                if (document.body) _rangeBoundsObserver.observe(document.body, { attributes: true, attributeFilter: ['min', 'max'], subtree: true });
+            };
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _observeRangeBounds, { once: true });
+            else _observeRangeBounds();
             function initAll() {
                 // Do NOT gate on document.hasFocus(). That guard made the initial
                 // pass a no-op whenever the window was not focused - which is

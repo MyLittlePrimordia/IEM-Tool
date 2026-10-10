@@ -1467,7 +1467,13 @@ setGlobalFont: function(fontId) {
                 // Shared painter for high-frequency callers (scrub timeupdate /
                 // drag input) so they restyle ONE element instead of running a
                 // full-page syncGlobalSliders pass on every mousemove frame.
-                window.paintSliderTrack = updateTrack;
+                // updateTrack paints an inline background that the stylesheet's
+                // !important track rule overrides, so also refresh the variable the
+                // stylesheet DOES read (see app-init.js).
+                window.paintSliderTrack = function (el) {
+                    updateTrack(el);
+                    if (window.IEM_updateRangeFill && el && el.type === 'range') window.IEM_updateRangeFill(el);
+                };
 
                 const applyMagneticSnapping = (input) => {
                     let val = parseFloat(input.value);
@@ -1549,11 +1555,13 @@ setGlobalFont: function(fontId) {
                     if (el && el.tagName === 'INPUT' && el.type === 'range') {
                         el.lastDragVal = parseFloat(el.value) || 0;
                         updateTrack(el);
+                        if (window.IEM_updateRangeFill) window.IEM_updateRangeFill(el);
                         return;
                     }
                     document.querySelectorAll('input[type="range"]').forEach(input => {
                         input.lastDragVal = parseFloat(input.value) || 0;
                         updateTrack(input);
+                        if (window.IEM_updateRangeFill) window.IEM_updateRangeFill(input);
                     });
                 };
             } catch (error) {

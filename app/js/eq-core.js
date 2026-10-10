@@ -762,6 +762,10 @@ if (window.bypassedBands === undefined) window.bypassedBands = new Set();
                 if (!slider) return;
                 const percent = ((val - min) / (max - min)) * 100;
                 slider.style.setProperty('--track-percent', `${percent}%`);
+                // The stylesheet reads --range-fill first; keep it in step (see app-init.js).
+                // Use the element's own value/min/max as the single truth for the knob position.
+                if (window.IEM_updateRangeFill) window.IEM_updateRangeFill(slider);
+                else slider.style.setProperty('--range-fill', `${percent}%`);
             };
 
             if (type === 'main') {
