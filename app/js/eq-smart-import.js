@@ -57,6 +57,11 @@ const EQ_SmartImportMethods = {
         if (window.bypassedBands && typeof window.bypassedBands.forEach === 'function') {
             window.bypassedBands.forEach(function(k) { snap.bypassed.push(k); });
         }
+        // >20-band AutoEQ solves live in virtualBands; without them an undo of a
+        // big solve (or a remembered session) would leave the old tail behind.
+        snap.virtual = (this.virtualBands || []).map(function(v) {
+            return { hz: v.hz, g: v.g, q: v.q, type: v.type || 'peaking' };
+        });
         return snap;
     },
 
@@ -92,7 +97,48 @@ const EQ_SmartImportMethods = {
             window.bypassedBands.clear();
             snap.bypassed.forEach(function(k) { window.bypassedBands.add(k); });
         }
+        if (Array.isArray(snap.virtual)) {
+            this.virtualBands = snap.virtual.map(function(v) { return { hz: v.hz, g: v.g, q: v.q, type: v.type || 'peaking' }; });
+        } else {
+            this.virtualBands = [];
+        }
         this.activePreset = snap.activePreset || null;
+        // Band cards: the type / slope buttons and the bypass dot are plain DOM
+        // that the writes above do not touch, so without this a restored band
+        // could show "PK" while actually being a high-shelf (or show the wrong
+        // bypass state). handleTypeChange is the same funnel every type change
+        // already goes through; it also re-applies the slope reset rule.
+        var TYPE_LABELS = { peaking: 'PK', lowshelf: 'LS', highshelf: 'HS', highpass: 'HP', lowpass: 'LP', notch: 'Notch' };
+        var SLOPE_TYPES = ['lowshelf', 'highshelf', 'lowpass', 'highpass'];
+        var prevProg = this.isProgrammaticSliderUpdate;
+        this.isProgrammaticSliderUpdate = true;
+        try {
+            for (var k = 0; k < this.bands.length; k++) {
+                var bk = this.bands[k];
+                var typeBtn = document.getElementById('eq-t_m' + k);
+                if (typeBtn) typeBtn.textContent = TYPE_LABELS[bk.type] || 'PK';
+                if (this.handleTypeChange) this.handleTypeChange(k, bk.type || 'peaking');
+                var slopeBtn = document.getElementById('eq-sl_m' + k);
+                if (slopeBtn) {
+                    slopeBtn.classList.toggle('hidden', SLOPE_TYPES.indexOf(bk.type) === -1);
+                    slopeBtn.textContent = (bk.slope || 12) + 'dB';
+                }
+                var key = 'm' + k;
+                var off = !!(window.bypassedBands && window.bypassedBands.has(key));
+                var bpBtn = document.getElementById('eq-bp_' + key);
+                if (bpBtn) {
+                    bpBtn.textContent = off ? '\uD83D\uDD34' : '\uD83D\uDFE2';
+                    bpBtn.style.color = off ? 'var(--accent-red)' : 'var(--accent-green)';
+                    var card = bpBtn.closest('.eq-band-card');
+                    if (card) {
+                        card.style.opacity = off ? '0.3' : '1';
+                        card.classList.toggle('bypassed', off);
+                    }
+                }
+            }
+        } finally {
+            this.isProgrammaticSliderUpdate = prevProg;
+        }
         // Re-drive every band through the normal update path. The DOM values we
         // just wrote are what updateAudioConnections() reads, so this is what
         // actually pushes the restored curve back to the worklet - without it
@@ -200,11 +246,6 @@ const EQ_SmartImportMethods = {
             }
         },
 
-        toggleSmartImportExpand: function() {
-            var overlay = document.getElementById('smart-import-expand-overlay');
-            if (overlay && overlay.classList.contains('is-open')) this.collapseSmartImportExpand();
-            else this.expandSmartImportField();
-        },
 
         _smartImportWireExpand: function() {
             if (this._smartImportExpandWired) return;
@@ -565,56 +606,3 @@ const EQ_SmartImportMethods = {
             this.loadValues({ preVal: 0, mainVals: mainVals, advVals: advVals });
         },
 };
-
-
-// ---- Ctrl+Z undo for EQ edits -------------------------------------------------
-// Reuses snapshotEQState / restoreEQState above. A snapshot of the CURRENT
-// state is taken just before each user gesture inside the EQ workspace
-// (pointer press or arrow-key nudge), so undo returns to the state from before
-// the gesture. Capped at 20, in memory only, EQ workspace only.
-(function () {
-    var stack = [];
-    var MAX = 20;
-    var ZONES = '#eq-col-db, #eq-col-graph, #eq-col-console';
-
-    function snap() {
-        var eq = window.EQ;
-        if (!eq || typeof eq.snapshotEQState !== 'function') return null;
-        var s = eq.snapshotEQState();
-        return { key: JSON.stringify(s), snap: s };
-    }
-    function record(e) {
-        try {
-            if (!e.target || !e.target.closest || !e.target.closest(ZONES)) return;
-            var cur = snap();
-            if (!cur) return;
-            var top = stack[stack.length - 1];
-            if (top && top.key === cur.key) return;
-            stack.push(cur);
-            if (stack.length > MAX) stack.shift();
-        } catch (_) {}
-    }
-    document.addEventListener('pointerdown', record, true);
-    document.addEventListener('keydown', function (e) {
-        if (e.ctrlKey || e.metaKey || e.altKey) return;
-        if (e.key && e.key.indexOf('Arrow') === 0) record(e);
-    }, true);
-
-    EQ_SmartImportMethods.undoEQ = function () {
-        try {
-            var zone = document.getElementById('eq-col-graph');
-            if (!zone || zone.offsetParent === null) return false;
-            var cur = snap();
-            if (!cur) return false;
-            var prev = null;
-            while (stack.length) {
-                var c = stack.pop();
-                if (c.key !== cur.key) { prev = c; break; }
-            }
-            if (!prev) return false;
-            this.restoreEQState(prev.snap);
-            if (typeof showToast === 'function') showToast('Undid last EQ change', '↩️');
-            return true;
-        } catch (err) { console.error('[EQ undo]', err); return false; }
-    };
-})();

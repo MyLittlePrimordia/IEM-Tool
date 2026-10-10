@@ -294,6 +294,15 @@ function startLocalServer(rootDir) {
   return new Promise((resolve, reject) => {
     server = http.createServer((req, res) => {
       try {
+        // DNS-rebinding guard: only answer requests addressed to the literal
+        // loopback origin the app itself loaded. A web page in the user's
+        // browser that rebinds a hostname to 127.0.0.1 would otherwise be able
+        // to read database.json and the bundled assets through this server.
+        const addr = server && server.address();
+        if (addr && (req.headers.host || '').toLowerCase() !== `127.0.0.1:${addr.port}`) {
+          sendEmpty(res, 403);
+          return;
+        }
         const rawPath = req.url.split('?')[0];
         let filePath;
         try {
@@ -424,6 +433,21 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.js')
     }
   });
+
+  // Permission lockdown. The app is fully offline and needs no camera, mic,
+  // location, notifications or MIDI. The only grants it uses are clipboard
+  // read (paste of curve data) and sanitized clipboard write (copy EQ lines),
+  // and only for its own origin. Everything else is denied by default.
+  const ALLOWED_PERMISSIONS = new Set(['clipboard-read', 'clipboard-sanitized-write']);
+  const ownOrigin = `http://127.0.0.1:${port}`;
+  const ses = mainWindow.webContents.session;
+  ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+    const origin = (details && details.requestingUrl) || '';
+    callback(ALLOWED_PERMISSIONS.has(permission) && origin.startsWith(ownOrigin + '/'));
+  });
+  ses.setPermissionCheckHandler((wc, permission, requestingOrigin) => (
+    ALLOWED_PERMISSIONS.has(permission) && requestingOrigin === ownOrigin
+  ));
 
   mainWindow.loadURL(`http://127.0.0.1:${port}/index.html${app.isPackaged ? '?packaged=1' : ''}`);
 

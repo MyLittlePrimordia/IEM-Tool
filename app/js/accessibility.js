@@ -30,12 +30,6 @@ btn.setAttribute('aria-checked', this.blueLightActive ? 'true' : 'false');
             
             localStorage.setItem('a11y_bluelight', this.blueLightActive ? 'true' : 'false');
         },
-                setChannelMode: function(mode) {
-            const desiredMono = (mode === 'mono');
-            if (window.isMonoMode !== desiredMono && window.toggleAudioMode) {
-                window.toggleAudioMode();
-            }
-        },
         setBalance: function(val) {
             if (window.EQ && EQ.updateBalance) {
                 EQ.updateBalance(parseFloat(val) / 100);

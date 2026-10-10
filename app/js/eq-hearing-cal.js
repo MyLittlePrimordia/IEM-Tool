@@ -9,65 +9,6 @@
             hearingCalibrationFrequencies: [250, 500, 1000, 2000, 4000, 8000, 12000, 16000],
             resonanceCalEnabled: false,
             volumeCompEnabled: false,
-            toggleResonanceCal: function() {
-                this.resonanceCalEnabled = !this.resonanceCalEnabled;
-                const btn = document.getElementById('btn-resonance-cal');
-                const lbl = document.getElementById('lbl-resonance-cal');
-                
-                // Flush target interpolation cache as frequency axes will shift
-                PEQDB_Module.STATE.activeCurves.forEach(c => {
-                    if (c.role === 'target') c.cachedInterp = null;
-                });
-
-                if (btn && lbl) {
-                    if (this.resonanceCalEnabled) {
-                        btn.classList.add('active-btn');
-                        lbl.textContent = 'Resonance: ON';
-                        showToast("Ear Resonance Peak (" + PEQDB_Module.resonanceHz + "Hz) Applied!", "ðŸŽ¯");
-                    } else {
-                        btn.classList.remove('active-btn');
-                        lbl.textContent = 'Resonance: Off';
-                        showToast("Ear Resonance Peak Disabled", "ðŸŽ¯");
-                    }
-                }
-                this.drawCurve();
-            },
-            toggleHearingCal: function() {
-                this.hearingCalEnabled = !this.hearingCalEnabled;
-                const btn = document.getElementById('btn-hearing-cal');
-                const lbl = document.getElementById('lbl-hearing-cal');
-                if (btn && lbl) {
-                    if (this.hearingCalEnabled) {
-                        btn.classList.add('active-btn');
-                        lbl.textContent = 'Hearing: ON';
-                        Mascot.triggerTemporaryExpression('cool', 2000);
-                    showToast("Hearing Calibration Profile Applied!", "ðŸ‘‚");
-                    } else {
-                        btn.classList.remove('active-btn');
-                        lbl.textContent = 'Hearing: Off';
-                        showToast("Hearing Calibration Profile Disabled", "ðŸ‘‚");
-                    }
-                }
-                this.applyHearingCalibrationGains();
-                this.drawCurve();
-            },
-            toggleVolumeComp: function() {
-                this.volumeCompEnabled = !this.volumeCompEnabled;
-                const btn = document.getElementById('btn-volume-comp');
-                const lbl = document.getElementById('lbl-volume-comp');
-                if (btn && lbl) {
-                    if (this.volumeCompEnabled) {
-                        btn.classList.add('active-btn');
-                        lbl.textContent = 'Compensator: ON';
-                        showToast("Auto Headroom & Volume Compensation Active", "ðŸ”Š");
-                    } else {
-                        btn.classList.remove('active-btn');
-                        lbl.textContent = 'Compensator: Off';
-                        showToast("Volume Compensation Disabled", "ðŸ”Š");
-                    }
-                }
-                this.updatePreamp();
-            },
             applyHearingCalibrationGains: function() {
                 const hearingFreqs = [250, 500, 1000, 2000, 4000, 8000, 12000, 16000];
                 let maxBoost = 0, secondBoost = 0;
@@ -172,25 +113,6 @@ updateDeEsserSens: function(val) {
                 // worklet with an immediately-superseded gain.
                 const sensVal = document.getElementById('deesser-sens-val');
                 if (sensVal) sensVal.textContent = val + "%";
-                this.drawCurve();
-            },
-            updateDeEsserFreq: function(freq) {
-                this.deEsserCurrentFreq = Math.round(freq);
-                if (!Number.isFinite(this.deEsserSensitivity)) this.deEsserSensitivity = 50;
-                // Seed post only; the tracker takes over on the next frame.
-                if (this.deEsserEnabled && SharedAudio.workletNode) {
-                    SharedAudio.workletNode.port.postMessage({
-                        type: 'updateSimulations',
-                        sims: [{
-                            index: 5,
-                            bypassed: false,
-                            filterType: 'peaking',
-                            frequency: this.deEsserCurrentFreq,
-                            gain: -3.0 * (this.deEsserSensitivity / 100),
-                            q: 2.5
-                        }]
-                    });
-                }
                 this.drawCurve();
             },
         };

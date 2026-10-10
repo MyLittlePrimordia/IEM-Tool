@@ -1276,7 +1276,9 @@ existing module drives this unchanged. -->
                                 <button id="graph-align-hz-btn" data-action="click_53_PEQDB_Module_cycleAlignHz" class="btn-clear text-stone-200 font-bold text-xs h-8 px-2.5 shadow-sm flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap" title="Align curves at"><span class="align-label-prefix">Align: </span>AVG</button>
                                 <button id="graph-align-db-btn" data-action="click_202_PEQDB_Module_cycleAlignDb" class="btn-clear text-stone-200 font-bold text-xs h-8 px-2.5 shadow-sm flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap" title="Shift all curves"><span class="align-label-prefix">Amp: </span>0dB</button>
                 </div>
-<button data-action="click_283_PEQDB_Module_clearState" class="btn-clear text-stone-200 font-bold text-xs h-8 px-2 sm:px-2.5 shadow-sm flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap" title="Clear graph, flatten EQ">
+<button type="button" data-cmd="EQ.undoEQ" class="btn-clear text-stone-200 font-bold text-xs h-8 px-2 shadow-sm flex items-center justify-center cursor-pointer whitespace-nowrap" title="Undo EQ change (Ctrl+Z)" aria-label="Undo EQ change"><span class="emoji-font">↩️</span></button>
+                                <button type="button" data-cmd="EQ.redoEQ" class="btn-clear text-stone-200 font-bold text-xs h-8 px-2 shadow-sm flex items-center justify-center cursor-pointer whitespace-nowrap" title="Redo EQ change (Ctrl+Y)" aria-label="Redo EQ change"><span class="emoji-font">↪️</span></button>
+                                <button data-action="click_283_PEQDB_Module_clearState" class="btn-clear text-stone-200 font-bold text-xs h-8 px-2 sm:px-2.5 shadow-sm flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap" title="Clear graph, flatten EQ">
                                     <span>🧹</span><span class="hidden sm:inline">Clear</span>
                                 </button>
                                 <button data-action="click_207_EQ_saveCurrentAsCustomPreset" class="btn-clear text-stone-200 font-bold text-xs h-8 px-2 sm:px-2.5 shadow-sm flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap" title="Save as preset">
@@ -2521,10 +2523,22 @@ existing module drives this unchanged. -->
             <span class="settings-row-icon emoji-font">📂</span>
             <div class="settings-row-text">
               <span class="settings-row-label">Offline database</span>
-              <span class="settings-row-hint">Drop a newer database.json + data folder here, then restart</span>
+              <span class="settings-row-hint is-one-line">Add a newer database, then hit Refresh</span>
             </div>
             <div class="settings-actions">
               <button data-action="click_900_App_openDataFolder" class="settings-btn" title="Open the folder that holds database.json and data">Open folder</button>
+              <button data-action="click_901_App_reloadDatabase" class="settings-btn" title="Reload the database after adding new files (the app window reloads; saved reviews, presets and settings are kept)">Refresh</button>
+            </div>
+          </div>
+
+          <div class="settings-row">
+            <span class="settings-row-icon emoji-font">🛟</span>
+            <div class="settings-row-text">
+              <span class="settings-row-label">Settings repair</span>
+              <span class="settings-row-hint is-one-line">Reset app settings. Reviews and presets stay</span>
+            </div>
+            <div class="settings-actions">
+              <button data-action="click_902_App_resetSettings" class="settings-btn" title="Reset theme, font, playback and remembered-EQ settings to defaults, then reload. Saved reviews, presets and hearing calibration are kept.">Fix settings</button>
             </div>
           </div>
 
@@ -2992,7 +3006,7 @@ existing module drives this unchanged. -->
 <!-- ONNX Runtime Web is loaded on demand by IEM_Module.loadPhotoMatteRuntime();
      see the note next to this tag. -->
 
-<script src="app/js/bundle-version.js?v=7c07cef8379f"></script>
+<script src="app/js/bundle-version.js?v=1ba1a22f3db0"></script>
         <!-- Bundle loader. External (app/js/boot-bundle.js) rather than inline so that
          script-src can drop 'unsafe-inline'. -->
         <script src="app/js/boot-bundle.js"></script>

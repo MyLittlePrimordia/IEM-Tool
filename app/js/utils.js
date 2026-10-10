@@ -169,31 +169,6 @@ const CurveUtils = {
         });
     },
 
-    // Resample an already-interpolated dense response (e.g. a cachedInterp on
-    // the 500-pt DSP.FREQS grid) onto a sparser target grid via log-space
-    // linear interpolation. Avoids re-normalizing + re-splining raw curve data
-    // whenever a scan needs a different grid density than the cached one.
-    resampleInterp: function(sourceInterp, sourceFreqs, targetFreqs) {
-        if (!sourceInterp || !sourceFreqs || !targetFreqs) return null;
-        const n = sourceFreqs.length;
-        if (n < 2 || targetFreqs.length === 0) return null;
-        const out = new Float32Array(targetFreqs.length);
-        for (let i = 0; i < targetFreqs.length; i++) {
-            const f = targetFreqs[i];
-            if (f <= sourceFreqs[0]) { out[i] = sourceInterp[0]; continue; }
-            if (f >= sourceFreqs[n - 1]) { out[i] = sourceInterp[n - 1]; continue; }
-            let lo = 0, hi = n - 1;
-            while (lo + 1 < hi) {
-                const mid = (lo + hi) >> 1;
-                if (sourceFreqs[mid] < f) lo = mid; else hi = mid;
-            }
-            const x0 = Math.log10(sourceFreqs[lo]);
-            const x1 = Math.log10(sourceFreqs[hi]);
-            const t = (x1 > x0) ? (Math.log10(f) - x0) / (x1 - x0) : 0;
-            out[i] = sourceInterp[lo] + (sourceInterp[hi] - sourceInterp[lo]) * t;
-        }
-        return out;
-    },
 
     // 5-axis classification bands. Each band's lo/hi now meets its neighbors
     // at the geometric-mean boundary between adjacent centers (and the outer
@@ -219,67 +194,8 @@ const CurveUtils = {
         { center: 14000, lo: 10583.01, hi: 20000 }
     ],
 
-    // Average the curve's spline over each band (9 log-spaced samples per band).
-    bandAverages: function(points, bands) {
-        const out = [];
-        // cubicSplineInterpolate rebuilds the whole tridiagonal solve on every
-        // call, so evaluating it once per sample (54 calls across 6 bands x 9
-        // samples) was 54 full spline solves per curve. Build every sample
-        // frequency across all bands up front and do a single solve, then
-        // slice the results back out per band - same output, one spline build.
-        const samplesPerBand = 9;
-        const allFreqs = new Array(bands.length * samplesPerBand);
-        let idx = 0;
-        for (let b = 0; b < bands.length; b++) {
-            const lo = bands[b].lo, hi = bands[b].hi;
-            for (let k = 0; k <= 8; k++) {
-                allFreqs[idx++] = lo * Math.pow(hi / lo, k / 8);
-            }
-        }
-        const allInterp = this.cubicSplineInterpolate(points, allFreqs);
-        for (let b = 0; b < bands.length; b++) {
-            let sum = 0, count = 0;
-            const base = b * samplesPerBand;
-            for (let k = 0; k < samplesPerBand; k++) {
-                sum += allInterp[base + k];
-                count++;
-            }
-            out.push(count > 0 ? sum / count : 0);
-        }
-        return out;
-    },
 
-    // Average a dense dB response (parallel freq/dB arrays) over each band.
-    responseBandMeans: function(freqsData, respData, bands) {
-        const out = [];
-        for (let b = 0; b < bands.length; b++) {
-            const lo = bands[b].lo, hi = bands[b].hi;
-            let sum = 0, count = 0;
-            for (let j = 0; j < freqsData.length; j++) {
-                const f = freqsData[j];
-                if (f >= lo && f <= hi) { sum += respData[j]; count++; }
-            }
-            out.push(count > 0 ? sum / count : 0);
-        }
-        return out;
-    },
 
-    // Per-axis weights derived from PERCEPTUAL_WEIGHTS [sub, warmth, vocal,
-    // treble, air] - axes 0,1,3,4,5 of AXIS_BANDS (index 2 is the mids ref).
-    axisScoreWeights: function() {
-        const bands = this.AXIS_BANDS;
-        const axes = [0, 1, 3, 4, 5];
-        return axes.map(bi => {
-            const b = bands[bi];
-            let sum = 0, count = 0;
-            for (let k = 0; k <= 8; k++) {
-                const f = b.lo * Math.pow(b.hi / b.lo, k / 8);
-                sum += this.weightFor(f);
-                count++;
-            }
-            return count > 0 ? sum / count : 1.0;
-        });
-    },
 
     // Level-offset-corrected, perceptually weighted MAE between two curves
     // indexed through `probes` (grid indices). Returns similarity % in [0,100].
@@ -387,54 +303,6 @@ const CurveUtils = {
         return smoothed;
     },
 
-    averageCurves: function(curves, logGrid) {
-        if (!curves || curves.length === 0) return new Float32Array(logGrid.length).fill(75.0);
-        if (curves.length === 1) return curves[0].cachedInterp || this.cubicSplineInterpolate(curves[0].data, logGrid);
-
-        const len = logGrid.length;
-        const interpolatedMatrix = [];
-
-        curves.forEach(c => {
-            if (c && c.cachedInterp) {
-                interpolatedMatrix.push(c.cachedInterp);
-            } else if (c && c.data) {
-                const norm = CurveUtils.normalizeTo75dB(c.data);
-                interpolatedMatrix.push(CurveUtils.cubicSplineInterpolate(norm, logGrid));
-            }
-        });
-
-        if (interpolatedMatrix.length === 0) return new Float32Array(logGrid.length).fill(75.0);
-
-        const activeNumCurves = interpolatedMatrix.length;
-        const averaged = new Float32Array(len);
-
-        for (let i = 0; i < len; i++) {
-            const valuesAtFreq = [];
-            for (let j = 0; j < activeNumCurves; j++) {
-                valuesAtFreq.push(interpolatedMatrix[j][i]);
-            }
-            valuesAtFreq.sort((a, b) => a - b);
-            let sum = 0;
-            let count = 0;
-            // Trimmed mean (15% each side) only when N>=7; for N=4-6
-            // floor(N*0.15) is 0 so no trimming occurs — documented, not a bug.
-            if (activeNumCurves >= 7) {
-                const start = Math.floor(activeNumCurves * 0.15);
-                const end = activeNumCurves - start;
-                for (let k = start; k < end; k++) {
-                    sum += valuesAtFreq[k];
-                    count++;
-                }
-            } else {
-                for (let k = 0; k < activeNumCurves; k++) {
-                    sum += valuesAtFreq[k];
-                    count++;
-                }
-            }
-            averaged[i] = count > 0 ? (sum / count) : 75.0;
-        }
-        return this.gaussianSmooth(logGrid, averaged, 0.05);
-    },
 
     // Exported for reuse by app-core.js computeSimilarityScores
     // to maintain single source of truth shared with find-worker.js

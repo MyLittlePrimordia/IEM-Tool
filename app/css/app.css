@@ -5888,6 +5888,12 @@ input[type="range"]::-moz-range-thumb {
     line-height: 1.35;
     color: var(--text-lo);
 }
+/* Keeps a hint to a single row (ellipsis) when buttons crowd the row. */
+.settings-row-hint.is-one-line {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 
 /* Value buttons (Theme / Font / Audio channel). Fixed min-width so the three
    rows line up on their right edge even when the values are 4 vs 9 chars. */

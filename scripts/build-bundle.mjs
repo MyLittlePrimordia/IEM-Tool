@@ -32,7 +32,7 @@ const src = [
   'app/js/utils.js','app/js/endgame-categories.js','app/js/audio-engine.js','app/js/safe-storage.js','app/js/accessibility.js','app/js/ui-kit.js',
   'app/js/shortcuts.js','app/js/eq-export.js',
   'app/js/eq-playlist.js','app/js/eq-reverb.js','app/js/eq-crossfeed.js','app/js/eq-crossover.js','app/js/eq-dynamics.js',
-  'app/js/eq-loudness.js','app/js/eq-tempo.js','app/js/eq-smart-import.js','app/js/eq-hearing-cal.js','app/js/eq-viz-fullscreen.js',
+  'app/js/eq-loudness.js','app/js/eq-tempo.js','app/js/eq-smart-import.js','app/js/eq-history.js','app/js/eq-adapter-impedance.js','app/js/eq-hearing-cal.js','app/js/eq-viz-fullscreen.js',
   'app/js/eq-source-sim.js','app/js/eq-presets.js','app/js/eq-band-handlers.js','app/js/eq-draw-curve.js','app/js/eq-squig-graph.js',
     'app/js/eq-math-utils.js','app/js/iem-search.js','app/js/eq-sculptor.js','app/js/app-theme.js','app/js/events.js',
     // The nine built-in themes and their token maps. Declared as a top-level
@@ -42,7 +42,7 @@ const src = [
     // own object literal is being built. It also has to be a plain file rather
     // than inline data so app/export-backdrop.html can load the SAME map.
     'app/js/theme-tokens.js',
-    'app/js/app-core-shared.js','app/js/mascot-module.js','app/js/iem-module.js',
+    'app/js/app-core-shared.js','app/js/mascot-module.js','app/js/iem-export.js','app/js/iem-library.js','app/js/iem-image.js','app/js/iem-db-search.js','app/js/iem-module.js',
   // Photo background remover (u2netp). MUST come after iem-module.js: it does
   // Object.assign(IEM_Module, ...) to override preProcessImage /
   // toggleBgRemoval / processWhiteBgRemoval, and IEM_Module is a top-level
@@ -65,7 +65,7 @@ const src = [
   'app/js/eq-media-transport.js',
   'app/js/eq-graph-input.js',
   'app/js/eq-visualizer.js',
-  'app/js/db-cache.js','app/js/peqdb-module.js','app/js/testlab-module.js','app/js/find-engine.js',
+  'app/js/db-cache.js','app/js/curve-indexer.js','app/js/peqdb-alignment.js','app/js/peqdb-similar.js','app/js/peqdb-smart-rf.js','app/js/peqdb-module.js','app/js/testlab-abx.js','app/js/testlab-hearing.js','app/js/testlab-burnin.js','app/js/testlab-spatial.js','app/js/testlab-module.js','app/js/find-genre.js','app/js/find-upgrade.js','app/js/find-endgame.js','app/js/find-taste.js','app/js/find-engine.js',
   'app/js/handlers.js','app/js/app-init.js'
 ];
 

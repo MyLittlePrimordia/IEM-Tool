@@ -209,11 +209,6 @@ class BiquadFilter {
         }
     }
 
-    _updateCoeffsIfNeeded(smoothingFactor, sampleRate) {
-        if (sampleRate === undefined || !Number.isFinite(sampleRate)) sampleRate = 44100;
-        if (smoothingFactor === undefined || !Number.isFinite(smoothingFactor)) smoothingFactor = computeSmoothingFactor(sampleRate);
-        this.stepSmoothing(smoothingFactor, sampleRate);
-    }
 
     processSampleL(x, smoothingFactor, sampleRate) {
         if (sampleRate === undefined || !Number.isFinite(sampleRate)) sampleRate = 44100;

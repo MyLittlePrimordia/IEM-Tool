@@ -387,50 +387,7 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
             this.setGameMatchUI(bestMatch.emoji, bestMatch.name, bestMatch.colorClass, bestMatch.animClass);
         },
 
-        changeGraphMode: function(mode) {
-            this.graphMode = mode;
 
-            const optIdx = this.graphModes.findIndex(m => m.id === mode);
-            if (optIdx !== -1) {
-                this.currentGraphModeIdx = optIdx;
-                const btn = document.getElementById('graph-mode-cycle-btn');
-                if (btn) btn.textContent = this.graphModes[optIdx].label;
-            }
-
-            this.drawCurve();
-        },
-
-toggleVizFullscreen: function() {
-            const modal = document.getElementById('fullscreen-viz-modal');
-            const trackName = document.getElementById('modal-track-name');
-            const modalPlayBtn = document.getElementById('modal-play-btn');
-
-            if (!modal) return;
-
-            this.vizModalActive = !this.vizModalActive;
-
-            if (this.vizModalActive) {
-
-                this.ensureDSPGraph();
-
-                modal.classList.remove('hidden');
-                modal.classList.add('flex');
-
-                const currentTrackInfo = document.getElementById('playlist-track-info')?.textContent || "No tracks Loaded";
-                if (trackName) trackName.textContent = currentTrackInfo;
-
-                if (modalPlayBtn) {
-                    modalPlayBtn.innerHTML = this.audioEl.paused ? "<span>▶️</span><span>Play</span>" : "<span>⏸️</span><span>Pause</span>";
-                }
-
-                if (!this.vizLoopRunning) {
-                    this.startVisualizer();
-                }
-            } else {
-                modal.classList.add('hidden');
-                modal.classList.remove('flex');
-            }
-        },
 
                 calculateTargetMatches: function() {
 

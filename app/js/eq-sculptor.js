@@ -97,15 +97,7 @@ const EQ_Sculptor = {
         if (window.EQ) EQ.updateAll();
     },
 
-    getSculptPoints: function() {
-        return this.sculptPoints;
-    },
 
-    setSculptPoints: function(points) {
-        if (Array.isArray(points)) {
-            this.sculptPoints = points;
-        }
-    }
 };
 
 // Export for both module and global usage

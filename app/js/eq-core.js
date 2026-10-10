@@ -92,32 +92,7 @@ const EQ_Module = {
     graphFocus: 'eq',
     currentViewport: 'squig',
     isTuningLabActive: false,
-    toggleAdvancedSettings: function() {
-        const drawer = document.getElementById('advanced-settings-drawer');
-        if (drawer) {
-            drawer.classList.toggle('hidden');
-        }
-    },
 
-    setSculptSubMode: function(mode) {
-        PEQDB_Module.sculptMode = mode;
-        const btnSimple = document.getElementById('btn-sculpt-simple');
-        const btnAdvanced = document.getElementById('btn-sculpt-advanced');
-        if (btnSimple && btnAdvanced) {
-            if (mode === 'simple') {
-                btnSimple.className = "px-2 py-1 bg-pink-500 text-white transition-all cursor-pointer";
-                btnAdvanced.className = "px-2 py-1 text-zinc-500 hover:text-stone-300 transition-all cursor-pointer";
-            } else {
-                btnAdvanced.className = "px-2 py-1 bg-pink-500 text-white transition-all cursor-pointer";
-                btnSimple.className = "px-2 py-1 text-zinc-500 hover:text-stone-300 transition-all cursor-pointer";
-            }
-        }
-
-        if (mode === 'simple') {
-            PEQDB_Module.resetSculptTarget();
-        }
-        this.drawCurve();
-    },
 
          exportFormats: [
             { id: 'peace', name: 'Peace', icon: 'app/icons/peace.png', fn: function() { EQ_Module.exportPeace(); } },
@@ -146,9 +121,6 @@ const EQ_Module = {
             }
         },
 
-        toggleExportMenu: function() {
-            this.executeCurrentExportFormat();
-        },
 
         togglePersonalityMode: function(mode) {
         // `mode` arg historically ignored — boot calls with 'simple' but UX is
@@ -217,30 +189,6 @@ const EQ_Module = {
         { min: 6000, max: 10000, emoji: "✨", title: "Treble", desc: "Cymbal sparkle, high-frequency transient crispness, sibilance detail, and snap." },
         { min: 10000, max: 20000, emoji: "💨", title: "Air", desc: "Acoustic breathing room, head-stage width, and micro-detail resolution." }
     ],
-    updateAcousticBubble: function(region) {
-        const bubble = document.getElementById('acoustic-info-bubble');
-        const emojiContainer = document.getElementById('aib-emoji-container');
-        const titleContainer = document.getElementById('aib-title');
-        const descContainer = document.getElementById('aib-description');
-
-        if (!bubble || !emojiContainer || !titleContainer || !descContainer) return;
-
-        if (region) {
-            emojiContainer.innerHTML = `<span class="vibrant-emoji anim-match-breath" style="display: inline-block;">${region.emoji}</span>`;
-            titleContainer.textContent = `${region.title} (${region.min}-${region.max >= 1000 ? (region.max/1000) + 'k' : region.max}Hz):`;
-            descContainer.textContent = region.desc;
-
-            const activeAccent = getComputedStyle(document.documentElement).getPropertyValue('--accent-blue').trim();
-            bubble.style.borderColor = activeAccent;
-            bubble.style.boxShadow = `0 0 10px rgba(${getComputedStyle(document.documentElement).getPropertyValue('--accent-blue-rgb').trim()}, 0.12)`;
-        } else {
-            emojiContainer.innerHTML = '<span>🎯</span>';
-            titleContainer.textContent = "Interactive Translator:";
-            descContainer.textContent = "Hover your cursor over the graphs to translate acoustic frequency registers.";
-            bubble.style.borderColor = "";
-            bubble.style.boxShadow = "";
-        }
-    },
     activeGraphTab: 'frequency',
     staticCacheCanvas: null,
     staticCacheCtx: null,
@@ -248,54 +196,6 @@ const EQ_Module = {
     lastStaticState: null,
     autoGainMatchActive: false,
     autoGainCompensationDb: 0.0,
-    switchGraphTab: function(tabId) {
-        document.querySelectorAll('.graph-console-panel').forEach(p => p.classList.add('hidden'));
-        document.querySelectorAll('#graph-master-tabs button').forEach(b => b.classList.remove('active'));
-
-        const panel = document.getElementById('graph-panel-' + tabId);
-        if (panel) panel.classList.remove('hidden');
-
-        const btn = document.getElementById('graph-tab-' + tabId);
-        if (btn) btn.classList.add('active');
-
-        this.activeGraphTab = tabId;
-
-        const hzBtn = document.getElementById('graph-align-hz-btn');
-        const dbBtn = document.getElementById('graph-align-db-btn');
-        const clearBtn = document.getElementById('graph-clear-btn');
-        const modeBtn = document.getElementById('graph-mode-cycle-btn');
-        const div1 = document.getElementById('graph-divider-1');
-
-        const saveBtn = document.getElementById('graph-save-preset-btn');
-        const resetBtn = document.getElementById('graph-reset-eq-btn');
-        const div2 = document.getElementById('graph-divider-2');
-
-        if (tabId === 'frequency') {
-            if (hzBtn) hzBtn.classList.remove('hidden');
-            if (dbBtn) dbBtn.classList.remove('hidden');
-            if (clearBtn) clearBtn.classList.remove('hidden');
-            if (modeBtn) modeBtn.classList.remove('hidden');
-            if (div1) div1.classList.remove('hidden');
-
-            if (saveBtn) saveBtn.classList.add('hidden');
-            if (resetBtn) resetBtn.classList.add('hidden');
-            if (div2) div2.classList.add('hidden');
-        } else {
-            if (hzBtn) hzBtn.classList.add('hidden');
-            if (dbBtn) dbBtn.classList.add('hidden');
-            if (clearBtn) clearBtn.classList.add('hidden');
-            if (modeBtn) modeBtn.classList.add('hidden');
-            if (div1) div1.classList.add('hidden');
-
-            if (saveBtn) saveBtn.classList.remove('hidden');
-            if (resetBtn) resetBtn.classList.remove('hidden');
-            if (div2) div2.classList.remove('hidden');
-        }
-
-        setTimeout(() => {
-            this.drawCurve();
-        }, 30);
-    },
 
     activeConsoleTab: 'filters',
     consoleModes: [
@@ -317,12 +217,6 @@ const EQ_Module = {
         { id: 'effects', label: 'Effects', emoji: '📣' },
         { id: 'crossover', label: 'Crossover', emoji: '𔔀' }
     ],
-    cycleAcousticsSubTab: function(dir) {
-        const currentIdx = this.acousticsSubModes.findIndex(m => m.id === this.activeAcousticsSubTab);
-        const total = this.acousticsSubModes.length;
-        const nextIdx = (currentIdx + dir + total) % total;
-        this.switchAcousticsSubTab(this.acousticsSubModes[nextIdx].id);
-    },
     switchAcousticsSubTab: function(subTabId) {
         this.activeAcousticsSubTab = subTabId;
         document.querySelectorAll('.acoustics-sub-panel').forEach(p => p.classList.add('hidden'));
@@ -382,20 +276,7 @@ document.querySelectorAll('#acoustics-sub-tabs button').forEach(b => {
         { id: 'standard', label: 'Standard', emoji: '🎚️' },
         { id: 'advanced', label: 'Advanced', emoji: '⚙️' }
     ],
-    cycleFaderTab: function(dir) {
-        const currentIdx = this.faderModes.findIndex(m => m.id === this.activeFaderTab);
-        const total = this.faderModes.length;
-        const nextIdx = (currentIdx + dir + total) % total;
-        this.switchFaderTab(this.faderModes[nextIdx].id);
-    },
 
-            // (presetCategories extracted to eq-presets-data.js — EQ_PresetsData)
-    cyclePresetCategory: function(dir) {
-        const currentIdx = this.presetCategories.findIndex(m => m.id === (this.activePresetCategory || 'music'));
-        const total = this.presetCategories.length;
-        const nextIdx = (currentIdx + dir + total) % total;
-        this.switchCategory(this.presetCategories[nextIdx].id);
-    },
     crossfeedState: 'on',
     speakerSimMode: 'natural',
     stereoExpandLevel: 0,
@@ -433,11 +314,6 @@ document.querySelectorAll('#acoustics-sub-tabs button').forEach(b => {
         { id: 'heatmap', label: '🌡️ Heatmap' }
     ],
     currentGraphModeIdx: 0,
-    cycleGraphMode: function() {
-        this.currentGraphModeIdx = (this.currentGraphModeIdx + 1) % this.graphModes.length;
-        const mode = this.graphModes[this.currentGraphModeIdx];
-        this.changeGraphMode(mode.id);
-    },
     bands: [
             {hz:31,name:"Sub Bass",emoji:"🌋", type:"peaking", defaultQ:1.0},
             {hz:62,name:"Bass",emoji:"🔊", type:"peaking", defaultQ:1.0},
@@ -579,6 +455,9 @@ vizModalActive: false,
         window.addEventListener('resize', () => this.drawCurve());
 
             this.attachGraphInput();
+
+            // Re-apply the EQ from the last session (validated; see eq-history.js).
+            if (typeof EQ_History !== 'undefined') EQ_History.restoreLast(this);
         },
 
         switchFaderTab: function(tabId) {
@@ -1249,7 +1128,7 @@ switchCategory: function(catId) {
                     btn.id = 'preset-btn-' + p.id;
 
                     btn.className = 'w-full text-center text-[10px] h-8 px-1 py-1 bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate flex items-center justify-center gap-1 cursor-pointer';
-                    btn.innerHTML = `<span>${p.name}</span>`;
+                    const lbl = document.createElement('span'); lbl.textContent = p.name; btn.appendChild(lbl);
                     btn.onclick = () => { this.applyPreset(p.id); };
                     grid.appendChild(btn);
 
@@ -1374,7 +1253,6 @@ switchCategory: function(catId) {
             PEQDB_Module._similarTargetEverModified = true;
         },
 
-        clearAudio: function() { this.audioEl.pause(); this.audioEl.removeAttribute("src"); this.audioEl.load(); document.getElementById("eq-file").value = ""; this.audioEl.volume = 0.5; },
         resetEQ: function(skipDraw) {
             this.activePreset = null;
             EQ_Module.isProgrammaticSliderUpdate = true;

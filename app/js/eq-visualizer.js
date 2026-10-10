@@ -20,24 +20,6 @@ const EQ_VisualizerMethods = {
             vizModes: [
                 'horizontalSpectrogram', 'fullScreenWaterfall', 'acousticTunnel', 'oledSpectrum', 'oscilloscope', 'audioMesh'
             ],
-stopVisualizer: function() {
-        // The AGC watchdog must survive background tabs (rAF stops when
-        // hidden, so it cannot live in drawViz) — but it must also be
-        // stoppable so the 30ms timer doesn't outlive the feature.
-        if (this.agcIntervalId) {
-            clearInterval(this.agcIntervalId);
-            this.agcIntervalId = null;
-        }
-        if (this.vizFrameId) {
-            cancelAnimationFrame(this.vizFrameId);
-            this.vizFrameId = null;
-        }
-        if (this._vizIdleTimer) {
-            clearTimeout(this._vizIdleTimer);
-            this._vizIdleTimer = null;
-        }
-        this.vizLoopRunning = false;
-    },
 startVisualizer: function() {
         if (this.vizFrameId) {
             cancelAnimationFrame(this.vizFrameId);

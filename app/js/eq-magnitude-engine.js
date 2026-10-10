@@ -112,6 +112,9 @@ getLiveFiltersState: function() {
             const masterTrebVal = Number.isFinite(rawMasterTreb) ? rawMasterTreb : 0;
             const hearingCalStr = (this.hearingCalEnabled && this.hearingOffsets) ? this.hearingOffsets.join(',') : 'off';
             const gearIdx = (this.currentGearIdx !== undefined) ? this.currentGearIdx : 0;
+            const gearNow = this.gearSimOptions && this.gearSimOptions[gearIdx];
+            // Adapter shelves can be re-fitted per IEM, so the key must follow the values, not just the index.
+            const gearParamsKey = gearNow ? [gearNow.lowF, gearNow.lowG, gearNow.highF, gearNow.highG].join(',') : '';
             // The magnitude cache is keyed by content, but callers pass
             // DIFFERENT frequency grids (the graph's 1000-pt view grid vs the
             // Similar scan's fixed 500-pt DSP grid, and the view grid is
@@ -143,7 +146,7 @@ getLiveFiltersState: function() {
                 this.sourceSimLowG, this.sourceSimLowF, this.sourceSimHighG, this.sourceSimHighF,
                 this.simState.tip, this.simState.depth, this.simState.seal,
                 this.tapeModState ? JSON.stringify(this.tapeModState) : 'n',
-                masterBassVal, masterTrebVal, hearingCalStr, gearIdx,
+                masterBassVal, masterTrebVal, hearingCalStr, gearIdx, gearParamsKey,
                 this.virtualBands ? this.virtualBands.length : -1,
                 this.eqEnabled ? 1 : 0, gridKey, viewRange].join('|');
 

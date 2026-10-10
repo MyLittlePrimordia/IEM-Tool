@@ -458,24 +458,30 @@ const EQ_SquigGraphMethods = {
                         var y2 = EQ_Module.dbToY_squig(PEQDB_Module.alignDb + g2 + preVal, h);
                         var isHov = (hoverEQ2 && hoverEQ2.type === 'main' && hoverEQ2.i === i);
                         
+                        // Round band nodes (match the rest of the UI). Same sizes as the
+                        // old squares: the diameter is the old edge length.
                         var nodeSize = isHov ? 14 : 10;
-                        var half = nodeSize / 2;
-                        var px = Math.round(x2 - half);
-                        var py = Math.round(y2 - half);
+                        var radius = nodeSize / 2;
+                        var cx = Math.round(x2);
+                        var cy = Math.round(y2);
 
                         cc.save();
-                        // 8-Bit drop shadow
+                        // Drop shadow
                         cc.fillStyle = "rgba(0, 0, 0, 0.75)";
-                        cc.fillRect(px + 2, py + 2, nodeSize, nodeSize);
+                        cc.beginPath();
+                        cc.arc(cx + 2, cy + 2, radius, 0, Math.PI * 2);
+                        cc.fill();
 
                         // Solid band color
                         cc.fillStyle = bandColors[i % bandColors.length];
-                        cc.fillRect(px, py, nodeSize, nodeSize);
+                        cc.beginPath();
+                        cc.arc(cx, cy, radius, 0, Math.PI * 2);
+                        cc.fill();
 
                         // White outline border
                         cc.strokeStyle = '#ffffff';
                         cc.lineWidth = 1.8;
-                        cc.strokeRect(px, py, nodeSize, nodeSize);
+                        cc.stroke();
                         cc.restore();
                     }
                 });
@@ -1142,38 +1148,4 @@ const EQ_SquigGraphMethods = {
             return h - ((db - min) / (max - min)) * h;
         },
 
-        drawDot: function(cc, hz, g, w, h, isHovered, isActive, type) {
-            const x = w * (Math.log10(hz/20) / Math.log10(20000/20));
-            const y = (h / 2) - (g / 15) * (h / 2);
-            
-            let bIdx = 0;
-            if (type === 'main') {
-                bIdx = this.bands.findIndex(b => b.hz === hz);
-            } else {
-                bIdx = this.advancedBands.findIndex(b => b.hz === hz);
-            }
-            if (bIdx === -1) bIdx = 0;
-
-            const bandColors = ['#ef4444', '#f97316', '#f59e0b', '#10b981', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e'];
-            const targetColor = bandColors[bIdx % bandColors.length];
-
-            // 8-bit pixel-node style: hard-edged square, flat offset drop shadow (no blur), solid black outline
-            const half = isHovered ? 7 : 5.5;
-            const px = Math.round(x - half);
-            const py = Math.round(y - half);
-            const size = half * 2;
-
-            cc.save();
-            // Flat retro drop shadow (2px offset, no blur — matches every other button/slider in the app)
-            cc.fillStyle = "rgba(0, 0, 0, 0.55)";
-            cc.fillRect(px + 2, py + 2, size, size);
-
-            cc.fillStyle = targetColor;
-            cc.fillRect(px, py, size, size);
-
-            cc.strokeStyle = '#000000';
-            cc.lineWidth = 2;
-            cc.strokeRect(px, py, size, size);
-            cc.restore();
-        },
 };

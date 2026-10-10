@@ -22,7 +22,14 @@ const SUITES = [
   { file: 'tools/verify-data-cmd.js', what: 'data-cmd dispatcher (replaced 60 runtime inline handlers)' },
   { file: 'tools/verify-file-picker-a11y.js', what: 'keyboard-accessible file pickers' },
   { file: 'tools/verify-tone-sweep.js', what: 'Auto Sweep button state' },
-  { file: 'tools/verify-volume-sync.js', what: 'volume synced across footer/mobile/modal' }
+  { file: 'tools/verify-volume-sync.js', what: 'volume synced across footer/mobile/modal' },
+  { file: 'tools/verify-facades.js', what: 'god-file split keeps every public member (PEQDB, Find, TestLab, IEM, App)' },
+  { file: 'tools/verify-review-flow.js', what: 'Review tab: library round trip and infographic export' },
+  { file: 'tools/verify-permissions.js', what: 'real main.js: clipboard allowed, other permissions denied, Host guard' },
+  { file: 'tools/verify-adapter-impedance.js', what: 'Gear Simulator adapters fit from a measured impedance curve, with fallbacks' },
+  { file: 'tools/verify-eq-history.js', what: 'EQ undo/redo, remembered EQ, Settings > Fix settings' },
+  { file: 'tools/verify-database-load.js', what: 'catalogue loads once, bad file survives, Refresh picks up a new entry' },
+  { file: 'tools/verify-refresh-database.js', what: 'Settings > Refresh database: one-row hint, cache clear, reload' }
 ];
 
 function electronBinary() {

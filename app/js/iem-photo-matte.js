@@ -98,17 +98,6 @@ const IEM_PhotoMatteMethods = {
 
     /* Frees the WASM heap. The session is a few tens of MB and there is no
        reason to hold it once the user is done with the photo. */
-    releasePhotoMatte: function() {
-        if (this._matteSession) {
-            try { this._matteSession.release(); } catch (e) { /* already gone */ }
-        }
-        this._matteSession = null;
-        this._matteSessionPromise = null;
-        this._matteBaseMask = null;
-        this._matteFills = [];
-        this._matteRedoStack = [];
-        this._matteStrength = 0.5;
-    },
 
     // ------------------------------------------------------------- inference
 

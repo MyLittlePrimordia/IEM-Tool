@@ -11,6 +11,8 @@
      // from rAF callbacks themselves (e.g. resize storms) can't queue a
      // second raster for the same frame.
      drawCurve: function() {
+        // Re-fit impedance adapters when the base IEM changed (see eq-adapter-impedance.js).
+        if (this._adapterSyncCheck) this._adapterSyncCheck();
          if (this.drawPending) return;
          const cv = document.getElementById("eq-squiglinkViz");
          if (!cv || cv.clientWidth === 0 || cv.clientHeight === 0) return;

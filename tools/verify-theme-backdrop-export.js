@@ -190,7 +190,8 @@ function spread(sig) {
   console.log('\n[5] The renderer path is actually wired');
   const mainSrc = fs.readFileSync(path.join(APP_ROOT, 'main.js'), 'utf8');
   const preloadSrc = fs.readFileSync(path.join(APP_ROOT, 'preload.js'), 'utf8');
-  const modSrc = fs.readFileSync(path.join(APP_ROOT, 'app', 'js', 'iem-module.js'), 'utf8');
+  // The export code lives in iem-export.js since the god-file split; read both.
+  const modSrc = ['iem-module.js', 'iem-export.js'].map(f => fs.readFileSync(path.join(APP_ROOT, 'app', 'js', f), 'utf8')).join('\n');
   const pkg = JSON.parse(fs.readFileSync(path.join(APP_ROOT, 'package.json'), 'utf8'));
   const files = pkg.build.files;
 

@@ -31,7 +31,6 @@
                 Mascot.update();
             }, 400);
         },
-        updateToneVolume: function() { const volEl = document.getElementById('tone-volume'); const vol = volEl ? parseFloat(volEl.value) : 50; const disp = document.getElementById('tone-vol-display'); if (disp) disp.innerText = vol + '%'; if(this.gain) { setAudioParamSmooth(this.gain.gain, vol / 100 * 0.2); } },
         toneTogglePlay: async function() {
             if(this.osc) { this.toneStop(); return; }
             // Re-entrancy guard.

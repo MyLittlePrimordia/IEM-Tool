@@ -56,34 +56,6 @@ const EQ_DynamicsMethods = {
             showToast("Anti-Clip Headroom Limiter Disabled", "🛡️");
         }
     },
-    toggleDynamicsDrawer: function() {
-        var content = document.getElementById('dynamics-drawer-content');
-        var arrow = document.getElementById('dynamics-drawer-arrow');
-        if (content && arrow) { 
-            var h = content.classList.toggle('hidden'); 
-            arrow.textContent = h ? "▼" : "▲"; 
-        }
-    },
-    toggleLimiter: function() {
-        this.limiterActive = !this.limiterActive;
-        const btn = document.getElementById('btn-limiter-toggle');
-        const lbl = document.getElementById('lbl-limiter-state');
-        
-        if (btn) {
-            if (this.limiterActive) {
-                btn.classList.add('active-btn');
-            } else {
-                btn.classList.remove('active-btn');
-            }
-        }
-        if (lbl) {
-            lbl.textContent = this.limiterActive ? 'Limiter: ON' : 'Limiter: Off';
-        }
-        
-        if (SharedAudio.limiter && SharedAudio.ctx) {
-            setAudioParamSmooth(SharedAudio.limiter.ratio, this.limiterActive ? 20.0 : 1.0);
-        }
-    },
     toggleCompressor: function() {
         if (!SharedAudio.compressor) return;
         const btn = document.getElementById('btn-compressor-toggle');

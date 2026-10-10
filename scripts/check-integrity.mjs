@@ -456,6 +456,22 @@ const ON_ATTR_RE = (events, quote) => {
   }
 }
 
+// ---------------------------------------------------------------- database pair
+// The app prefers database.json.gz and only falls back to database.json, and
+// main.js serves the two as one unit. Nothing regenerates the .gz automatically,
+// so a hand-edited database.json would be silently shadowed by a stale .gz and
+// the app would keep showing the OLD catalogue. Fail the build if they differ.
+{
+  const { gunzipSync } = await import('node:zlib');
+  const jsonPath = join(root, 'database.json');
+  const gzPath = join(root, 'database.json.gz');
+  if (existsSync(jsonPath) && existsSync(gzPath)) {
+    const same = gunzipSync(readFileSync(gzPath)).equals(readFileSync(jsonPath));
+    notes.push('database.json.gz matches database.json: ' + (same ? 'yes' : 'NO'));
+    if (!same) problems.push('DATA  database.json.gz is out of sync with database.json - regenerate it (gzip -9 -k -f database.json).');
+  }
+}
+
 // ---------------------------------------------------------------- report
 for (const n of notes) console.log('  ' + n);
 if (problems.length) {

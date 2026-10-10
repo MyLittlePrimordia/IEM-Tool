@@ -96,7 +96,6 @@ const UIKit = {
     confirm: function (opts) {
         opts = opts || {};
         const wrap = this._ensureModal();
-        const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
         wrap.querySelector('#uikit-confirm-title').innerHTML = (opts.icon || (opts.danger ? '🗑️' : '⚠️')) + ' ' + esc(opts.title || 'Are you sure?');
         wrap.querySelector('#uikit-confirm-msg').textContent = opts.message || '';

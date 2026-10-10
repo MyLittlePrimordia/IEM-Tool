@@ -122,3 +122,17 @@ npm run dist-mac
 npm run dist-linux
 ```
 </details>
+
+## Impedance data for the Gear Simulator (optional)
+
+The 10-100 ohm adapter options model the voltage divider formed by the adapter and the
+IEM's impedance curve. Drop a measured curve for an IEM at
+
+    data/impedance/<database entry id>.txt
+
+(the `id` field in `database.json`, e.g. `earfun_wave_pro.txt`). One point per line,
+`frequency_Hz  impedance_ohms`, separated by spaces, tabs, commas or semicolons; lines
+starting with `#` and text headers are ignored. The curve must cover roughly 100 Hz to
+10 kHz with at least 8 points. With a valid file the adapter is fitted to that IEM and its
+label reads "(measured Z)"; without one the generic approximation is used. Use
+Settings > Offline database > Refresh after adding files.

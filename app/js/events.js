@@ -14,12 +14,6 @@ const EventBinding = {
         this.handlers[action] = handler;
     },
 
-    // Register multiple handlers at once
-    registerAll: function(map) {
-        Object.keys(map).forEach(function(action) {
-            this.register(action, map[action]);
-        }, this);
-    },
 
     // Get handler for an action
     get: function(action) {

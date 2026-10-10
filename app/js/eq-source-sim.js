@@ -307,6 +307,7 @@ const EQ_SourceSimMethods = {
         cycleGearSim: function(dir) {
             const total = this.gearSimOptions.length;
             this.currentGearIdx = ((this.currentGearIdx || 0) + dir + total) % total;
+            if (this._adapterApplyCachedFit) this._adapterApplyCachedFit();
             const gear = this.gearSimOptions[this.currentGearIdx];
 
             const labelEl = document.getElementById('label-gear-sim');

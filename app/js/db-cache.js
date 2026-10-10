@@ -1,5 +1,5 @@
 // Split out of the former monolithic app-core.js (2026 refactor).
-// DBCache: small in-memory cache used when browsing/searching the database.
+// DBCache: IndexedDB store for saved reviews (the "Library"). Not a curve cache; see CurveIndexer in peqdb-module.js.
     Object.assign(EQ_Module, EQ_ExportMethods);
     Object.assign(EQ_Module, EQ_PlaylistMethods);
 
@@ -30,6 +30,8 @@
     Object.assign(EQ_Module, EQ_LoudnessMethods);
     Object.assign(EQ_Module, EQ_TempoMethods);
     Object.assign(EQ_Module, EQ_SmartImportMethods);
+    Object.assign(EQ_Module, EQ_HistoryMethods);
+    Object.assign(EQ_Module, EQ_AdapterImpedanceMethods);
     Object.assign(EQ_Module, EQ_HearingCalMethods);
     Object.assign(EQ_Module, EQ_VizFullscreenMethods);
     Object.assign(EQ_Module, EQ_SourceSimMethods);

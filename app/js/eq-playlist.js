@@ -52,7 +52,7 @@ const EQ_PlaylistMethods = {
         _transitioning: false,    // a crossfade is in flight — suppress double-advance
 
         settingsLoudnessMatchEnabled: function() {
-            return localStorage.getItem('settings_loudness_match') !== '0';
+            return SafeStorage.getItem('settings_loudness_match') !== '0';
         },
 
 _retargetActiveArm: function(gain, tc = 0.05) {
@@ -267,22 +267,6 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             URL.revokeObjectURL(url);
         },
 
-        // Revoke all blob URLs in the current playlist and clear caches.
-        // Call when replacing the entire playlist to prevent leaks.
-        _clearAllBlobUrls: function() {
-            if (this.playlist) {
-                this.playlist.forEach(t => this._revokeTrackUrl(t));
-            }
-            if (this.objectUrlsCache) {
-                this.objectUrlsCache.forEach(u => {
-                    try { URL.revokeObjectURL(u); } catch (_) {}
-                });
-                this.objectUrlsCache = [];
-            }
-            if (this._urlRegistry) {
-                this._urlRegistry = {};
-            }
-        },
 
         /**
          * Fisher-Yates shuffle of an array of indices.
@@ -443,11 +427,6 @@ _retargetActiveArm: function(gain, tc = 0.05) {
                 // Graph absent — mirror the fade on the active element attribute directly.
                 const active = this._activeEl();
                 if (active) active.volume = Math.max(0, Math.min(1, targetVal));
-            }
-        },
-        fadeMasterGain: function(targetVal, duration = 0.015) {
-            if (SharedAudio.masterGain && SharedAudio.ctx) {
-                setAudioParamSmooth(SharedAudio.masterGain.gain, targetVal);
             }
         },
 

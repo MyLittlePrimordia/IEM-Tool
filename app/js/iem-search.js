@@ -117,9 +117,6 @@ const IemSearchIndex = {
         return results.map(r => r.item);
     },
 
-    getDb: function() {
-        return this._db;
-    },
 
     rebuild: function(db) {
         this.init(db);

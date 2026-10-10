@@ -90,6 +90,53 @@ const handlers = {
                 showToast("Opening folders only works in the desktop app.", "⚠️");
             }
         },
+        "click_901_App_reloadDatabase": async function(event, element) {
+            // Reloads the curve database after the user dropped newer files into
+            // the offline-database folder. The catalogue feeds PEQDB, Find, the
+            // worker and several derived caches, so the reliable way to pick up
+            // new files is to drop every cache built from the old ones and reload
+            // the app window (same origin, so settings, presets and saved reviews
+            // are untouched). The server re-reads the folder on every request.
+            const ok = await UIKit.confirm({
+                title: "Refresh the database?",
+                message: "The app window will reload to use the new database files. Saved reviews, presets and settings are kept; anything unsaved (current EQ bands, loaded curves) is cleared.",
+                confirmLabel: "Refresh"
+            });
+            if (!ok) return;
+            try { await CurveIndexer.clearCurveCache(); } catch (e) { console.warn("[Refresh] curve cache clear failed:", e); }
+            // Flags that tell the app the old catalogue is already indexed, and
+            // the profiles derived from it. Reviews live in a separate store
+            // (DBCache) and are deliberately not touched.
+            SafeStorage.removeItem("squig_db_indexed");
+            SafeStorage.removeItem("find_canonical_profiles");
+            showToast("Reloading database…", "🔄");
+            setTimeout(function() { location.reload(); }, 300);
+        },
+        "click_902_App_resetSettings": async function(event, element) {
+            // Safe-mode for a bad saved setting. Removes app SETTINGS only and
+            // keeps everything the user made or measured: saved reviews (separate
+            // IndexedDB store), custom EQ presets, Find favorites, fit memory and
+            // the hearing-test calibration.
+            const ok = await UIKit.confirm({
+                title: "Reset app settings?",
+                message: "Theme, font, playback, alignment and remembered-EQ settings go back to defaults and the app window reloads. Your saved reviews, EQ presets, favorites and hearing calibration are kept.",
+                confirmLabel: "Reset settings",
+                danger: true
+            });
+            if (!ok) return;
+            const KEEP = new Set(["settings_hearing_offsets"]);
+            const EXTRA = ["iem_last_eq_v1", "a11y_bluelight", "squig_db_indexed", "find_canonical_profiles"];
+            try {
+                const keys = [];
+                for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+                keys.forEach(function(k) {
+                    if (k && k.indexOf("settings_") === 0 && !KEEP.has(k)) SafeStorage.removeItem(k);
+                });
+            } catch (e) { console.warn("[Settings repair] could not enumerate settings:", e); }
+            EXTRA.forEach(function(k) { SafeStorage.removeItem(k); });
+            showToast("Settings reset. Reloading…", "🛟");
+            setTimeout(function() { location.reload(); }, 300);
+        },
         "click_196_IEM_saveConfig": function(event, element) { IEM.saveConfig() },
         "click_197_EQ_applyGenreTargetAutoEQ__music": function(event, element) { EQ.applyGenreTargetAutoEQ('music') },
         "click_198_App_switchTab__iem": function(event, element) { App.switchTab('iem') },
