@@ -2,7 +2,7 @@
 
 **The offline audio playground for exploring, tuning, and testing In-Ear Monitors.**
 
-Find budget clones of $1,000 flagships, tune any set with 1-click AutoEQ, pinpoint harsh treble peaks, and test your gear—100% offline with zero signups or tracking.
+Find budget clones of $1,000 flagships, tune any set with 1-click AutoEQ, and test your gear—100% offline with zero signups or tracking.
 
 [📥 **Download Latest Release (Windows / macOS / Linux)**](https://github.com/MyLittlePrimordia/IEM-Tool/releases/latest)  
 *100% Free • Works completely offline*
@@ -11,66 +11,49 @@ Find budget clones of $1,000 flagships, tune any set with 1-click AutoEQ, pinpoi
 
 ## ✨ What You Can Do
 
-- 💎 **Find Budget "Gems" & Clones:** Match frequency curves to find cheap budget alternatives that sound just like flagship $1,000+ IEMs.
-- 🎛️ **1-Click AutoEQ:** Instantly tune your IEMs to match target sound signatures or music genres. Export presets straight to **Wavelet**, **Peace EQ**, **Qudelix**, **Poweramp**, and **FxSound**.
-- 🔬 **Acoustic Ear Lab:** Sweep audio frequencies to find your unique ear canal resonance peak, balance uneven left/right channels, and blind test audio tracks.
-- ⚡ **Power & Dongle Calculator:** Find out if your phone, dongle, or desktop DAC/amp has enough power to drive your IEMs.
-- 🎨 **Colour Themes & Visualizers:** 6 live audio visualizers and 9 colour themes, each with its own backdrop pattern.
+- 💎 **Find Budget "Gems":** Match frequency curves to find cheap alternatives that sound like flagship $1,000+ IEMs.
+- 🎛️ **1-Click AutoEQ:** Instantly tune your IEMs and export presets to **Wavelet**, **Peace EQ**, **Qudelix**, and more.
+- 🔬 **Acoustic Ear Lab:** Sweep audio frequencies, check channel balance, and run blind audio tests.
+- ⚡ **Power Calculator:** Check if your phone or DAC/amp has enough juice to drive your gear.
+- 🎨 **Visualizers & Themes:** Enjoy live audio visualizers and 9 unique colour themes.
 
 ---
 
-## 📸 Workspaces
+## 📸 Workspaces (All 7 Tabs)
 
 ### 1. 🔍 Find
-Filter by price, driver type, or sound signature. Pick an expensive dream set to instantly find budget twins with matching frequency curves.
-
-<p align="center">
-  <img src="screenshots/FIND.png" width="900" alt="Find Workspace">
-</p>
-
----
+Filter by price, driver type, or sound signature to discover budget twins for expensive dream sets.
+<p align="center"><img src="screenshots/FIND.png" width="900" alt="Find Workspace"></p>
 
 ### 2. 🎚️ EQ
-Draw your own curves or let the AutoEQ engine solve them for you. Includes crossfeed, de-essing, stereo widening, and 1-click exports.
-
-<p align="center">
-  <img src="screenshots/EQ.png" width="900" alt="EQ Workspace">
-</p>
-
----
+Draw custom curves, let AutoEQ solve targets automatically, and export presets with one click.
+<p align="center"><img src="screenshots/EQ.png" width="900" alt="EQ Workspace"></p>
 
 ### 3. 🔬 Test
-Find personal ear canal resonance peaks, check channel balance, and run blind A/B audio tests to see if you can really tell the difference.
-
-<p align="center">
-  <img src="screenshots/TEST.png" width="900" alt="Test Lab Workspace">
-</p>
-
----
+Pinpoint your ear canal resonance peak, check channel balance, and run blind A/B audio tests.
+<p align="center"><img src="screenshots/TEST.png" width="900" alt="Test Lab Workspace"></p>
 
 ### 4. 📝 Review
-Calculate exact voltage and mW requirements for your gear, take notes, and compare IEMs side-by-side with radar charts.
-
-<p align="center">
-  <img src="screenshots/REVIEW.png" width="900" alt="Review Workspace">
-</p>
-
----
+Calculate power requirements, view radar charts, and compare IEM specifications side-by-side.
+<p align="center"><img src="screenshots/REVIEW.png" width="900" alt="Review Workspace"></p>
 
 ### 5. 🗃️ Data
-Editor tool built into the app to maintain & update the offline database.  
+Built-in editor to safely manage and update your offline database without touching system files.
+<p align="center"><img src="screenshots/DATA.png" width="900" alt="Data Workspace"></p>
 
-<p align="center">
-  <img src="screenshots/DATA.png" width="900" alt="Data Workspace">
-</p>
+### 6. 📊 Viz
+Immersive, fullscreen live audio visualizers that react in real-time to your music playback.
+<p align="center"><img src="screenshots/VIZ.png" width="900" alt="Viz Workspace"></p>
 
-**Your edits never touch the files that came with the app.** The first time you save, the installed app makes a personal working copy of `database.json` and `data/` inside the `IEM-Data` folder and the bundled files are never written, renamed or deleted. **Settings → Offline database → Reset** deletes the working copy and the app goes back to the built-in database. (Running from source with `npm start` is developer mode: the project folder *is* the bundled copy, so saves update the files that ship.) In a browser, Chrome/Edge can connect your project folder to save in place; other browsers download the files. Shortcuts: `5` opens the tab, `Ctrl+S` saves, `Ctrl+Z` / `Ctrl+Y` undo / redo.
+### 7. ⚙️ Setup
+Customize your experience with 9 color themes, typography scaling, audio routing, and database management.
+<p align="center"><img src="screenshots/SETUP.png" width="900" alt="Setup Workspace"></p>
 
-Developers: logic is in `app/js/data-core.js`, `data-curves.js`, `data-import.js` (pure, no DOM), `data-store.js` (storage), `data-module.js` (UI). `tools/verify-data-tab.js` and `tools/verify-working-copy.js` are end-to-end tests that **write**, so run them only against scratch copies (they refuse to run on the real project folder).
+---
 
 ## 🎨 Themes
 
-Switch between 9 colour themes anytime from the settings. Each one has its own accent colour *and* its own backdrop pattern:
+Switch between 9 colour themes anytime from settings. Each theme features its own accent color and backdrop pattern:
 
 | ⚫ Black | 🟤 Brown | 🔴 Red |
 | :---: | :---: | :---: |
@@ -86,24 +69,21 @@ Switch between 9 colour themes anytime from the settings. Each one has its own a
 
 | Platform | File | How |
 | :--- | :--- | :--- |
-| **Windows** | `IEM-Tool-Setup.exe` | Run the installer and follow the wizard. Launch from the Start menu or desktop shortcut. |
-| **Linux** | `IEM-Tool.appimage` | `chmod +x IEM-Tool.appimage`, then run it. Portable, no install. (Needs FUSE 2; if it won't start, run it with `--appimage-extract-and-run`.) |
+| **Windows** | `IEM-Tool-Setup.exe` | Run the installer and launch from the Start menu or desktop shortcut. |
+| **Linux** | `IEM-Tool.appimage` | `chmod +x IEM-Tool.appimage`, then run it. Portable, no install required. |
 | **macOS** | `IEM-Tool.dmg` | Open the DMG and drag the app to Applications. |
 
-Your settings, themes and saved reviews are stored per user (Windows: `%APPDATA%\iem-tool`). The Linux AppImage instead keeps `IEM-Profile/` and `IEM-Data/` next to the file, so it can run from a USB stick.
+*Saved settings and reviews are stored locally per user (Windows: `%APPDATA%\iem-tool`).*
 
 ---
 
-## 🔄 Updating IEM Data (Without Reinstalling)
+## 🔄 Updating IEM Data
 
-You don't need a new app version to get newly measured IEMs:
-
-1. Download the latest data from the **[📦 Database Repo](https://github.com/MyLittlePrimordia/Database/archive/refs/heads/main.zip)**.
-2. In IEM Tool open **Settings → Data → Offline database → Open folder**. This opens the `IEM-Data` folder (it is created for you).
-3. Extract the download and drop `database.json` (and `database.json.gz` if included) plus the `data/` folder into that `IEM-Data` folder. (Linux AppImage: it sits next to the AppImage. macOS: `~/Library/Application Support/IEM Tool/IEM-Data/`.)
+Get newly measured IEMs without reinstalling the app:
+1. Download the latest data bundle from the **[📦 Database Repo](https://github.com/MyLittlePrimordia/Database/archive/refs/heads/main.zip)**.
+2. In IEM Tool, go to **Settings → Data → Offline database → Open folder**.
+3. Extract the download and drop `database.json` and the `data/` folder into that folder.
 4. Restart **IEM Tool**.
-
-Files in `IEM-Data` win over the database built into the app, and anything missing there is still read from the built-in copy. To go back to the built-in database, delete the `IEM-Data` folder.
 
 ---
 
@@ -112,7 +92,7 @@ Files in `IEM-Data` win over the database built into the app, and anything missi
 
 | Repository | Description |
 | :--- | :--- |
-| **[🎧 IEM Tool](https://github.com/MyLittlePrimordia/IEM-Tool)** | The main desktop workspace for finding, tuning, testing, and reviewing IEMs. |
+| **[🎧 IEM Tool](https://github.com/MyLittlePrimordia/IEM-Tool)** | The main desktop workspace for exploring, tuning, and testing IEMs. |
 | **[📦 Database](https://github.com/MyLittlePrimordia/Database)** | The raw repository hosting measurement curve files and datasets. |
 </details>
 
@@ -130,4 +110,3 @@ npm start
 npm run dist-win
 npm run dist-mac
 npm run dist-linux
-```
