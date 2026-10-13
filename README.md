@@ -19,35 +19,22 @@ Find budget clones of $1,000 flagships, tune any set with 1-click AutoEQ, and te
 
 ---
 
-## 📸 Workspaces (All 7 Tabs)
+## 🗺️ Workspaces (All 7 Tabs)
 
-### 1. 🔍 Find
-Filter by price, driver type, or sound signature to discover budget twins for expensive dream sets.
-<p align="center"><img src="screenshots/FIND.png" width="900" alt="Find Workspace"></p>
+<details>
+<summary><b>Click to expand and view all 7 workspaces & screenshots</b></summary>
 
-### 2. 🎚️ EQ
-Draw custom curves, let AutoEQ solve targets automatically, and export presets with one click.
-<p align="center"><img src="screenshots/EQ.png" width="900" alt="EQ Workspace"></p>
+| Workspace | Description | Preview |
+| :--- | :--- | :--- |
+| **1. 🔍 Find** | Filter by price, driver type, or sound signature to discover budget twins. | [📸 View Screenshot](screenshots/FIND.png) |
+| **2. 🎚️ EQ** | Draw custom curves, solve AutoEQ targets, and export presets instantly. | [📸 View Screenshot](screenshots/EQ.png) |
+| **3. 🔬 Test** | Pinpoint ear canal resonance peaks, check channel balance, and run blind tests. | [📸 View Screenshot](screenshots/TEST.png) |
+| **4. 📝 Review** | Calculate power needs, view radar charts, and compare specs side-by-side. | [📸 View Screenshot](screenshots/REVIEW.png) |
+| **5. 🗃️ Data** | Built-in editor to safely manage and update your offline database locally. | [📸 View Screenshot](screenshots/DATA.png) |
+| **6. 📊 Viz** | Immersive, fullscreen live audio visualizers reacting to your music. | [📸 View Screenshot](screenshots/VIZ.png) |
+| **7. ⚙️ Setup** | Customize 9 color themes, typography scaling, audio routing, and backups. | [📸 View Screenshot](screenshots/SETUP.png) |
 
-### 3. 🔬 Test
-Pinpoint your ear canal resonance peak, check channel balance, and run blind A/B audio tests.
-<p align="center"><img src="screenshots/TEST.png" width="900" alt="Test Lab Workspace"></p>
-
-### 4. 📝 Review
-Calculate power requirements, view radar charts, and compare IEM specifications side-by-side.
-<p align="center"><img src="screenshots/REVIEW.png" width="900" alt="Review Workspace"></p>
-
-### 5. 🗃️ Data
-Built-in editor to safely manage and update your offline database without touching system files.
-<p align="center"><img src="screenshots/DATA.png" width="900" alt="Data Workspace"></p>
-
-### 6. 📊 Viz
-Immersive, fullscreen live audio visualizers that react in real-time to your music playback.
-<p align="center"><img src="screenshots/VIZ.png" width="900" alt="Viz Workspace"></p>
-
-### 7. ⚙️ Setup
-Customize your experience with 9 color themes, typography scaling, audio routing, and database management.
-<p align="center"><img src="screenshots/SETUP.png" width="900" alt="Setup Workspace"></p>
+</details>
 
 ---
 
