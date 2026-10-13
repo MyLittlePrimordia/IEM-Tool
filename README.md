@@ -21,7 +21,7 @@ Find budget clones of $1,000 flagships, tune any set with 1-click AutoEQ, pinpoi
 
 ## 📸 Workspaces
 
-### 1. 🔍 Find (Recommendations & Clones)
+### 1. 🔍 Find
 Filter by price, driver type, or sound signature. Pick an expensive dream set to instantly find budget twins with matching frequency curves.
 
 <p align="center">
@@ -30,7 +30,7 @@ Filter by price, driver type, or sound signature. Pick an expensive dream set to
 
 ---
 
-### 2. 🎚️ EQ (Parametric Equalizer)
+### 2. 🎚️ EQ
 Draw your own curves or let the AutoEQ engine solve them for you. Includes crossfeed, de-essing, stereo widening, and 1-click exports.
 
 <p align="center">
@@ -39,7 +39,7 @@ Draw your own curves or let the AutoEQ engine solve them for you. Includes cross
 
 ---
 
-### 3. 🔬 Test (Acoustic Lab)
+### 3. 🔬 Test
 Find personal ear canal resonance peaks, check channel balance, and run blind A/B audio tests to see if you can really tell the difference.
 
 <p align="center">
@@ -48,7 +48,7 @@ Find personal ear canal resonance peaks, check channel balance, and run blind A/
 
 ---
 
-### 4. 📝 Review & Power Calculator
+### 4. 📝 Review
 Calculate exact voltage and mW requirements for your gear, take notes, and compare IEMs side-by-side with radar charts.
 
 <p align="center">
@@ -56,6 +56,17 @@ Calculate exact voltage and mW requirements for your gear, take notes, and compa
 </p>
 
 ---
+
+### 5. 🗃️ Data
+Editor tool built into the app to maintain & update the offline database.  
+
+<p align="center">
+  <img src="screenshots/DATA.png" width="900" alt="Data Workspace">
+</p>
+
+**Your edits never touch the files that came with the app.** The first time you save, the installed app makes a personal working copy of `database.json` and `data/` inside the `IEM-Data` folder and the bundled files are never written, renamed or deleted. **Settings → Offline database → Reset** deletes the working copy and the app goes back to the built-in database. (Running from source with `npm start` is developer mode: the project folder *is* the bundled copy, so saves update the files that ship.) In a browser, Chrome/Edge can connect your project folder to save in place; other browsers download the files. Shortcuts: `5` opens the tab, `Ctrl+S` saves, `Ctrl+Z` / `Ctrl+Y` undo / redo.
+
+Developers: logic is in `app/js/data-core.js`, `data-curves.js`, `data-import.js` (pure, no DOM), `data-store.js` (storage), `data-module.js` (UI). `tools/verify-data-tab.js` and `tools/verify-working-copy.js` are end-to-end tests that **write**, so run them only against scratch copies (they refuse to run on the real project folder).
 
 ## 🎨 Themes
 
@@ -102,7 +113,6 @@ Files in `IEM-Data` win over the database built into the app, and anything missi
 | Repository | Description |
 | :--- | :--- |
 | **[🎧 IEM Tool](https://github.com/MyLittlePrimordia/IEM-Tool)** | The main desktop workspace for finding, tuning, testing, and reviewing IEMs. |
-| **[🛠️ DB Tool](https://github.com/MyLittlePrimordia/Database-Tool)** | Desktop app for editing and maintaining the IEM measurement catalog. |
 | **[📦 Database](https://github.com/MyLittlePrimordia/Database)** | The raw repository hosting measurement curve files and datasets. |
 </details>
 
@@ -121,18 +131,3 @@ npm run dist-win
 npm run dist-mac
 npm run dist-linux
 ```
-</details>
-
-## Impedance data for the Gear Simulator (optional)
-
-The 10-100 ohm adapter options model the voltage divider formed by the adapter and the
-IEM's impedance curve. Drop a measured curve for an IEM at
-
-    data/impedance/<database entry id>.txt
-
-(the `id` field in `database.json`, e.g. `earfun_wave_pro.txt`). One point per line,
-`frequency_Hz  impedance_ohms`, separated by spaces, tabs, commas or semicolons; lines
-starting with `#` and text headers are ignored. The curve must cover roughly 100 Hz to
-10 kHz with at least 8 points. With a valid file the adapter is fitted to that IEM and its
-label reads "(measured Z)"; without one the generic approximation is used. Use
-Settings > Offline database > Refresh after adding files.

@@ -58,7 +58,7 @@ const App_Theme = {
             const expThemeSelector = document.getElementById('export-theme-selector');
             if (expThemeSelector) expThemeSelector.value = themeId;
 
-            const TABS = ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings'];
+            const TABS = ['find', 'eq', 'testlab', 'iem', 'database', 'visualizer', 'settings'];
             const activeTabId = TABS.find(id => {
                 const pane = document.getElementById(`pane-${id}`);
                 return pane && !pane.classList.contains('hidden');

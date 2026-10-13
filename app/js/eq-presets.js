@@ -7,8 +7,18 @@ const EQ_PresetMethods = {
             const base = KEY + '.corrupt.' + Date.now();
             let key = base, n = 1;
             while (SafeStorage.getItem(key) !== null) { key = base + '-' + (n++); }
-            try { SafeStorage.setItem(key, raw); } catch (_) {}
-            try { SafeStorage.removeItem(KEY); } catch (_) {}
+            // Only remove the original once the backup is verified readable.
+            // Previously a failed backup write was swallowed and the original
+            // was deleted anyway, which destroyed the only copy.
+            let backedUp = false;
+            try { SafeStorage.setItem(key, raw); backedUp = (SafeStorage.getItem(key) === raw); } catch (e) {
+                console.error('[EQ] Could not back up corrupted presets to "' + key + '".', e);
+            }
+            if (backedUp) {
+                try { SafeStorage.removeItem(KEY); } catch (e) { console.error('[EQ] Could not remove corrupted presets key.', e); }
+            } else {
+                console.error('[EQ] Backup of corrupted presets failed; original left in place.');
+            }
             return key;
         },
 

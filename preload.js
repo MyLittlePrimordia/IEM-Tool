@@ -41,6 +41,19 @@ contextBridge.exposeInMainWorld('appBridge', {
   // Resolves to { ok, path, error? }.
   openDataFolder: () => ipcRenderer.invoke('app:open-data-folder'),
 
+  // Database tab. Scoped file access: the renderer never names a path. Each
+  // call maps to one fixed IPC channel validated in main.js (data-relative
+  // "data/<folder>/<name>.txt" only; writes land in the IEM-Data folder).
+  dataInfo: () => ipcRenderer.invoke('data:info'),
+  dataReadDatabase: () => ipcRenderer.invoke('data:read-database'),
+  dataListFiles: () => ipcRenderer.invoke('data:list-files'),
+  dataReadFile: (rel) => ipcRenderer.invoke('data:read-file', String(rel)),
+  dataEnsureWorkingCopy: () => ipcRenderer.invoke('data:ensure-working-copy'),
+  dataResetWorkingCopy: () => ipcRenderer.invoke('data:reset-working-copy'),
+  dataDeleteFile: (rel) => ipcRenderer.invoke('data:delete-file', String(rel)),
+  dataWriteDatabase: (payload) => ipcRenderer.invoke('data:write-database', { text: payload && payload.text, json: !(payload && payload.json === false), gz: !(payload && payload.gz === false) }),
+  dataWriteFile: (payload) => ipcRenderer.invoke('data:write-file', { rel: payload && payload.rel, text: payload && payload.text, overwrite: !!(payload && payload.overwrite) }),
+
   // Push subscription for maximize / unmaximize. Covers all three ways the
   // state can change: the caption button, double-click on the title-bar drag
   // region, and Win+Up / Win+Down — so the glyph can never go stale. Returns an

@@ -49,16 +49,21 @@ function getBandEnergy(dataArray, startBin, endBin) {
 
     function setAudioParamSmooth(audioParam, value, timeConstant = 0.015) {
         if (audioParam) {
+            // Boundary guard: a NaN/Infinity (e.g. parseFloat('') from a
+            // cleared volume field) makes setTargetAtTime throw a RangeError,
+            // and the old fallback `audioParam.value = value` then threw a
+            // second, uncaught one. Drop non-finite targets here.
+            if (typeof value !== 'number' || !Number.isFinite(value)) return;
             if (SharedAudio.ctx && SharedAudio.ctx.state !== 'suspended') {
                 const now = SharedAudio.ctx.currentTime;
                 try {
 
                     audioParam.setTargetAtTime(value, now, timeConstant);
                 } catch (e) {
-                    audioParam.value = value;
+                    try { audioParam.value = value; } catch (_) {}
                 }
             } else {
-                audioParam.value = value;
+                try { audioParam.value = value; } catch (_) {}
             }
         }
     }
@@ -511,7 +516,7 @@ window.updateExpandedAutoHide = function() {
                 const iemWrapper = document.getElementById('pane-iem-outer-wrapper');
                 if (iemWrapper) iemWrapper.classList.toggle('hidden', tabId !== 'iem');
 
-                ['iem', 'eq', 'testlab', 'visualizer', 'settings', 'find'].forEach(id => {
+                ['iem', 'eq', 'testlab', 'visualizer', 'settings', 'find', 'database'].forEach(id => {
                     const pane = document.getElementById(`pane-${id}`);
                     if (pane) pane.classList.add('hidden');
                     const btn = document.getElementById(`tab-${id}-btn`);
@@ -542,7 +547,7 @@ window.updateExpandedAutoHide = function() {
                 // accent at all. Second, the inline value was captured from
                 // localStorage at switch time, so it could not track a theme
                 // change; the class plus tokens always reflects the live theme.
-                ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings'].forEach(id => {
+                ['find', 'eq', 'testlab', 'iem', 'database', 'visualizer', 'settings'].forEach(id => {
                     const b = document.getElementById(`tab-${id}-btn`);
                     if (!b) return;
                     b.classList.toggle('is-active-tab', id === tabId);
@@ -564,6 +569,9 @@ window.updateExpandedAutoHide = function() {
             }
                 if (tabId === 'iem' && window.IEM) {
                     IEM.ensureChartReady();
+                }
+                if (tabId === 'database' && typeof DataTab !== 'undefined') {
+                    DataTab.onShow();
                 }
                 // typeof guard: FindEngine is a top-level const in the
                 // bundle, never assigned to window — the old window.FindEngine
@@ -738,7 +746,7 @@ setGlobalTheme: function(themeId) {
                 const expThemeSelector = document.getElementById('export-theme-selector');
                 if (expThemeSelector) expThemeSelector.value = themeId;
 
-            ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings'].forEach(id => {
+            ['find', 'eq', 'testlab', 'iem', 'database', 'visualizer', 'settings'].forEach(id => {
                 const b = document.getElementById(`tab-${id}-btn`);
                 if (b) {
                     b.style.backgroundColor = '';
@@ -748,7 +756,7 @@ setGlobalTheme: function(themeId) {
                     b.style.transform = '';
                 }
             });
-            const activeTabId = ['find', 'eq', 'testlab', 'iem', 'visualizer', 'settings'].find(id => {
+            const activeTabId = ['find', 'eq', 'testlab', 'iem', 'database', 'visualizer', 'settings'].find(id => {
                 const pane = document.getElementById(`pane-${id}`);
                 return pane && !pane.classList.contains('hidden');
             }) || 'find';
@@ -992,11 +1000,13 @@ setGlobalFont: function(fontId) {
         },
 
         activeTestLabSection: 'sweeps',
+        activeDatabaseSection: 'tree',
 
         mobileSectionConfig: {
             iem: { order: ['specs', 'radar', 'sliders'], labels: { specs: '📋 Specs', radar: '📊 Chart', sliders: '🎚️ Sliders' }, current: 'activeReviewSection', setter: 'setReviewSection' },
             find: { order: ['prefs', 'matches', 'tools'], labels: { prefs: '🎯 Tuning', matches: '🔍 Matches', tools: '🛠️ Tools' }, current: 'activeFindSection', setter: 'setFindSection' },
             eq: { order: ['db', 'graph', 'console'], labels: { db: '🎯 Targets', graph: '📈 Graph', console: '🎛️ Console' }, current: 'activeEqSection', setter: 'setEqSection' },
+            database: { order: ['tree', 'editor', 'tools'], labels: { tree: '🗂️ Entries', editor: '✏️ Editor', tools: '🛠️ Tools' }, current: 'activeDatabaseSection', setter: 'setDatabaseSection' },
             testlab: { order: ['sweeps', 'spatial', 'generators'], labels: { sweeps: '📡 Signals', spatial: '🔊 Soundstage', generators: '🎵 Generators' }, current: 'activeTestLabSection', setter: 'setTestLabSection' }
         },
         cycleMobileSection: function(paneKey, direction) {
@@ -1014,6 +1024,17 @@ setGlobalFont: function(fontId) {
             if (!cfg) return;
             const labelEl = document.getElementById(paneKey + '-mobile-section-label');
             if (labelEl) labelEl.textContent = cfg.labels[secId] || secId;
+        },
+
+        setDatabaseSection: function(secId) {
+            this.activeDatabaseSection = secId;
+            this.updateMobileSectionLabel('database', secId);
+            const cols = { tree: 'database-col-tree', editor: 'database-col-editor', tools: 'database-col-tools' };
+            const narrow = window.innerWidth < RESPONSIVE_SECTION_BREAKPOINT_PX;
+            Object.keys(cols).forEach(k => {
+                const el = document.getElementById(cols[k]);
+                if (el) el.style.display = narrow ? (k === secId ? 'flex' : 'none') : '';
+            });
         },
 
         setTestLabSection: function(secId) {
@@ -1350,6 +1371,10 @@ setGlobalFont: function(fontId) {
                     // after the first deactivate. Reset the flag here so
                     // runGlobalSporesLoop can restart cleanly.
                     this._sporesLoopStarted = false;
+                    // Also drop the resize listener added above; otherwise
+                    // every on/off cycle leaked one listener holding a stale
+                    // canvas reference.
+                    window.removeEventListener('resize', resizeCanvas);
                     return;
                 }
 
@@ -1792,6 +1817,7 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
 
                 this.renderThemeToggles();
                 this.switchTab('find');
+                if (typeof DataTab !== 'undefined') DataTab.init();
                 this.initGlobalSliders();
                 this.initDragAndDrop();
 

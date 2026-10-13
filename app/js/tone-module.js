@@ -129,6 +129,11 @@ return;
             if (!this.osc) {
                 await this.toneTogglePlay();
             }
+            // The user may have hit Stop (toneStop) or the tone may have
+            // failed to start while we awaited: don't create a timer that
+            // nothing will ever clear.
+            if (!this.osc) return;
+            if (this.sweepTimer) { clearInterval(this.sweepTimer); this.sweepTimer = null; }
             const btnSweep = document.getElementById('tone-sweep-btn');
             if (btnSweep) {
                 btnSweep.textContent = 'Stop Sweep';

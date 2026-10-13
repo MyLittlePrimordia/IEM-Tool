@@ -1263,6 +1263,12 @@ switchCategory: function(catId) {
             const _prevSuppress = this._suppressDraw;
             if (skipDraw) this._suppressDraw = true;
 
+            // _suppressDraw is restored in the OUTER finally below, so a throw
+            // anywhere in this function (band loop, compressor reset,
+            // toggleCompressor) can no longer leave the EQ graph permanently
+            // frozen for the rest of the session.
+            try {
+
             // ALWAYS release the programmatic flag, even if a band throws
             // mid-loop. A stuck true flag silently disabled every subsequent
             // manual audio update for the whole session: sliders would move and
@@ -1370,7 +1376,9 @@ switchCategory: function(catId) {
                 this.toggleCompressor();
             }
 
-            this._suppressDraw = _prevSuppress;
+            } finally {
+                this._suppressDraw = _prevSuppress;
+            }
             // The per-band updateSlider calls above all ran under
             // isProgrammaticSliderUpdate=true, which suppresses their worklet
             // push (eq-core.js:917). Send the filter bank now so the worklet

@@ -83,6 +83,9 @@
             <button data-action="click_188_App_switchTab__testlab____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
                 <span class="text-[18px]">🔬</span> <span>Test</span>
             </button>
+            <button data-action="click_341_App_switchTab__database____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
+                <span class="text-[18px]">🗃️</span> <span>Database</span>
+            </button>
             <button data-action="click_147_App_switchTab__visualizer____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
                 <span class="text-[18px]">📊</span> <span>Visualizer</span>
             </button>
@@ -136,6 +139,9 @@
             </button>
 			<button data-action="click_198_App_switchTab__iem" id="tab-iem-btn" data-tooltip="Score and review gear" class="app-tab no-tactile">
                 <span class="app-tab-icon">📝</span><span class="app-tab-label">Review</span>
+            </button>
+            <button data-action="click_340_App_switchTab__database" id="tab-database-btn" data-tooltip="Edit, audit and import the database" class="app-tab no-tactile">
+                <span class="app-tab-icon">🗃️</span><span class="app-tab-label">Data</span>
             </button>
             <button data-action="click_291_App_switchTab__visualizer" id="tab-visualizer-btn" data-tooltip="Spectrum and waveform" class="app-tab no-tactile">
                 <span class="app-tab-icon">📊</span><span class="app-tab-label">Viz</span>
@@ -2370,6 +2376,64 @@ existing module drives this unchanged. -->
 
             </div>
 
+<div id="pane-database" class="tab-pane hidden h-full flex flex-col responsive-row overflow-hidden">
+
+                <div class="stepper-rail xl:hidden flex items-center gap-1.5 bg-[var(--bg-input)] p-1.5 border-b-[3px] border-black w-full select-none flex-shrink-0 relative z-40" id="database-mobile-subnav">
+                    <button data-action="click_342_App_cycleMobileSection__database____1" class="stepper-arrow w-9 h-9 bg-[var(--bg-card)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-[var(--text-main)] font-black text-sm flex items-center justify-center cursor-pointer select-none flex-shrink-0" aria-label="Previous section">◀</button>
+                    <div id="database-mobile-section-label" class="stepper-label flex-1 text-center text-xs font-black uppercase tracking-widest border-[3px] border-black bg-[var(--bg-card)] h-9 flex items-center justify-center truncate px-2">🗂️ Entries</div>
+                    <button data-action="click_343_App_cycleMobileSection__database___1" class="stepper-arrow w-9 h-9 bg-[var(--bg-card)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-[var(--text-main)] font-black text-sm flex items-center justify-center cursor-pointer select-none flex-shrink-0" aria-label="Next section">▶</button>
+                </div>
+
+                <div id="database-col-tree" class="w-full responsive-w-96 responsive-border-r border-[var(--border-color)] bg-transparent p-2.5 flex flex-col h-full overflow-hidden flex-shrink-0 select-none">
+                    <div class="section-card p-3 flex flex-col h-full flex-1 overflow-hidden">
+                        <div id="dt-left-tabs" class="subtab-seg-grid cols-2 mb-2 flex-shrink-0" role="tablist" aria-label="Entries section">
+                            <button type="button" id="dt-left-tab-tree" data-dt="left" data-a="tree" class="subtab-seg-btn no-tactile active" role="tab" aria-selected="true">
+                                <span class="subtab-seg-emoji">🗂️</span> Entries
+                            </button>
+                            <button type="button" id="dt-left-tab-history" data-dt="left" data-a="history" class="subtab-seg-btn no-tactile" role="tab" aria-selected="false">
+                                <span class="subtab-seg-emoji">🕘</span> History
+                            </button>
+                        </div>
+                        <div id="dt-lp-tree" class="dt-panel is-on"></div>
+                        <div id="dt-lp-history" class="dt-panel"></div>
+                    </div>
+                </div>
+
+                <div id="database-col-editor" class="flex-1 bg-transparent p-2.5 flex flex-col h-full overflow-hidden flex-shrink-0">
+                    <div id="dt-mid-card" class="section-card p-3 flex flex-col h-full flex-1 overflow-hidden">
+                        <div id="dt-mid-tabs" class="subtab-seg-grid cols-2 mb-2 flex-shrink-0" role="tablist" aria-label="Entry sections">
+                            <button type="button" id="dt-mid-tab-editor" data-dt="mid" data-a="editor" class="subtab-seg-btn no-tactile active" role="tab" aria-selected="true">
+                                <span class="subtab-seg-emoji">✏️</span> Editor
+                            </button>
+                            <button type="button" id="dt-mid-tab-curves" data-dt="mid" data-a="curves" class="subtab-seg-btn no-tactile" role="tab" aria-selected="false">
+                                <span class="subtab-seg-emoji">📈</span> Curves
+                            </button>
+                        </div>
+                        <div id="dt-editor" class="dt-grow dt-col" style="gap: 10px; min-height: 0;"></div>
+                    </div>
+                </div>
+
+                <div id="database-col-tools" class="w-full responsive-w-96 responsive-border-l border-[var(--border-color)] p-2.5 bg-transparent flex flex-col h-full overflow-hidden flex-shrink-0 select-none">
+                    <div class="section-card p-3 flex flex-col h-full flex-1 overflow-hidden">
+                        <div id="dt-right-tabs" class="subtab-seg-grid cols-3 mb-2 flex-shrink-0" role="tablist" aria-label="Database tools">
+                            <button type="button" id="dt-right-tab-audit" data-dt="right" data-a="audit" class="subtab-seg-btn no-tactile active" role="tab" aria-selected="true">
+                                <span class="subtab-seg-emoji">🩺</span> Audit
+                            </button>
+                            <button type="button" id="dt-right-tab-ai" data-dt="right" data-a="ai" class="subtab-seg-btn no-tactile" role="tab" aria-selected="false">
+                                <span class="subtab-seg-emoji">🤖</span> AI
+                            </button>
+                            <button type="button" id="dt-right-tab-export" data-dt="right" data-a="export" class="subtab-seg-btn no-tactile" role="tab" aria-selected="false">
+                                <span class="subtab-seg-emoji">📦</span> Export
+                            </button>
+                        </div>
+                        <div id="dt-rp-audit" class="dt-panel is-on"></div>
+                        <div id="dt-rp-ai" class="dt-panel"></div>
+                        <div id="dt-rp-export" class="dt-panel"></div>
+                    </div>
+                </div>
+
+            </div>
+
 <div id="pane-visualizer" class="tab-pane hidden h-full flex flex-col viz-pane overflow-hidden select-none">
   <div class="w-full h-full flex flex-col viz-frame overflow-hidden">
 
@@ -2523,11 +2587,12 @@ existing module drives this unchanged. -->
             <span class="settings-row-icon emoji-font">📂</span>
             <div class="settings-row-text">
               <span class="settings-row-label">Offline database</span>
-              <span class="settings-row-hint is-one-line">Add a newer database, then hit Refresh</span>
+              <span class="settings-row-hint is-one-line">Edit in Data · Reset restores built-in</span>
             </div>
             <div class="settings-actions">
               <button data-action="click_900_App_openDataFolder" class="settings-btn" title="Open the folder that holds database.json and data">Open folder</button>
               <button data-action="click_901_App_reloadDatabase" class="settings-btn" title="Reload the database after adding new files (the app window reloads; saved reviews, presets and settings are kept)">Refresh</button>
+              <button data-action="click_903_App_resetDatabase" id="btn-reset-database" class="settings-btn" style="display:none" title="Delete your copy and go back to the built-in database">Reset</button>
             </div>
           </div>
 
@@ -3006,7 +3071,7 @@ existing module drives this unchanged. -->
 <!-- ONNX Runtime Web is loaded on demand by IEM_Module.loadPhotoMatteRuntime();
      see the note next to this tag. -->
 
-<script src="app/js/bundle-version.js?v=aceae91c1dbf"></script>
+<script src="app/js/bundle-version.js?v=28d62f071206"></script>
         <!-- Bundle loader. External (app/js/boot-bundle.js) rather than inline so that
          script-src can drop 'unsafe-inline'. -->
         <script src="app/js/boot-bundle.js"></script>

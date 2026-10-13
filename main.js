@@ -1,4 +1,4 @@
-const { app, BrowserWindow, screen, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, shell, Menu } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
@@ -262,6 +262,20 @@ function isFile(p) {
   try { return fs.statSync(p).isFile(); } catch (_) { return false; }
 }
 
+// "Working copy" (Database tab). The first time a user edits the database from the
+// Database tab, the bundled database.json / database.json.gz / data/ are COPIED into
+// IEM-Data and this marker is written. From then on IEM-Data is the complete database:
+// the bundled files that ship with the app are never written to, renamed or deleted,
+// and the local server stops falling back to them, so a file the user deleted stays
+// deleted. Settings -> Offline database -> Reset deletes the working copy and the app
+// is back on the bundled database. Without the marker nothing changes: IEM-Data stays
+// the optional "drop a newer database.json here" override it always was.
+const WORKING_COPY_MARKER = '.iem-working-copy.json';
+function workingCopyActive() {
+  const ext = getExternalDataDir();
+  return !!(ext && isFile(path.join(ext, WORKING_COPY_MARKER)));
+}
+
 // Resolves a data-root-relative path to a real file: external folder first,
 // bundled copy second. database.json and database.json.gz are treated as ONE
 // unit - if the external folder supplies either of them, only the external
@@ -277,6 +291,7 @@ function resolveDataFile(relativePath, relPosix) {
     const extRel = path.relative(extRoot, extPath);
     const extSafe = extRel !== '' && !extRel.startsWith('..') && !path.isAbsolute(extRel);
     if (extSafe && isFile(extPath)) return extPath;
+    if (isFile(path.join(extRoot, WORKING_COPY_MARKER))) return null; // complete working copy: never fall back to the bundled files
     if (isDbIndex && extHasIndex) return null; // do not fall back to the bundled index
   }
   const bundledPath = path.normalize(path.join(bundledRoot, relativePath));
@@ -454,6 +469,28 @@ async function createWindow() {
   // Lock the window to the local app only: deny popups and any navigation away
   // from the local UI (prevents accidental trips to external web content).
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+  // Right-click menu. Electron shows nothing by default (a browser would), so text fields
+  // could only be pasted into with Ctrl+V. Editable fields get Undo / Cut / Copy / Paste /
+  // Select all (plus spelling suggestions); selected text elsewhere gets Copy. Nothing else.
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const items = [];
+    if (params.isEditable) {
+      (params.dictionarySuggestions || []).slice(0, 5).forEach((word) => {
+        items.push({ label: word, click: () => mainWindow.webContents.replaceMisspelling(word) });
+      });
+      if (items.length) items.push({ type: 'separator' });
+      const f = params.editFlags || {};
+      items.push(
+        { role: 'undo', enabled: !!f.canUndo }, { role: 'redo', enabled: !!f.canRedo }, { type: 'separator' },
+        { role: 'cut', enabled: !!f.canCut }, { role: 'copy', enabled: !!f.canCopy }, { role: 'paste', enabled: !!f.canPaste },
+        { type: 'separator' }, { role: 'selectAll' }
+      );
+    } else if (params.selectionText && params.selectionText.trim()) {
+      items.push({ role: 'copy' });
+    }
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: mainWindow });
+  });
   mainWindow.webContents.on('will-navigate', (e, url) => {
     if (!url.startsWith(`http://127.0.0.1:${port}/`)) e.preventDefault();
   });
@@ -511,7 +548,8 @@ const IEM_DATA_README = [
   ''
 ].join('\r\n');
 
-ipcMain.handle('app:open-data-folder', async () => {
+ipcMain.handle('app:open-data-folder', async (event) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
   try {
     const dir = getExternalDataDir() || getDataRoot();
     fs.mkdirSync(dir, { recursive: true });
@@ -526,6 +564,225 @@ ipcMain.handle('app:open-data-folder', async () => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Database tab (renderer: app/js/data-*.js). Everything below is scoped:
+//  - the renderer never supplies a path, only a data-relative name that must be
+//    "data/<folder>/<file>.txt" with no traversal;
+//  - writes go to ONE place: the IEM-Data folder when packaged (the folder the
+//    app already prefers over its bundled copy), or the project root when
+//    running unpackaged (`npm start`);
+//  - reads see both the writable folder and the bundled copy, writable first.
+// ---------------------------------------------------------------------------
+const zlib = require('zlib');
+const DATA_MAX_BYTES = 64 * 1024 * 1024;
+
+function dataWriteRoot() { return app.isPackaged ? getExternalDataDir() : getDataRoot(); }
+function dataReadRoots() {
+  const roots = [];
+  const ext = getExternalDataDir();
+  if (ext) roots.push(ext);
+  if (!workingCopyActive()) roots.push(getDataRoot());   // once the working copy exists it is the whole database
+  return roots.filter((r, i) => r && roots.indexOf(r) === i);
+}
+function safeDataRel(rel) {
+  if (typeof rel !== 'string') return null;
+  const n = rel.replace(/\\/g, '/').replace(/\/+/g, '/').trim();
+  if (!/^data\/[^/].*\.txt$/i.test(n)) return null;
+  if (n.split('/').some((p) => p === '..' || p === '.' || p === '')) return null;
+  if (n.length > 400) return null;
+  return n;
+}
+function dataSenderOk(event) {
+  return !!(mainWindow && event && event.sender === mainWindow.webContents);
+}
+function walkTxt(dir, rel, out) {
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
+  for (const e of entries) {
+    if (e.isSymbolicLink()) continue;
+    if (e.isDirectory()) walkTxt(path.join(dir, e.name), rel + e.name + '/', out);
+    else if (e.isFile() && e.name.toLowerCase().endsWith('.txt')) out.push(rel + e.name);
+  }
+}
+function atomicWrite(file, data) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = file + '.tmp-' + process.pid + '-' + Date.now();
+  try {
+    const fd = fs.openSync(tmp, 'w');
+    try { fs.writeFileSync(fd, data); try { fs.fsyncSync(fd); } catch (_) {} } finally { fs.closeSync(fd); }
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch (_) {}
+    throw e;
+  }
+}
+
+ipcMain.handle('data:info', (event) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  const root = dataWriteRoot();
+  let canWrite = false;
+  try { if (root) { fs.mkdirSync(root, { recursive: true }); fs.accessSync(root, fs.constants.W_OK); canWrite = true; } } catch (_) {}
+  return { ok: true, canWrite, path: root, packaged: app.isPackaged, workingCopy: app.isPackaged ? workingCopyActive() : true,
+    canReset: app.isPackaged, label: app.isPackaged ? 'Your copy (IEM-Data)' : 'Project folder (dev)' };
+});
+
+// First write from the Database tab: copy the bundled database into IEM-Data (never into
+// the bundled files). Anything already in IEM-Data wins, so a user who dropped a newer
+// database there keeps it. Returns quickly when it already exists.
+let seedPromise = null;
+async function seedWorkingCopy() {
+  const ext = getExternalDataDir();
+  if (!ext) return { ok: true, created: false, dev: true };
+  if (workingCopyActive()) return { ok: true, created: false };
+  const bundled = getDataRoot();
+  fs.mkdirSync(ext, { recursive: true });
+  const has = (n) => isFile(path.join(ext, n));
+  if (!has('database.json') && !has('database.json.gz')) {
+    for (const n of ['database.json', 'database.json.gz']) {
+      if (isFile(path.join(bundled, n))) fs.copyFileSync(path.join(bundled, n), path.join(ext, n));
+    }
+  } else if (has('database.json') && !has('database.json.gz')) {
+    atomicWrite(path.join(ext, 'database.json.gz'), zlib.gzipSync(fs.readFileSync(path.join(ext, 'database.json')), { level: 9 }));
+  }
+  const srcData = path.join(bundled, 'data');
+  if (fs.existsSync(srcData)) await fs.promises.cp(srcData, path.join(ext, 'data'), { recursive: true, force: false, errorOnExist: false });
+  atomicWrite(path.join(ext, WORKING_COPY_MARKER), JSON.stringify({ version: 1, createdAt: new Date().toISOString(), appVersion: app.getVersion() }, null, 2));
+  return { ok: true, created: true };
+}
+ipcMain.handle('data:ensure-working-copy', async (event) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  try {
+    if (!seedPromise) seedPromise = seedWorkingCopy().finally(() => { seedPromise = null; });
+    return await seedPromise;
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+// Settings -> Offline database -> Reset. Removes ONLY what the Database tab / an update drop
+// created inside IEM-Data (database files, data/, backup/, marker). The bundled files are
+// untouched, so the app simply goes back to them.
+ipcMain.handle('data:reset-working-copy', async (event) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  try {
+    const ext = getExternalDataDir();
+    if (!ext || path.basename(ext) !== 'IEM-Data') return { ok: false, error: 'Reset is only available in the installed app.' };
+    for (const n of ['database.json', 'database.json.gz', WORKING_COPY_MARKER]) { try { fs.rmSync(path.join(ext, n), { force: true }); } catch (_) {} }
+    for (const n of ['data', 'backup']) { await fs.promises.rm(path.join(ext, n), { recursive: true, force: true }); }
+    return { ok: true };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+// Every write needs the working copy to exist first (installed app). The renderer asks the
+// user and calls data:ensure-working-copy; this is the backstop so a write can never land
+// in a half-seeded folder.
+function writeBlocked() { return app.isPackaged && !workingCopyActive(); }
+
+ipcMain.handle('data:read-database', (event) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  try {
+    for (const root of dataReadRoots()) {
+      const j = path.join(root, 'database.json'), g = path.join(root, 'database.json.gz');
+      const hasJ = isFile(j), hasG = isFile(g);
+      if (!hasJ && !hasG) continue;
+      let gzStale = false;
+      if (hasJ && hasG) { try { gzStale = fs.statSync(g).mtimeMs + 2000 < fs.statSync(j).mtimeMs; } catch (_) {} }
+      if (hasJ) return { ok: true, text: fs.readFileSync(j, 'utf8'), source: 'database.json', gzStale };
+      const buf = zlib.gunzipSync(fs.readFileSync(g), { maxOutputLength: DATA_MAX_BYTES });
+      return { ok: true, text: buf.toString('utf8'), source: 'database.json.gz', gzStale: false };
+    }
+    return { ok: false, error: 'No database.json or database.json.gz found.' };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+ipcMain.handle('data:list-files', (event) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  try {
+    const set = new Set();
+    for (const root of dataReadRoots()) {
+      const out = [];
+      walkTxt(path.join(root, 'data'), 'data/', out);
+      out.forEach((p) => set.add(p));
+    }
+    return { ok: true, files: Array.from(set).sort() };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+ipcMain.handle('data:read-file', (event, rel) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  const n = safeDataRel(rel);
+  if (!n) return { ok: false, error: 'bad path' };
+  for (const root of dataReadRoots()) {
+    const p = path.join(root, n);
+    const r = path.relative(root, p);
+    if (r.startsWith('..') || path.isAbsolute(r)) continue;
+    try { if (isFile(p) && fs.statSync(p).size <= 20 * 1024 * 1024) return { ok: true, text: fs.readFileSync(p, 'utf8') }; } catch (_) {}
+  }
+  return { ok: false, error: 'not found' };
+});
+
+ipcMain.handle('data:write-database', (event, payload) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  if (writeBlocked()) return { ok: false, error: 'needs-working-copy' };
+  try {
+    const root = dataWriteRoot();
+    if (!root) return { ok: false, error: 'No writable data folder.' };
+    const text = payload && payload.text;
+    if (typeof text !== 'string' || text.length < 2 || text.length > DATA_MAX_BYTES) return { ok: false, error: 'bad payload' };
+    // Refuse anything that is not a JSON array: a corrupted save must never replace a good database.
+    let parsed;
+    try { parsed = JSON.parse(text); } catch (_) { return { ok: false, error: 'payload is not valid JSON' }; }
+    if (!Array.isArray(parsed)) return { ok: false, error: 'payload is not a JSON array' };
+    fs.mkdirSync(root, { recursive: true });
+    const files = [];
+    const j = path.join(root, 'database.json');
+    if (payload.json !== false) {
+      if (isFile(j)) { try { fs.mkdirSync(path.join(root, 'backup'), { recursive: true }); fs.copyFileSync(j, path.join(root, 'backup', 'database.json.bak')); } catch (_) {} }
+      atomicWrite(j, text);
+      files.push({ name: 'database.json', bytes: Buffer.byteLength(text) });
+    }
+    if (payload.gz !== false) {
+      const gz = zlib.gzipSync(Buffer.from(text, 'utf8'), { level: 9 });
+      atomicWrite(path.join(root, 'database.json.gz'), gz);
+      files.push({ name: 'database.json.gz', bytes: gz.length });
+    }
+    return { ok: true, files, path: root };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+ipcMain.handle('data:write-file', (event, payload) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  if (writeBlocked()) return { ok: false, error: 'needs-working-copy' };
+  try {
+    const root = dataWriteRoot();
+    const n = safeDataRel(payload && payload.rel);
+    if (!root || !n) return { ok: false, error: 'bad path' };
+    const text = payload.text;
+    if (typeof text !== 'string' || text.length > 20 * 1024 * 1024) return { ok: false, error: 'bad payload' };
+    const dest = path.join(root, n);
+    const r = path.relative(root, dest);
+    if (r.startsWith('..') || path.isAbsolute(r)) return { ok: false, error: 'bad path' };
+    let existed = dataReadRoots().some((rt) => isFile(path.join(rt, n)));
+    if (existed && !payload.overwrite) return { ok: true, existed: true, skipped: true };
+    atomicWrite(dest, text);
+    return { ok: true, existed };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+ipcMain.handle('data:delete-file', (event, rel) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  if (writeBlocked()) return { ok: false, error: 'needs-working-copy' };
+  try {
+    const root = dataWriteRoot();
+    const n = safeDataRel(rel);
+    if (!root || !n) return { ok: false, error: 'bad path' };
+    const dest = path.join(root, n);
+    const r = path.relative(root, dest);
+    if (r.startsWith('..') || path.isAbsolute(r)) return { ok: false, error: 'bad path' };
+    if (!isFile(dest)) return { ok: true, existed: false };
+    fs.unlinkSync(dest);
+    return { ok: true, existed: true };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
 // Review-card export backdrop. The rasterising itself lives in theme-backdrop.js
 // so it can be required directly by tools/verify-theme-backdrop-export.js and
 // tested as the production function rather than as a re-implementation.
@@ -533,6 +790,7 @@ ipcMain.handle('app:open-data-folder', async () => {
 // Scope: takes a theme id and two integers, returns a PNG data URL (or null),
 // touches nothing on disk, and passes no renderer-supplied markup or path.
 ipcMain.handle('theme:capture-backdrop', (_event, payload) => {
+  if (!dataSenderOk(_event)) return null;
   const req = payload && typeof payload === 'object' ? payload : {};
   return captureThemeBackdrop(req.themeId, req.width, req.height);
 });

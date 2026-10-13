@@ -2503,7 +2503,7 @@
 
                     const labelEl = document.getElementById(`label-src-stepper-${idx}`);
                     if (labelEl) {
-                        const rawHtml = `<span class="text-stone-300 font-bold">${currentSrcIdx + 1}/${total}</span> <span class="text-[var(--accent-blue)] font-black">${sourceName}</span> <span class="text-stone-200 font-bold">(${fileNameRaw})</span>`;
+                        const rawHtml = `<span class="text-stone-300 font-bold">${currentSrcIdx + 1}/${total}</span> <span class="text-[var(--accent-blue)] font-black">${esc(sourceName)}</span> <span class="text-stone-200 font-bold">(${esc(fileNameRaw)})</span>`;
                         labelEl.classList.remove('marquee-orbit-active');
                         labelEl.style.removeProperty('--marquee-orbit-duration');
                         labelEl.innerHTML = rawHtml;
@@ -3097,8 +3097,8 @@
                                         </div>
 
                                         <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
-                                            ${price !== null && price !== undefined ? `<span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>` : ''}
-                                            ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
+                                            ${price !== null && price !== undefined ? `<span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${esc(price)}</span>` : ''}
+                                            ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${esc(year)}</span>` : ''}
                                             ${driverType ? `<span class="spec-icon-badge" data-tooltip="${escDriverTip}">${driverEmoji}</span>` : ''}
                                             ${connector ? `<span class="spec-icon-badge" data-tooltip="${escConnectorTip}">${connectorEmoji}</span>` : ''}
                                             <span class="spec-icon-badge" data-tooltip="${escFormTip}">${formEmoji}</span>

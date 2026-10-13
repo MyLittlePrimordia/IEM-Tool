@@ -1427,10 +1427,12 @@ Object.assign(TestLab_Module, TestLab_AbxMethods);
                     colSpatial.style.display = '';
                     colGenerators.style.display = '';
                 }
+                ['database-col-tree', 'database-col-editor', 'database-col-tools'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
             } else {
                 App.setReviewSection(App.activeReviewSection);
                 App.setEqSection(App.activeEqSection);
                 App.setTestLabSection(App.activeTestLabSection);
+                App.setDatabaseSection(App.activeDatabaseSection);
             }
         });
 
@@ -1438,6 +1440,7 @@ Object.assign(TestLab_Module, TestLab_AbxMethods);
         App.setFindSection('prefs');
         App.setEqSection('db');
         App.setTestLabSection('spatial');
+        App.setDatabaseSection('tree');
 
         if (window.syncGlobalSliders) window.syncGlobalSliders();
 

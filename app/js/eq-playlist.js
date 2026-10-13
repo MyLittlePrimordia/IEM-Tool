@@ -1166,6 +1166,9 @@ this.fadeMusicVolume(vol, 0.015);
 },
 
         updateMusicVolume: function(val) {
+            // Validate at the entry point: an empty/garbage field must not
+            // reach the audio graph, the loudness DSP or the display.
+            if (!Number.isFinite(parseFloat(val))) return;
             const vol = parseFloat(val) / 100;
             if (parseFloat(val) === 100 && this._lastVolPct !== 100) {
                 Mascot.triggerTemporaryExpression('deaf', 2000);

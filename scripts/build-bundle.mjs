@@ -66,6 +66,11 @@ const src = [
   'app/js/eq-graph-input.js',
   'app/js/eq-visualizer.js',
   'app/js/db-cache.js','app/js/curve-indexer.js','app/js/peqdb-alignment.js','app/js/peqdb-similar.js','app/js/peqdb-smart-rf.js','app/js/peqdb-module.js','app/js/testlab-abx.js','app/js/testlab-hearing.js','app/js/testlab-burnin.js','app/js/testlab-spatial.js','app/js/testlab-module.js','app/js/find-genre.js','app/js/find-upgrade.js','app/js/find-endgame.js','app/js/find-taste.js','app/js/find-engine.js',
+  // Database tab. Pure-logic files first (no DOM, Node-testable), then the
+  // storage adapter, then the UI module that drives them. DataTab is only
+  // touched at runtime (App.init / App.switchTab), so these just need to be
+  // present before handlers.js.
+  'app/js/data-core.js','app/js/data-curves.js','app/js/data-import.js','app/js/data-prompts.js','app/js/data-store.js','app/js/data-module.js',
   'app/js/handlers.js','app/js/app-init.js'
 ];
 

@@ -112,6 +112,37 @@ const handlers = {
             showToast("Reloading database…", "🔄");
             setTimeout(function() { location.reload(); }, 300);
         },
+        "click_903_App_resetDatabase": async function(event, element) {
+            // Throws away the user's working copy (made by the Data tab on its first save):
+            // their database edits, converted/added measurement files and the autosave.
+            // The database that shipped inside the app is never modified, so it simply
+            // becomes the active one again.
+            const bridge = window.appBridge;
+            if (!bridge || typeof bridge.dataResetWorkingCopy !== 'function') {
+                showToast("Reset only works in the installed desktop app.", "⚠️");
+                return;
+            }
+            const ok = await UIKit.confirm({
+                title: "Reset the database?",
+                message: "This deletes your working copy: every entry you added or changed and every measurement file you added or converted in the Data tab. The database that came with the app is not touched and is used again. This cannot be undone.",
+                confirmLabel: "Reset database",
+                danger: true
+            });
+            if (!ok) return;
+            try {
+                const r = await bridge.dataResetWorkingCopy();
+                if (!r || !r.ok) throw new Error((r && r.error) || "reset failed");
+            } catch (e) {
+                showToast("Reset failed: " + ((e && e.message) || e), "⚠️");
+                return;
+            }
+            try { if (typeof DataStore !== "undefined") await DataStore.kvDelete("working"); } catch (e) {}
+            try { await CurveIndexer.clearCurveCache(); } catch (e) { console.warn("[Reset] curve cache clear failed:", e); }
+            SafeStorage.removeItem("squig_db_indexed");
+            SafeStorage.removeItem("find_canonical_profiles");
+            showToast("Database reset. Reloading…", "🔄");
+            setTimeout(function() { location.reload(); }, 300);
+        },
         "click_902_App_resetSettings": async function(event, element) {
             // Safe-mode for a bad saved setting. Removes app SETTINGS only and
             // keeps everything the user made or measured: saved reviews (separate
@@ -424,6 +455,14 @@ const handlers = {
         "click_322_IEM_switchRightTab__impressions": function(event, element) { IEM.switchRightTab('impressions'); },
         // R7: the Test Lab's ◀/▶ sub-tab steppers became segmented pill rows, so
         // each pill needs a direct handler rather than relying on cycle(dir).
+        // Database tab (data-module.js): header tab, mobile drawer entry and the
+        // mobile section stepper. Everything inside the pane is bound by
+        // DataTab's own delegated listener (data-dt attributes), so these four
+        // are the only keys the pane needs here.
+        "click_340_App_switchTab__database": function(event, element) { App.switchTab('database') },
+        "click_341_App_switchTab__database____App_toggleMobileDrawer": function(event, element) { App.switchTab('database'); App.toggleMobileDrawer(); },
+        "click_342_App_cycleMobileSection__database____1": function(event, element) { App.cycleMobileSection('database', -1) },
+        "click_343_App_cycleMobileSection__database___1": function(event, element) { App.cycleMobileSection('database', 1) },
         "click_323_TestLab_switchLeftTab__resonance": function(event, element) { TestLab.switchLeftTab('resonance'); },
         "click_324_TestLab_switchLeftTab__balance": function(event, element) { TestLab.switchLeftTab('balance'); },
         "click_325_TestLab_switchLeftTab__burnin": function(event, element) { TestLab.switchLeftTab('burnin'); },
