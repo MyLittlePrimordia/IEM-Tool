@@ -19,22 +19,22 @@ Find budget clones of $1,000 flagships, tune any set with 1-click AutoEQ, and te
 
 ---
 
-## 🗺️ Workspaces (All 7 Tabs)
+## 📸 Workspaces (All 7 Tabs)
 
-<details>
-<summary><b>Click to expand and view all 7 workspaces & screenshots</b></summary>
+| 1. 🔍 Find | 2. 🎚️ EQ | 3. 🔬 Test |
+| :---: | :---: | :---: |
+| Filter by price, driver, or signature to find budget twins. | Draw custom curves, AutoEQ solve, and export presets. | Pinpoint ear peaks, check balance, and run blind tests. |
+| <img src="screenshots/FIND.png" width="280" alt="Find Workspace"> | <img src="screenshots/EQ.png" width="280" alt="EQ Workspace"> | <img src="screenshots/TEST.png" width="280" alt="Test Workspace"> |
 
-| Workspace | Description | Preview |
-| :--- | :--- | :--- |
-| **1. 🔍 Find** | Filter by price, driver type, or sound signature to discover budget twins. | [📸 View Screenshot](screenshots/FIND.png) |
-| **2. 🎚️ EQ** | Draw custom curves, solve AutoEQ targets, and export presets instantly. | [📸 View Screenshot](screenshots/EQ.png) |
-| **3. 🔬 Test** | Pinpoint ear canal resonance peaks, check channel balance, and run blind tests. | [📸 View Screenshot](screenshots/TEST.png) |
-| **4. 📝 Review** | Calculate power needs, view radar charts, and compare specs side-by-side. | [📸 View Screenshot](screenshots/REVIEW.png) |
-| **5. 🗃️ Data** | Built-in editor to safely manage and update your offline database locally. | [📸 View Screenshot](screenshots/DATA.png) |
-| **6. 📊 Viz** | Immersive, fullscreen live audio visualizers reacting to your music. | [📸 View Screenshot](screenshots/VIZ.png) |
-| **7. ⚙️ Setup** | Customize 9 color themes, typography scaling, audio routing, and backups. | [📸 View Screenshot](screenshots/SETUP.png) |
+| 4. 📝 Review | 5. 🗃️ Data | 6. 📊 Viz |
+| :---: | :---: | :---: |
+| Calculate power needs and view side-by-side specs. | Built-in offline database editor to manage curves locally. | Immersive, fullscreen live audio visualizers. |
+| <img src="screenshots/REVIEW.png" width="280" alt="Review Workspace"> | <img src="screenshots/DATA.png" width="280" alt="Data Workspace"> | <img src="screenshots/VIZ.png" width="280" alt="Viz Workspace"> |
 
-</details>
+| 7. ⚙️ Setup |
+| :---: |
+| Customize 9 themes, scaling, routing, and backups. |
+| <img src="screenshots/SETUP.png" width="280" alt="Setup Workspace"> |
 
 ---
 
