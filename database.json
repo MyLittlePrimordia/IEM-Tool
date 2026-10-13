@@ -4259,7 +4259,7 @@
     "model": "Miracle One",
     "variant": "",
     "year": 2026,
-    "price_usd": 1000,
+    "price_usd": 235,
     "driver_type": "DD",
     "driver_config": "1DD",
     "impedance": 38,
@@ -4273,7 +4273,7 @@
       "Smooth",
       "Warm",
       "Wide-Stage",
-      "Premium"
+      "Mid-Tier"
     ],
     "files": [
       "data/SUPER REVIEW/AFUL ACOUSTICS MIRACLEONE.txt"
@@ -6529,9 +6529,9 @@
     "model": "Fulgrim",
     "variant": "",
     "year": 2026,
-    "price_usd": 1600,
+    "price_usd": 6900,
     "driver_type": "Tribrid",
-    "driver_config": "1DD+4BA+2EST+1BC",
+    "driver_config": "1DD+6BA+6EST",
     "impedance": 14,
     "sensitivity": 104,
     "connector": "2-pin",
@@ -8275,8 +8275,8 @@
     "price_usd": 550,
     "driver_type": "DD",
     "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 105,
+    "impedance": 0,
+    "sensitivity": 0,
     "connector": "Bluetooth",
     "form_factor": "Wireless Over-Ear Headphones",
     "tags": [
@@ -8547,15 +8547,15 @@
     "price_usd": 160,
     "driver_type": "DD",
     "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 105,
+    "impedance": 16,
+    "sensitivity": 118,
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Mid-Tier",
       "Balanced",
       "Detailed",
-      "Wide-Stage"
+      "Wide-Stage",
+      "Mid-Tier"
     ],
     "files": [
       "data/HAWAII BAY BOY/ARIA EAR SYLVA.txt"
@@ -8591,10 +8591,10 @@
     "variant": "Cu",
     "year": 2026,
     "price_usd": 290,
-    "driver_type": "Hybrid",
-    "driver_config": "1DD+4BA",
-    "impedance": 22,
-    "sensitivity": 110,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 103,
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
@@ -8641,8 +8641,8 @@
     "price_usd": 7500,
     "driver_type": "Tribrid",
     "driver_config": "2DD+6BA+6EST",
-    "impedance": 16,
-    "sensitivity": 108,
+    "impedance": 25,
+    "sensitivity": 98,
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
@@ -14688,7 +14688,7 @@
     "driver_type": "DD",
     "driver_config": "1DD",
     "impedance": 25,
-    "sensitivity": 112,
+    "sensitivity": 110,
     "connector": "Detachable Cable",
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
@@ -28206,7 +28206,7 @@
     "driver_config": "1DD+1BA",
     "impedance": 22,
     "sensitivity": 99,
-    "connector": "2-pin",
+    "connector": "QDC",
     "form_factor": "IEM",
     "tags": [
       "Fun",
@@ -28276,13 +28276,13 @@
     "price_usd": 20,
     "driver_type": "DD",
     "driver_config": "1DD",
-    "impedance": 22,
+    "impedance": 32,
     "sensitivity": 102,
-    "connector": "2-pin",
+    "connector": "QDC",
     "form_factor": "IEM",
     "tags": [
-      "Bright",
       "Balanced",
+      "Bright",
       "Smooth",
       "Budget"
     ],
@@ -30687,10 +30687,10 @@
     ]
   },
   {
-    "id": "dita_project_m_2",
+    "id": "dita_project_m_ii",
     "brand": "Dita",
     "model": "Project M",
-    "variant": "2",
+    "variant": "II",
     "year": 2026,
     "price_usd": 350,
     "driver_type": "DD",
@@ -41783,16 +41783,16 @@
     "price_usd": 600,
     "driver_type": "BA",
     "driver_config": "2BA",
-    "impedance": 16,
-    "sensitivity": 108,
+    "impedance": 225,
+    "sensitivity": 96,
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Premium",
-      "Smooth",
-      "Neutral",
       "Detailed",
-      "Vocal-Focused"
+      "Neutral",
+      "Smooth",
+      "Vocal-Focused",
+      "Premium"
     ],
     "files": [
       "data/HU-FI/FINAL S6000.txt"
@@ -63398,8 +63398,8 @@
     "price_usd": 75,
     "driver_type": "Hybrid",
     "driver_config": "1DD+4BA",
-    "impedance": 32,
-    "sensitivity": 108,
+    "impedance": 13,
+    "sensitivity": 107,
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
@@ -66480,7 +66480,7 @@
     "driver_config": "1DD",
     "impedance": 24,
     "sensitivity": 105,
-    "connector": "2-pin",
+    "connector": "QDC",
     "form_factor": "IEM",
     "tags": [
       "Balanced",
@@ -67198,7 +67198,7 @@
     "model": "Sonata",
     "variant": "X",
     "year": 2026,
-    "price_usd": 400,
+    "price_usd": 180,
     "driver_type": "BA",
     "driver_config": "14BA",
     "impedance": 24,
@@ -69776,7 +69776,7 @@
     "model": "Sonata",
     "variant": "",
     "year": 2026,
-    "price_usd": 2000,
+    "price_usd": 2300,
     "driver_type": "Tribrid",
     "driver_config": "2DD+4BA+4EST",
     "impedance": 22,
@@ -69784,15 +69784,15 @@
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Sub-Bass",
-      "Punchy Bass",
       "Balanced",
       "Detailed",
+      "Good-Imaging",
+      "Punchy Bass",
+      "Reference",
       "Resolving",
+      "Sub-Bass",
       "Technical",
       "Wide-Stage",
-      "Good-Imaging",
-      "Reference",
       "Flagship"
     ],
     "files": [
