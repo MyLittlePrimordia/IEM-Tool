@@ -11,6 +11,7 @@
 const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const EXPECTED_ENTRIES = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'database.json'), 'utf8')).length;  // follows database.json, never a hardcoded count
 const crypto = require('crypto');
 const ROOT = path.resolve(process.env.IEM_TEST_ROOT || '');
 const BUNDLE = path.resolve(process.env.BUNDLE || '');
@@ -49,7 +50,7 @@ app.whenReady().then(async () => {
   check('Data tab loaded', await wait('DataTab.ready'), true);
   check('mode is electron + packaged', await js('DataStore.state.mode + "|" + DataStore.state.packaged'), 'electron|true');
   check('no working copy yet', await js('DataStore.state.workingCopy'), false);
-  check('5251 entries read from the bundled database', await js('DataTab.S.entries.length'), 5251);
+  check('entries read from the bundled database', await js('DataTab.S.entries.length'), EXPECTED_ENTRIES);
   check('IEM-Data has no database or marker yet', fs.existsSync(path.join(EXT, 'database.json')) || fs.existsSync(path.join(EXT, '.iem-working-copy.json')), false);
   check('Settings → Reset button is available in the installed app', await js("getComputedStyle(document.getElementById('btn-reset-database')).display !== 'none'"), true);
 
@@ -126,7 +127,7 @@ app.whenReady().then(async () => {
   check('the deleted file is served again (back on the bundle)', await js(`fetch(${JSON.stringify(url)}).then(r => r.status)`), 200);
   check('the user-added curve is gone', await js("fetch('/data/MY%20SOURCE/WC%20TEST%20ONE.txt').then(r => r.status)"), 404);
   await js("App.switchTab('database')");
-  check('Data tab shows the original 5251 entries again, no edits', await wait('DataTab.ready && DataTab.S.entries.length === 5251 && !DataTab.S.entries.some(e => e.year === 2001 && e.id === DataTab.S.entries[3].id && false)'), true);
+  check('Data tab shows the original entries again, no edits', await wait('DataTab.ready && DataTab.S.entries.length === ' + EXPECTED_ENTRIES + ' && !DataTab.S.entries.some(e => e.year === 2001 && e.id === DataTab.S.entries[3].id && false)'), true);
   check('original entry year restored', await js('DataTab.S.entries[3].year !== 2001'), true);
   check('BUNDLE still byte-for-byte untouched after everything', fingerprint(BUNDLE), bundleBefore);
 

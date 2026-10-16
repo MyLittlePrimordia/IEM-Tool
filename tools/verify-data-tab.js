@@ -15,6 +15,7 @@ const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
 const zlib = require('zlib');
 const path = require('path');
+const EXPECTED_ENTRIES = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'database.json'), 'utf8')).length;  // follows database.json, never a hardcoded count
 const PROJECT = path.resolve(path.join(__dirname, '..'));
 const ROOT = path.resolve(process.env.IEM_TEST_ROOT || PROJECT);
 if (ROOT === PROJECT && process.env.IEM_TEST_ALLOW_PROJECT !== '1') {
@@ -49,7 +50,7 @@ app.whenReady().then(async () => {
   check('DataTab became ready', await wait('DataTab.ready'), true);
   check('store mode is electron', await js('DataStore.state.mode'), 'electron');
   check('saves to the scratch root', await js('DataStore.state.rootPath'), ROOT);
-  check('5251 entries loaded', await js('DataTab.S.entries.length'), 5251);
+  check('all database entries loaded', await js('DataTab.S.entries.length'), EXPECTED_ENTRIES);
   check('tree rendered brand rows', await wait("document.querySelectorAll('#dt-tree .dt-brand').length > 100"), true);
   check('first entry selected + editor shown', await wait("!!document.getElementById('dt-e-brand') && document.getElementById('dt-e-brand').value.length > 0"), true);
   check('pane visible, others hidden', await js("!document.getElementById('pane-database').classList.contains('hidden') && document.getElementById('pane-find').classList.contains('hidden')"), true);
@@ -83,7 +84,7 @@ app.whenReady().then(async () => {
   check('save finished (banner)', await wait("!!(DataTab.ex.banner && DataTab.ex.banner.kind === 'saved')"), true);
   const dbText = fs.readFileSync(path.join(ROOT, 'database.json'), 'utf8');
   const gzText = zlib.gunzipSync(fs.readFileSync(path.join(ROOT, 'database.json.gz'))).toString('utf8');
-  check('database.json written and valid', JSON.parse(dbText).length, 5251);
+  check('database.json written and valid', JSON.parse(dbText).length, EXPECTED_ENTRIES);
   check('.gz identical to .json', gzText === dbText, true);
   check('edited model is on disk', dbText.includes(' Test"'), true);
   check('backup of previous file kept', fs.existsSync(path.join(ROOT, 'backup', 'database.json.bak')), true);

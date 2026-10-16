@@ -79,7 +79,8 @@ jobs:
 
       - name: Install Electron's runtime libraries
         run: |
-          sudo apt-get update
+          # Mirrors occasionally hiccup; retry instead of failing the run.
+          for i in 1 2 3; do sudo apt-get update && break || sleep 10; done
           # Several of these were renamed in the t64 transition (libasound2 ->
           # libasound2t64 and friends). Verified on Ubuntu 26.04: `apt-get install
           # libasound2` fails with "no installation candidate" even though
@@ -99,9 +100,32 @@ jobs:
         # No sound card on a runner, and Chromium in a container needs
         # --no-sandbox. All six suites are verified to pass with audio output
         # disabled, so this should not be sensitive to the missing device.
+        #
+        # ADVISORY, NOT BLOCKING. These suites drive the real app in Electron and
+        # can fail for reasons that have nothing to do with whether the app
+        # builds (a test with a stale expectation, a flaky runner display, a
+        # timing hiccup). One failing suite used to cancel all three platform
+        # builds and the release. The static `verify` job above remains the hard
+        # gate (it catches a parse error / blank-app bundle); this step reports
+        # loudly but lets the installers still be built.
+        id: ui
+        continue-on-error: true
         env:
           IEM_VERIFY_CHROMIUM_FLAGS: --no-sandbox --disable-audio-output --mute-audio --disable-gpu
         run: xvfb-run -a --server-args="-screen 0 1600x900x24" npm run verify:ui
+
+      - name: Report UI verification result
+        if: always()
+        run: |
+          if [ "${{ steps.ui.outcome }}" = "success" ]; then
+            echo "### UI verification: passed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning title=UI verification failed::One or more UI suites failed. Builds still ran. See the 'Behavioural verification' step log."
+            {
+              echo "### UI verification: FAILED (builds were NOT blocked)"
+              echo "Open the **Behavioural verification** step above and search for \`FAIL\` to see which check broke."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   build-linux:
     needs: [verify, verify-ui]

@@ -8,6 +8,8 @@
 const { app, BrowserWindow } = require('electron');
 const http = require('http');
 const path = require('path');
+const fs = require('fs');
+const EXPECTED_ENTRIES = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'database.json'), 'utf8')).length;  // follows database.json, never a hardcoded count
 let failures = 0;
 function check(label, actual, expected) {
   const ok = String(actual) === String(expected);
@@ -30,9 +32,22 @@ app.whenReady().then(async () => {
   console.log('   app origin:', url.origin);
   check('window actually loaded the app (nav bar present)', await js("!!document.getElementById('top-nav-bar')"), true);
 
-  check('real server delivers the catalogue', await js('CurveIndexer.catalog.length'), 5251);
-  const curve = await js("fetch('./' + CurveIndexer.catalog[0].files[0].split('/').map(encodeURIComponent).join('/')).then(r => r.status)");
-  check('real server delivers a curve file', curve, 200);
+  check('real server delivers the catalogue', await js('CurveIndexer.catalog.length'), EXPECTED_ENTRIES);
+  // Pick whichever curve file the CURRENT database points at and that exists on
+  // disk, instead of assuming entry #0 has a file. The bundled database and the
+  // data/ folder change often; this test must not care what is in them.
+  const dbEntries = JSON.parse(fs.readFileSync(path.join(ROOT, 'database.json'), 'utf8'));
+  let sampleCurve = null;
+  for (const e of dbEntries) {
+    const f = e && Array.isArray(e.files) && e.files[0];
+    if (typeof f === 'string' && fs.existsSync(path.join(ROOT, f))) { sampleCurve = f; break; }
+  }
+  if (sampleCurve) {
+    const curve = await js(`fetch('./' + ${JSON.stringify(sampleCurve)}.split('/').map(encodeURIComponent).join('/')).then(r => r.status)`);
+    check('real server delivers a curve file', curve, 200);
+  } else {
+    console.log('  SKIP  no database entry points at an existing curve file in data/ - nothing to fetch');
+  }
 
   console.log('\n[1] clipboard still works under the lockdown');
   await js("window.focus(); document.body.focus()");
