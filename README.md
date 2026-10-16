@@ -31,10 +31,13 @@ Find budget clones of $1,000 flagships, tune any set with 1-click AutoEQ, and te
 | Calculate power needs and view side-by-side specs. | Built-in offline database editor to manage curves locally. | Immersive, fullscreen live audio visualizers. |
 | <img src="screenshots/REVIEW.png" width="280" alt="Review Workspace"> | <img src="screenshots/DATA.png" width="280" alt="Data Workspace"> | <img src="screenshots/VIZ.png" width="280" alt="Viz Workspace"> |
 
-| 7. ⚙️ Setup |
-| :---: |
-| Customize 9 themes, scaling, routing, and backups. |
-| <img src="screenshots/SETTINGS.png" width="280" alt="Setup Workspace"> |
+<div align="center">
+<table width="33%">
+  <tr><th align="center">7. ⚙️ Setup</th></tr>
+  <tr><td align="center">Customize 9 themes, scaling, routing, and backups.</td></tr>
+  <tr><td align="center"><img src="screenshots/SETTINGS.png" width="100%" alt="Setup Workspace"></td></tr>
+</table>
+</div>
 
 ---
 
