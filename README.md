@@ -34,7 +34,7 @@ Find budget clones of $1,000 flagships, tune any set with 1-click AutoEQ, and te
 | 7. ⚙️ Setup |
 | :---: |
 | Customize 9 themes, scaling, routing, and backups. |
-| <img src="screenshots/SETUP.png" width="280" alt="Setup Workspace"> |
+| <img src="screenshots/SETTINGS.png" width="280" alt="Setup Workspace"> |
 
 ---
 
