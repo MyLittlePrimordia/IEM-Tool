@@ -37150,6 +37150,30 @@
     ]
   },
   {
+    "id": "euiu_ui_09",
+    "brand": "EUIU",
+    "model": "UI",
+    "variant": "09",
+    "year": 2026,
+    "price_usd": 200,
+    "driver_type": "Hybrid",
+    "driver_config": "1DD+8BA",
+    "impedance": 16,
+    "sensitivity": 107,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Resolving",
+      "Studio-Monitoring",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/BASS AUDIO/EUIU UI-09.txt"
+    ]
+  },
+  {
     "id": "euiu_ui_05",
     "brand": "EUIU",
     "model": "UI-05",
