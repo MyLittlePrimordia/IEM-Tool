@@ -75,13 +75,38 @@ const DataCore = (function () {
     'Basshead': '\uD83D\uDCA5', 'Sub-Bass': '\uD83C\uDF0A', 'Punchy Bass': '\uD83E\uDD4A', 'Warm': '\uD83C\uDF3F',
     'Neutral': '\u2696\uFE0F', 'V-Shaped': '\uD83D\uDD3A', 'U-Shaped': '\uD83E\uDDF2', 'Balanced': '\u262F\uFE0F',
     'Bright': '\u2728', 'Treblehead': '\u26A1', 'Dark': '\uD83C\uDF11', 'Vocal-Focused': '\uD83D\uDDE3\uFE0F',
-    'Detailed': '\uD83D\uDC8E', 'Resolving': '\uD83D\uDD0D', 'Technical': '\uD83D\uDD2C', 'Wide-Stage': '\uD83C\uDFDF\uFE0F',
+    'Detailed': '\uD83D\uDD0D', 'Resolving': '\uD83D\uDC53', 'Technical': '\uD83D\uDD2C', 'Wide-Stage': '\uD83C\uDFDF\uFE0F',
     'Good-Imaging': '\uD83D\uDD2D', 'Smooth': '\uD83E\uDDC8', 'Reference': '\uD83D\uDCD0', 'Analytical': '\uD83E\uDDE0',
     'Fun': '\uD83D\uDD25', 'Relaxed': '\uD83D\uDE0C', 'Gaming': '\uD83C\uDFAE', 'Competitive-Gaming': '\uD83C\uDFC6',
     'Studio-Monitoring': '\uD83C\uDF9B\uFE0F', 'Collab': '\uD83E\uDD1D', 'Limited-Edition': '\uD83C\uDF1F',
     'Budget': '\uD83E\uDE99', 'Mid-Tier': '\uD83D\uDCB5', 'Premium': '\uD83D\uDC8E', 'Flagship': '\uD83D\uDC51'
   };
   const APPROVED_TAGS = [].concat.apply([], Object.keys(TAG_GROUPS).map(k => TAG_GROUPS[k]));
+  // One canonical emoji lookup for the whole app (Find, EQ, Review, PEQdb all
+  // resolve through tagEmoji). Names are matched case/space/underscore-folded;
+  // a small alias table keeps the historical synonyms that predate the shared
+  // registry (v-shape, sub bass, detail, soundstage, …) pointing at the same
+  // emoji as their canonical tag. Unknown names fall back to the generic label.
+  function tagNorm(s) { return String(s === null || s === undefined ? '' : s).toLowerCase().trim().replace(/[\s_]+/g, '-'); }
+  const TAG_EMOJI_BY_NORM = {};
+  Object.keys(TAG_EMOJI).forEach(k => { TAG_EMOJI_BY_NORM[tagNorm(k)] = TAG_EMOJI[k]; });
+  const TAG_EMOJI_ALIAS = {
+    'v-shape': '\uD83D\uDD3A',            // V-Shaped
+    'detail': '\uD83D\uDD0D',             // Detailed
+    'soundstage': '\uD83C\uDFDF\uFE0F',   // Wide-Stage
+    'imaging': '\uD83D\uDD2D',            // Good-Imaging
+    'warm-tilt': '\uD83C\uDF3F',          // Warm
+    'u-shape': '\uD83E\uDDF2',            // U-Shaped
+    'vocal': '\uD83C\uDFA4',              // Vocal (review-side name)
+    'vintage': '\uD83D\uDCFC'            // legacy-only tag
+  };
+  const TAG_EMOJI_FALLBACK = '\uD83C\uDFF7\uFE0F';
+  function tagEmoji(name) {
+    if (name === null || name === undefined || name === '') return TAG_EMOJI_FALLBACK;
+    if (typeof name !== 'string') name = String(name);
+    const k = tagNorm(name);
+    return TAG_EMOJI_BY_NORM[k] || TAG_EMOJI_ALIAS[k] || TAG_EMOJI_FALLBACK;
+  }
   const PRICE_TIER_TAGS = TAG_GROUPS[PRICE_GROUP];
   const PRIMARY_TONALITY_GROUP = ['Neutral', 'Balanced', 'V-Shaped', 'U-Shaped'];
   const TAG_CONFLICT_PAIRS = [
@@ -1440,6 +1465,7 @@ const DataCore = (function () {
     // constants
     SCHEMA_FIELDS, BLANK_ENTRY, blankEntry, DRIVER_TECH_ORDER, ALLOWED_DRIVER_TYPES, FORM_FACTORS, CONNECTORS_ALL,
     FORM_CONNECTOR_MAP, FORM_FACTOR_ICON, CONNECTOR_ICON, DRIVER_TYPE_ICON, TAG_GROUPS, TAG_GROUP_EMOJI, TAG_EMOJI, PRICE_GROUP, APPROVED_TAGS, PRICE_TIER_TAGS,
+    tagEmoji,
     PRIMARY_TONALITY_GROUP, TAG_CONFLICT_PAIRS, MIN_TAGS, MAX_TAGS, TWS_FORM_FACTOR, WIRELESS_OVER_EAR_FORM_FACTOR,
     PRICE_MAX, CURRENT_YEAR,
     // helpers

@@ -9085,11 +9085,20 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
 
 /* ---- Database tab, round 4: wide chart as the centre piece, roomier tags, big paste box ---- */
 .dt-cvtab { display: flex; flex-direction: column; gap: 10px; flex: 1 1 auto; min-height: 0; }
-.dt-curve.is-wide { flex: 1 1 200px; min-height: 150px; height: auto; }
-.dt-wide-empty { flex: 1 1 200px; display: flex; align-items: center; justify-content: center; }
-.dt-cvlow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; flex: 0 0 auto; height: clamp(230px, 34vh, 350px); }
+.dt-curve.is-wide { flex: 0 1 auto; height: clamp(140px, 22vh, 210px); min-height: 130px; }
+.dt-wide-empty { flex: 0 1 auto; height: clamp(140px, 22vh, 210px); min-height: 130px; display: flex; align-items: center; justify-content: center; }
+.dt-cvlow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; flex: 1 1 auto; min-height: clamp(250px, 36vh, 430px); height: auto; }
 .dt-cvlow > .dt-col { min-height: 0; overflow: hidden; gap: 8px; }
 .dt-cvlow .dt-fscroll { max-height: none; flex: 1 1 0; min-height: 40px; }
+/* Round 4c: the Linked files / Import pair gets its own padded cards and a
+   taller drop zone so the importer no longer feels crammed against the chart. */
+.dt-cvcard { padding: 12px; border: 1px solid var(--line); border-radius: var(--r-md, 10px); background: var(--bg-inset, var(--bg-input)); }
+.dt-cvhead { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.dt-cvhead .dt-cvcount { margin-left: auto; font-size: 10px; font-weight: 900; color: var(--text-lo); }
+.dt-cvsec { display: flex; flex-direction: column; gap: 5px; flex: 0 0 auto; }
+.dt-cvfoot { display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; }
+.dt-cvfoot .dt-btn.is-primary { width: 100%; }
+.dt-cvtab .dt-drop { padding: 16px; font-size: 11.5px; }
 .dt-ai-ta { height: 260px; min-height: 140px; resize: vertical; font-size: 12px; line-height: 1.45; }
 .dt-tgwrap { gap: clamp(8px, 1.7vh, 18px); }
 .dt-tg { gap: clamp(4px, .8vh, 8px); }
@@ -9100,7 +9109,7 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
   .dt-cvtab > * { flex: none; }
   .dt-curve.is-wide { height: 200px; }
   .dt-wide-empty { height: 120px; }
-  .dt-cvlow { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .dt-cvlow { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 0; }
   .dt-cvlow > .dt-col { overflow: visible; }
   .dt-cvlow .dt-fscroll { max-height: 160px; flex: none; }
 }

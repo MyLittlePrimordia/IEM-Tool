@@ -2212,19 +2212,19 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
         },
         tonalityTags: [
             {name: "⚖️ Neutral"}, {name: "✨ Bright"}, {name: "🌿 Warm"}, {name: "🌑 Dark"},
-            {name: "🔺 V-Shape"}, {name: "🪞 U-Shape"}, {name: "🎯 Mid-Forward"}, {name: "🌬️ Airy"},
-            {name: "💎 Detailed"}, {name: "☁️ Smooth"}, {name: "🔥 Energetic"}, {name: "😌 Relaxed"}
+            {name: "🔺 V-Shaped"}, {name: "🧲 U-Shaped"}, {name: "🎯 Mid-Forward"}, {name: "🌬️ Airy"},
+            {name: "🔍 Detailed"}, {name: "🧈 Smooth"}, {name: "🚀 Energetic"}, {name: "😌 Relaxed"}
         ],
         bassTags: [
-            {name: "💥 Basshead"}, {name: "🌊 Deep Bass"}, {name: "📳 Rumble"}, {name: "🥊 Punchy"},
-            {name: "🎯 Controlled"}, {name: "🎈 Light Bass"}, {name: "⚡ Fast Bass"}, {name: "🪨 Thick Bass"},
+            {name: "💥 Basshead"}, {name: "🐋 Deep Bass"}, {name: "📳 Rumble"}, {name: "👊 Punchy"},
+            {name: "🎚️ Controlled"}, {name: "🎈 Light Bass"}, {name: "💨 Fast Bass"}, {name: "🪨 Thick Bass"},
             {name: "🧼 Clean Bass"}, {name: "🫀 Slam"}
         ],
         genreTags: [
-            {name: "📱 All-Rounder"}, {name: "🎤 Vocal"}, {name: "🎸 Rock"}, {name: "⚡ EDM"},
+            {name: "📱 All-Rounder"}, {name: "🎤 Vocal"}, {name: "🎸 Rock"}, {name: "🔊 EDM"},
             {name: "🎧 Hip-Hop"}, {name: "🎹 Pop"}, {name: "🎻 Classical"}, {name: "🎷 Jazz"},
             {name: "🤠 Country"}, {name: "🎼 Orchestra"}, {name: "🎮 Gaming"}, {name: "🎬 Movies"},
-            {name: "🔬 Critical"}
+            {name: "🧐 Critical"}
         ],
 
         init: function() {
@@ -2527,9 +2527,15 @@ label: function(context) {
             if (activePanel) activePanel.classList.remove('hidden');
         },
 
-        allReviewTags: [
-            "⚖️ Neutral", "💥 Basshead", "🌊 Sub-Bass", "🥊 Punchy Bass", "🌿 Warm", "🔺 V-Shaped", "☯️ Balanced", "✨ Bright", "🌑 Dark", "💎 Detailed", "🔍 Resolving", "🔬 Technical", "🏟️ Wide-Stage", "🔭 Good-Imaging", "🧈 Smooth", "📐 Reference", "🧠 Analytical", "🔥 Fun", "😌 Relaxed", "🎮 Gaming", "🏆 Competitive-Gaming", "🎤 Vocal-Focused", "💰 Budget", "🪙 Mid-Tier", "👑 Premium", "🥇 Flagship", "🤝 Collab", "🌟 Limited-Edition"
-        ],
+        // Canonical registry from data-core.js, decorated with the shared emoji.
+        // A getter (not a snapshot) because DataCore is concatenated after this
+        // file; it is only read at runtime, long after boot.
+        get allReviewTags() {
+            if (typeof DataCore !== 'undefined' && DataCore && DataCore.APPROVED_TAGS) {
+                return DataCore.APPROVED_TAGS.map(t => ((DataCore.TAG_EMOJI && DataCore.TAG_EMOJI[t]) || '🏷️') + ' ' + t);
+            }
+            return [];
+        },
         currentReviewTagIndex: 0,
 
         cycleReviewTag: function(dir) {
@@ -2879,18 +2885,9 @@ label: function(context) {
             menu.innerHTML = '';
 
             const groups = [
-                {
-                    label: 'Tonality',
-                    tags: ['⚖️ Neutral', '✨ Bright', '🌿 Warm', '🌑 Dark', '🔺 V-Shape', '🪞 U-Shape', '🎯 Mid-Forward', '🌬️ Airy', '💎 Detailed', '☁️ Smooth', '🔥 Energetic', '😌 Relaxed']
-                },
-                {
-                    label: 'Bass',
-                    tags: ['💥 Basshead', '🌊 Deep Bass', '📳 Rumble', '🥊 Punchy', '🎯 Controlled', '🎈 Light Bass', '⚡ Fast Bass', '🪨 Thick Bass', '🧼 Clean Bass', '🫀 Slam']
-                },
-                {
-                    label: 'Genres',
-                    tags: ['📱 All-Rounder', '🎤 Vocal', '🎸 Rock', '⚡ EDM', '🎧 Hip-Hop', '🎹 Pop', '🎻 Classical', '🎷 Jazz', '🤠 Country', '🎼 Orchestra', '🎮 Gaming', '🎬 Movies', '🔬 Critical']
-                }
+                { label: 'Tonality', tags: this.tonalityTags.map(t => t.name) },
+                { label: 'Bass', tags: this.bassTags.map(t => t.name) },
+                { label: 'Genres', tags: this.genreTags.map(t => t.name) }
             ];
 
             groups.forEach(g => {

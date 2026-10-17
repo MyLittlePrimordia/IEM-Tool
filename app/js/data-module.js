@@ -248,6 +248,19 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     $('dt-count').textContent = shown + ' of ' + T.S.entries.length + ' entries';
     const cur2 = box.querySelector('.is-sel'); if (cur2 && T._scrollSel) { cur2.scrollIntoView({ block: 'center' }); T._scrollSel = false; }
   }
+  // After an import we want the new/edited entry visible AND selected in the
+  // tree. If the current filter/search would hide it, drop back to the default
+  // view so the scroll-into-view actually finds a row to scroll to.
+  function revealInTree(uid) {
+    const e = T.S && T.S.byUid(uid); if (!e) return;
+    const toks = T.search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const hay = (e.brand + ' ' + e.model + ' ' + e.variant + ' ' + e.id + ' ' + e.tags.join(' ') + ' ' + e.driver_config + ' ' + e.form_factor).toLowerCase();
+    const visible = matchesFilter(e) && toks.every(t => hay.indexOf(t) >= 0);
+    if (visible) return;
+    if (T.filter !== 'all') { T.filter = 'all'; }
+    if (T.search) { T.search = ''; const s = $('dt-search'); if (s) s.value = ''; }
+    renderTree();
+  }
 
   // =================================================================== history
   function renderHistory() {
@@ -414,9 +427,12 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     return '<div class="dt-cvtab">' +
       '<div class="dt-row"><h4 class="dt-h dt-grow">' + (ok ? E(DC.formatEntryLabel(d)) : 'Measurements') + '</h4>' + (ok ? '<button class="dt-btn is-sm" data-dt="go-eq" id="dt-go-eq">🎚️ EQ</button><button class="dt-btn is-sm" data-dt="go-review" id="dt-go-review">📝 Review</button>' : '') + '</div>' +
       (ok ? '<div class="dt-curve is-wide"><canvas id="dt-canvas"></canvas><span class="dt-cap" id="dt-curve-cap">No curve</span></div>' : '<div class="dt-box dt-empty dt-wide-empty">' + (!d ? 'Select an entry.' : 'Apply the new entry first.') + '</div>') +
-      '<div class="dt-cvlow"><div class="dt-col"><h4 class="dt-h" title="The first file is the default curve. Drag to reorder.">Linked files</h4>' +
-        (ok ? '<div id="dt-files" class="dt-col dt-fscroll" style="gap:4px"></div><div class="dt-sug"><input id="dt-file-in" class="dt-in input-bg-fix dt-mono" data-f="file-in" placeholder="Link an existing file…" autocomplete="off" spellcheck="false"><div id="dt-file-sug" class="dt-sugbox" style="display:none"></div></div>' : '') +
-      '</div><div class="dt-col"><h4 class="dt-h">Import</h4><div id="dt-cv-body" class="dt-col dt-grow" style="gap:8px;min-height:0"></div></div></div></div>';
+      '<div class="dt-cvlow">' +
+        '<div class="dt-col dt-cvcard"><div class="dt-cvhead"><h4 class="dt-h" title="The first file is the default curve. Drag to reorder.">📎 Linked files</h4>' + (ok ? '<span class="dt-cvcount">' + d.files.length + '</span>' : '') + '</div>' +
+          (ok ? '<div id="dt-files" class="dt-col dt-fscroll" style="gap:6px"></div><div class="dt-sug"><input id="dt-file-in" class="dt-in input-bg-fix dt-mono" data-f="file-in" placeholder="Link an existing file…" autocomplete="off" spellcheck="false"><div id="dt-file-sug" class="dt-sugbox" style="display:none"></div></div>' : '<div class="dt-box dt-help" style="padding:10px">Apply the new entry first, then its files appear here.</div>') +
+        '</div>' +
+        '<div class="dt-col dt-cvcard"><div class="dt-cvhead"><h4 class="dt-h">📥 Import</h4></div><div id="dt-cv-body" class="dt-col dt-grow" style="gap:10px;min-height:0"></div></div>' +
+      '</div></div>';
   }
   function renderEditor() {
     const box = $('dt-editor'); if (!box) return;
@@ -948,6 +964,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       if (!ok) return;
     }
     let nNew = 0, nChg = 0, nDel = 0;
+    const beforeUids = new Set(T.S.entries.map(e => e._uid));
     T.S.batch('AI import: ' + staged.staged.length + ' entr' + (staged.staged.length === 1 ? 'y' : 'ies'), list => {
       staged.staged.forEach(x => {
         const p = x.proposal;
@@ -963,8 +980,20 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     st.strippedReports.forEach(l => lines.push('• ' + l)); st.keptReports.forEach(l => lines.push('• ' + l));
     if (staged.problems.length) { lines.push('', 'NOT applied (failed validation):'); staged.problems.forEach(l => lines.push('• ' + l)); }
     A.log = lines.join('\n'); A.proposals = []; A.include = new Set(); A.status = 'Applied. 💾 Save to keep.';
+    A.text = ''; { const inp = $('dt-ai-in'); if (inp) inp.value = ''; }
     toast('AI import applied: ' + nNew + ' new, ' + nChg + ' changed' + (nDel ? ', ' + nDel + ' deleted' : '') + '.', '🤖');
-    renderAI(); refreshSelection(); runAudit();
+    renderAI(); runAudit();
+    // Jump to what changed: the first new entry, else the first edited one.
+    const added = T.S.entries.find(e => !beforeUids.has(e._uid));
+    const changedUid = staged.staged.filter(x => x.proposal.action === 'changed' && T.S.byUid(x.proposal.uid)).map(x => x.proposal.uid)[0];
+    const focusUid = added ? added._uid : (changedUid !== undefined ? changedUid : null);
+    if (focusUid !== null) {
+      const fe = T.S.byUid(focusUid);
+      if (fe) T.expanded.add(fe.brand || '(no brand)');
+      revealInTree(focusUid);
+      T._fromTap = true;   // on a phone, jump from Tools to the Editor section
+      setLeft('tree'); setMid('editor'); selectUid(focusUid, true);
+    } else refreshSelection();
   }
 
   // ===================================================================== curves
@@ -1045,15 +1074,15 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
         '<div class="dt-g2" style="margin-top:5px"><input class="dt-in input-bg-fix dt-mono dt-up" style="height:26px" data-f="cv-name:' + i + '" value="' + E(p.name) + '" placeholder="NAME" spellcheck="false" autocomplete="off" title="File name (.txt is added)"><select class="dt-sel input-bg-fix" style="height:26px" data-f="cv-link:' + i + '" title="Link to">' + sel + '</select></div></div>';
     }).join('');
     el.innerHTML =
-      '<div><label class="dt-lbl">Source folder</label>' +
+      '<div class="dt-cvsec"><label class="dt-lbl">Source folder</label>' +
       '<select class="dt-sel input-bg-fix" data-f="cv-source">' + folders.map(f => '<option value="' + E(f) + '"' + (C.source === f ? ' selected' : '') + '>' + E(f) + '</option>').join('') + '<option value="__new__"' + (C.source === '__new__' ? ' selected' : '') + '>➕ New source folder…</option></select>' +
       (C.source === '__new__' ? '<input class="dt-in input-bg-fix dt-mono dt-up" style="margin-top:5px" data-f="cv-newsource" value="' + E(C.newSource) + '" placeholder="NEW SOURCE NAME" spellcheck="false" autocomplete="off">' : '') +
       '<p class="dt-help" id="dt-cv-where" style="margin-top:3px">' + cvWhere(folder, folders) + '</p></div>' +
-      '<div class="dt-drop" data-dt="cv-pick" title="Left/right or (1)/(2) pairs are averaged">📥 Drop .txt / .csv or click</div><input type="file" id="dt-cv-file" multiple accept=".txt,.csv,.tsv" data-f="cv-files" style="display:none">' +
+      '<div class="dt-drop" data-dt="cv-pick" title="Left/right or (1)/(2) pairs are averaged">📥 Drop .txt / .csv files here, or click to browse</div><input type="file" id="dt-cv-file" multiple accept=".txt,.csv,.tsv" data-f="cv-files" style="display:none">' +
       (rows ? '<div class="dt-box dt-scroll dt-grow">' + rows + '</div>' : '<div class="dt-grow"></div>') +
       (C.log ? '<pre class="dt-log dt-box dt-scroll" style="max-height:64px;flex:0 0 auto">' + E(C.log) + '</pre>' : '') +
-      '<div class="dt-row"><button class="dt-btn' + (C.overwrite ? ' is-on' : '') + '" data-dt="cv-over" title="Replace files that already exist">♻ ' + (C.overwrite ? 'Replace' : 'Keep') + '</button><button class="dt-btn" data-dt="cv-clear" title="Clear the list">Clear</button>' +
-      '<button class="dt-btn is-primary dt-grow" data-dt="cv-convert"' + (C.plans.length && folder && !C.busy ? '' : ' disabled') + '>' + (C.busy ? '⏳ Converting…' : 'Convert & save') + '</button></div>';
+      '<div class="dt-cvfoot"><div class="dt-row"><button class="dt-btn dt-grow' + (C.overwrite ? ' is-on' : '') + '" data-dt="cv-over" title="Replace files that already exist">♻ ' + (C.overwrite ? 'Replace' : 'Keep') + '</button><button class="dt-btn dt-grow" data-dt="cv-clear" title="Clear the list">Clear list</button></div>' +
+      '<button class="dt-btn is-primary" data-dt="cv-convert"' + (C.plans.length && folder && !C.busy ? '' : ' disabled') + '>' + (C.busy ? '⏳ Converting…' : 'Convert & save') + '</button></div>';
   }
   function cvWhere(folder, folders) {
     const C = T.cv;

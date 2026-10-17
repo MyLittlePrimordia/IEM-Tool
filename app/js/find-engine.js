@@ -11,18 +11,15 @@
                 iemDatabase: [],
                 filterTags: new Set(),
                 selectedPicks: [],
-                approvedTagsList: [
-                    "Basshead", "Sub-Bass", "Punchy Bass", "Warm", "Neutral", "V-Shaped", "Balanced",
-                    "Bright", "Dark", "Detailed", "Resolving", "Technical", "Wide-Stage", "Good-Imaging",
-                    "Smooth", "Reference", "Analytical", "Fun", "Relaxed", "Gaming", "Competitive-Gaming",
-                    "Vocal-Focused", "Budget", "Mid-Tier", "Premium", "Flagship", "Collab", "Limited-Edition"
-                ],
-                tagEmojis: {
-                    "Basshead": "💥", "Sub-Bass": "🌊", "Punchy Bass": "🥊", "Warm": "🌿", "Neutral": "⚖️", "V-Shaped": "🔺", "Balanced": "☯️",
-                    "Bright": "✨", "Dark": "🌑", "Detailed": "💎", "Resolving": "🔍", "Technical": "🔬", "Wide-Stage": "🏟️", "Good-Imaging": "🔭",
-                    "Smooth": "🧈", "Reference": "📐", "Analytical": "🧠", "Fun": "🔥", "Relaxed": "😌", "Gaming": "🎮", "Competitive-Gaming": "🏆",
-                    "Vocal-Focused": "🗣️", "Budget": "💰", "Mid-Tier": "🪙", "Premium": "👑", "Flagship": "🥇", "Collab": "🤝", "Limited-Edition": "🌟",
-                    "Vintage": "📼"
+                // Canonical tag registry lives in data-core.js (shared with the
+                // Database/Review tabs). Getters, not snapshots: DataCore is
+                // concatenated AFTER this file, so the value is only read at
+                // runtime (interface render / boot), by which time it exists.
+                get approvedTagsList() {
+                    return (typeof DataCore !== 'undefined' && DataCore && DataCore.APPROVED_TAGS) ? DataCore.APPROVED_TAGS : [];
+                },
+                get tagEmojis() {
+                    return (typeof DataCore !== 'undefined' && DataCore && DataCore.TAG_EMOJI) ? DataCore.TAG_EMOJI : {};
                 },
 
                 _toggleCustomMenuPrefixed: function(prefix, keys, key) {
@@ -90,18 +87,23 @@
                 _pickGroupList: function() {
                     const tags = this.approvedTagsList || [];
                     const tagOf = (name) => ({ kind: 'meta', value: name, emoji: this.tagEmojis[name] || '🏷️' });
-                    const soundTuning = ['Basshead', 'Sub-Bass', 'Punchy Bass', 'Warm', 'Neutral', 'V-Shaped', 'Balanced', 'Bright', 'Dark', 'Detailed', 'Resolving', 'Technical', 'Wide-Stage', 'Good-Imaging', 'Smooth', 'Reference', 'Analytical', 'Fun', 'Relaxed', 'Vocal-Focused'];
-                    const special = ['Budget', 'Mid-Tier', 'Premium', 'Flagship', 'Collab', 'Limited-Edition'];
-                    const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
-                    const known = new Set([...soundTuning, ...special, ...gamingAttrs]);
+                    // Group straight from the canonical registry so Find, the EQ
+                    // and the Database tab never drift apart again.
+                    const G = (typeof DataCore !== 'undefined' && DataCore && DataCore.TAG_GROUPS) ? DataCore.TAG_GROUPS : null;
+                    const tuning = G ? [].concat(G['Tonal Profiles & Sound Signature'] || [], G['Technicalities & Presentation'] || []) : tags;
+                    const useCases = G ? (G['Use Cases'] || []) : ['Gaming', 'Competitive-Gaming', 'Studio-Monitoring'];
+                    const other = G ? [].concat(G['Price Tier (auto-assigned)'] || [], G['Release Types'] || []) : [];
+                    const gamingAttrs = useCases.filter(t => /gaming/i.test(t));
+                    const restUseCases = useCases.filter(t => !/gaming/i.test(t));
+                    const known = new Set([...tuning, ...useCases, ...other]);
                     const leftover = tags.filter(t => !known.has(t));
                     const musicItems = (this.genreFamilies || []).map(f => { const v = f.musicVariants[0]; return v ? { kind: 'music', value: v.name, emoji: v.emoji } : null; }).filter(Boolean);
                     const gameItems = (this.genreFamilies || []).map(f => { const v = f.gameVariants[0]; return v ? { kind: 'game', value: v.name, emoji: v.emoji } : null; }).filter(Boolean);
                     const groups = [
-                        { title: 'Tuning Tags', emoji: '🎛️', cls: 'text-sky-400', kind: 'meta', items: soundTuning.filter(t => tags.includes(t)).map(tagOf) },
+                        { title: 'Tuning Tags', emoji: '🎛️', cls: 'text-sky-400', kind: 'meta', items: tuning.filter(t => tags.includes(t)).map(tagOf) },
                         { title: 'Music Tags', emoji: '🎵', cls: 'text-cyan-400', kind: 'music', items: musicItems },
                         { title: 'Gaming Tags', emoji: '🎮', cls: 'text-amber-500', kind: 'game', items: [...gameItems, ...gamingAttrs.filter(t => tags.includes(t)).map(tagOf)] },
-                        { title: 'Other Tags', emoji: '✨', cls: 'text-violet-400', kind: 'meta', items: [...special.filter(t => tags.includes(t)).map(tagOf), ...leftover.map(tagOf)] }
+                        { title: 'Other Tags', emoji: '✨', cls: 'text-violet-400', kind: 'meta', items: [...other.filter(t => tags.includes(t)).map(tagOf), ...restUseCases.filter(t => tags.includes(t)).map(tagOf), ...leftover.map(tagOf)] }
                     ];
                     return groups;
                 },
@@ -255,19 +257,9 @@
                     if (typeof tagStr !== 'string') tagStr = String(tagStr);
                     const emojiMatch = tagStr.match(/^(\p{Extended_Pictographic}|\p{Emoji})/u);
                     if (emojiMatch) return '';
-                    const cleanKey = tagStr.toLowerCase().trim().replace(/_/g, '-');
-                    const emojiMap = {
-                        'basshead': '💥', 'sub-bass': '🌊', 'sub bass': '🌊', 'punchy-bass': '🥊', 'punchy bass': '🥊',
-                        'warm': '🌿', 'warm-tilt': '🌿', 'neutral': '⚖️', 'v-shaped': '🔺', 'v-shape': '🔺',
-                        'balanced': '☯️', 'bright': '✨', 'dark': '🌑', 'detailed': '💎', 'detail': '💎',
-                        'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️', 'soundstage': '🏟️',
-                        'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '📐',
-                        'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮',
-                        'competitive-gaming': '🏆', 'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰',
-                        'mid-tier': '🪙', 'premium': '👑', 'flagship': '🥇', 'collab': '🤝',
-                        'limited-edition': '🌟', 'vintage': '📼'
-                    };
-                    return emojiMap[cleanKey] || '🏷️';
+                    // Single source of truth for every tab (data-core.js).
+                    if (typeof DataCore !== 'undefined' && DataCore && typeof DataCore.tagEmoji === 'function') return DataCore.tagEmoji(tagStr);
+                    return '🏷️';
                 },
                 baselineOptions: [
                     { id: 'harman', label: 'Harman IE 2019', emoji: '🎯' },

@@ -952,20 +952,9 @@ const savedDb = localStorage.getItem('settings_align_db');
                 const getTagEmoji = (tagStr) => {
                     // Same defect as FindEngine.getTagEmoji: only the array-ness
                     // of `tags` is validated, never the element type, so a
-                    // numeric tag reached .toLowerCase() and threw.
-                    if (tagStr === null || tagStr === undefined || tagStr === '') return '🏷️';
-                    if (typeof tagStr !== 'string') tagStr = String(tagStr);
-                    const cleanKey = tagStr.toLowerCase().trim().replace(/[\s_]+/g, '-');
-                    const emojiMap = {
-                        'basshead': '💥', 'sub-bass': '🌊', 'punchy-bass': '🥊', 'warm': '🌿', 'warm-tilt': '🌿',
-                        'neutral': '⚖️', 'v-shaped': '🔺', 'balanced': '⚖️', 'bright': '✨', 'dark': '🌑',
-                        'detailed': '💎', 'detail': '💎', 'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️',
-                        'soundstage': '🏟️', 'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '🎯',
-                        'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮', 'competitive-gaming': '🏆',
-                        'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
-                        'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📼'
-                    };
-                    return emojiMap[cleanKey] || '🏷️';
+                    // numeric tag reached .toLowerCase() and threw. FindEngine
+                    // now normalises (and resolves the canonical emoji) itself.
+                    return FindEngine.getTagEmoji(tagStr);
                 };
                 const tagsHtml = (item.tags || []).map(t => `<span class="spec-icon-badge" data-tooltip="${esc(t)}">${getTagEmoji(t)}</span>`).join('');
 
@@ -1816,16 +1805,16 @@ item.innerHTML = `<div class="flex items-center justify-between w-full h-6 selec
 
             if (subBass - midBass > 3) tags.push('🌋 Sub Focus');
 
-            if (bassBoost > 3 && trebleBoost > 3 && mids < midReference - 1) tags.push('🔺 V-Shape');
+            if (bassBoost > 3 && trebleBoost > 3 && mids < midReference - 1) tags.push('🔺 V-Shaped');
 
-            if (bassBoost > 2 && trebleBoost > 2 && Math.abs(mids - midReference) < 2) tags.push('🪞 U-Shape');
+            if (bassBoost > 2 && trebleBoost > 2 && Math.abs(mids - midReference) < 2) tags.push('🧲 U-Shaped');
 
             if (Math.abs(bassBoost) < 2 && Math.abs(trebleBoost) < 2 && Math.abs(upperMidPresence) < 2.5) {
                 tags.push('⚖️ Neutral');
             }
 
             if (trebleBoost > 4) tags.push('✨ Bright');
-            else if (trebleBoost > 2) tags.push('💎 Detailed');
+            else if (trebleBoost > 2) tags.push('🔍 Detailed');
 
             if (trebleBoost < -3) tags.push('🌑 Dark');
             else if (trebleBoost < -1.5) tags.push('😌 Relaxed Treble');
@@ -1841,7 +1830,7 @@ item.innerHTML = `<div class="flex items-center justify-between w-full h-6 selec
             const pinnaSharpness = pinnaRegion - ((mids + presence) / 2);
             if (pinnaSharpness > 4) tags.push('🎯 BA Timbre');
 
-            if (air > treble - 2 && air > midReference - 2) tags.push('🧲 Extended Air');
+            if (air > treble - 2 && air > midReference - 2) tags.push('🎐 Extended Air');
 
             if (air < treble - 6) tags.push('📉 Treble Roll-off');
 

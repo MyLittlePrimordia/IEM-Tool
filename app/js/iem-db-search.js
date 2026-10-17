@@ -145,20 +145,7 @@ onDbSearchInput: function(value) {
                 ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${esc(item.connector)}">${connectorEmoji}</span>` : ''}
                 <span class="spec-icon-badge" data-tooltip="${esc(item.form_factor || 'In-Ear Monitor (IEM)')}">${formEmoji}</span>
             `;
-            const getTagEmoji = (tagStr) => {
-                if (!tagStr) return '🏷️';
-                const cleanKey = tagStr.toLowerCase().trim().replace(/[\s_]+/g, '-');
-                const emojiMap = {
-                    'basshead': '💥', 'sub-bass': '🌊', 'punchy-bass': '🥊', 'warm': '🌿', 'warm-tilt': '🌿',
-                    'neutral': '⚖️', 'v-shaped': '🔺', 'balanced': '⚖️', 'bright': '✨', 'dark': '🌑',
-                    'detailed': '💎', 'detail': '💎', 'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️',
-                        'soundstage': '🏟️', 'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '🎯',
-                        'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮', 'competitive-gaming': '🏆',
-                        'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
-                        'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📼'
-                };
-                return emojiMap[cleanKey] || '🏷️';
-            };
+            const getTagEmoji = (tagStr) => FindEngine.getTagEmoji(tagStr);
             const tagsHtml = (item.tags || []).slice(0, 4).map(t => `<span class="spec-icon-badge" data-tooltip="${esc(t)}">${getTagEmoji(t)}</span>`).join('');
 
             const isActive = (this._iemDbActiveId === item.id);

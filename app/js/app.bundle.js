@@ -12086,20 +12086,7 @@ onDbSearchInput: function(value) {
                 ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${esc(item.connector)}">${connectorEmoji}</span>` : ''}
                 <span class="spec-icon-badge" data-tooltip="${esc(item.form_factor || 'In-Ear Monitor (IEM)')}">${formEmoji}</span>
             `;
-            const getTagEmoji = (tagStr) => {
-                if (!tagStr) return '🏷️';
-                const cleanKey = tagStr.toLowerCase().trim().replace(/[\s_]+/g, '-');
-                const emojiMap = {
-                    'basshead': '💥', 'sub-bass': '🌊', 'punchy-bass': '🥊', 'warm': '🌿', 'warm-tilt': '🌿',
-                    'neutral': '⚖️', 'v-shaped': '🔺', 'balanced': '⚖️', 'bright': '✨', 'dark': '🌑',
-                    'detailed': '💎', 'detail': '💎', 'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️',
-                        'soundstage': '🏟️', 'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '🎯',
-                        'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮', 'competitive-gaming': '🏆',
-                        'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
-                        'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📼'
-                };
-                return emojiMap[cleanKey] || '🏷️';
-            };
+            const getTagEmoji = (tagStr) => FindEngine.getTagEmoji(tagStr);
             const tagsHtml = (item.tags || []).slice(0, 4).map(t => `<span class="spec-icon-badge" data-tooltip="${esc(t)}">${getTagEmoji(t)}</span>`).join('');
 
             const isActive = (this._iemDbActiveId === item.id);
@@ -14665,19 +14652,19 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
         },
         tonalityTags: [
             {name: "⚖️ Neutral"}, {name: "✨ Bright"}, {name: "🌿 Warm"}, {name: "🌑 Dark"},
-            {name: "🔺 V-Shape"}, {name: "🪞 U-Shape"}, {name: "🎯 Mid-Forward"}, {name: "🌬️ Airy"},
-            {name: "💎 Detailed"}, {name: "☁️ Smooth"}, {name: "🔥 Energetic"}, {name: "😌 Relaxed"}
+            {name: "🔺 V-Shaped"}, {name: "🧲 U-Shaped"}, {name: "🎯 Mid-Forward"}, {name: "🌬️ Airy"},
+            {name: "🔍 Detailed"}, {name: "🧈 Smooth"}, {name: "🚀 Energetic"}, {name: "😌 Relaxed"}
         ],
         bassTags: [
-            {name: "💥 Basshead"}, {name: "🌊 Deep Bass"}, {name: "📳 Rumble"}, {name: "🥊 Punchy"},
-            {name: "🎯 Controlled"}, {name: "🎈 Light Bass"}, {name: "⚡ Fast Bass"}, {name: "🪨 Thick Bass"},
+            {name: "💥 Basshead"}, {name: "🐋 Deep Bass"}, {name: "📳 Rumble"}, {name: "👊 Punchy"},
+            {name: "🎚️ Controlled"}, {name: "🎈 Light Bass"}, {name: "💨 Fast Bass"}, {name: "🪨 Thick Bass"},
             {name: "🧼 Clean Bass"}, {name: "🫀 Slam"}
         ],
         genreTags: [
-            {name: "📱 All-Rounder"}, {name: "🎤 Vocal"}, {name: "🎸 Rock"}, {name: "⚡ EDM"},
+            {name: "📱 All-Rounder"}, {name: "🎤 Vocal"}, {name: "🎸 Rock"}, {name: "🔊 EDM"},
             {name: "🎧 Hip-Hop"}, {name: "🎹 Pop"}, {name: "🎻 Classical"}, {name: "🎷 Jazz"},
             {name: "🤠 Country"}, {name: "🎼 Orchestra"}, {name: "🎮 Gaming"}, {name: "🎬 Movies"},
-            {name: "🔬 Critical"}
+            {name: "🧐 Critical"}
         ],
 
         init: function() {
@@ -14980,9 +14967,15 @@ label: function(context) {
             if (activePanel) activePanel.classList.remove('hidden');
         },
 
-        allReviewTags: [
-            "⚖️ Neutral", "💥 Basshead", "🌊 Sub-Bass", "🥊 Punchy Bass", "🌿 Warm", "🔺 V-Shaped", "☯️ Balanced", "✨ Bright", "🌑 Dark", "💎 Detailed", "🔍 Resolving", "🔬 Technical", "🏟️ Wide-Stage", "🔭 Good-Imaging", "🧈 Smooth", "📐 Reference", "🧠 Analytical", "🔥 Fun", "😌 Relaxed", "🎮 Gaming", "🏆 Competitive-Gaming", "🎤 Vocal-Focused", "💰 Budget", "🪙 Mid-Tier", "👑 Premium", "🥇 Flagship", "🤝 Collab", "🌟 Limited-Edition"
-        ],
+        // Canonical registry from data-core.js, decorated with the shared emoji.
+        // A getter (not a snapshot) because DataCore is concatenated after this
+        // file; it is only read at runtime, long after boot.
+        get allReviewTags() {
+            if (typeof DataCore !== 'undefined' && DataCore && DataCore.APPROVED_TAGS) {
+                return DataCore.APPROVED_TAGS.map(t => ((DataCore.TAG_EMOJI && DataCore.TAG_EMOJI[t]) || '🏷️') + ' ' + t);
+            }
+            return [];
+        },
         currentReviewTagIndex: 0,
 
         cycleReviewTag: function(dir) {
@@ -15332,18 +15325,9 @@ label: function(context) {
             menu.innerHTML = '';
 
             const groups = [
-                {
-                    label: 'Tonality',
-                    tags: ['⚖️ Neutral', '✨ Bright', '🌿 Warm', '🌑 Dark', '🔺 V-Shape', '🪞 U-Shape', '🎯 Mid-Forward', '🌬️ Airy', '💎 Detailed', '☁️ Smooth', '🔥 Energetic', '😌 Relaxed']
-                },
-                {
-                    label: 'Bass',
-                    tags: ['💥 Basshead', '🌊 Deep Bass', '📳 Rumble', '🥊 Punchy', '🎯 Controlled', '🎈 Light Bass', '⚡ Fast Bass', '🪨 Thick Bass', '🧼 Clean Bass', '🫀 Slam']
-                },
-                {
-                    label: 'Genres',
-                    tags: ['📱 All-Rounder', '🎤 Vocal', '🎸 Rock', '⚡ EDM', '🎧 Hip-Hop', '🎹 Pop', '🎻 Classical', '🎷 Jazz', '🤠 Country', '🎼 Orchestra', '🎮 Gaming', '🎬 Movies', '🔬 Critical']
-                }
+                { label: 'Tonality', tags: this.tonalityTags.map(t => t.name) },
+                { label: 'Bass', tags: this.bassTags.map(t => t.name) },
+                { label: 'Genres', tags: this.genreTags.map(t => t.name) }
             ];
 
             groups.forEach(g => {
@@ -24436,20 +24420,9 @@ const savedDb = localStorage.getItem('settings_align_db');
                 const getTagEmoji = (tagStr) => {
                     // Same defect as FindEngine.getTagEmoji: only the array-ness
                     // of `tags` is validated, never the element type, so a
-                    // numeric tag reached .toLowerCase() and threw.
-                    if (tagStr === null || tagStr === undefined || tagStr === '') return '🏷️';
-                    if (typeof tagStr !== 'string') tagStr = String(tagStr);
-                    const cleanKey = tagStr.toLowerCase().trim().replace(/[\s_]+/g, '-');
-                    const emojiMap = {
-                        'basshead': '💥', 'sub-bass': '🌊', 'punchy-bass': '🥊', 'warm': '🌿', 'warm-tilt': '🌿',
-                        'neutral': '⚖️', 'v-shaped': '🔺', 'balanced': '⚖️', 'bright': '✨', 'dark': '🌑',
-                        'detailed': '💎', 'detail': '💎', 'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️',
-                        'soundstage': '🏟️', 'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '🎯',
-                        'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮', 'competitive-gaming': '🏆',
-                        'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰', 'mid-tier': '🪙', 'premium': '👑',
-                        'flagship': '🥇', 'collab': '🤝', 'limited-edition': '🌟', 'vintage': '📼'
-                    };
-                    return emojiMap[cleanKey] || '🏷️';
+                    // numeric tag reached .toLowerCase() and threw. FindEngine
+                    // now normalises (and resolves the canonical emoji) itself.
+                    return FindEngine.getTagEmoji(tagStr);
                 };
                 const tagsHtml = (item.tags || []).map(t => `<span class="spec-icon-badge" data-tooltip="${esc(t)}">${getTagEmoji(t)}</span>`).join('');
 
@@ -25300,16 +25273,16 @@ item.innerHTML = `<div class="flex items-center justify-between w-full h-6 selec
 
             if (subBass - midBass > 3) tags.push('🌋 Sub Focus');
 
-            if (bassBoost > 3 && trebleBoost > 3 && mids < midReference - 1) tags.push('🔺 V-Shape');
+            if (bassBoost > 3 && trebleBoost > 3 && mids < midReference - 1) tags.push('🔺 V-Shaped');
 
-            if (bassBoost > 2 && trebleBoost > 2 && Math.abs(mids - midReference) < 2) tags.push('🪞 U-Shape');
+            if (bassBoost > 2 && trebleBoost > 2 && Math.abs(mids - midReference) < 2) tags.push('🧲 U-Shaped');
 
             if (Math.abs(bassBoost) < 2 && Math.abs(trebleBoost) < 2 && Math.abs(upperMidPresence) < 2.5) {
                 tags.push('⚖️ Neutral');
             }
 
             if (trebleBoost > 4) tags.push('✨ Bright');
-            else if (trebleBoost > 2) tags.push('💎 Detailed');
+            else if (trebleBoost > 2) tags.push('🔍 Detailed');
 
             if (trebleBoost < -3) tags.push('🌑 Dark');
             else if (trebleBoost < -1.5) tags.push('😌 Relaxed Treble');
@@ -25325,7 +25298,7 @@ item.innerHTML = `<div class="flex items-center justify-between w-full h-6 selec
             const pinnaSharpness = pinnaRegion - ((mids + presence) / 2);
             if (pinnaSharpness > 4) tags.push('🎯 BA Timbre');
 
-            if (air > treble - 2 && air > midReference - 2) tags.push('🧲 Extended Air');
+            if (air > treble - 2 && air > midReference - 2) tags.push('🎐 Extended Air');
 
             if (air < treble - 6) tags.push('📉 Treble Roll-off');
 
@@ -32088,18 +32061,15 @@ const Find_TasteMethods = {
                 iemDatabase: [],
                 filterTags: new Set(),
                 selectedPicks: [],
-                approvedTagsList: [
-                    "Basshead", "Sub-Bass", "Punchy Bass", "Warm", "Neutral", "V-Shaped", "Balanced",
-                    "Bright", "Dark", "Detailed", "Resolving", "Technical", "Wide-Stage", "Good-Imaging",
-                    "Smooth", "Reference", "Analytical", "Fun", "Relaxed", "Gaming", "Competitive-Gaming",
-                    "Vocal-Focused", "Budget", "Mid-Tier", "Premium", "Flagship", "Collab", "Limited-Edition"
-                ],
-                tagEmojis: {
-                    "Basshead": "💥", "Sub-Bass": "🌊", "Punchy Bass": "🥊", "Warm": "🌿", "Neutral": "⚖️", "V-Shaped": "🔺", "Balanced": "☯️",
-                    "Bright": "✨", "Dark": "🌑", "Detailed": "💎", "Resolving": "🔍", "Technical": "🔬", "Wide-Stage": "🏟️", "Good-Imaging": "🔭",
-                    "Smooth": "🧈", "Reference": "📐", "Analytical": "🧠", "Fun": "🔥", "Relaxed": "😌", "Gaming": "🎮", "Competitive-Gaming": "🏆",
-                    "Vocal-Focused": "🗣️", "Budget": "💰", "Mid-Tier": "🪙", "Premium": "👑", "Flagship": "🥇", "Collab": "🤝", "Limited-Edition": "🌟",
-                    "Vintage": "📼"
+                // Canonical tag registry lives in data-core.js (shared with the
+                // Database/Review tabs). Getters, not snapshots: DataCore is
+                // concatenated AFTER this file, so the value is only read at
+                // runtime (interface render / boot), by which time it exists.
+                get approvedTagsList() {
+                    return (typeof DataCore !== 'undefined' && DataCore && DataCore.APPROVED_TAGS) ? DataCore.APPROVED_TAGS : [];
+                },
+                get tagEmojis() {
+                    return (typeof DataCore !== 'undefined' && DataCore && DataCore.TAG_EMOJI) ? DataCore.TAG_EMOJI : {};
                 },
 
                 _toggleCustomMenuPrefixed: function(prefix, keys, key) {
@@ -32167,18 +32137,23 @@ const Find_TasteMethods = {
                 _pickGroupList: function() {
                     const tags = this.approvedTagsList || [];
                     const tagOf = (name) => ({ kind: 'meta', value: name, emoji: this.tagEmojis[name] || '🏷️' });
-                    const soundTuning = ['Basshead', 'Sub-Bass', 'Punchy Bass', 'Warm', 'Neutral', 'V-Shaped', 'Balanced', 'Bright', 'Dark', 'Detailed', 'Resolving', 'Technical', 'Wide-Stage', 'Good-Imaging', 'Smooth', 'Reference', 'Analytical', 'Fun', 'Relaxed', 'Vocal-Focused'];
-                    const special = ['Budget', 'Mid-Tier', 'Premium', 'Flagship', 'Collab', 'Limited-Edition'];
-                    const gamingAttrs = ['Gaming', 'Competitive-Gaming'];
-                    const known = new Set([...soundTuning, ...special, ...gamingAttrs]);
+                    // Group straight from the canonical registry so Find, the EQ
+                    // and the Database tab never drift apart again.
+                    const G = (typeof DataCore !== 'undefined' && DataCore && DataCore.TAG_GROUPS) ? DataCore.TAG_GROUPS : null;
+                    const tuning = G ? [].concat(G['Tonal Profiles & Sound Signature'] || [], G['Technicalities & Presentation'] || []) : tags;
+                    const useCases = G ? (G['Use Cases'] || []) : ['Gaming', 'Competitive-Gaming', 'Studio-Monitoring'];
+                    const other = G ? [].concat(G['Price Tier (auto-assigned)'] || [], G['Release Types'] || []) : [];
+                    const gamingAttrs = useCases.filter(t => /gaming/i.test(t));
+                    const restUseCases = useCases.filter(t => !/gaming/i.test(t));
+                    const known = new Set([...tuning, ...useCases, ...other]);
                     const leftover = tags.filter(t => !known.has(t));
                     const musicItems = (this.genreFamilies || []).map(f => { const v = f.musicVariants[0]; return v ? { kind: 'music', value: v.name, emoji: v.emoji } : null; }).filter(Boolean);
                     const gameItems = (this.genreFamilies || []).map(f => { const v = f.gameVariants[0]; return v ? { kind: 'game', value: v.name, emoji: v.emoji } : null; }).filter(Boolean);
                     const groups = [
-                        { title: 'Tuning Tags', emoji: '🎛️', cls: 'text-sky-400', kind: 'meta', items: soundTuning.filter(t => tags.includes(t)).map(tagOf) },
+                        { title: 'Tuning Tags', emoji: '🎛️', cls: 'text-sky-400', kind: 'meta', items: tuning.filter(t => tags.includes(t)).map(tagOf) },
                         { title: 'Music Tags', emoji: '🎵', cls: 'text-cyan-400', kind: 'music', items: musicItems },
                         { title: 'Gaming Tags', emoji: '🎮', cls: 'text-amber-500', kind: 'game', items: [...gameItems, ...gamingAttrs.filter(t => tags.includes(t)).map(tagOf)] },
-                        { title: 'Other Tags', emoji: '✨', cls: 'text-violet-400', kind: 'meta', items: [...special.filter(t => tags.includes(t)).map(tagOf), ...leftover.map(tagOf)] }
+                        { title: 'Other Tags', emoji: '✨', cls: 'text-violet-400', kind: 'meta', items: [...other.filter(t => tags.includes(t)).map(tagOf), ...restUseCases.filter(t => tags.includes(t)).map(tagOf), ...leftover.map(tagOf)] }
                     ];
                     return groups;
                 },
@@ -32332,19 +32307,9 @@ const Find_TasteMethods = {
                     if (typeof tagStr !== 'string') tagStr = String(tagStr);
                     const emojiMatch = tagStr.match(/^(\p{Extended_Pictographic}|\p{Emoji})/u);
                     if (emojiMatch) return '';
-                    const cleanKey = tagStr.toLowerCase().trim().replace(/_/g, '-');
-                    const emojiMap = {
-                        'basshead': '💥', 'sub-bass': '🌊', 'sub bass': '🌊', 'punchy-bass': '🥊', 'punchy bass': '🥊',
-                        'warm': '🌿', 'warm-tilt': '🌿', 'neutral': '⚖️', 'v-shaped': '🔺', 'v-shape': '🔺',
-                        'balanced': '☯️', 'bright': '✨', 'dark': '🌑', 'detailed': '💎', 'detail': '💎',
-                        'resolving': '🔍', 'technical': '🔬', 'wide-stage': '🏟️', 'soundstage': '🏟️',
-                        'good-imaging': '🔭', 'imaging': '🔭', 'smooth': '🧈', 'reference': '📐',
-                        'analytical': '🧠', 'fun': '🔥', 'relaxed': '😌', 'gaming': '🎮',
-                        'competitive-gaming': '🏆', 'vocal-focused': '🗣️', 'vocal': '🎤', 'budget': '💰',
-                        'mid-tier': '🪙', 'premium': '👑', 'flagship': '🥇', 'collab': '🤝',
-                        'limited-edition': '🌟', 'vintage': '📼'
-                    };
-                    return emojiMap[cleanKey] || '🏷️';
+                    // Single source of truth for every tab (data-core.js).
+                    if (typeof DataCore !== 'undefined' && DataCore && typeof DataCore.tagEmoji === 'function') return DataCore.tagEmoji(tagStr);
+                    return '🏷️';
                 },
                 baselineOptions: [
                     { id: 'harman', label: 'Harman IE 2019', emoji: '🎯' },
@@ -35478,13 +35443,38 @@ const DataCore = (function () {
     'Basshead': '\uD83D\uDCA5', 'Sub-Bass': '\uD83C\uDF0A', 'Punchy Bass': '\uD83E\uDD4A', 'Warm': '\uD83C\uDF3F',
     'Neutral': '\u2696\uFE0F', 'V-Shaped': '\uD83D\uDD3A', 'U-Shaped': '\uD83E\uDDF2', 'Balanced': '\u262F\uFE0F',
     'Bright': '\u2728', 'Treblehead': '\u26A1', 'Dark': '\uD83C\uDF11', 'Vocal-Focused': '\uD83D\uDDE3\uFE0F',
-    'Detailed': '\uD83D\uDC8E', 'Resolving': '\uD83D\uDD0D', 'Technical': '\uD83D\uDD2C', 'Wide-Stage': '\uD83C\uDFDF\uFE0F',
+    'Detailed': '\uD83D\uDD0D', 'Resolving': '\uD83D\uDC53', 'Technical': '\uD83D\uDD2C', 'Wide-Stage': '\uD83C\uDFDF\uFE0F',
     'Good-Imaging': '\uD83D\uDD2D', 'Smooth': '\uD83E\uDDC8', 'Reference': '\uD83D\uDCD0', 'Analytical': '\uD83E\uDDE0',
     'Fun': '\uD83D\uDD25', 'Relaxed': '\uD83D\uDE0C', 'Gaming': '\uD83C\uDFAE', 'Competitive-Gaming': '\uD83C\uDFC6',
     'Studio-Monitoring': '\uD83C\uDF9B\uFE0F', 'Collab': '\uD83E\uDD1D', 'Limited-Edition': '\uD83C\uDF1F',
     'Budget': '\uD83E\uDE99', 'Mid-Tier': '\uD83D\uDCB5', 'Premium': '\uD83D\uDC8E', 'Flagship': '\uD83D\uDC51'
   };
   const APPROVED_TAGS = [].concat.apply([], Object.keys(TAG_GROUPS).map(k => TAG_GROUPS[k]));
+  // One canonical emoji lookup for the whole app (Find, EQ, Review, PEQdb all
+  // resolve through tagEmoji). Names are matched case/space/underscore-folded;
+  // a small alias table keeps the historical synonyms that predate the shared
+  // registry (v-shape, sub bass, detail, soundstage, …) pointing at the same
+  // emoji as their canonical tag. Unknown names fall back to the generic label.
+  function tagNorm(s) { return String(s === null || s === undefined ? '' : s).toLowerCase().trim().replace(/[\s_]+/g, '-'); }
+  const TAG_EMOJI_BY_NORM = {};
+  Object.keys(TAG_EMOJI).forEach(k => { TAG_EMOJI_BY_NORM[tagNorm(k)] = TAG_EMOJI[k]; });
+  const TAG_EMOJI_ALIAS = {
+    'v-shape': '\uD83D\uDD3A',            // V-Shaped
+    'detail': '\uD83D\uDD0D',             // Detailed
+    'soundstage': '\uD83C\uDFDF\uFE0F',   // Wide-Stage
+    'imaging': '\uD83D\uDD2D',            // Good-Imaging
+    'warm-tilt': '\uD83C\uDF3F',          // Warm
+    'u-shape': '\uD83E\uDDF2',            // U-Shaped
+    'vocal': '\uD83C\uDFA4',              // Vocal (review-side name)
+    'vintage': '\uD83D\uDCFC'            // legacy-only tag
+  };
+  const TAG_EMOJI_FALLBACK = '\uD83C\uDFF7\uFE0F';
+  function tagEmoji(name) {
+    if (name === null || name === undefined || name === '') return TAG_EMOJI_FALLBACK;
+    if (typeof name !== 'string') name = String(name);
+    const k = tagNorm(name);
+    return TAG_EMOJI_BY_NORM[k] || TAG_EMOJI_ALIAS[k] || TAG_EMOJI_FALLBACK;
+  }
   const PRICE_TIER_TAGS = TAG_GROUPS[PRICE_GROUP];
   const PRIMARY_TONALITY_GROUP = ['Neutral', 'Balanced', 'V-Shaped', 'U-Shaped'];
   const TAG_CONFLICT_PAIRS = [
@@ -36843,6 +36833,7 @@ const DataCore = (function () {
     // constants
     SCHEMA_FIELDS, BLANK_ENTRY, blankEntry, DRIVER_TECH_ORDER, ALLOWED_DRIVER_TYPES, FORM_FACTORS, CONNECTORS_ALL,
     FORM_CONNECTOR_MAP, FORM_FACTOR_ICON, CONNECTOR_ICON, DRIVER_TYPE_ICON, TAG_GROUPS, TAG_GROUP_EMOJI, TAG_EMOJI, PRICE_GROUP, APPROVED_TAGS, PRICE_TIER_TAGS,
+    tagEmoji,
     PRIMARY_TONALITY_GROUP, TAG_CONFLICT_PAIRS, MIN_TAGS, MAX_TAGS, TWS_FORM_FACTOR, WIRELESS_OVER_EAR_FORM_FACTOR,
     PRICE_MAX, CURRENT_YEAR,
     // helpers
@@ -38040,6 +38031,19 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     $('dt-count').textContent = shown + ' of ' + T.S.entries.length + ' entries';
     const cur2 = box.querySelector('.is-sel'); if (cur2 && T._scrollSel) { cur2.scrollIntoView({ block: 'center' }); T._scrollSel = false; }
   }
+  // After an import we want the new/edited entry visible AND selected in the
+  // tree. If the current filter/search would hide it, drop back to the default
+  // view so the scroll-into-view actually finds a row to scroll to.
+  function revealInTree(uid) {
+    const e = T.S && T.S.byUid(uid); if (!e) return;
+    const toks = T.search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const hay = (e.brand + ' ' + e.model + ' ' + e.variant + ' ' + e.id + ' ' + e.tags.join(' ') + ' ' + e.driver_config + ' ' + e.form_factor).toLowerCase();
+    const visible = matchesFilter(e) && toks.every(t => hay.indexOf(t) >= 0);
+    if (visible) return;
+    if (T.filter !== 'all') { T.filter = 'all'; }
+    if (T.search) { T.search = ''; const s = $('dt-search'); if (s) s.value = ''; }
+    renderTree();
+  }
 
   // =================================================================== history
   function renderHistory() {
@@ -38206,9 +38210,12 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     return '<div class="dt-cvtab">' +
       '<div class="dt-row"><h4 class="dt-h dt-grow">' + (ok ? E(DC.formatEntryLabel(d)) : 'Measurements') + '</h4>' + (ok ? '<button class="dt-btn is-sm" data-dt="go-eq" id="dt-go-eq">🎚️ EQ</button><button class="dt-btn is-sm" data-dt="go-review" id="dt-go-review">📝 Review</button>' : '') + '</div>' +
       (ok ? '<div class="dt-curve is-wide"><canvas id="dt-canvas"></canvas><span class="dt-cap" id="dt-curve-cap">No curve</span></div>' : '<div class="dt-box dt-empty dt-wide-empty">' + (!d ? 'Select an entry.' : 'Apply the new entry first.') + '</div>') +
-      '<div class="dt-cvlow"><div class="dt-col"><h4 class="dt-h" title="The first file is the default curve. Drag to reorder.">Linked files</h4>' +
-        (ok ? '<div id="dt-files" class="dt-col dt-fscroll" style="gap:4px"></div><div class="dt-sug"><input id="dt-file-in" class="dt-in input-bg-fix dt-mono" data-f="file-in" placeholder="Link an existing file…" autocomplete="off" spellcheck="false"><div id="dt-file-sug" class="dt-sugbox" style="display:none"></div></div>' : '') +
-      '</div><div class="dt-col"><h4 class="dt-h">Import</h4><div id="dt-cv-body" class="dt-col dt-grow" style="gap:8px;min-height:0"></div></div></div></div>';
+      '<div class="dt-cvlow">' +
+        '<div class="dt-col dt-cvcard"><div class="dt-cvhead"><h4 class="dt-h" title="The first file is the default curve. Drag to reorder.">📎 Linked files</h4>' + (ok ? '<span class="dt-cvcount">' + d.files.length + '</span>' : '') + '</div>' +
+          (ok ? '<div id="dt-files" class="dt-col dt-fscroll" style="gap:6px"></div><div class="dt-sug"><input id="dt-file-in" class="dt-in input-bg-fix dt-mono" data-f="file-in" placeholder="Link an existing file…" autocomplete="off" spellcheck="false"><div id="dt-file-sug" class="dt-sugbox" style="display:none"></div></div>' : '<div class="dt-box dt-help" style="padding:10px">Apply the new entry first, then its files appear here.</div>') +
+        '</div>' +
+        '<div class="dt-col dt-cvcard"><div class="dt-cvhead"><h4 class="dt-h">📥 Import</h4></div><div id="dt-cv-body" class="dt-col dt-grow" style="gap:10px;min-height:0"></div></div>' +
+      '</div></div>';
   }
   function renderEditor() {
     const box = $('dt-editor'); if (!box) return;
@@ -38740,6 +38747,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       if (!ok) return;
     }
     let nNew = 0, nChg = 0, nDel = 0;
+    const beforeUids = new Set(T.S.entries.map(e => e._uid));
     T.S.batch('AI import: ' + staged.staged.length + ' entr' + (staged.staged.length === 1 ? 'y' : 'ies'), list => {
       staged.staged.forEach(x => {
         const p = x.proposal;
@@ -38755,8 +38763,20 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     st.strippedReports.forEach(l => lines.push('• ' + l)); st.keptReports.forEach(l => lines.push('• ' + l));
     if (staged.problems.length) { lines.push('', 'NOT applied (failed validation):'); staged.problems.forEach(l => lines.push('• ' + l)); }
     A.log = lines.join('\n'); A.proposals = []; A.include = new Set(); A.status = 'Applied. 💾 Save to keep.';
+    A.text = ''; { const inp = $('dt-ai-in'); if (inp) inp.value = ''; }
     toast('AI import applied: ' + nNew + ' new, ' + nChg + ' changed' + (nDel ? ', ' + nDel + ' deleted' : '') + '.', '🤖');
-    renderAI(); refreshSelection(); runAudit();
+    renderAI(); runAudit();
+    // Jump to what changed: the first new entry, else the first edited one.
+    const added = T.S.entries.find(e => !beforeUids.has(e._uid));
+    const changedUid = staged.staged.filter(x => x.proposal.action === 'changed' && T.S.byUid(x.proposal.uid)).map(x => x.proposal.uid)[0];
+    const focusUid = added ? added._uid : (changedUid !== undefined ? changedUid : null);
+    if (focusUid !== null) {
+      const fe = T.S.byUid(focusUid);
+      if (fe) T.expanded.add(fe.brand || '(no brand)');
+      revealInTree(focusUid);
+      T._fromTap = true;   // on a phone, jump from Tools to the Editor section
+      setLeft('tree'); setMid('editor'); selectUid(focusUid, true);
+    } else refreshSelection();
   }
 
   // ===================================================================== curves
@@ -38837,15 +38857,15 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
         '<div class="dt-g2" style="margin-top:5px"><input class="dt-in input-bg-fix dt-mono dt-up" style="height:26px" data-f="cv-name:' + i + '" value="' + E(p.name) + '" placeholder="NAME" spellcheck="false" autocomplete="off" title="File name (.txt is added)"><select class="dt-sel input-bg-fix" style="height:26px" data-f="cv-link:' + i + '" title="Link to">' + sel + '</select></div></div>';
     }).join('');
     el.innerHTML =
-      '<div><label class="dt-lbl">Source folder</label>' +
+      '<div class="dt-cvsec"><label class="dt-lbl">Source folder</label>' +
       '<select class="dt-sel input-bg-fix" data-f="cv-source">' + folders.map(f => '<option value="' + E(f) + '"' + (C.source === f ? ' selected' : '') + '>' + E(f) + '</option>').join('') + '<option value="__new__"' + (C.source === '__new__' ? ' selected' : '') + '>➕ New source folder…</option></select>' +
       (C.source === '__new__' ? '<input class="dt-in input-bg-fix dt-mono dt-up" style="margin-top:5px" data-f="cv-newsource" value="' + E(C.newSource) + '" placeholder="NEW SOURCE NAME" spellcheck="false" autocomplete="off">' : '') +
       '<p class="dt-help" id="dt-cv-where" style="margin-top:3px">' + cvWhere(folder, folders) + '</p></div>' +
-      '<div class="dt-drop" data-dt="cv-pick" title="Left/right or (1)/(2) pairs are averaged">📥 Drop .txt / .csv or click</div><input type="file" id="dt-cv-file" multiple accept=".txt,.csv,.tsv" data-f="cv-files" style="display:none">' +
+      '<div class="dt-drop" data-dt="cv-pick" title="Left/right or (1)/(2) pairs are averaged">📥 Drop .txt / .csv files here, or click to browse</div><input type="file" id="dt-cv-file" multiple accept=".txt,.csv,.tsv" data-f="cv-files" style="display:none">' +
       (rows ? '<div class="dt-box dt-scroll dt-grow">' + rows + '</div>' : '<div class="dt-grow"></div>') +
       (C.log ? '<pre class="dt-log dt-box dt-scroll" style="max-height:64px;flex:0 0 auto">' + E(C.log) + '</pre>' : '') +
-      '<div class="dt-row"><button class="dt-btn' + (C.overwrite ? ' is-on' : '') + '" data-dt="cv-over" title="Replace files that already exist">♻ ' + (C.overwrite ? 'Replace' : 'Keep') + '</button><button class="dt-btn" data-dt="cv-clear" title="Clear the list">Clear</button>' +
-      '<button class="dt-btn is-primary dt-grow" data-dt="cv-convert"' + (C.plans.length && folder && !C.busy ? '' : ' disabled') + '>' + (C.busy ? '⏳ Converting…' : 'Convert & save') + '</button></div>';
+      '<div class="dt-cvfoot"><div class="dt-row"><button class="dt-btn dt-grow' + (C.overwrite ? ' is-on' : '') + '" data-dt="cv-over" title="Replace files that already exist">♻ ' + (C.overwrite ? 'Replace' : 'Keep') + '</button><button class="dt-btn dt-grow" data-dt="cv-clear" title="Clear the list">Clear list</button></div>' +
+      '<button class="dt-btn is-primary" data-dt="cv-convert"' + (C.plans.length && folder && !C.busy ? '' : ' disabled') + '>' + (C.busy ? '⏳ Converting…' : 'Convert & save') + '</button></div>';
   }
   function cvWhere(folder, folders) {
     const C = T.cv;
