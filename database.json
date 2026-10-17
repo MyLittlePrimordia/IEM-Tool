@@ -931,6 +931,33 @@
     ]
   },
   {
+    "id": "64_audio_a3e",
+    "brand": "64 Audio",
+    "model": "A3e",
+    "variant": "",
+    "year": 2018,
+    "price_usd": 700,
+    "driver_type": "BA",
+    "driver_config": "3BA",
+    "impedance": 11,
+    "sensitivity": 109,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Warm",
+      "Vocal-Focused",
+      "Detailed",
+      "Smooth",
+      "Good-Imaging",
+      "Studio-Monitoring",
+      "Premium"
+    ],
+    "files": [
+      "data/PRECOGVISION/64 AUDIO A3E.txt"
+    ]
+  },
+  {
     "id": "64_audio_a3t",
     "brand": "64 Audio",
     "model": "A3t",
@@ -43065,6 +43092,34 @@
     ],
     "files": [
       "data/HU-FI/FITEAR TOGO 334P.txt"
+    ]
+  },
+  {
+    "id": "flare_audio_flares_pro",
+    "brand": "Flare Audio",
+    "model": "Flares",
+    "variant": "Pro",
+    "year": 2017,
+    "price_usd": 400,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 0,
+    "sensitivity": 0,
+    "connector": "Bluetooth",
+    "form_factor": "Wireless Earbuds (TWS)",
+    "tags": [
+      "V-Shaped",
+      "Sub-Bass",
+      "Punchy Bass",
+      "Bright",
+      "Detailed",
+      "Resolving",
+      "Wide-Stage",
+      "Fun",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/AFTERSOUND/FLARE AUDIO FLARES PRO.txt"
     ]
   },
   {
