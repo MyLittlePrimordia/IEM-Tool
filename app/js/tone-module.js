@@ -67,7 +67,7 @@
                 EQ_Module.fadeMusicVolume(musicVol, 0.05);
             }
             this.osc = ctx.createOscillator(); this.gain = ctx.createGain(); this.osc.type = "sine"; this.osc.frequency.value = this.current;
-            const volEl = document.getElementById('tone-volume'); const vol = volEl ? parseFloat(volEl.value) : 50; this.gain.gain.value = vol / 100 * 0.2;
+            const vol = 50; this.gain.gain.value = vol / 100 * 0.2;
             this.osc.connect(this.gain);
 
             this.gain.connect(EQ_Module.inputGainNode || SharedAudio.masterGain);
@@ -185,16 +185,14 @@ return;
                 }
             }
         },
-        // #tone-volume / #tone-vol-display do not exist in index.html (the
-        // tone panel has no volume control). Every dereference must be
-        // guarded or getState() throws and kills its callers: Save-to-Library
-        // (iem-module.js saveToLibrary), workspace Export/Backup (saveConfig),
-        // Clear-all-workspace (resetAll — after localStorage.clear, leaving a
-        // half-wiped workspace), and profile import (loadProfileData).
+        // The tone panel has no volume control (#tone-volume / #tone-vol-display
+        // were removed from index.html), so tone volume is a fixed 50. This
+        // helper stays so getState() keeps working for its callers: Save-to-
+        // Library (iem-module.js saveToLibrary), workspace Export/Backup
+        // (saveConfig), Clear-all-workspace (resetAll) and profile import
+        // (loadProfileData).
         _readToneVolume: function() {
-            const el = document.getElementById('tone-volume');
-            const raw = el ? parseFloat(el.value) : NaN;
-            return Number.isFinite(raw) ? raw : 50;
+            return 50;
         },
         getState: function() { return { freq: this.current, volume: this._readToneVolume() }; },
         loadState: function(state) {
@@ -202,11 +200,7 @@ return;
                 this.current = state.freq || 0;
                 const slider = document.getElementById('tone-slider');
                 if (slider) slider.value = this.current;
-                const volEl = document.getElementById('tone-volume');
                 const vol = (state.volume !== undefined && Number.isFinite(parseFloat(state.volume))) ? parseFloat(state.volume) : 50;
-                if (volEl) volEl.value = vol;
-                const dispEl = document.getElementById('tone-vol-display');
-                if (dispEl) dispEl.innerText = vol + '%';
                 if (this.gain) setAudioParamSmooth(this.gain.gain, vol / 100 * 0.2);
             } else { this.reset(); }
             this.updateUI();
@@ -215,10 +209,6 @@ return;
             this.current = 0;
             const slider = document.getElementById('tone-slider');
             if (slider) slider.value = 0;
-            const volEl = document.getElementById('tone-volume');
-            if (volEl) volEl.value = 50;
-            const dispEl = document.getElementById('tone-vol-display');
-            if (dispEl) dispEl.innerText = '50%';
             if (this.gain) setAudioParamSmooth(this.gain.gain, 50 / 100 * 0.2);
             this.updateUI();
         }

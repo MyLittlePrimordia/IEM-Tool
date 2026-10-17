@@ -144,20 +144,26 @@ const Find_GenreMethods = {
         // Same 5-axis reduction, but for the EQ tab's live 10-band parametric
         // EQ (fixed centers 31/62/125/250/500/1000/2000/4000/8000/16000 Hz)
         // instead of a measured curve, so both features share one classifier.
+        // The axes are sampled at the SAME reference points getCurveDeltas()
+        // uses (30/100/2500/8000/14000 Hz, referenced to the 500 Hz mids).
+        // Sampling at the band centres instead (vocal at 1 kHz, treble at
+        // ~2.8 kHz) put the same tone in a different family depending on whether
+        // it arrived as a curve or as fader values. Values between band centres
+        // are log-linearly interpolated to match the spline used on curves.
         // bandDeltas is the 10 boost/cut values in dB, band-index order.
         getEqBandDeltas: function(bandDeltas) {
             if (!bandDeltas || bandDeltas.length < 10) return null;
             const [b31, b62, b125, b250, b500, b1k, b2k, b4k, b8k, b16k] = bandDeltas;
+            const sub = b31;                            // ~30 Hz
+            const warmth = 0.318 * b62 + 0.682 * b125;  // ~100 Hz
+            const vocal = 0.678 * b2k + 0.322 * b4k;    // ~2500 Hz
+            const treble = b8k;                         // ~8000 Hz
+            const air = 0.193 * b8k + 0.807 * b16k;     // ~14000 Hz
             // Mirror getCurveDeltas: axes are relative to the 500Hz mids
             // reference, so the 500Hz fader acts as the reference (moving it
             // moves the badge) instead of being dropped.
             const m = b500;
-            const sub = (b31 + b62) / 2 - m;
-            const warmth = (b125 + b250) / 2 - m;
-            const vocal = b1k - m;
-            const treble = (b2k + b4k) / 2 - m;
-            const air = (b8k + b16k) / 2 - m;
-            return [sub, warmth, vocal, treble, air];
+            return [sub - m, warmth - m, vocal - m, treble - m, air - m];
         },
 
         // Stable (non-random) string hash so the same IEM always lands on the

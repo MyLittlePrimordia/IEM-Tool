@@ -23,7 +23,7 @@
     "check:js": "node scripts/check-js.mjs",
     "check:reach": "node scripts/check-reachability.mjs",
     "check:integrity": "node scripts/sync-database-gz.mjs && node scripts/check-integrity.mjs",
-    "check:workflow": "node tools/check-workflow.js",
+    "check:workflow": "node tools/check-workflow.mjs",
     "test": "node --test tools/test-data-core.mjs",
     "check": "npm run check:js && npm run check:reach && npm run check:integrity && npm run check:workflow",
     "verify:ui": "node tools/run-ui-verify.mjs",

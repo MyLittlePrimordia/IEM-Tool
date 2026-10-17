@@ -314,13 +314,16 @@ const CurveIndexer = {
     },
 
     loadCurve: async function(item, fileIndex = 0) {
-        const targetFile = item.files && item.files[fileIndex] ? item.files[fileIndex] : item.primaryFilePath;
-        if (!targetFile) return false;
-
+        // Already-parsed data (e.g. a Smart-RF import that carries its own
+        // curve and has no backing file) must short-circuit *before* the file
+        // guard below; requiring a file path first dropped such curves.
         if (fileIndex === 0 && item.data && Array.isArray(item.data) && item.data.length >= 2) {
             this._progress.done++;
             return true;
         }
+
+        const targetFile = item.files && item.files[fileIndex] ? item.files[fileIndex] : item.primaryFilePath;
+        if (!targetFile) return false;
 
         if (item.sourcesCache && item.sourcesCache[targetFile]) {
             if (fileIndex === 0) item.data = item.sourcesCache[targetFile];

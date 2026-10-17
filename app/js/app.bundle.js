@@ -2606,8 +2606,6 @@ _retargetActiveArm: function(gain, tc = 0.05) {
                         if (infoText) infoText.textContent = `(${startIndex + 1}/${this.playlist.length}) ${track.name}`;
                         const mobInfoText = document.getElementById("mobile-track-info");
                         if (mobInfoText) mobInfoText.textContent = `(${startIndex + 1}/${this.playlist.length}) ${track.name}`;
-                        const modalInfoText = document.getElementById("modal-track-name");
-                        if (modalInfoText) modalInfoText.textContent = `(${startIndex + 1}/${this.playlist.length}) ${track.name}`;
                         this.updateMarquee();
 
                         // Boot the gapless standby with the second track so the
@@ -2783,6 +2781,18 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             if (oldGain) oldGain.gain.setTargetAtTime(0, now, tc);
             if (newGain) newGain.gain.setTargetAtTime(Math.max(0.05, Math.min(4, loudG)), now, tc);
 
+            // Snapshot the pre-commit position so a rejected play() can roll
+            // back instead of leaving playlistIndex / the active arm advanced
+            // for a track that never actually started. The commit below stays
+            // synchronous on purpose: the crossfade-guard in the play().then
+            // and the retirement timeout both read the swapped arm.
+            const prevCommit = {
+                playlistIndex: this.playlistIndex,
+                activeIsA: this._activeIsA,
+                standbyTrackIndex: this._standbyTrackIndex,
+                preloadedIndex: this._preloadedIndex
+            };
+
             standby.play().then(() => {
                 // A newer switch took over while play() was pending: this
                 // standby element is retired — kill playback and zero its
@@ -2808,6 +2818,12 @@ _retargetActiveArm: function(gain, tc = 0.05) {
                 if (oldGain) oldGain.gain.setTargetAtTime(1, now, 0.01);
                 if (newGain) newGain.gain.setTargetAtTime(0, now, 0.01);
                 this._transitioning = false;
+                // A newer switch already owns the position: never roll it back.
+                if (seq !== this._playSeq) return;
+                this.playlistIndex = prevCommit.playlistIndex;
+                this._activeIsA = prevCommit.activeIsA;
+                this._standbyTrackIndex = prevCommit.standbyTrackIndex;
+                this._preloadedIndex = prevCommit.preloadedIndex;
             });
 
             this.playlistIndex = index;
@@ -2983,13 +2999,11 @@ _applyGaplessButton: function() {
             this.playlistIndex = index;
             const infoText = document.getElementById("playlist-track-info");
             const mobInfoText = document.getElementById("mobile-track-info");
-            const modalInfoText = document.getElementById("modal-track-name");
             const track = this.playlist[index];
             const trackLabel = `(${index + 1}/${this.playlist.length}) ${track.name}`;
             
             if(infoText) infoText.textContent = trackLabel;
             if(mobInfoText) mobInfoText.textContent = trackLabel;
-            if(modalInfoText) modalInfoText.textContent = trackLabel;
             this.updateMarquee();
             
             this._targetTrackKey = this._deriveTrackKey(track);
@@ -3116,8 +3130,6 @@ _applyGaplessButton: function() {
             
             const infoText = document.getElementById("playlist-track-info");
             if (infoText) infoText.textContent = "No tracks Loaded";
-            const modalInfoText = document.getElementById("modal-track-name");
-            if (modalInfoText) modalInfoText.textContent = "No tracks Loaded";
             this.updateMarquee();
             
             const playBtn = document.getElementById("playlist-play-btn");
@@ -3226,8 +3238,6 @@ _applyGaplessButton: function() {
             if (btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
             const mobBtn = document.getElementById("mobile-play-btn");
             if (mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
-            const modalPlayBtn = document.getElementById('modal-play-btn');
-            if (modalPlayBtn) modalPlayBtn.innerHTML = "<span>▶</span><span>Play</span>";
             return wasPlaying;
         },
 
@@ -3258,8 +3268,6 @@ return;
                 console.warn('[Playlist] AudioContext resume failed:', err && err.message);
             }
             const btn = document.getElementById("playlist-play-btn");
-            const modalPlayBtn = document.getElementById('modal-play-btn');
-            
             const mobBtn = document.getElementById("mobile-play-btn");
             // Play/pause must be decided on the ACTIVE element — with gapless
             // or crossfade on, the B element (eq-audio-gapless) can be the one
@@ -3301,12 +3309,10 @@ return;
                         if (playPauseSeq !== this._pauseSeq) return;
                         if (btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
                         if (mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
-                        if (modalPlayBtn) modalPlayBtn.innerHTML = "<span>▶</span><span>Play</span>";
                     });
                 }
                 if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
                 if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
-                if(modalPlayBtn) modalPlayBtn.innerHTML = "<span>⏸</span><span>Pause</span>";
             } else {
                                 // Fade-out pause
                 this.fadeMusicVolume(0, 0.015);
@@ -3323,7 +3329,6 @@ return;
                 }, 80); // Wait 80ms for the fade-out to complete before pausing
                 if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
                 if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
-                if(modalPlayBtn) modalPlayBtn.innerHTML = "<span>▶</span><span>Play</span>";
             }
         },
 
@@ -3443,15 +3448,7 @@ this.fadeMusicVolume(vol, 0.015);
             const mobDisplay = document.getElementById("mobile-vol-display");
             if (mobDisplay) mobDisplay.textContent = `${val}%`;
 
-            // Sync visualizer pop-up controls immediately
-            const modalVolDisplay = document.getElementById("modal-vol-display");
-            if (modalVolDisplay) modalVolDisplay.textContent = `${val}%`;
-            const modalIcon = document.getElementById("modal-vol-icon");
-            if (modalIcon) {
-                if (vol === 0) modalIcon.textContent = "🔇";
-                else if (vol < 0.4) modalIcon.textContent = "🔈";
-                else modalIcon.textContent = "🔊";
-            }
+            // (the visualizer pop-up volume readouts were removed)
         },
 
                 toggleMute: function() {
@@ -6328,7 +6325,7 @@ const EQ_PresetMethods = {
                 this.updatePreamp();
             }
 
-            if (p.m) {
+            if (Array.isArray(p.m)) {
                 p.m.forEach((val, i) => {
                     const band = this.bands[i];
                     if (!band) return;   // more bands than the UI has slots
@@ -6392,7 +6389,7 @@ const EQ_PresetMethods = {
                 });
             }
 
-            if (p.a) {
+            if (Array.isArray(p.a)) {
                 p.a.forEach((val, i) => {
                     const b = this.advancedBands[i];
                     if (!b) return;
@@ -6459,7 +6456,7 @@ const EQ_PresetMethods = {
                 });
             }
 
-                if (p.v && Array.isArray(p.v)) {
+                if (Array.isArray(p.v)) {
                     // Virtual bands feed worklet slots 50+ directly from
                     // eq-dsp-graph.js, so they need the same validation.
                     this.virtualBands = p.v.map(v => {
@@ -6467,10 +6464,10 @@ const EQ_PresetMethods = {
                         if (clean.__repaired) repairedBands++;
                         return { hz: clean.hz, g: clean.g, q: clean.q, type: clean.type };
                     });
-                } else if (p.v === undefined) {
-                    // Backward compat: old presets without virtual still clear any
-                    // previous virtual solve so the old 10/20-band preset does not
-                    // retain a stale >20-band tail.
+                } else {
+                    // Backward compat: a preset with no virtual array (old
+                    // 10/20-band presets, or a malformed value) must clear any
+                    // previous virtual solve so it cannot retain a stale tail.
                     this.virtualBands = [];
                 }
             } finally {
@@ -8466,8 +8463,14 @@ const App_Theme = {
 
     setGlobalTheme: function(themeId) {
         try {
-            const t = (this.themeMap && this.themeMap[themeId]) ? this.themeMap[themeId] : this._defaultThemeEntry();
-            this.currentTheme = this.themeMap[themeId] ? themeId : 'slate';
+            // Resolve the id once: an unknown/stale stored id falls back to
+            // 'slate'. Persisting and class-naming the raw id made an unknown
+            // theme permanent (the bad id was saved back, and the
+            // 'theme-<id>' class never matched a real token block).
+            const hasTheme = !!(this.themeMap && this.themeMap[themeId]);
+            const resolvedId = hasTheme ? themeId : 'slate';
+            const t = hasTheme ? this.themeMap[themeId] : this._defaultThemeEntry();
+            this.currentTheme = resolvedId;
 
             const root = document.documentElement;
 
@@ -8482,7 +8485,7 @@ const App_Theme = {
             // (or a future grid-pattern hook) relies on could be silently
             // destroyed by a theme switch - which is a class of bug that shows
             // up as "the theme only half applied".
-            const wanted = 'theme-' + themeId;
+            const wanted = 'theme-' + resolvedId;
             Array.from(root.classList)
                 .filter(c => c.startsWith('theme-') && c !== wanted)
                 .forEach(c => root.classList.remove(c));
@@ -8491,9 +8494,6 @@ const App_Theme = {
             const accentColor = t.accent || (t.variables && t.variables['--accent-blue']) || '#787878';
             const rgbStr = (typeof PEQDB_Module !== 'undefined' && PEQDB_Module.hexToRgb) ? PEQDB_Module.hexToRgb(accentColor) : '120, 120, 120';
             root.style.setProperty('--accent-blue-rgb', rgbStr);
-
-            const expThemeSelector = document.getElementById('export-theme-selector');
-            if (expThemeSelector) expThemeSelector.value = themeId;
 
             const TABS = ['find', 'eq', 'testlab', 'iem', 'database', 'visualizer', 'settings'];
             const activeTabId = TABS.find(id => {
@@ -8534,7 +8534,7 @@ const App_Theme = {
             if (window.syncGlobalSliders) {
                 window.syncGlobalSliders();
             }
-            localStorage.setItem('settings_theme_id', themeId);
+            localStorage.setItem('settings_theme_id', resolvedId);
             if (typeof EQ_Module !== 'undefined') {
                 EQ_Module._vizThemeDirty = true;
             }
@@ -9524,8 +9524,10 @@ var Mascot = window.Mascot || {
                 hearing_test: '🧐'
         },
 
-        setExpression: function(expr) {
-            if (this.currentExpression === expr) return;
+        setExpression: function(expr, force) {
+            // `force` re-applies the glyph even when the expression name is
+            // unchanged (e.g. the seasonal idle art rolled over).
+            if (this.currentExpression === expr && !force) return;
             const el = document.getElementById('brand-icon-emoji');
             if (!el) return;
 
@@ -10005,9 +10007,11 @@ var Mascot = window.Mascot || {
                 this.setExpression('vibing');
             }
         } else {
-
+            // setExpression no-ops when the expression is unchanged, so force a
+            // refresh here: otherwise a seasonal/holiday idle rollover keeps
+            // showing the previous art until some other expression intervenes.
             this.expressions.idle = this.getSeasonalExpression();
-            this.setExpression('idle');
+            this.setExpression('idle', true);
         }
     }
 };
@@ -12687,13 +12691,6 @@ window.updateExpandedAutoHide = function() {
             EQ_Module.hearingOffsets = offsets.map(v => (Number.isFinite(v) ? Math.max(0, Math.min(6, v)) : 0));
             EQ_Module.hearingCalEnabled = true;
 
-            const btn = document.getElementById('btn-hearing-cal');
-            const lbl = document.getElementById('lbl-hearing-cal');
-            if (btn && lbl) {
-                btn.classList.add('active-btn');
-                lbl.textContent = 'Hearing: ON';
-            }
-
             // Reflect the restored profile in the Test Lab panel state.
             const genBtn = document.getElementById('hearing-eq-generate-btn');
             if (genBtn) {
@@ -13087,48 +13084,8 @@ window.updateExpandedAutoHide = function() {
         },
 
         renderThemeToggles: function() {
-            try {
-                const container = document.getElementById('theme-toggles-container');
-                if (!container) return;
-                container.innerHTML = '';
-
-                const themes = [
-                    { id: 'slate', label: '🕹️ Slate', emoji: '🕹️' },
-                    { id: 'parchment', label: '📜 Parchment', emoji: '📜' },
-                    { id: 'ember', label: '🔴 Ember', emoji: '🔴' },
-                    { id: 'circuit', label: '🔵 Circuit', emoji: '🔵' },
-                    { id: 'byte', label: '📟 Byte', emoji: '📟' },
-                    { id: 'cartridge', label: '🟠 Cartridge', emoji: '🟠' },
-                    { id: 'arcade', label: '👾 Arcade', emoji: '👾' },
-                    { id: 'blush', label: '🌸 Blush', emoji: '🌸' },
-                    { id: 'bit', label: '🪙 Bit', emoji: '🪙' }
-                ];
-
-                themes.forEach(theme => {
-                    const isReady = !!(this.themeMap && this.themeMap[theme.id]);
-                    const btn = document.createElement('button');
-                    btn.id = 'theme-btn-' + theme.id;
-                    btn.className = 'theme-toggle-btn px-2.5 py-1.5 text-[10px] font-bold text-[var(--text-secondary)] hover:text-white border border-transparent transition-all duration-200 flex items-center justify-center gap-1.5 bg-zinc-950/40 hover:scale-[1.03] cursor-pointer';
-                    btn.innerHTML = `<span>${theme.emoji}</span> <span class="truncate">${theme.label.split(' ')[1]}</span>`;
-
-                    if (isReady) {
-                        btn.onclick = () => App.setGlobalTheme(theme.id);
-                        btn.addEventListener('click', function() {
-                            this.classList.add('pulse');
-                            setTimeout(() => this.classList.remove('pulse'), 200);
-                        });
-                    } else {
-                        btn.disabled = true;
-                        btn.classList.add('opacity-40', 'cursor-not-allowed');
-                        btn.title = 'Still loading theme data…';
-                        btn.onclick = () => showToast('Themes are still loading — try again in a moment.', '⏳');
-                    }
-
-                    container.appendChild(btn);
-                });
-            } catch (error) {
-                console.error("Theme toggles creation failed:", error);
-            }
+            // (the theme-toggles container was removed from the markup; theme
+            // selection now lives in the Settings theme grid)
         },
 
         cycleTheme: function() {
@@ -13182,9 +13139,6 @@ setGlobalTheme: function(themeId) {
                     (t.variables && t.variables['--accent-glow']) || ('rgba(' + rgbStr + ', 0.16)'));
                 root.style.setProperty('--accent-soft',
                     (t.variables && t.variables['--accent-soft']) || ('rgba(' + rgbStr + ', 0.08)'));
-
-                const expThemeSelector = document.getElementById('export-theme-selector');
-                if (expThemeSelector) expThemeSelector.value = themeId;
 
             ['find', 'eq', 'testlab', 'iem', 'database', 'visualizer', 'settings'].forEach(id => {
                 const b = document.getElementById(`tab-${id}-btn`);
@@ -14583,7 +14537,10 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
         wayOptions: ['UNK', '1W', '2W', '3W', '4W', '5W', '6W+'],
         cycleCrossover: function() {
             this.crossoverOverride = true;
-            const curIdx = this.crossoverOptions.indexOf(this.currentCrossover);
+            // indexOf is -1 for a legacy/unknown current value; normalise to a
+            // known start index so the cycle advances from a defined position.
+            let curIdx = this.crossoverOptions.indexOf(this.currentCrossover);
+            if (curIdx === -1) curIdx = 0;
             const nextIdx = (curIdx + 1) % this.crossoverOptions.length;
             this.currentCrossover = this.crossoverOptions[nextIdx];
             this.updateCrossoverButtonsUI();
@@ -14591,7 +14548,8 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
         },
         cycleWay: function() {
             this.wayOverride = true;
-            const curIdx = this.wayOptions.indexOf(this.currentWay);
+            let curIdx = this.wayOptions.indexOf(this.currentWay);
+            if (curIdx === -1) curIdx = 0;
             const nextIdx = (curIdx + 1) % this.wayOptions.length;
             this.currentWay = this.wayOptions[nextIdx];
             this.updateWayButtonsUI();
@@ -14668,12 +14626,6 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
         ],
 
         init: function() {
-
-         if (document.getElementById('tonality-tags')) {
-             this.createTags('tonality-tags', this.tonalityTags, this.selectedTags);
-             this.createTags('genre-tags', this.genreTags, this.selectedGenres);
-             this.createTags('bass-tags', this.bassTags, this.selectedBass);
-         }
             this.initGauges();
             this.updateSensUnitUI();
 
@@ -14980,6 +14932,9 @@ label: function(context) {
 
         cycleReviewTag: function(dir) {
             const total = this.allReviewTags.length;
+            // Guard the empty registry: without tags `% 0` is NaN, which then
+            // poisoned currentReviewTagIndex and the preview label.
+            if (!total) return;
             this.currentReviewTagIndex = (this.currentReviewTagIndex + dir + total) % total;
             this.updateReviewTagPreviewLabel();
         },
@@ -15008,16 +14963,12 @@ label: function(context) {
             const totalSelected = this.selectedTags.size + this.selectedGenres.size + this.selectedBass.size;
             if (totalSelected >= 4) {
                 showToast("Limit: Maximum 4 signature tags allowed.", "⚠️");
-                const sel = document.getElementById('review-tag-select');
-                if (sel) sel.value = '';
                 return;
             }
 
             this.selectedTags.add(tagName);
 
             this.renderReviewSelectedTags();
-            const sel = document.getElementById('review-tag-select');
-            if (sel) sel.value = '';
             this.updateAll();
         },
         removeReviewTag: function(tagName) {
@@ -15315,50 +15266,11 @@ label: function(context) {
             this.updateDriverSummary();
         },
         toggleCustomTagMenu: function() {
-            const menu = document.getElementById('menu-review-tag');
-            if (menu) menu.classList.toggle('hidden');
+            // (the review tag menu was removed from the markup)
         },
 
         renderReviewTagMenuOptions: function() {
-            const menu = document.getElementById('menu-review-tag');
-            if (!menu) return;
-            menu.innerHTML = '';
-
-            const groups = [
-                { label: 'Tonality', tags: this.tonalityTags.map(t => t.name) },
-                { label: 'Bass', tags: this.bassTags.map(t => t.name) },
-                { label: 'Genres', tags: this.genreTags.map(t => t.name) }
-            ];
-
-            groups.forEach(g => {
-                const header = document.createElement('div');
-                header.className = "text-[9px] font-black uppercase text-amber-400 px-2 py-1 bg-black/40 border-y border-black mt-1";
-                header.textContent = `--- ${g.label} ---`;
-                menu.appendChild(header);
-
-                g.tags.forEach(tag => {
-                    const match = tag.match(/^(\p{Extended_Pictographic}+(?:\uFE0F|\uFE0E)?)/u);
-                    let emoji = "🏷️";
-                    let text = tag;
-                    if (match) {
-                        emoji = match[1];
-                        text = tag.slice(emoji.length).trim();
-                    }
-                    const animClass = FindEngine.getTagAnimationClass ? FindEngine.getTagAnimationClass(text) : 'anim-match-float';
-
-                    const div = document.createElement('div');
-                    div.className = "px-2 py-1.5 hover:bg-[var(--bg-card)] hover:text-[var(--accent-blue)] cursor-pointer flex items-center gap-2 font-bold group transition-all text-xs";
-                    div.onclick = () => {
-                        IEM.addReviewTagFromSelect(tag);
-                        IEM.toggleCustomTagMenu();
-                    };
-                    div.innerHTML = `
-                        <span class="emoji-font vibrant-emoji ${animClass} text-lg flex-shrink-0 leading-none inline-block">${emoji}</span>
-                        <span>${text}</span>
-                    `;
-                    menu.appendChild(div);
-                });
-            });
+            // (the review tag menu was removed from the markup)
         },
 
         updateDriverSummary: function() {
@@ -15784,8 +15696,6 @@ if(this.radarChart) {
                 EQ_Module.hearingCalEnabled = false;
                 EQ_Module.hearingOffsets = [0, 0, 0, 0, 0, 0, 0, 0];
                 if (EQ_Module.applyHearingCalibrationGains) EQ_Module.applyHearingCalibrationGains();
-                const lbl = document.getElementById('lbl-hearing-cal');
-                if (lbl) lbl.textContent = 'Hearing: Off';
             }
             localStorage.removeItem('settings_hearing_offsets');
 
@@ -16322,6 +16232,9 @@ const IEM_PhotoMatteMethods = {
             const tag = t && t.tagName;
             if (t && (t.isContentEditable || tag === 'TEXTAREA' ||
                 (tag === 'INPUT' && t.type !== 'range' && t.type !== 'checkbox' && t.type !== 'button'))) return;
+            // Another handler already claimed this Ctrl+Z (e.g. the global undo
+            // stack): do not also run the photo-matte undo on the same keypress.
+            if (ev.defaultPrevented) return;
             ev.preventDefault();
             if (ev.shiftKey) self.redoPhotoMatteUI();
             else self.undoPhotoMatteUI();
@@ -16636,7 +16549,7 @@ if (typeof window !== 'undefined') {
                 EQ_Module.fadeMusicVolume(musicVol, 0.05);
             }
             this.osc = ctx.createOscillator(); this.gain = ctx.createGain(); this.osc.type = "sine"; this.osc.frequency.value = this.current;
-            const volEl = document.getElementById('tone-volume'); const vol = volEl ? parseFloat(volEl.value) : 50; this.gain.gain.value = vol / 100 * 0.2;
+            const vol = 50; this.gain.gain.value = vol / 100 * 0.2;
             this.osc.connect(this.gain);
 
             this.gain.connect(EQ_Module.inputGainNode || SharedAudio.masterGain);
@@ -16754,16 +16667,14 @@ return;
                 }
             }
         },
-        // #tone-volume / #tone-vol-display do not exist in index.html (the
-        // tone panel has no volume control). Every dereference must be
-        // guarded or getState() throws and kills its callers: Save-to-Library
-        // (iem-module.js saveToLibrary), workspace Export/Backup (saveConfig),
-        // Clear-all-workspace (resetAll — after localStorage.clear, leaving a
-        // half-wiped workspace), and profile import (loadProfileData).
+        // The tone panel has no volume control (#tone-volume / #tone-vol-display
+        // were removed from index.html), so tone volume is a fixed 50. This
+        // helper stays so getState() keeps working for its callers: Save-to-
+        // Library (iem-module.js saveToLibrary), workspace Export/Backup
+        // (saveConfig), Clear-all-workspace (resetAll) and profile import
+        // (loadProfileData).
         _readToneVolume: function() {
-            const el = document.getElementById('tone-volume');
-            const raw = el ? parseFloat(el.value) : NaN;
-            return Number.isFinite(raw) ? raw : 50;
+            return 50;
         },
         getState: function() { return { freq: this.current, volume: this._readToneVolume() }; },
         loadState: function(state) {
@@ -16771,11 +16682,7 @@ return;
                 this.current = state.freq || 0;
                 const slider = document.getElementById('tone-slider');
                 if (slider) slider.value = this.current;
-                const volEl = document.getElementById('tone-volume');
                 const vol = (state.volume !== undefined && Number.isFinite(parseFloat(state.volume))) ? parseFloat(state.volume) : 50;
-                if (volEl) volEl.value = vol;
-                const dispEl = document.getElementById('tone-vol-display');
-                if (dispEl) dispEl.innerText = vol + '%';
                 if (this.gain) setAudioParamSmooth(this.gain.gain, vol / 100 * 0.2);
             } else { this.reset(); }
             this.updateUI();
@@ -16784,10 +16691,6 @@ return;
             this.current = 0;
             const slider = document.getElementById('tone-slider');
             if (slider) slider.value = 0;
-            const volEl = document.getElementById('tone-volume');
-            if (volEl) volEl.value = 50;
-            const dispEl = document.getElementById('tone-vol-display');
-            if (dispEl) dispEl.innerText = '50%';
             if (this.gain) setAudioParamSmooth(this.gain.gain, 50 / 100 * 0.2);
             this.updateUI();
         }
@@ -17075,9 +16978,11 @@ const EQ_Module = {
 
             for (const effect of this.customEffectsList) {
                 if (effect.file) {
-                    await this.injectScriptAsync(`./app/effects/${effect.file}`);
-
-                    this.vizModes.push(effect.id);
+                    const ok = await this.injectScriptAsync(`./app/effects/${effect.file}`);
+                    // injectScriptAsync resolves false (not rejects) when the
+                    // script is missing/corrupt; registering the mode anyway
+                    // left a menu entry that threw on every frame.
+                    if (ok) this.vizModes.push(effect.id);
                 }
             }
         } catch (e) {
@@ -17134,17 +17039,13 @@ const EQ_Module = {
         // intended to start advanced (reverted per audit: keep always-advanced
         // unless product confirms simple default). Keep compat helper separate.
         this.personalityMode = 'advanced';
-        const panelAdvanced = document.getElementById('panel-personality-advanced');
-        if (panelAdvanced) panelAdvanced.classList.remove('hidden');
-
-        const alignBtn = document.getElementById('btn-advanced-settings');
-        const tableContainer = document.getElementById('sculptor-advanced-table-container');
-
-        if (alignBtn && PEQDB_Module.targetMode !== 'sculptor') alignBtn.classList.remove('hidden');
+        // NB: the simple/advanced panel toggle, the advanced-settings button
+        // and the sculptor advanced table container were removed from the
+        // markup; personality is always 'advanced' and the table is rendered
+        // unconditionally by renderSculptMatrixTable below.
 
         if (PEQDB_Module.targetMode === 'sculptor') {
             PEQDB_Module.sculptMode = 'advanced';
-            if (tableContainer) tableContainer.classList.remove('hidden');
             PEQDB_Module.renderSculptMatrixTable();
         }
         this.drawCurve();
@@ -17241,11 +17142,7 @@ document.querySelectorAll('#acoustics-sub-tabs button').forEach(b => {
                 btn.setAttribute('aria-selected', 'true');
             }
 
-        const stepperLabel = document.getElementById('acoustics-sub-stepper-label');
-        if (stepperLabel) {
-            const info = this.acousticsSubModes.find(m => m.id === subTabId) || this.acousticsSubModes[0];
-            stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
-        }
+        // (the acoustics sub-tab stepper label was removed from the markup)
     },
 
     switchConsoleTab: function(tabId) {
@@ -17488,11 +17385,7 @@ vizModalActive: false,
                 }
             }
 
-            const stepperLabel = document.getElementById('eq-fader-stepper-label');
-            if (stepperLabel) {
-                const info = this.faderModes.find(m => m.id === tabId) || this.faderModes[0];
-                stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
-            }
+            // (the EQ fader stepper label was removed from the markup)
         },
 
                 enterTuningLab: function() {
@@ -17528,12 +17421,13 @@ vizModalActive: false,
                 });
             }
 
-            PEQDB_Module.targetMode = 'sculptor';
-            // Remember the pre-lab target mode: exitTuningLab previously left
-            // 'sculptor' set forever, which permanently disabled wheel zoom,
-            // background panning and dblclick-reset on the graph (all three
-            // gate on targetMode !== 'sculptor' in eq-graph-input.js).
+            // Remember the pre-lab target mode BEFORE switching to 'sculptor'.
+            // Reading targetMode after the assignment always saw 'sculptor',
+            // so exitTuningLab restored '' instead of the user's previous mode
+            // and left 'sculptor' semantics (disabled wheel zoom, panning and
+            // dblclick-reset in eq-graph-input.js) stuck after leaving the lab.
             PEQDB_Module._preLabTargetMode = (PEQDB_Module.targetMode && PEQDB_Module.targetMode !== 'sculptor') ? PEQDB_Module.targetMode : '';
+            PEQDB_Module.targetMode = 'sculptor';
             this.graphFocus = 'sculpt';
 
             const overlay = document.getElementById('graph-focus-selector');
@@ -17579,13 +17473,8 @@ vizModalActive: false,
                 editBtn.title = "Open Target Sculptor Lab";
             }
 
-            const hzSelector = document.getElementById('align-hz-selector');
-            const dbSelector = document.getElementById('align-db-selector');
-            if (hzSelector) hzSelector.style.pointerEvents = 'auto';
-            if (dbSelector) dbSelector.style.pointerEvents = 'auto';
-            if (hzSelector) hzSelector.style.opacity = '1';
-            if (dbSelector) dbSelector.style.opacity = '1';
-
+            // (the standalone align-hz / align-db selectors were removed from
+            // the markup; alignment is driven from the toolbar buttons)
             if (applyChanges) {
                 const activeTarget = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'target');
                 if (activeTarget) {
@@ -18105,11 +17994,7 @@ switchCategory: function(catId) {
             try {
                 this.activePresetCategory = catId;
 
-                const stepperLabel = document.getElementById('preset-category-stepper-label');
-                if (stepperLabel && this.presetCategories) {
-                    const info = this.presetCategories.find(m => m.id === catId) || this.presetCategories[0];
-                    stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
-                }
+                // (the preset-category stepper label was removed from the markup)
 
                 const categoryContainers = document.querySelectorAll('#rc-panel-presets button');
                 categoryContainers.forEach(pill => {
@@ -19203,19 +19088,21 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
 
             const variant = side === 'music' ? fam.musicVariants[0] : fam.gameVariants[0];
             // fam.profile is the same [sub, warmth, vocal, treble, air] delta
-            // shape getEqBandDeltas() derives from a real 10-band FR (see
-            // FindEngine.getEqBandDeltas / nearestGenreFamilyIndex) --
-            // expanding it back out to those same band frequencies, plus
-            // 20Hz/20kHz endpoints so the curve interpolates cleanly across
-            // the full audible range instead of collapsing to 0 past the
-            // outermost defined point.
+            // shape getEqBandDeltas() derives (see FindEngine.getEqBandDeltas /
+            // nearestGenreFamilyIndex). Expand it back out at the SAME reference
+            // points that classifier samples -- 30/100/500/2500/8000/14000 Hz
+            // (the axes are mids-relative, so 500 Hz is pinned to 0) -- plus
+            // 20Hz/20kHz endpoints so the curve interpolates cleanly across the
+            // full audible range instead of collapsing to 0 past the outermost
+            // defined point.
             const [sub, warmth, vocal, treble, air] = fam.profile;
             const data = [
-                [20, sub], [31, sub], [62, sub],
-                [125, warmth], [250, warmth],
-                [1000, vocal],
-                [2000, treble], [4000, treble],
-                [8000, air], [16000, air], [20000, air]
+                [20, sub], [30, sub],
+                [100, warmth],
+                [500, 0],
+                [2500, vocal],
+                [8000, treble],
+                [14000, air], [20000, air]
             ];
 
             PEQDB_Module.STATE.activeCurves = PEQDB_Module.STATE.activeCurves.filter(c => c.role !== 'target');
@@ -20037,8 +19924,6 @@ const EQ_MediaTransportMethods = {
                     const mobBtn = document.getElementById("mobile-play-btn");
                     if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
                     if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
-                    const modalBtn = document.getElementById("modal-play-btn");
-                    if(modalBtn) modalBtn.innerHTML = "<span>⏸</span><span>Pause</span>";
 
                     if (SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
                         await SharedAudio.ctx.resume();
@@ -20084,8 +19969,6 @@ const EQ_MediaTransportMethods = {
                         if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
                         const mobBtn = document.getElementById("mobile-play-btn");
                         if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
-                        const modalBtn = document.getElementById("modal-play-btn");
-                        if(modalBtn) modalBtn.innerHTML = "<span>▶</span><span>Play</span>";
                     }
                 });
                 // During a crossfade the retiring element keeps playing until
@@ -20110,8 +19993,6 @@ const EQ_MediaTransportMethods = {
                         const mobBtn = document.getElementById("mobile-play-btn");
                         if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
                         if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
-                        const modalBtn = document.getElementById("modal-play-btn");
-                        if(modalBtn) modalBtn.innerHTML = "<span>⏸</span><span>Pause</span>";
                         if (SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
                             await SharedAudio.ctx.resume();
                         }
@@ -20132,8 +20013,6 @@ const EQ_MediaTransportMethods = {
                             if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
                             const mobBtn = document.getElementById("mobile-play-btn");
                             if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
-                            const modalBtn = document.getElementById("modal-play-btn");
-                            if(modalBtn) modalBtn.innerHTML = "<span>▶</span><span>Play</span>";
                         }
                     });
                     this.gaplessEl.addEventListener('ended', () => {
@@ -20172,10 +20051,8 @@ const EQ_MediaTransportMethods = {
                 const formatted = this.formatTime(cur || 0);
                 const timeCur = document.getElementById('playlist-time-current');
                 const mobTimeCur = document.getElementById('mobile-time-current');
-                const modalTimeCur = document.getElementById('modal-time-current');
                 if (timeCur) timeCur.textContent = formatted;
                 if (mobTimeCur) mobTimeCur.textContent = formatted;
-                if (modalTimeCur) modalTimeCur.textContent = formatted;
             };
 
             const attachTimeUpdate = (el) => {
@@ -20197,10 +20074,8 @@ const EQ_MediaTransportMethods = {
                         const formatted = this.formatTime(dur);
                         const timeDur = document.getElementById('playlist-time-duration');
                         const mobTimeDur = document.getElementById('mobile-time-duration');
-                        const modalTimeDur = document.getElementById('modal-time-duration');
                         if (timeDur) timeDur.textContent = formatted;
                         if (mobTimeDur) mobTimeDur.textContent = formatted;
-                        if (modalTimeDur) modalTimeDur.textContent = formatted;
                     }
                 });
             };
@@ -20210,7 +20085,6 @@ const EQ_MediaTransportMethods = {
 
             const scrub = document.getElementById('playlist-scrub');
             const mobScrub = document.getElementById('mobile-scrub');
-            const modalScrub = document.getElementById('modal-scrub');
 
             const startSeek = () => {
                 this.isSeeking = true;
@@ -20238,10 +20112,8 @@ const EQ_MediaTransportMethods = {
                             const formatted = this.formatTime(tempTime);
                             const timeCur = document.getElementById('playlist-time-current');
                             const mobTimeCur = document.getElementById('mobile-time-current');
-                            const modalTimeCur = document.getElementById('modal-time-current');
                             if (timeCur) timeCur.textContent = formatted;
                             if (mobTimeCur) mobTimeCur.textContent = formatted;
-                            if (modalTimeCur) modalTimeCur.textContent = formatted;
                         }
                     });
                 });
@@ -20262,7 +20134,6 @@ const EQ_MediaTransportMethods = {
 
             bindScrubEvents(scrub);
             bindScrubEvents(mobScrub);
-            bindScrubEvents(modalScrub);
 
             window.addEventListener('mouseup', () => { this.isSeeking = false; });
             window.addEventListener('touchend', () => { this.isSeeking = false; });
@@ -20273,6 +20144,10 @@ const EQ_MediaTransportMethods = {
             if (this._scrubRaf) cancelAnimationFrame(this._scrubRaf);
             let _scrubStuckWarn = 0;
             const paintPlaybackScrub = () => {
+                // Stop spinning while the window is backgrounded: a plain rAF
+                // keeps firing this callback (and the DOM lookups below) forever
+                // even when nothing is playing. Resume on visibilitychange.
+                if (document.hidden) { this._scrubRaf = null; return; }
                 this._scrubRaf = requestAnimationFrame(paintPlaybackScrub);
                 if (this.isSeeking) return;
                 const active = (this._activeEl && this._activeEl()) || this.audioEl;
@@ -20293,6 +20168,12 @@ const EQ_MediaTransportMethods = {
                 });
             };
             paintPlaybackScrub();
+            if (!this._scrubVisibilityBound) {
+                this._scrubVisibilityBound = true;
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden && !this._scrubRaf) paintPlaybackScrub();
+                });
+            }
     },
 };
 
@@ -20618,11 +20499,8 @@ const EQ_GraphInputMethods = {
 
                             p.hz = Math.max(minBound, Math.min(maxBound, Math.round(f)));
 
-                            const hzInput = document.getElementById('sculptor-node-hz');
-                            const dbInput = document.getElementById('sculptor-node-db');
-                            if (hzInput) hzInput.value = p.hz;
-                            if (dbInput) dbInput.value = p.val.toFixed(1);
-
+                            // (the sculptor node hz/db text inputs were removed;
+                            // node values live on the curve points themselves)
                             PEQDB_Module.updateSculptTargetData();
 
                             if (PEQDB_Module.searchMode === 'similar') {
@@ -20923,11 +20801,14 @@ const EQ_VisualizerMethods = {
                 'horizontalSpectrogram', 'fullScreenWaterfall', 'acousticTunnel', 'oledSpectrum', 'oscilloscope', 'audioMesh'
             ],
 startVisualizer: function() {
+        // A loop already in flight owns vizFrameId. Cancelling its pending
+        // frame and then returning early (vizLoopRunning is still true) would
+        // silently kill the animation, so bail out before touching the frame.
+        if (this.vizLoopRunning) return;
         if (this.vizFrameId) {
             cancelAnimationFrame(this.vizFrameId);
             this.vizFrameId = null;
         }
-        if (this.vizLoopRunning) return;
 
         if (!this.agcIntervalId) {
 
@@ -21071,9 +20952,6 @@ startVisualizer: function() {
                     alpha: Math.random() * 0.4 + 0.4
                 });
             }
-
-            const miniCanvas = document.getElementById("mini-spectrum");
-            const miniCtx = miniCanvas ? miniCanvas.getContext("2d") : null;
 
             const vintagePeaks = new Float32Array(256).fill(0);
             let liquidPhase = 0;
@@ -21518,26 +21396,8 @@ if (diffR > 0.4) {
                     }
                 }
 
-                if (miniCtx && miniCanvas) {
-                    const mw = miniCanvas.width;
-                    const mh = miniCanvas.height;
-                    miniCtx.clearRect(0, 0, mw, mh);
-                    miniCtx.strokeStyle = "rgba(37, 99, 235, 0.85)";
-                    miniCtx.lineWidth = 2.0;
-                    miniCtx.beginPath();
-
-                    const step = 16;
-                    const sliceWidth = (mw / bufferLength) * step;
-                    let x = 0;
-                    for (let i = 0; i < bufferLength; i += step) {
-                        const v = timeDomain[i] / 128.0;
-                        const y = (v * mh) / 2;
-                        if (i === 0) miniCtx.moveTo(x, y);
-                        else miniCtx.lineTo(x, y);
-                        x += sliceWidth;
-                    }
-                    miniCtx.stroke();
-                }
+                // (the mini-spectrum canvas was removed; only the fullscreen
+                // visualizer is drawn now)
 
                 if (!EQ_Module.fullscreenVizCanvas) {
                     EQ_Module.fullscreenVizCanvas = document.getElementById("fullscreen-viz-canvas");
@@ -22456,13 +22316,16 @@ const CurveIndexer = {
     },
 
     loadCurve: async function(item, fileIndex = 0) {
-        const targetFile = item.files && item.files[fileIndex] ? item.files[fileIndex] : item.primaryFilePath;
-        if (!targetFile) return false;
-
+        // Already-parsed data (e.g. a Smart-RF import that carries its own
+        // curve and has no backing file) must short-circuit *before* the file
+        // guard below; requiring a file path first dropped such curves.
         if (fileIndex === 0 && item.data && Array.isArray(item.data) && item.data.length >= 2) {
             this._progress.done++;
             return true;
         }
+
+        const targetFile = item.files && item.files[fileIndex] ? item.files[fileIndex] : item.primaryFilePath;
+        if (!targetFile) return false;
 
         if (item.sourcesCache && item.sourcesCache[targetFile]) {
             if (fileIndex === 0) item.data = item.sourcesCache[targetFile];
@@ -26872,8 +26735,6 @@ const TestLab_HearingMethods = {
             const status = document.getElementById('hearing-test-status');
             const hzDisp = document.getElementById('hearing-test-hz');
             const volSlider = document.getElementById('hearing-test-vol');
-            const calBtn = document.getElementById('btn-hearing-cal');
-            const calLbl = document.getElementById('lbl-hearing-cal');
             const generateBtn = document.getElementById('hearing-eq-generate-btn');
             const notHeardBtn = document.getElementById('hearing-not-heard-btn');
 
@@ -26884,8 +26745,6 @@ const TestLab_HearingMethods = {
             if (volSlider) volSlider.value = 50;
             const calVal = document.getElementById('hearing-cal-val');
             if (calVal) calVal.textContent = '50%';
-            if (calBtn) calBtn.classList.remove('active-btn');
-            if (calLbl) calLbl.textContent = 'Hearing: Off';
             this._updateHearingTestUI({
                 progress: 0,
                 showSlider: true,
@@ -26935,13 +26794,6 @@ const TestLab_HearingMethods = {
 
             EQ_Module.hearingOffsets = offsets;
             EQ_Module.hearingCalEnabled = true;
-
-            const btn = document.getElementById('btn-hearing-cal');
-            const lbl = document.getElementById('lbl-hearing-cal');
-            if (btn && lbl) {
-                btn.classList.add('active-btn');
-                lbl.textContent = 'Hearing: ON';
-            }
 
             const generateBtn = document.getElementById('hearing-eq-generate-btn');
             if (generateBtn) {
@@ -27184,6 +27036,12 @@ const TestLab_BurninMethods = {
     },
 
     toggleBurnin: async function() {
+        // Re-entrancy guard: the button stays live across the awaits below, so
+        // a rapid double-click could run the start branch twice and leak a
+        // second gain node + interval. Ignore clicks while a toggle is in flight.
+        if (this.burninToggleInFlight) return;
+        this.burninToggleInFlight = true;
+        try {
         const startBtn = document.getElementById('burnin-start-btn');
         if (this.burninActive) {
             this.stopBurninActual();
@@ -27216,6 +27074,9 @@ const TestLab_BurninMethods = {
 
             this.startImbalanceMeter();
             showToast("Burn-In session started!", "🔥");
+        }
+        } finally {
+            this.burninToggleInFlight = false;
         }
     },
 
@@ -27502,11 +27363,6 @@ const TestLab_SpatialMethods = {
         stopSpatialOrbit: function() {
             this.stopSpatialOrbitTimerOnly();
             this.spatialOrbitActive = false;
-            const btn = document.getElementById('spatial-orbit-btn');
-            if (btn) {
-                btn.className = "bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.12] text-stone-200 font-bold text-[10px] h-8 px-3 shadow-sm flex items-center justify-center";
-                btn.textContent = '🔄 Orbit: Off';
-            }
         },
 
         spatialDepthZ: -1.5,
@@ -28319,6 +28175,12 @@ loadSoundLibrary: async function() {
                     showToast("Failed to decode audio file.", "⚠️");
                 });
             };
+            reader.onerror = () => {
+                // A FileReader failure (unreadable/removed file) previously left
+                // isDecoding stuck true, permanently blocking later imports.
+                this.isDecoding = false;
+                showToast("Failed to read audio file.", "⚠️");
+            };
             reader.readAsArrayBuffer(file);
         },
 
@@ -28392,7 +28254,14 @@ loadSoundLibrary: async function() {
             this.switchLeftTab(this.leftTabModes[nextIdx].id);
         },
         switchLeftTab: function(tabId) {
+            const prevTab = this.activeLeftTab;
             this.activeLeftTab = tabId;
+            // Leaving one subtab must silence the outgoing test's generator: a
+            // resonance sweep / channel tone otherwise kept playing under the
+            // now-hidden panel. stopAll preserves an in-progress burn-in (its
+            // preserveBurnin flag) exactly like App.switchTab, so a long run
+            // survives; it only runs on an actual tab change.
+            if (prevTab !== tabId) this.stopAll(true, this.burninActive);
             ['resonance', 'balance', 'burnin'].forEach(id => {
                 const panel = document.getElementById('tl-left-panel-' + id);
                 const btn = document.getElementById('tl-left-tab-' + id);
@@ -28429,7 +28298,12 @@ loadSoundLibrary: async function() {
             this.switchRightTab(this.rightTabModes[nextIdx].id);
         },
         switchRightTab: function(tabId) {
+            const prevTab = this.activeRightTab;
             this.activeRightTab = tabId;
+            // See switchLeftTab: stop the outgoing tab's tone/AB/hearing audio
+            // (burn-in is preserved) instead of letting it bleed under the
+            // hidden panel.
+            if (prevTab !== tabId) this.stopAll(true, this.burninActive);
             ['tone', 'ab', 'hearing'].forEach(id => {
                 const panel = document.getElementById('tl-right-panel-' + id);
                 const btn = document.getElementById('tl-right-tab-' + id);
@@ -28991,12 +28865,6 @@ toggleChannelSwap: function() {
             }
 
             EQ_Module.resonanceCalEnabled = true;
-            const calBtn = document.getElementById('btn-resonance-cal');
-            const calLbl = document.getElementById('lbl-resonance-cal');
-            if (calBtn && calLbl) {
-                calBtn.classList.add('active-btn');
-                calLbl.textContent = 'Resonance: ON';
-            }
 
             const fInput = document.getElementById("eq-f8");
             const sSlider = document.getElementById("eq-s8");
@@ -29075,8 +28943,6 @@ toggleChannelSwap: function() {
             const scanBtn = document.getElementById('resonance-scan-btn');
             const lockBtn = document.getElementById('resonance-lock-btn');
             const readout = document.getElementById('resonance-lock-hz');
-            const calBtn = document.getElementById('btn-resonance-cal');
-            const calLbl = document.getElementById('lbl-resonance-cal');
             const needle = document.getElementById('resonance-gauge-needle');
 
             if (needle) {
@@ -29098,9 +28964,6 @@ toggleChannelSwap: function() {
                 readout.textContent = '8,000 Hz';
                 readout.className = "text-xs font-mono font-black text-sky-400 bg-sky-950/30 px-2 py-0.5 border border-sky-900/30";
             }
-            if (calBtn) calBtn.classList.remove('active-btn');
-            if (calLbl) calLbl.textContent = 'Resonance: Off';
-
             const b = EQ_Module.bands[8];
             const fInput = document.getElementById("eq-f8");
             const sSlider = document.getElementById("eq-s8");
@@ -29999,20 +29862,26 @@ const Find_GenreMethods = {
         // Same 5-axis reduction, but for the EQ tab's live 10-band parametric
         // EQ (fixed centers 31/62/125/250/500/1000/2000/4000/8000/16000 Hz)
         // instead of a measured curve, so both features share one classifier.
+        // The axes are sampled at the SAME reference points getCurveDeltas()
+        // uses (30/100/2500/8000/14000 Hz, referenced to the 500 Hz mids).
+        // Sampling at the band centres instead (vocal at 1 kHz, treble at
+        // ~2.8 kHz) put the same tone in a different family depending on whether
+        // it arrived as a curve or as fader values. Values between band centres
+        // are log-linearly interpolated to match the spline used on curves.
         // bandDeltas is the 10 boost/cut values in dB, band-index order.
         getEqBandDeltas: function(bandDeltas) {
             if (!bandDeltas || bandDeltas.length < 10) return null;
             const [b31, b62, b125, b250, b500, b1k, b2k, b4k, b8k, b16k] = bandDeltas;
+            const sub = b31;                            // ~30 Hz
+            const warmth = 0.318 * b62 + 0.682 * b125;  // ~100 Hz
+            const vocal = 0.678 * b2k + 0.322 * b4k;    // ~2500 Hz
+            const treble = b8k;                         // ~8000 Hz
+            const air = 0.193 * b8k + 0.807 * b16k;     // ~14000 Hz
             // Mirror getCurveDeltas: axes are relative to the 500Hz mids
             // reference, so the 500Hz fader acts as the reference (moving it
             // moves the badge) instead of being dropped.
             const m = b500;
-            const sub = (b31 + b62) / 2 - m;
-            const warmth = (b125 + b250) / 2 - m;
-            const vocal = b1k - m;
-            const treble = (b2k + b4k) / 2 - m;
-            const air = (b8k + b16k) / 2 - m;
-            return [sub, warmth, vocal, treble, air];
+            return [sub - m, warmth - m, vocal - m, treble - m, air - m];
         },
 
         // Stable (non-random) string hash so the same IEM always lands on the
@@ -30884,12 +30753,13 @@ const Find_UpgradeMethods = {
                                 const candNorm = CurveUtils.normalizeTo75dB(cand.data, 500, 75);
                                 const candInterp = CurveUtils.cubicSplineInterpolate(candNorm, freqs);
 
-                                let maeSum = 0;
-                                for (let k = 0; k < freqs.length; k++) {
-                                    maeSum += Math.abs(candInterp[k] - baseInterp[k]);
-                                }
-                                const mae = maeSum / freqs.length;
-                                const tonalMatch = Math.max(0, 100 * Math.exp(-0.11 * mae));
+                                // Shared, calibrated scorer (CurveUtils.scoreInterp
+                                // via FindEngine._scoreInterp) instead of a local
+                                // naive MAE: the level-fit band + step weights keep
+                                // upgrade scores on the same scale as the tuning
+                                // scan and the worker, so the same candidate can no
+                                // longer score differently across views.
+                                const tonalMatch = this._scoreInterp(candInterp, baseInterp, freqs);
 
                                 if (tonalMatch < 60 && goal !== 'tech' && goal !== 'tier') continue;
 
@@ -30973,6 +30843,9 @@ const Find_UpgradeMethods = {
                     }
 
                     if (grid) {
+                        // Mark this view so the blind-mode toggle does not
+                        // overwrite the ladder with stale tuning matches.
+                        this._activeResultsKind = 'upgrade';
                         grid.innerHTML = activeStepNumbers.map(sNum => this.renderStepCardHtml(sNum)).join('');
                     }
 
@@ -31272,12 +31145,20 @@ const Find_EndgameMethods = {
 
                         let endgame = await this._runEndgameViaWorker(slim, maxPrice, freqs);
                         if (!endgame) {
-                            const cc = slim.filter(s => s.data).map(s => {
-                                const norm = CurveUtils.normalizeTo75dB(s.data, 500, 75);
+                            // The local fallback must group candidates the SAME way
+                            // the worker does (buildCanonicalProfiles), or the two
+                            // paths rank different sets: one entry per curve here
+                            // vs. one canonical profile per model there. Canonica-
+                            // lisation drops price/brand/tags, so reattach them
+                            // from the slim payload by id.
+                            const metaById = new Map();
+                            slim.forEach(s => { if (s && s.id != null) metaById.set(s.id, s); });
+                            const canonical = await this.buildCanonicalProfiles(slim.filter(s => s.data));
+                            const cc = canonical.map(c => {
+                                const meta = metaById.get(c.id) || {};
                                 return {
-                                    id: s.id, name: s.name,
-                                    interp: CurveUtils.cubicSplineInterpolate(norm, freqs),
-                                    price: s.price, brand: s.brand, tags: s.tags
+                                    id: c.id, name: c.name, interp: c.interp,
+                                    price: meta.price, brand: meta.brand, tags: meta.tags
                                 };
                             });
                             endgame = this._scoreEndgameCategoriesLocal(cc, freqs, maxPrice);
@@ -31322,6 +31203,7 @@ const Find_EndgameMethods = {
                 },
 
                 renderEndgameResults: function(endgame) {
+                    this._activeResultsKind = 'endgame';
                     const grid = document.getElementById('find-matches-grid');
                     const emptyState = document.getElementById('find-empty-state');
                     if (!grid) return;
@@ -32234,12 +32116,6 @@ const Find_TasteMethods = {
                 updatePickUI: function() {
                     const hidden = document.getElementById('find-filter-picks');
                     if (hidden) hidden.value = JSON.stringify(this.selectedPicks || []);
-                    const count = document.getElementById('find-pick-count');
-                    const picks = this.selectedPicks || [];
-                    if (count) {
-                        count.textContent = String(picks.length);
-                        count.classList.toggle('hidden', picks.length === 0);
-                    }
                     this.renderPickGrid();
                 },
 
@@ -32344,8 +32220,6 @@ const Find_TasteMethods = {
 
                     setTimeout(() => {
                         this.drawTargetVisualization();
-                        const radarCard = document.getElementById('find-radar-card');
-                        if (radarCard) radarCard.classList.remove('hidden');
                         this.drawTasteRadar();
                     }, 200);
 
@@ -32529,7 +32403,7 @@ const Find_TasteMethods = {
                     const priceMinEl = document.getElementById('find-filter-price-min');
                     const priceMaxEl = document.getElementById('find-filter-price-max');
                     return {
-                        brand: (document.getElementById('find-filter-brand')?.value || '').trim().toLowerCase(),
+                        brand: '',
                         yearMin: yearMinEl ? (parseInt(yearMinEl.min) || 1995) : 1995,
                         yearMax: yearMaxEl ? (parseInt(yearMaxEl.max) || 2026) : 2026,
                         yearLo: yearMinEl ? (parseInt(yearMinEl.value) || (parseInt(yearMinEl.min) || 1995)) : 1995,
@@ -32738,11 +32612,7 @@ const Find_TasteMethods = {
                         if (pickSection) pickSection.classList.add('hidden');
                     }
 
-                    const stepperLabel = document.getElementById('find-mode-stepper-label');
-                    if (stepperLabel) {
-                        const mInfo = this.findModes.find(m => m.id === mode) || this.findModes[0];
-                        stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${mInfo.emoji}</span> ${mInfo.label}`;
-                    }
+                    // (the find-mode ◀/▶ stepper label was removed from the markup)
 
                     this.drawTargetVisualization();
                 },
@@ -32904,50 +32774,16 @@ const Find_TasteMethods = {
                 // onmousedown, which Chromium refused to compile under the
                 // shipped CSP.
                 doBrandFilter: function(query) {
-                    const container = document.getElementById('find-brand-suggestions-box');
-                    if (!container) return;
-
-                    if (!this.brandSuggestionsList || this.brandSuggestionsList.length === 0) {
-                        this.populateBrandSuggestions();
-                    }
-
-                    const brands = this.brandSuggestionsList || [];
-                    const q = (query || '').trim().toLowerCase();
-                    const matches = q ? brands.filter(b => b.toLowerCase().includes(q)) : brands;
-
-                    if (matches.length === 0) {
-                        container.classList.add('hidden');
-                        return;
-                    }
-
-                    if (container.parentNode !== document.body) {
-                        document.body.appendChild(container);
-                    }
-
-                    const inputEl = document.getElementById('find-filter-brand');
-                    if (inputEl) {
-                        const rect = inputEl.getBoundingClientRect();
-                        container.style.position = 'fixed';
-                        container.style.left = rect.left + 'px';
-                        container.style.top = (rect.bottom + 2) + 'px';
-                        container.style.width = rect.width + 'px';
-                        container.style.right = 'auto';
-                        container.style.zIndex = '99999';
-                    }
-
-                    container.innerHTML = matches.map(b => `
-                        <div data-cmd="FindEngine.selectBrandName" data-arg-0="${esc(b)}" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
-                            ${esc(b)}
-                        </div>
-                    `).join('');
-                    container.classList.remove('hidden');
+                    // The brand-suggestions box and brand filter input were
+                    // removed from the markup, so there is nothing to filter or
+                    // show. Kept as a named no-op because tools/facade-baseline.json
+                    // lists it and populateBrandSuggestions (live) shares
+                    // brandSuggestionsList.
+                    void query;
                 },
 
                 selectBrandName: function(brand) {
-                    const input = document.getElementById('find-filter-brand');
-                    const container = document.getElementById('find-brand-suggestions-box');
-                    if (input) input.value = brand;
-                    if (container) container.classList.add('hidden');
+                    void brand;
                 },
 
                 getDriveability: function(impedance, sensitivity) {
@@ -33015,14 +32851,8 @@ const Find_TasteMethods = {
                 },
 
                 bindEvents: function() {
-                    const blindChk = document.getElementById('find-blind-mode');
-                    if (blindChk) {
-                        blindChk.addEventListener('change', () => {
-                            if (this._lastMatches) {
-                                this.renderMatches(this._lastMatches);
-                            }
-                        });
-                    }
+                    // (the Find blind-mode checkbox was removed from the markup;
+                    // this listener had no element to bind to)
 
                     document.addEventListener('click', (e) => {
                         const isDropdownClick = e.target.closest('[id^="menu-find-filter-"]') ||
@@ -33140,32 +32970,9 @@ const Find_TasteMethods = {
                     if (this._activeSlotObserverStarted) return;
                     this._activeSlotObserverStarted = true;
 
-                    this._activeSlotIntervalId = setInterval(() => {
-                        if (document.hidden) return;
-                        // Skip work entirely when the Find tab isn't visible —
-                        // the next tick after returning corrects any stale state.
-                        const findPane = document.getElementById('pane-find');
-                        if (findPane && findPane.classList.contains('hidden')) return;
-                        const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
-                        const btn = document.getElementById('find-clone-btn');
-                        const row = document.getElementById('find-clone-actions-row');
-                        if (!btn || !row) return;
-
-                        if (baseCurve) {
-                            if (!this.isClonedModeActive) {
-                                btn.textContent = `📁 Detected: ${baseCurve.name}`;
-                                btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 text-[9px] font-bold text-stone-300 flex items-center justify-center px-2 truncate shadow-inner";
-                                row.classList.remove('hidden');
-                            }
-                        } else {
-                            if (this.isClonedModeActive) {
-                                this.deactivateEQBaseClone();
-                            }
-                            btn.textContent = "🔒 EQ Base Slot Empty";
-                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 text-[9px] font-black uppercase text-zinc-555 flex items-center justify-center gap-1.5 shadow-inner cursor-not-allowed";
-                            row.classList.add('hidden');
-                        }
-                    }, 500);
+                    // The EQ-base clone button/row that this interval drove were
+                    // removed from the markup, so the observer has nothing left
+                    // to sync; the 500 ms lookup-only timer is gone with them.
                 },
 
                 applyEQBaseClone: function() {
@@ -33176,29 +32983,12 @@ const Find_TasteMethods = {
                     this.clonedTargetInterp = null;
                     this.resetSlidersToZero();
 
-                    const btn = document.getElementById('find-clone-btn');
-                    if (btn) {
-                        btn.textContent = `🟢 Active Clone: ${baseCurve.name}`;
-                        btn.className = "w-full h-7 bg-gradient-to-r from-emerald-600 to-teal-600 border border-emerald-500/40 text-[9px] font-black uppercase text-white flex items-center justify-center px-2 truncate shadow-md active-btn";
-                    }
                     this.drawTargetVisualization();
                     showToast(`Target locked to "${baseCurve.name}"!`, "💾");
                 },
 
                 deactivateEQBaseClone: function() {
                     this.isClonedModeActive = false;
-                    const btn = document.getElementById('find-clone-btn');
-                    const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
-
-                    if (btn) {
-                        if (baseCurve) {
-                            btn.textContent = `📁 Detected: ${baseCurve.name}`;
-                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 text-[9px] font-bold text-stone-300 flex items-center justify-center px-2 truncate shadow-inner";
-                        } else {
-                            btn.textContent = "🔒 EQ Base Slot Empty";
-                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 text-[9px] font-black uppercase text-zinc-555 flex items-center justify-center gap-1.5 shadow-inner cursor-not-allowed";
-                        }
-                    }
                     this.drawTargetVisualization();
                 },
 
@@ -33349,9 +33139,6 @@ const Find_TasteMethods = {
                         if (overlay) overlay.classList.add('hidden');
                         this.isScanning = false;
 
-                        const details = document.getElementById('find-taste-details');
-                        if (details) details.open = false;
-
                         App.setFindSection('matches');
 
                         showToast(`Found ${deduplicatedMatches.length > 100 ? 100 : deduplicatedMatches.length} matches for your taste profile!`, "❤️");
@@ -33470,69 +33257,8 @@ const Find_TasteMethods = {
                 },
 
                 drawTasteRadar: function() {
-                    const canvas = document.getElementById('find-taste-radar');
-                    if (!canvas) return;
-                    const w = canvas.clientWidth, h = canvas.clientHeight;
-                    // Cap the hidden-canvas retry chain: the Find pane can stay
-                    // at 0x0 indefinitely, and every caller (slider input, tab
-                    // switch) started its own unbounded 100 ms re-arm loop.
-                    if (w === 0 || h === 0) {
-                        const attempt = (arguments[0] || 0) + 1;
-                        if (attempt <= 20) setTimeout(() => this.drawTasteRadar(attempt), 100);
-                        return;
-                    }
-                    canvas.width = w; canvas.height = h;
-                    const ctx = canvas.getContext('2d');
-                    ctx.clearRect(0, 0, w, h);
-                    const sliders = [
-                        { id: 'find-bass', label: 'Bass' }, { id: 'find-sub', label: 'Sub' },
-                        { id: 'find-punch', label: 'Punch' }, { id: 'find-warm', label: 'Warmth' },
-                        { id: 'find-vocals', label: 'Vocals' }, { id: 'find-treble', label: 'Treble' },
-                        { id: 'find-smooth', label: 'Smooth' }
-                    ];
-                    const values = sliders.map(s => {
-                        const el = document.getElementById(s.id);
-                        return el ? (parseFloat(el.value) + 10) / 20 : 0.5;
-                    });
-                    const cx = w/2, cy = h/2, radius = Math.min(w,h)*0.35, step = (Math.PI*2)/sliders.length;
-                    ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
-                    for (let r=0.25; r<=1; r+=0.25) {
-                        ctx.beginPath();
-                        for (let i=0; i<=sliders.length; i++) {
-                            const a = step*i - Math.PI/2;
-                            const x = cx+Math.cos(a)*radius*r, y = cy+Math.sin(a)*radius*r;
-                            i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
-                        }
-                        ctx.closePath(); ctx.stroke();
-                    }
-                    for (let i=0; i<sliders.length; i++) {
-                        const a = step*i - Math.PI/2;
-                        ctx.beginPath(); ctx.moveTo(cx,cy);
-                        ctx.lineTo(cx+Math.cos(a)*radius, cy+Math.sin(a)*radius); ctx.stroke();
-                    }
-                    // Canvas2D cannot resolve CSS var() — resolve the theme
-                    // accent here, otherwise the polygon renders as a black
-                    // blob with a near-invisible outline.
-                    const docStyle = getComputedStyle(document.documentElement);
-                    const accentColor = (docStyle.getPropertyValue('--accent-blue') || '#6488b0').trim() || '#6488b0';
-                    const accentRgbRaw = (docStyle.getPropertyValue('--accent-blue-rgb') || '').trim();
-                    const accentRgb = /^\d{1,3},\s*\d{1,3},\s*\d{1,3}$/.test(accentRgbRaw) ? accentRgbRaw : '100,136,176';
-                    ctx.fillStyle = `rgba(${accentRgb}, 0.15)`;
-                    ctx.strokeStyle = accentColor; ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    for (let i=0; i<=sliders.length; i++) {
-                        const idx = i%sliders.length, a = step*idx - Math.PI/2;
-                        const r = radius*values[idx];
-                        const x = cx+Math.cos(a)*r, y = cy+Math.sin(a)*r;
-                        i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
-                    }
-                    ctx.closePath(); ctx.fill(); ctx.stroke();
-                    ctx.fillStyle = '#8e8e9c'; ctx.font = 'bold 8px system-ui, sans-serif';
-                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                    sliders.forEach((s,i) => {
-                        const a = step*i - Math.PI/2;
-                        ctx.fillText(s.label, cx+Math.cos(a)*(radius+16), cy+Math.sin(a)*(radius+16));
-                    });
+                    // (the Find taste radar canvas was removed from the markup;
+                    // this render is a no-op kept so its callers stay valid)
                 },
 
                 drawTargetVisualization: function() {
@@ -33671,7 +33397,10 @@ const Find_TasteMethods = {
                 },
 
                 buildCanonicalProfiles: async function(dataset) {
-                    const groups = {};
+                    // Null-prototype map: a canonical name of "__proto__" (or
+                    // "constructor") would otherwise collide with Object.prototype
+                    // keys and corrupt grouping.
+                    const groups = Object.create(null);
                     const freqs = CurveUtils.generateLogGrid(100);
 
                     dataset.forEach(item => {
@@ -33682,7 +33411,9 @@ const Find_TasteMethods = {
                         // the top when the Worker is unavailable.
                         if (!item.data || item.data.length < 2) return;
 
-                        const nameLower = item.name.toLowerCase();
+                        // Coerce: a non-string name (number/object from custom
+                        // imports) previously threw on .toLowerCase().
+                        const nameLower = String(item.name == null ? '' : item.name).toLowerCase();
 
                         const isImpedanceEntry = /[Ωω]|\b\d+\s*ohms?\b|\badapter\b|\bimpedance\b/i.test(nameLower);
 
@@ -33954,9 +33685,11 @@ const Find_TasteMethods = {
                             // so reattach each match's data by id on the main thread.
                             // Without this, match cards lose their sparkline curves
                             // and genre matching falls back to defaults for every box.
+                            const itemById = new Map();
+                            items.forEach(i => { if (i && i.id != null) itemById.set(i.id, i); });
                             list.forEach(m => {
                                 if (m.data) return;
-                                const it = items.find(i => i && i.id === m.id);
+                                const it = itemById.get(m.id);
                                 if (it) m.data = it.data || null;
                             });
                             list.sort((a, b) => b.similarity - a.similarity);
@@ -34736,11 +34469,7 @@ const Find_TasteMethods = {
                         }
                     });
 
-                    const stepperLabel = document.getElementById('find-right-tab-stepper-label');
-                    if (stepperLabel) {
-                        const info = this.rightTabModes.find(m => m.id === tabId) || this.rightTabModes[0];
-                        stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
-                    }
+                    // (the find right-tab stepper label was removed from the markup)
 
                     if (tabId === 'upgrade' && !this.selectedUpgradeBaseIemId) {
                         const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
@@ -34856,6 +34585,11 @@ const Find_TasteMethods = {
                 },
 
                 renderMatches: function(matches) {
+                    // Retain the complete list: applyGenreFilters is destructive,
+                    // so a later re-render (blind-mode toggle, pick change) must
+                    // start from the full set or filtered-out items are lost.
+                    this._lastRawMatches = matches;
+                    this._activeResultsKind = 'matches';
                     matches = this.applyGenreFilters(matches);
                     this._lastMatches = matches;
 
@@ -34880,7 +34614,7 @@ const Find_TasteMethods = {
                         countText.className = 'text-[9.5px] font-black uppercase tracking-wider text-emerald-400';
                     }
 
-                    const isBlind = document.getElementById('find-blind-mode')?.checked;
+                    const isBlind = false; // (the Find blind-mode checkbox was removed)
                     const targetCurve = this.generateTargetCurve();
                     const freqs = CurveUtils.generateLogGrid(100);
                     const targetInterp = CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]);
@@ -35492,6 +35226,13 @@ const DataCore = (function () {
     'Analytical|Warm': 'remove "Analytical" if warm/bassy, or "Warm" if lean/clinical',
     'Basshead|Treblehead': 'keep the defining signature tag'
   };
+  // The subset of tag conflicts with a *deterministic* resolution: the tag that
+  // must be removed. The other rows depend on the measured frequency response
+  // ("keep the dominant treble character"), so they are reported with guidance
+  // but intentionally carry no auto-fix.
+  const TAG_CONFLICT_DROP_TAG = {
+    'V-Shaped|Vocal-Focused': 'Vocal-Focused'
+  };
   const PRIMARY_TONALITY_RESOLUTION = 'at most one primary tonal profile is allowed; keep the one the measurement curves support';
   const MIN_TAGS = 4;
   const MAX_TAGS = 12;
@@ -35871,7 +35612,8 @@ const DataCore = (function () {
     tagConflicts(new Set(tags.map(String))).forEach(pair => {
       const c = 'Conflicting tags: ' + pair.join(' + ');
       const r = tagConflictResolution(pair);
-      errors.push(c);
+      // Include the documented resolution instead of discarding it.
+      errors.push(r ? c + ' — ' + r : c);
     });
     const tiers = tags.filter(t => PRICE_TIER_TAGS.indexOf(t) >= 0);
     if (tiers.length !== 1) errors.push('Needs exactly one price-tier tag.');
@@ -36533,7 +36275,17 @@ const DataCore = (function () {
       tagConflicts(new Set(tags.map(String))).forEach(pair => {
         const c = 'Conflicting tags: ' + pair.join(' + ');
         const r = tagConflictResolution(pair);
-        issues.push(makeIssue('Tag Conflict', idx, eid, c, { severity: 'error' }));
+        // Surface the documented resolution (it used to be computed and thrown
+        // away) and attach an auto-fix when the resolution is deterministic.
+        const msg = r ? c + ' — ' + r : c;
+        const dropTag = TAG_CONFLICT_DROP_TAG[pair.slice().sort().join('|')];
+        const opts = { severity: 'error' };
+        if (dropTag) {
+          opts.fix = makeFix(entry, realId || eid, idx, en => {
+            en.tags = (Array.isArray(en.tags) ? en.tags : []).filter(t => t !== dropTag);
+          });
+        }
+        issues.push(makeIssue('Tag Conflict', idx, eid, msg, opts));
       });
       if (tags.length < MIN_TAGS) issues.push(makeIssue('Tag Count', idx, eid, 'Only ' + tags.length + ' tags (min ' + MIN_TAGS + ').', { severity: 'error' }));
       if (tags.length > MAX_TAGS) issues.push(makeIssue('Tag Count', idx, eid, tags.length + ' tags (max ' + MAX_TAGS + ').', { severity: 'error' }));
@@ -37541,14 +37293,21 @@ const DataStore = (function () {
   async function gzipBytes(text) {
     const cs = new CompressionStream('gzip');
     const w = cs.writable.getWriter();
-    w.write(enc.encode(text)); w.close();
-    return new Uint8Array(await new Response(cs.readable).arrayBuffer());
+    // Consume the readable concurrently so a large payload cannot fill the
+    // stream buffer and deadlock, then await the writer so a write failure
+    // surfaces here instead of as an unhandled rejection.
+    const written = w.write(enc.encode(text)).then(() => w.close());
+    const buf = await new Response(cs.readable).arrayBuffer();
+    await written;
+    return new Uint8Array(buf);
   }
   async function gunzipText(buf) {
     const ds = new DecompressionStream('gzip');
     const w = ds.writable.getWriter();
-    w.write(buf); w.close();
-    return await new Response(ds.readable).text();
+    const written = w.write(buf).then(() => w.close());
+    const text = await new Response(ds.readable).text();
+    await written;
+    return text;
   }
   function safeRel(rel) {
     if (typeof rel !== 'string') return null;
@@ -39076,7 +38835,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       case 'dl-gz': DataStore.downloadBlob('database.json.gz', await DataStore.gzipBytes(T.S.serialize()), 'application/gzip'); break;
       case 'pick-folder': try { await DataStore.pickFolder(); toast('Connected.', '📂'); T.ready = false; T.selUid = null; T.draft = null; T.load(); } catch (err) { if (err && err.name !== 'AbortError') toast(String(err.message || err), '⚠️'); } break;
       case 'reconnect-folder': if (await DataStore.reconnectFolder()) { T.ready = false; T.load(); } else toast('Permission was not granted.', '⚠️'); break;
-      case 'zip': { if (T.S.dirty || true) { const n = await DataStore.exportZip([{ name: 'database.json', data: T.S.serialize() }, { name: 'database.json.gz', data: await DataStore.gzipBytes(T.S.serialize()) }]); T.S.markSaved(); T.savedLen = T.S.undoStack.length; recomputeChanged(); toast('Downloaded ' + n + ' files.', '🗜️'); renderAll(); } break; }
+      case 'zip': { if (T.S.dirty) { const n = await DataStore.exportZip([{ name: 'database.json', data: T.S.serialize() }, { name: 'database.json.gz', data: await DataStore.gzipBytes(T.S.serialize()) }]); T.S.markSaved(); T.savedLen = T.S.undoStack.length; recomputeChanged(); toast('Downloaded ' + n + ' files.', '🗜️'); renderAll(); } break; }
     }
   }
   function onInput(e) {

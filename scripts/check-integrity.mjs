@@ -26,13 +26,11 @@
 //    `el.onclick = fn` is ordinary DOM scripting and is fine. This counts the
 //    attribute-form sites so the real blocker is measured and cannot grow.
 // 5. DEAD getElementById REFERENCES — `getElementById('x')` where no element
-//    with id "x" exists in index.html and none is created at runtime. Each of
-//    these is a guaranteed null. They are currently all guarded with `if (el)`,
-//    so they are dead code rather than live crashes (the runtime smoke test in
-//    tools/smoke-runtime.js passes with zero console errors), but an unguarded
-//    one added later would throw. Reported and ratcheted rather than mass-deleted,
-//    because removing 35 call sites across eight modules for zero user-visible
-//    gain is a much worse trade than leaving them counted.
+//    with id "x" exists in index.html and none is created at runtime (including
+//    ids minted by `id="eq-f${i}"`-style templates, which are expanded before
+//    the test). Each of these is a guaranteed null no-op. The vestigial ones
+//    (the removed modal/stepper/tag/theme UI) have been pruned, so the ratchet
+//    baseline is now zero: a NEW dead target fails rather than accumulating.
 // 6. CSP — script-src must not carry 'unsafe-inline'.
 //
 //    This was only achievable once BOTH sources of inline script were gone: the
@@ -347,6 +345,15 @@ const ON_ATTR_RE = (events, quote) => {
     for (const m of src.matchAll(/id\s*=\s*['"`]([^'"`]*\$\{[^'"`]*)['"`]/g)) runtimeCreated.add(m[1]);
   }
 
+  // The templates above record the SHAPE (e.g. `eq-f${i}`), not the ids they
+  // actually mint, so `getElementById('eq-f8')` was misread as dead even though
+  // band 8's fader exists. Expand simple numeric interpolations over the 0..20
+  // range the band builders use before deciding what is dead.
+  for (const tpl of [...runtimeCreated]) {
+    if (!tpl.includes('${')) continue;
+    for (let n = 0; n <= 20; n++) runtimeCreated.add(tpl.replace(/\$\{[^}]*\}/g, String(n)));
+  }
+
   // Skip anything built by interpolation or concatenation at call time.
   const dynamic = /\$\{|\+\s*[A-Za-z_$]/;
   const dead = [...referenced]
@@ -397,16 +404,16 @@ const ON_ATTR_RE = (events, quote) => {
   }
 
   // Measured by this check (it scans every app/js source file, so it sees a few
-  // more than the runtime DOM audit in tools/audit-dom.js). These are all
-  // `if (el)`-guarded no-ops today - the smoke test passes with zero console
-  // errors - so this reports and ratchets rather than failing on the existing set.
-  const BASELINE = 87;
+  // more than the runtime DOM audit in tools/audit-dom.js). The vestigial
+  // `if (el)`-guarded no-ops have been pruned, so the ratchet is pinned at zero:
+  // any NEW dead getElementById target fails instead of silently accumulating.
+  const BASELINE = 0;
   const typoNote = typos.length
     ? `, ${typos.length} of which ${typos.length === 1 ? 'looks' : 'look'} like a TYPO of a live id and must be fixed`
-    : ', none of which are near-misses of a live id';
+    : (dead.length ? ', none of which are near-misses of a live id' : '');
   notes.push(
-    `dead getElementById refs: ${dead.length} (all guarded; ratchet baseline ${BASELINE}${typoNote})` +
-    `\n                 e.g. ${dead.slice(0, 6).join(', ')}${dead.length > 6 ? ', ...' : ''}`
+    `dead getElementById refs: ${dead.length} (ratchet baseline ${BASELINE}${dead.length ? '; all guarded' : ''}${typoNote})` +
+    (dead.length ? `\n                 e.g. ${dead.slice(0, 6).join(', ')}${dead.length > 6 ? ', ...' : ''}` : '')
   );
   if (dead.length > BASELINE) {
     problems.push(

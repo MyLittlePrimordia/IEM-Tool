@@ -149,19 +149,21 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
 
             const variant = side === 'music' ? fam.musicVariants[0] : fam.gameVariants[0];
             // fam.profile is the same [sub, warmth, vocal, treble, air] delta
-            // shape getEqBandDeltas() derives from a real 10-band FR (see
-            // FindEngine.getEqBandDeltas / nearestGenreFamilyIndex) --
-            // expanding it back out to those same band frequencies, plus
-            // 20Hz/20kHz endpoints so the curve interpolates cleanly across
-            // the full audible range instead of collapsing to 0 past the
-            // outermost defined point.
+            // shape getEqBandDeltas() derives (see FindEngine.getEqBandDeltas /
+            // nearestGenreFamilyIndex). Expand it back out at the SAME reference
+            // points that classifier samples -- 30/100/500/2500/8000/14000 Hz
+            // (the axes are mids-relative, so 500 Hz is pinned to 0) -- plus
+            // 20Hz/20kHz endpoints so the curve interpolates cleanly across the
+            // full audible range instead of collapsing to 0 past the outermost
+            // defined point.
             const [sub, warmth, vocal, treble, air] = fam.profile;
             const data = [
-                [20, sub], [31, sub], [62, sub],
-                [125, warmth], [250, warmth],
-                [1000, vocal],
-                [2000, treble], [4000, treble],
-                [8000, air], [16000, air], [20000, air]
+                [20, sub], [30, sub],
+                [100, warmth],
+                [500, 0],
+                [2500, vocal],
+                [8000, treble],
+                [14000, air], [20000, air]
             ];
 
             PEQDB_Module.STATE.activeCurves = PEQDB_Module.STATE.activeCurves.filter(c => c.role !== 'target');

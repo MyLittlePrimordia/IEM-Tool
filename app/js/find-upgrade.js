@@ -609,12 +609,13 @@ const Find_UpgradeMethods = {
                                 const candNorm = CurveUtils.normalizeTo75dB(cand.data, 500, 75);
                                 const candInterp = CurveUtils.cubicSplineInterpolate(candNorm, freqs);
 
-                                let maeSum = 0;
-                                for (let k = 0; k < freqs.length; k++) {
-                                    maeSum += Math.abs(candInterp[k] - baseInterp[k]);
-                                }
-                                const mae = maeSum / freqs.length;
-                                const tonalMatch = Math.max(0, 100 * Math.exp(-0.11 * mae));
+                                // Shared, calibrated scorer (CurveUtils.scoreInterp
+                                // via FindEngine._scoreInterp) instead of a local
+                                // naive MAE: the level-fit band + step weights keep
+                                // upgrade scores on the same scale as the tuning
+                                // scan and the worker, so the same candidate can no
+                                // longer score differently across views.
+                                const tonalMatch = this._scoreInterp(candInterp, baseInterp, freqs);
 
                                 if (tonalMatch < 60 && goal !== 'tech' && goal !== 'tier') continue;
 
@@ -698,6 +699,9 @@ const Find_UpgradeMethods = {
                     }
 
                     if (grid) {
+                        // Mark this view so the blind-mode toggle does not
+                        // overwrite the ladder with stale tuning matches.
+                        this._activeResultsKind = 'upgrade';
                         grid.innerHTML = activeStepNumbers.map(sNum => this.renderStepCardHtml(sNum)).join('');
                     }
 

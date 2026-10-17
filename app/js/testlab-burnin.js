@@ -131,6 +131,12 @@ const TestLab_BurninMethods = {
     },
 
     toggleBurnin: async function() {
+        // Re-entrancy guard: the button stays live across the awaits below, so
+        // a rapid double-click could run the start branch twice and leak a
+        // second gain node + interval. Ignore clicks while a toggle is in flight.
+        if (this.burninToggleInFlight) return;
+        this.burninToggleInFlight = true;
+        try {
         const startBtn = document.getElementById('burnin-start-btn');
         if (this.burninActive) {
             this.stopBurninActual();
@@ -163,6 +169,9 @@ const TestLab_BurninMethods = {
 
             this.startImbalanceMeter();
             showToast("Burn-In session started!", "🔥");
+        }
+        } finally {
+            this.burninToggleInFlight = false;
         }
     },
 

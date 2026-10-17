@@ -200,7 +200,7 @@ const EQ_PresetMethods = {
                 this.updatePreamp();
             }
 
-            if (p.m) {
+            if (Array.isArray(p.m)) {
                 p.m.forEach((val, i) => {
                     const band = this.bands[i];
                     if (!band) return;   // more bands than the UI has slots
@@ -264,7 +264,7 @@ const EQ_PresetMethods = {
                 });
             }
 
-            if (p.a) {
+            if (Array.isArray(p.a)) {
                 p.a.forEach((val, i) => {
                     const b = this.advancedBands[i];
                     if (!b) return;
@@ -331,7 +331,7 @@ const EQ_PresetMethods = {
                 });
             }
 
-                if (p.v && Array.isArray(p.v)) {
+                if (Array.isArray(p.v)) {
                     // Virtual bands feed worklet slots 50+ directly from
                     // eq-dsp-graph.js, so they need the same validation.
                     this.virtualBands = p.v.map(v => {
@@ -339,10 +339,10 @@ const EQ_PresetMethods = {
                         if (clean.__repaired) repairedBands++;
                         return { hz: clean.hz, g: clean.g, q: clean.q, type: clean.type };
                     });
-                } else if (p.v === undefined) {
-                    // Backward compat: old presets without virtual still clear any
-                    // previous virtual solve so the old 10/20-band preset does not
-                    // retain a stale >20-band tail.
+                } else {
+                    // Backward compat: a preset with no virtual array (old
+                    // 10/20-band presets, or a malformed value) must clear any
+                    // previous virtual solve so it cannot retain a stale tail.
                     this.virtualBands = [];
                 }
             } finally {

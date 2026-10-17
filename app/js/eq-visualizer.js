@@ -21,11 +21,14 @@ const EQ_VisualizerMethods = {
                 'horizontalSpectrogram', 'fullScreenWaterfall', 'acousticTunnel', 'oledSpectrum', 'oscilloscope', 'audioMesh'
             ],
 startVisualizer: function() {
+        // A loop already in flight owns vizFrameId. Cancelling its pending
+        // frame and then returning early (vizLoopRunning is still true) would
+        // silently kill the animation, so bail out before touching the frame.
+        if (this.vizLoopRunning) return;
         if (this.vizFrameId) {
             cancelAnimationFrame(this.vizFrameId);
             this.vizFrameId = null;
         }
-        if (this.vizLoopRunning) return;
 
         if (!this.agcIntervalId) {
 
@@ -169,9 +172,6 @@ startVisualizer: function() {
                     alpha: Math.random() * 0.4 + 0.4
                 });
             }
-
-            const miniCanvas = document.getElementById("mini-spectrum");
-            const miniCtx = miniCanvas ? miniCanvas.getContext("2d") : null;
 
             const vintagePeaks = new Float32Array(256).fill(0);
             let liquidPhase = 0;
@@ -616,26 +616,8 @@ if (diffR > 0.4) {
                     }
                 }
 
-                if (miniCtx && miniCanvas) {
-                    const mw = miniCanvas.width;
-                    const mh = miniCanvas.height;
-                    miniCtx.clearRect(0, 0, mw, mh);
-                    miniCtx.strokeStyle = "rgba(37, 99, 235, 0.85)";
-                    miniCtx.lineWidth = 2.0;
-                    miniCtx.beginPath();
-
-                    const step = 16;
-                    const sliceWidth = (mw / bufferLength) * step;
-                    let x = 0;
-                    for (let i = 0; i < bufferLength; i += step) {
-                        const v = timeDomain[i] / 128.0;
-                        const y = (v * mh) / 2;
-                        if (i === 0) miniCtx.moveTo(x, y);
-                        else miniCtx.lineTo(x, y);
-                        x += sliceWidth;
-                    }
-                    miniCtx.stroke();
-                }
+                // (the mini-spectrum canvas was removed; only the fullscreen
+                // visualizer is drawn now)
 
                 if (!EQ_Module.fullscreenVizCanvas) {
                     EQ_Module.fullscreenVizCanvas = document.getElementById("fullscreen-viz-canvas");

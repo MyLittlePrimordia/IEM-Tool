@@ -319,11 +319,8 @@ const EQ_GraphInputMethods = {
 
                             p.hz = Math.max(minBound, Math.min(maxBound, Math.round(f)));
 
-                            const hzInput = document.getElementById('sculptor-node-hz');
-                            const dbInput = document.getElementById('sculptor-node-db');
-                            if (hzInput) hzInput.value = p.hz;
-                            if (dbInput) dbInput.value = p.val.toFixed(1);
-
+                            // (the sculptor node hz/db text inputs were removed;
+                            // node values live on the curve points themselves)
                             PEQDB_Module.updateSculptTargetData();
 
                             if (PEQDB_Module.searchMode === 'similar') {

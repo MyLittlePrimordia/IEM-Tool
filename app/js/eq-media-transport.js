@@ -44,8 +44,6 @@ const EQ_MediaTransportMethods = {
                     const mobBtn = document.getElementById("mobile-play-btn");
                     if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
                     if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
-                    const modalBtn = document.getElementById("modal-play-btn");
-                    if(modalBtn) modalBtn.innerHTML = "<span>⏸</span><span>Pause</span>";
 
                     if (SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
                         await SharedAudio.ctx.resume();
@@ -91,8 +89,6 @@ const EQ_MediaTransportMethods = {
                         if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
                         const mobBtn = document.getElementById("mobile-play-btn");
                         if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
-                        const modalBtn = document.getElementById("modal-play-btn");
-                        if(modalBtn) modalBtn.innerHTML = "<span>▶</span><span>Play</span>";
                     }
                 });
                 // During a crossfade the retiring element keeps playing until
@@ -117,8 +113,6 @@ const EQ_MediaTransportMethods = {
                         const mobBtn = document.getElementById("mobile-play-btn");
                         if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
                         if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
-                        const modalBtn = document.getElementById("modal-play-btn");
-                        if(modalBtn) modalBtn.innerHTML = "<span>⏸</span><span>Pause</span>";
                         if (SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
                             await SharedAudio.ctx.resume();
                         }
@@ -139,8 +133,6 @@ const EQ_MediaTransportMethods = {
                             if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
                             const mobBtn = document.getElementById("mobile-play-btn");
                             if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
-                            const modalBtn = document.getElementById("modal-play-btn");
-                            if(modalBtn) modalBtn.innerHTML = "<span>▶</span><span>Play</span>";
                         }
                     });
                     this.gaplessEl.addEventListener('ended', () => {
@@ -179,10 +171,8 @@ const EQ_MediaTransportMethods = {
                 const formatted = this.formatTime(cur || 0);
                 const timeCur = document.getElementById('playlist-time-current');
                 const mobTimeCur = document.getElementById('mobile-time-current');
-                const modalTimeCur = document.getElementById('modal-time-current');
                 if (timeCur) timeCur.textContent = formatted;
                 if (mobTimeCur) mobTimeCur.textContent = formatted;
-                if (modalTimeCur) modalTimeCur.textContent = formatted;
             };
 
             const attachTimeUpdate = (el) => {
@@ -204,10 +194,8 @@ const EQ_MediaTransportMethods = {
                         const formatted = this.formatTime(dur);
                         const timeDur = document.getElementById('playlist-time-duration');
                         const mobTimeDur = document.getElementById('mobile-time-duration');
-                        const modalTimeDur = document.getElementById('modal-time-duration');
                         if (timeDur) timeDur.textContent = formatted;
                         if (mobTimeDur) mobTimeDur.textContent = formatted;
-                        if (modalTimeDur) modalTimeDur.textContent = formatted;
                     }
                 });
             };
@@ -217,7 +205,6 @@ const EQ_MediaTransportMethods = {
 
             const scrub = document.getElementById('playlist-scrub');
             const mobScrub = document.getElementById('mobile-scrub');
-            const modalScrub = document.getElementById('modal-scrub');
 
             const startSeek = () => {
                 this.isSeeking = true;
@@ -245,10 +232,8 @@ const EQ_MediaTransportMethods = {
                             const formatted = this.formatTime(tempTime);
                             const timeCur = document.getElementById('playlist-time-current');
                             const mobTimeCur = document.getElementById('mobile-time-current');
-                            const modalTimeCur = document.getElementById('modal-time-current');
                             if (timeCur) timeCur.textContent = formatted;
                             if (mobTimeCur) mobTimeCur.textContent = formatted;
-                            if (modalTimeCur) modalTimeCur.textContent = formatted;
                         }
                     });
                 });
@@ -269,7 +254,6 @@ const EQ_MediaTransportMethods = {
 
             bindScrubEvents(scrub);
             bindScrubEvents(mobScrub);
-            bindScrubEvents(modalScrub);
 
             window.addEventListener('mouseup', () => { this.isSeeking = false; });
             window.addEventListener('touchend', () => { this.isSeeking = false; });
@@ -280,6 +264,10 @@ const EQ_MediaTransportMethods = {
             if (this._scrubRaf) cancelAnimationFrame(this._scrubRaf);
             let _scrubStuckWarn = 0;
             const paintPlaybackScrub = () => {
+                // Stop spinning while the window is backgrounded: a plain rAF
+                // keeps firing this callback (and the DOM lookups below) forever
+                // even when nothing is playing. Resume on visibilitychange.
+                if (document.hidden) { this._scrubRaf = null; return; }
                 this._scrubRaf = requestAnimationFrame(paintPlaybackScrub);
                 if (this.isSeeking) return;
                 const active = (this._activeEl && this._activeEl()) || this.audioEl;
@@ -300,5 +288,11 @@ const EQ_MediaTransportMethods = {
                 });
             };
             paintPlaybackScrub();
+            if (!this._scrubVisibilityBound) {
+                this._scrubVisibilityBound = true;
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden && !this._scrubRaf) paintPlaybackScrub();
+                });
+            }
     },
 };

@@ -184,12 +184,6 @@
                 updatePickUI: function() {
                     const hidden = document.getElementById('find-filter-picks');
                     if (hidden) hidden.value = JSON.stringify(this.selectedPicks || []);
-                    const count = document.getElementById('find-pick-count');
-                    const picks = this.selectedPicks || [];
-                    if (count) {
-                        count.textContent = String(picks.length);
-                        count.classList.toggle('hidden', picks.length === 0);
-                    }
                     this.renderPickGrid();
                 },
 
@@ -294,8 +288,6 @@
 
                     setTimeout(() => {
                         this.drawTargetVisualization();
-                        const radarCard = document.getElementById('find-radar-card');
-                        if (radarCard) radarCard.classList.remove('hidden');
                         this.drawTasteRadar();
                     }, 200);
 
@@ -479,7 +471,7 @@
                     const priceMinEl = document.getElementById('find-filter-price-min');
                     const priceMaxEl = document.getElementById('find-filter-price-max');
                     return {
-                        brand: (document.getElementById('find-filter-brand')?.value || '').trim().toLowerCase(),
+                        brand: '',
                         yearMin: yearMinEl ? (parseInt(yearMinEl.min) || 1995) : 1995,
                         yearMax: yearMaxEl ? (parseInt(yearMaxEl.max) || 2026) : 2026,
                         yearLo: yearMinEl ? (parseInt(yearMinEl.value) || (parseInt(yearMinEl.min) || 1995)) : 1995,
@@ -688,11 +680,7 @@
                         if (pickSection) pickSection.classList.add('hidden');
                     }
 
-                    const stepperLabel = document.getElementById('find-mode-stepper-label');
-                    if (stepperLabel) {
-                        const mInfo = this.findModes.find(m => m.id === mode) || this.findModes[0];
-                        stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${mInfo.emoji}</span> ${mInfo.label}`;
-                    }
+                    // (the find-mode ◀/▶ stepper label was removed from the markup)
 
                     this.drawTargetVisualization();
                 },
@@ -854,50 +842,16 @@
                 // onmousedown, which Chromium refused to compile under the
                 // shipped CSP.
                 doBrandFilter: function(query) {
-                    const container = document.getElementById('find-brand-suggestions-box');
-                    if (!container) return;
-
-                    if (!this.brandSuggestionsList || this.brandSuggestionsList.length === 0) {
-                        this.populateBrandSuggestions();
-                    }
-
-                    const brands = this.brandSuggestionsList || [];
-                    const q = (query || '').trim().toLowerCase();
-                    const matches = q ? brands.filter(b => b.toLowerCase().includes(q)) : brands;
-
-                    if (matches.length === 0) {
-                        container.classList.add('hidden');
-                        return;
-                    }
-
-                    if (container.parentNode !== document.body) {
-                        document.body.appendChild(container);
-                    }
-
-                    const inputEl = document.getElementById('find-filter-brand');
-                    if (inputEl) {
-                        const rect = inputEl.getBoundingClientRect();
-                        container.style.position = 'fixed';
-                        container.style.left = rect.left + 'px';
-                        container.style.top = (rect.bottom + 2) + 'px';
-                        container.style.width = rect.width + 'px';
-                        container.style.right = 'auto';
-                        container.style.zIndex = '99999';
-                    }
-
-                    container.innerHTML = matches.map(b => `
-                        <div data-cmd="FindEngine.selectBrandName" data-arg-0="${esc(b)}" class="p-1.5 bg-black/80 hover:bg-[var(--accent-blue)] hover:text-white cursor-pointer font-bold text-xs truncate border border-zinc-800">
-                            ${esc(b)}
-                        </div>
-                    `).join('');
-                    container.classList.remove('hidden');
+                    // The brand-suggestions box and brand filter input were
+                    // removed from the markup, so there is nothing to filter or
+                    // show. Kept as a named no-op because tools/facade-baseline.json
+                    // lists it and populateBrandSuggestions (live) shares
+                    // brandSuggestionsList.
+                    void query;
                 },
 
                 selectBrandName: function(brand) {
-                    const input = document.getElementById('find-filter-brand');
-                    const container = document.getElementById('find-brand-suggestions-box');
-                    if (input) input.value = brand;
-                    if (container) container.classList.add('hidden');
+                    void brand;
                 },
 
                 getDriveability: function(impedance, sensitivity) {
@@ -965,14 +919,8 @@
                 },
 
                 bindEvents: function() {
-                    const blindChk = document.getElementById('find-blind-mode');
-                    if (blindChk) {
-                        blindChk.addEventListener('change', () => {
-                            if (this._lastMatches) {
-                                this.renderMatches(this._lastMatches);
-                            }
-                        });
-                    }
+                    // (the Find blind-mode checkbox was removed from the markup;
+                    // this listener had no element to bind to)
 
                     document.addEventListener('click', (e) => {
                         const isDropdownClick = e.target.closest('[id^="menu-find-filter-"]') ||
@@ -1090,32 +1038,9 @@
                     if (this._activeSlotObserverStarted) return;
                     this._activeSlotObserverStarted = true;
 
-                    this._activeSlotIntervalId = setInterval(() => {
-                        if (document.hidden) return;
-                        // Skip work entirely when the Find tab isn't visible —
-                        // the next tick after returning corrects any stale state.
-                        const findPane = document.getElementById('pane-find');
-                        if (findPane && findPane.classList.contains('hidden')) return;
-                        const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
-                        const btn = document.getElementById('find-clone-btn');
-                        const row = document.getElementById('find-clone-actions-row');
-                        if (!btn || !row) return;
-
-                        if (baseCurve) {
-                            if (!this.isClonedModeActive) {
-                                btn.textContent = `📁 Detected: ${baseCurve.name}`;
-                                btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 text-[9px] font-bold text-stone-300 flex items-center justify-center px-2 truncate shadow-inner";
-                                row.classList.remove('hidden');
-                            }
-                        } else {
-                            if (this.isClonedModeActive) {
-                                this.deactivateEQBaseClone();
-                            }
-                            btn.textContent = "🔒 EQ Base Slot Empty";
-                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 text-[9px] font-black uppercase text-zinc-555 flex items-center justify-center gap-1.5 shadow-inner cursor-not-allowed";
-                            row.classList.add('hidden');
-                        }
-                    }, 500);
+                    // The EQ-base clone button/row that this interval drove were
+                    // removed from the markup, so the observer has nothing left
+                    // to sync; the 500 ms lookup-only timer is gone with them.
                 },
 
                 applyEQBaseClone: function() {
@@ -1126,29 +1051,12 @@
                     this.clonedTargetInterp = null;
                     this.resetSlidersToZero();
 
-                    const btn = document.getElementById('find-clone-btn');
-                    if (btn) {
-                        btn.textContent = `🟢 Active Clone: ${baseCurve.name}`;
-                        btn.className = "w-full h-7 bg-gradient-to-r from-emerald-600 to-teal-600 border border-emerald-500/40 text-[9px] font-black uppercase text-white flex items-center justify-center px-2 truncate shadow-md active-btn";
-                    }
                     this.drawTargetVisualization();
                     showToast(`Target locked to "${baseCurve.name}"!`, "💾");
                 },
 
                 deactivateEQBaseClone: function() {
                     this.isClonedModeActive = false;
-                    const btn = document.getElementById('find-clone-btn');
-                    const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
-
-                    if (btn) {
-                        if (baseCurve) {
-                            btn.textContent = `📁 Detected: ${baseCurve.name}`;
-                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 text-[9px] font-bold text-stone-300 flex items-center justify-center px-2 truncate shadow-inner";
-                        } else {
-                            btn.textContent = "🔒 EQ Base Slot Empty";
-                            btn.className = "w-full h-7 bg-zinc-950/40 border border-zinc-900/60 text-[9px] font-black uppercase text-zinc-555 flex items-center justify-center gap-1.5 shadow-inner cursor-not-allowed";
-                        }
-                    }
                     this.drawTargetVisualization();
                 },
 
@@ -1299,9 +1207,6 @@
                         if (overlay) overlay.classList.add('hidden');
                         this.isScanning = false;
 
-                        const details = document.getElementById('find-taste-details');
-                        if (details) details.open = false;
-
                         App.setFindSection('matches');
 
                         showToast(`Found ${deduplicatedMatches.length > 100 ? 100 : deduplicatedMatches.length} matches for your taste profile!`, "❤️");
@@ -1420,69 +1325,8 @@
                 },
 
                 drawTasteRadar: function() {
-                    const canvas = document.getElementById('find-taste-radar');
-                    if (!canvas) return;
-                    const w = canvas.clientWidth, h = canvas.clientHeight;
-                    // Cap the hidden-canvas retry chain: the Find pane can stay
-                    // at 0x0 indefinitely, and every caller (slider input, tab
-                    // switch) started its own unbounded 100 ms re-arm loop.
-                    if (w === 0 || h === 0) {
-                        const attempt = (arguments[0] || 0) + 1;
-                        if (attempt <= 20) setTimeout(() => this.drawTasteRadar(attempt), 100);
-                        return;
-                    }
-                    canvas.width = w; canvas.height = h;
-                    const ctx = canvas.getContext('2d');
-                    ctx.clearRect(0, 0, w, h);
-                    const sliders = [
-                        { id: 'find-bass', label: 'Bass' }, { id: 'find-sub', label: 'Sub' },
-                        { id: 'find-punch', label: 'Punch' }, { id: 'find-warm', label: 'Warmth' },
-                        { id: 'find-vocals', label: 'Vocals' }, { id: 'find-treble', label: 'Treble' },
-                        { id: 'find-smooth', label: 'Smooth' }
-                    ];
-                    const values = sliders.map(s => {
-                        const el = document.getElementById(s.id);
-                        return el ? (parseFloat(el.value) + 10) / 20 : 0.5;
-                    });
-                    const cx = w/2, cy = h/2, radius = Math.min(w,h)*0.35, step = (Math.PI*2)/sliders.length;
-                    ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
-                    for (let r=0.25; r<=1; r+=0.25) {
-                        ctx.beginPath();
-                        for (let i=0; i<=sliders.length; i++) {
-                            const a = step*i - Math.PI/2;
-                            const x = cx+Math.cos(a)*radius*r, y = cy+Math.sin(a)*radius*r;
-                            i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
-                        }
-                        ctx.closePath(); ctx.stroke();
-                    }
-                    for (let i=0; i<sliders.length; i++) {
-                        const a = step*i - Math.PI/2;
-                        ctx.beginPath(); ctx.moveTo(cx,cy);
-                        ctx.lineTo(cx+Math.cos(a)*radius, cy+Math.sin(a)*radius); ctx.stroke();
-                    }
-                    // Canvas2D cannot resolve CSS var() — resolve the theme
-                    // accent here, otherwise the polygon renders as a black
-                    // blob with a near-invisible outline.
-                    const docStyle = getComputedStyle(document.documentElement);
-                    const accentColor = (docStyle.getPropertyValue('--accent-blue') || '#6488b0').trim() || '#6488b0';
-                    const accentRgbRaw = (docStyle.getPropertyValue('--accent-blue-rgb') || '').trim();
-                    const accentRgb = /^\d{1,3},\s*\d{1,3},\s*\d{1,3}$/.test(accentRgbRaw) ? accentRgbRaw : '100,136,176';
-                    ctx.fillStyle = `rgba(${accentRgb}, 0.15)`;
-                    ctx.strokeStyle = accentColor; ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    for (let i=0; i<=sliders.length; i++) {
-                        const idx = i%sliders.length, a = step*idx - Math.PI/2;
-                        const r = radius*values[idx];
-                        const x = cx+Math.cos(a)*r, y = cy+Math.sin(a)*r;
-                        i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
-                    }
-                    ctx.closePath(); ctx.fill(); ctx.stroke();
-                    ctx.fillStyle = '#8e8e9c'; ctx.font = 'bold 8px system-ui, sans-serif';
-                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                    sliders.forEach((s,i) => {
-                        const a = step*i - Math.PI/2;
-                        ctx.fillText(s.label, cx+Math.cos(a)*(radius+16), cy+Math.sin(a)*(radius+16));
-                    });
+                    // (the Find taste radar canvas was removed from the markup;
+                    // this render is a no-op kept so its callers stay valid)
                 },
 
                 drawTargetVisualization: function() {
@@ -1621,7 +1465,10 @@
                 },
 
                 buildCanonicalProfiles: async function(dataset) {
-                    const groups = {};
+                    // Null-prototype map: a canonical name of "__proto__" (or
+                    // "constructor") would otherwise collide with Object.prototype
+                    // keys and corrupt grouping.
+                    const groups = Object.create(null);
                     const freqs = CurveUtils.generateLogGrid(100);
 
                     dataset.forEach(item => {
@@ -1632,7 +1479,9 @@
                         // the top when the Worker is unavailable.
                         if (!item.data || item.data.length < 2) return;
 
-                        const nameLower = item.name.toLowerCase();
+                        // Coerce: a non-string name (number/object from custom
+                        // imports) previously threw on .toLowerCase().
+                        const nameLower = String(item.name == null ? '' : item.name).toLowerCase();
 
                         const isImpedanceEntry = /[Ωω]|\b\d+\s*ohms?\b|\badapter\b|\bimpedance\b/i.test(nameLower);
 
@@ -1904,9 +1753,11 @@
                             // so reattach each match's data by id on the main thread.
                             // Without this, match cards lose their sparkline curves
                             // and genre matching falls back to defaults for every box.
+                            const itemById = new Map();
+                            items.forEach(i => { if (i && i.id != null) itemById.set(i.id, i); });
                             list.forEach(m => {
                                 if (m.data) return;
-                                const it = items.find(i => i && i.id === m.id);
+                                const it = itemById.get(m.id);
                                 if (it) m.data = it.data || null;
                             });
                             list.sort((a, b) => b.similarity - a.similarity);
@@ -2686,11 +2537,7 @@
                         }
                     });
 
-                    const stepperLabel = document.getElementById('find-right-tab-stepper-label');
-                    if (stepperLabel) {
-                        const info = this.rightTabModes.find(m => m.id === tabId) || this.rightTabModes[0];
-                        stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
-                    }
+                    // (the find right-tab stepper label was removed from the markup)
 
                     if (tabId === 'upgrade' && !this.selectedUpgradeBaseIemId) {
                         const baseCurve = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'base' && c.visible);
@@ -2806,6 +2653,11 @@
                 },
 
                 renderMatches: function(matches) {
+                    // Retain the complete list: applyGenreFilters is destructive,
+                    // so a later re-render (blind-mode toggle, pick change) must
+                    // start from the full set or filtered-out items are lost.
+                    this._lastRawMatches = matches;
+                    this._activeResultsKind = 'matches';
                     matches = this.applyGenreFilters(matches);
                     this._lastMatches = matches;
 
@@ -2830,7 +2682,7 @@
                         countText.className = 'text-[9.5px] font-black uppercase tracking-wider text-emerald-400';
                     }
 
-                    const isBlind = document.getElementById('find-blind-mode')?.checked;
+                    const isBlind = false; // (the Find blind-mode checkbox was removed)
                     const targetCurve = this.generateTargetCurve();
                     const freqs = CurveUtils.generateLogGrid(100);
                     const targetInterp = CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]);

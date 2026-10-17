@@ -137,11 +137,6 @@ const TestLab_SpatialMethods = {
         stopSpatialOrbit: function() {
             this.stopSpatialOrbitTimerOnly();
             this.spatialOrbitActive = false;
-            const btn = document.getElementById('spatial-orbit-btn');
-            if (btn) {
-                btn.className = "bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.12] text-stone-200 font-bold text-[10px] h-8 px-3 shadow-sm flex items-center justify-center";
-                btn.textContent = '🔄 Orbit: Off';
-            }
         },
 
         spatialDepthZ: -1.5,
@@ -953,6 +948,12 @@ loadSoundLibrary: async function() {
                     this.isDecoding = false;
                     showToast("Failed to decode audio file.", "⚠️");
                 });
+            };
+            reader.onerror = () => {
+                // A FileReader failure (unreadable/removed file) previously left
+                // isDecoding stuck true, permanently blocking later imports.
+                this.isDecoding = false;
+                showToast("Failed to read audio file.", "⚠️");
             };
             reader.readAsArrayBuffer(file);
         },

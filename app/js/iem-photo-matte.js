@@ -510,6 +510,9 @@ const IEM_PhotoMatteMethods = {
             const tag = t && t.tagName;
             if (t && (t.isContentEditable || tag === 'TEXTAREA' ||
                 (tag === 'INPUT' && t.type !== 'range' && t.type !== 'checkbox' && t.type !== 'button'))) return;
+            // Another handler already claimed this Ctrl+Z (e.g. the global undo
+            // stack): do not also run the photo-matte undo on the same keypress.
+            if (ev.defaultPrevented) return;
             ev.preventDefault();
             if (ev.shiftKey) self.redoPhotoMatteUI();
             else self.undoPhotoMatteUI();

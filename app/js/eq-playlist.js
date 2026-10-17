@@ -388,8 +388,6 @@ _retargetActiveArm: function(gain, tc = 0.05) {
                         if (infoText) infoText.textContent = `(${startIndex + 1}/${this.playlist.length}) ${track.name}`;
                         const mobInfoText = document.getElementById("mobile-track-info");
                         if (mobInfoText) mobInfoText.textContent = `(${startIndex + 1}/${this.playlist.length}) ${track.name}`;
-                        const modalInfoText = document.getElementById("modal-track-name");
-                        if (modalInfoText) modalInfoText.textContent = `(${startIndex + 1}/${this.playlist.length}) ${track.name}`;
                         this.updateMarquee();
 
                         // Boot the gapless standby with the second track so the
@@ -565,6 +563,18 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             if (oldGain) oldGain.gain.setTargetAtTime(0, now, tc);
             if (newGain) newGain.gain.setTargetAtTime(Math.max(0.05, Math.min(4, loudG)), now, tc);
 
+            // Snapshot the pre-commit position so a rejected play() can roll
+            // back instead of leaving playlistIndex / the active arm advanced
+            // for a track that never actually started. The commit below stays
+            // synchronous on purpose: the crossfade-guard in the play().then
+            // and the retirement timeout both read the swapped arm.
+            const prevCommit = {
+                playlistIndex: this.playlistIndex,
+                activeIsA: this._activeIsA,
+                standbyTrackIndex: this._standbyTrackIndex,
+                preloadedIndex: this._preloadedIndex
+            };
+
             standby.play().then(() => {
                 // A newer switch took over while play() was pending: this
                 // standby element is retired — kill playback and zero its
@@ -590,6 +600,12 @@ _retargetActiveArm: function(gain, tc = 0.05) {
                 if (oldGain) oldGain.gain.setTargetAtTime(1, now, 0.01);
                 if (newGain) newGain.gain.setTargetAtTime(0, now, 0.01);
                 this._transitioning = false;
+                // A newer switch already owns the position: never roll it back.
+                if (seq !== this._playSeq) return;
+                this.playlistIndex = prevCommit.playlistIndex;
+                this._activeIsA = prevCommit.activeIsA;
+                this._standbyTrackIndex = prevCommit.standbyTrackIndex;
+                this._preloadedIndex = prevCommit.preloadedIndex;
             });
 
             this.playlistIndex = index;
@@ -765,13 +781,11 @@ _applyGaplessButton: function() {
             this.playlistIndex = index;
             const infoText = document.getElementById("playlist-track-info");
             const mobInfoText = document.getElementById("mobile-track-info");
-            const modalInfoText = document.getElementById("modal-track-name");
             const track = this.playlist[index];
             const trackLabel = `(${index + 1}/${this.playlist.length}) ${track.name}`;
             
             if(infoText) infoText.textContent = trackLabel;
             if(mobInfoText) mobInfoText.textContent = trackLabel;
-            if(modalInfoText) modalInfoText.textContent = trackLabel;
             this.updateMarquee();
             
             this._targetTrackKey = this._deriveTrackKey(track);
@@ -898,8 +912,6 @@ _applyGaplessButton: function() {
             
             const infoText = document.getElementById("playlist-track-info");
             if (infoText) infoText.textContent = "No tracks Loaded";
-            const modalInfoText = document.getElementById("modal-track-name");
-            if (modalInfoText) modalInfoText.textContent = "No tracks Loaded";
             this.updateMarquee();
             
             const playBtn = document.getElementById("playlist-play-btn");
@@ -1008,8 +1020,6 @@ _applyGaplessButton: function() {
             if (btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
             const mobBtn = document.getElementById("mobile-play-btn");
             if (mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
-            const modalPlayBtn = document.getElementById('modal-play-btn');
-            if (modalPlayBtn) modalPlayBtn.innerHTML = "<span>▶</span><span>Play</span>";
             return wasPlaying;
         },
 
@@ -1040,8 +1050,6 @@ return;
                 console.warn('[Playlist] AudioContext resume failed:', err && err.message);
             }
             const btn = document.getElementById("playlist-play-btn");
-            const modalPlayBtn = document.getElementById('modal-play-btn');
-            
             const mobBtn = document.getElementById("mobile-play-btn");
             // Play/pause must be decided on the ACTIVE element — with gapless
             // or crossfade on, the B element (eq-audio-gapless) can be the one
@@ -1083,12 +1091,10 @@ return;
                         if (playPauseSeq !== this._pauseSeq) return;
                         if (btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
                         if (mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
-                        if (modalPlayBtn) modalPlayBtn.innerHTML = "<span>▶</span><span>Play</span>";
                     });
                 }
                 if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
                 if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
-                if(modalPlayBtn) modalPlayBtn.innerHTML = "<span>⏸</span><span>Pause</span>";
             } else {
                                 // Fade-out pause
                 this.fadeMusicVolume(0, 0.015);
@@ -1105,7 +1111,6 @@ return;
                 }, 80); // Wait 80ms for the fade-out to complete before pausing
                 if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
                 if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
-                if(modalPlayBtn) modalPlayBtn.innerHTML = "<span>▶</span><span>Play</span>";
             }
         },
 
@@ -1225,15 +1230,7 @@ this.fadeMusicVolume(vol, 0.015);
             const mobDisplay = document.getElementById("mobile-vol-display");
             if (mobDisplay) mobDisplay.textContent = `${val}%`;
 
-            // Sync visualizer pop-up controls immediately
-            const modalVolDisplay = document.getElementById("modal-vol-display");
-            if (modalVolDisplay) modalVolDisplay.textContent = `${val}%`;
-            const modalIcon = document.getElementById("modal-vol-icon");
-            if (modalIcon) {
-                if (vol === 0) modalIcon.textContent = "🔇";
-                else if (vol < 0.4) modalIcon.textContent = "🔈";
-                else modalIcon.textContent = "🔊";
-            }
+            // (the visualizer pop-up volume readouts were removed)
         },
 
                 toggleMute: function() {

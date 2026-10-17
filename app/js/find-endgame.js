@@ -230,12 +230,20 @@ const Find_EndgameMethods = {
 
                         let endgame = await this._runEndgameViaWorker(slim, maxPrice, freqs);
                         if (!endgame) {
-                            const cc = slim.filter(s => s.data).map(s => {
-                                const norm = CurveUtils.normalizeTo75dB(s.data, 500, 75);
+                            // The local fallback must group candidates the SAME way
+                            // the worker does (buildCanonicalProfiles), or the two
+                            // paths rank different sets: one entry per curve here
+                            // vs. one canonical profile per model there. Canonica-
+                            // lisation drops price/brand/tags, so reattach them
+                            // from the slim payload by id.
+                            const metaById = new Map();
+                            slim.forEach(s => { if (s && s.id != null) metaById.set(s.id, s); });
+                            const canonical = await this.buildCanonicalProfiles(slim.filter(s => s.data));
+                            const cc = canonical.map(c => {
+                                const meta = metaById.get(c.id) || {};
                                 return {
-                                    id: s.id, name: s.name,
-                                    interp: CurveUtils.cubicSplineInterpolate(norm, freqs),
-                                    price: s.price, brand: s.brand, tags: s.tags
+                                    id: c.id, name: c.name, interp: c.interp,
+                                    price: meta.price, brand: meta.brand, tags: meta.tags
                                 };
                             });
                             endgame = this._scoreEndgameCategoriesLocal(cc, freqs, maxPrice);
@@ -280,6 +288,7 @@ const Find_EndgameMethods = {
                 },
 
                 renderEndgameResults: function(endgame) {
+                    this._activeResultsKind = 'endgame';
                     const grid = document.getElementById('find-matches-grid');
                     const emptyState = document.getElementById('find-empty-state');
                     if (!grid) return;

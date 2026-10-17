@@ -29,8 +29,14 @@ const App_Theme = {
 
     setGlobalTheme: function(themeId) {
         try {
-            const t = (this.themeMap && this.themeMap[themeId]) ? this.themeMap[themeId] : this._defaultThemeEntry();
-            this.currentTheme = this.themeMap[themeId] ? themeId : 'slate';
+            // Resolve the id once: an unknown/stale stored id falls back to
+            // 'slate'. Persisting and class-naming the raw id made an unknown
+            // theme permanent (the bad id was saved back, and the
+            // 'theme-<id>' class never matched a real token block).
+            const hasTheme = !!(this.themeMap && this.themeMap[themeId]);
+            const resolvedId = hasTheme ? themeId : 'slate';
+            const t = hasTheme ? this.themeMap[themeId] : this._defaultThemeEntry();
+            this.currentTheme = resolvedId;
 
             const root = document.documentElement;
 
@@ -45,7 +51,7 @@ const App_Theme = {
             // (or a future grid-pattern hook) relies on could be silently
             // destroyed by a theme switch - which is a class of bug that shows
             // up as "the theme only half applied".
-            const wanted = 'theme-' + themeId;
+            const wanted = 'theme-' + resolvedId;
             Array.from(root.classList)
                 .filter(c => c.startsWith('theme-') && c !== wanted)
                 .forEach(c => root.classList.remove(c));
@@ -54,9 +60,6 @@ const App_Theme = {
             const accentColor = t.accent || (t.variables && t.variables['--accent-blue']) || '#787878';
             const rgbStr = (typeof PEQDB_Module !== 'undefined' && PEQDB_Module.hexToRgb) ? PEQDB_Module.hexToRgb(accentColor) : '120, 120, 120';
             root.style.setProperty('--accent-blue-rgb', rgbStr);
-
-            const expThemeSelector = document.getElementById('export-theme-selector');
-            if (expThemeSelector) expThemeSelector.value = themeId;
 
             const TABS = ['find', 'eq', 'testlab', 'iem', 'database', 'visualizer', 'settings'];
             const activeTabId = TABS.find(id => {
@@ -97,7 +100,7 @@ const App_Theme = {
             if (window.syncGlobalSliders) {
                 window.syncGlobalSliders();
             }
-            localStorage.setItem('settings_theme_id', themeId);
+            localStorage.setItem('settings_theme_id', resolvedId);
             if (typeof EQ_Module !== 'undefined') {
                 EQ_Module._vizThemeDirty = true;
             }

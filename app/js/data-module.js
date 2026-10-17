@@ -1293,7 +1293,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       case 'dl-gz': DataStore.downloadBlob('database.json.gz', await DataStore.gzipBytes(T.S.serialize()), 'application/gzip'); break;
       case 'pick-folder': try { await DataStore.pickFolder(); toast('Connected.', '📂'); T.ready = false; T.selUid = null; T.draft = null; T.load(); } catch (err) { if (err && err.name !== 'AbortError') toast(String(err.message || err), '⚠️'); } break;
       case 'reconnect-folder': if (await DataStore.reconnectFolder()) { T.ready = false; T.load(); } else toast('Permission was not granted.', '⚠️'); break;
-      case 'zip': { if (T.S.dirty || true) { const n = await DataStore.exportZip([{ name: 'database.json', data: T.S.serialize() }, { name: 'database.json.gz', data: await DataStore.gzipBytes(T.S.serialize()) }]); T.S.markSaved(); T.savedLen = T.S.undoStack.length; recomputeChanged(); toast('Downloaded ' + n + ' files.', '🗜️'); renderAll(); } break; }
+      case 'zip': { if (T.S.dirty) { const n = await DataStore.exportZip([{ name: 'database.json', data: T.S.serialize() }, { name: 'database.json.gz', data: await DataStore.gzipBytes(T.S.serialize()) }]); T.S.markSaved(); T.savedLen = T.S.undoStack.length; recomputeChanged(); toast('Downloaded ' + n + ' files.', '🗜️'); renderAll(); } break; }
     }
   }
   function onInput(e) {

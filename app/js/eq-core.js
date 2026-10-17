@@ -68,9 +68,11 @@ const EQ_Module = {
 
             for (const effect of this.customEffectsList) {
                 if (effect.file) {
-                    await this.injectScriptAsync(`./app/effects/${effect.file}`);
-
-                    this.vizModes.push(effect.id);
+                    const ok = await this.injectScriptAsync(`./app/effects/${effect.file}`);
+                    // injectScriptAsync resolves false (not rejects) when the
+                    // script is missing/corrupt; registering the mode anyway
+                    // left a menu entry that threw on every frame.
+                    if (ok) this.vizModes.push(effect.id);
                 }
             }
         } catch (e) {
@@ -127,17 +129,13 @@ const EQ_Module = {
         // intended to start advanced (reverted per audit: keep always-advanced
         // unless product confirms simple default). Keep compat helper separate.
         this.personalityMode = 'advanced';
-        const panelAdvanced = document.getElementById('panel-personality-advanced');
-        if (panelAdvanced) panelAdvanced.classList.remove('hidden');
-
-        const alignBtn = document.getElementById('btn-advanced-settings');
-        const tableContainer = document.getElementById('sculptor-advanced-table-container');
-
-        if (alignBtn && PEQDB_Module.targetMode !== 'sculptor') alignBtn.classList.remove('hidden');
+        // NB: the simple/advanced panel toggle, the advanced-settings button
+        // and the sculptor advanced table container were removed from the
+        // markup; personality is always 'advanced' and the table is rendered
+        // unconditionally by renderSculptMatrixTable below.
 
         if (PEQDB_Module.targetMode === 'sculptor') {
             PEQDB_Module.sculptMode = 'advanced';
-            if (tableContainer) tableContainer.classList.remove('hidden');
             PEQDB_Module.renderSculptMatrixTable();
         }
         this.drawCurve();
@@ -234,11 +232,7 @@ document.querySelectorAll('#acoustics-sub-tabs button').forEach(b => {
                 btn.setAttribute('aria-selected', 'true');
             }
 
-        const stepperLabel = document.getElementById('acoustics-sub-stepper-label');
-        if (stepperLabel) {
-            const info = this.acousticsSubModes.find(m => m.id === subTabId) || this.acousticsSubModes[0];
-            stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
-        }
+        // (the acoustics sub-tab stepper label was removed from the markup)
     },
 
     switchConsoleTab: function(tabId) {
@@ -481,11 +475,7 @@ vizModalActive: false,
                 }
             }
 
-            const stepperLabel = document.getElementById('eq-fader-stepper-label');
-            if (stepperLabel) {
-                const info = this.faderModes.find(m => m.id === tabId) || this.faderModes[0];
-                stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
-            }
+            // (the EQ fader stepper label was removed from the markup)
         },
 
                 enterTuningLab: function() {
@@ -521,12 +511,13 @@ vizModalActive: false,
                 });
             }
 
-            PEQDB_Module.targetMode = 'sculptor';
-            // Remember the pre-lab target mode: exitTuningLab previously left
-            // 'sculptor' set forever, which permanently disabled wheel zoom,
-            // background panning and dblclick-reset on the graph (all three
-            // gate on targetMode !== 'sculptor' in eq-graph-input.js).
+            // Remember the pre-lab target mode BEFORE switching to 'sculptor'.
+            // Reading targetMode after the assignment always saw 'sculptor',
+            // so exitTuningLab restored '' instead of the user's previous mode
+            // and left 'sculptor' semantics (disabled wheel zoom, panning and
+            // dblclick-reset in eq-graph-input.js) stuck after leaving the lab.
             PEQDB_Module._preLabTargetMode = (PEQDB_Module.targetMode && PEQDB_Module.targetMode !== 'sculptor') ? PEQDB_Module.targetMode : '';
+            PEQDB_Module.targetMode = 'sculptor';
             this.graphFocus = 'sculpt';
 
             const overlay = document.getElementById('graph-focus-selector');
@@ -572,13 +563,8 @@ vizModalActive: false,
                 editBtn.title = "Open Target Sculptor Lab";
             }
 
-            const hzSelector = document.getElementById('align-hz-selector');
-            const dbSelector = document.getElementById('align-db-selector');
-            if (hzSelector) hzSelector.style.pointerEvents = 'auto';
-            if (dbSelector) dbSelector.style.pointerEvents = 'auto';
-            if (hzSelector) hzSelector.style.opacity = '1';
-            if (dbSelector) dbSelector.style.opacity = '1';
-
+            // (the standalone align-hz / align-db selectors were removed from
+            // the markup; alignment is driven from the toolbar buttons)
             if (applyChanges) {
                 const activeTarget = PEQDB_Module.STATE.activeCurves.find(c => c.role === 'target');
                 if (activeTarget) {
@@ -1098,11 +1084,7 @@ switchCategory: function(catId) {
             try {
                 this.activePresetCategory = catId;
 
-                const stepperLabel = document.getElementById('preset-category-stepper-label');
-                if (stepperLabel && this.presetCategories) {
-                    const info = this.presetCategories.find(m => m.id === catId) || this.presetCategories[0];
-                    stepperLabel.innerHTML = `<span class="emoji-font vibrant-emoji text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none anim-toggle-pop">${info.emoji}</span> ${info.label}`;
-                }
+                // (the preset-category stepper label was removed from the markup)
 
                 const categoryContainers = document.querySelectorAll('#rc-panel-presets button');
                 categoryContainers.forEach(pill => {

@@ -247,13 +247,6 @@ window.updateExpandedAutoHide = function() {
             EQ_Module.hearingOffsets = offsets.map(v => (Number.isFinite(v) ? Math.max(0, Math.min(6, v)) : 0));
             EQ_Module.hearingCalEnabled = true;
 
-            const btn = document.getElementById('btn-hearing-cal');
-            const lbl = document.getElementById('lbl-hearing-cal');
-            if (btn && lbl) {
-                btn.classList.add('active-btn');
-                lbl.textContent = 'Hearing: ON';
-            }
-
             // Reflect the restored profile in the Test Lab panel state.
             const genBtn = document.getElementById('hearing-eq-generate-btn');
             if (genBtn) {
@@ -647,48 +640,8 @@ window.updateExpandedAutoHide = function() {
         },
 
         renderThemeToggles: function() {
-            try {
-                const container = document.getElementById('theme-toggles-container');
-                if (!container) return;
-                container.innerHTML = '';
-
-                const themes = [
-                    { id: 'slate', label: '🕹️ Slate', emoji: '🕹️' },
-                    { id: 'parchment', label: '📜 Parchment', emoji: '📜' },
-                    { id: 'ember', label: '🔴 Ember', emoji: '🔴' },
-                    { id: 'circuit', label: '🔵 Circuit', emoji: '🔵' },
-                    { id: 'byte', label: '📟 Byte', emoji: '📟' },
-                    { id: 'cartridge', label: '🟠 Cartridge', emoji: '🟠' },
-                    { id: 'arcade', label: '👾 Arcade', emoji: '👾' },
-                    { id: 'blush', label: '🌸 Blush', emoji: '🌸' },
-                    { id: 'bit', label: '🪙 Bit', emoji: '🪙' }
-                ];
-
-                themes.forEach(theme => {
-                    const isReady = !!(this.themeMap && this.themeMap[theme.id]);
-                    const btn = document.createElement('button');
-                    btn.id = 'theme-btn-' + theme.id;
-                    btn.className = 'theme-toggle-btn px-2.5 py-1.5 text-[10px] font-bold text-[var(--text-secondary)] hover:text-white border border-transparent transition-all duration-200 flex items-center justify-center gap-1.5 bg-zinc-950/40 hover:scale-[1.03] cursor-pointer';
-                    btn.innerHTML = `<span>${theme.emoji}</span> <span class="truncate">${theme.label.split(' ')[1]}</span>`;
-
-                    if (isReady) {
-                        btn.onclick = () => App.setGlobalTheme(theme.id);
-                        btn.addEventListener('click', function() {
-                            this.classList.add('pulse');
-                            setTimeout(() => this.classList.remove('pulse'), 200);
-                        });
-                    } else {
-                        btn.disabled = true;
-                        btn.classList.add('opacity-40', 'cursor-not-allowed');
-                        btn.title = 'Still loading theme data…';
-                        btn.onclick = () => showToast('Themes are still loading — try again in a moment.', '⏳');
-                    }
-
-                    container.appendChild(btn);
-                });
-            } catch (error) {
-                console.error("Theme toggles creation failed:", error);
-            }
+            // (the theme-toggles container was removed from the markup; theme
+            // selection now lives in the Settings theme grid)
         },
 
         cycleTheme: function() {
@@ -742,9 +695,6 @@ setGlobalTheme: function(themeId) {
                     (t.variables && t.variables['--accent-glow']) || ('rgba(' + rgbStr + ', 0.16)'));
                 root.style.setProperty('--accent-soft',
                     (t.variables && t.variables['--accent-soft']) || ('rgba(' + rgbStr + ', 0.08)'));
-
-                const expThemeSelector = document.getElementById('export-theme-selector');
-                if (expThemeSelector) expThemeSelector.value = themeId;
 
             ['find', 'eq', 'testlab', 'iem', 'database', 'visualizer', 'settings'].forEach(id => {
                 const b = document.getElementById(`tab-${id}-btn`);
@@ -2143,7 +2093,10 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
         wayOptions: ['UNK', '1W', '2W', '3W', '4W', '5W', '6W+'],
         cycleCrossover: function() {
             this.crossoverOverride = true;
-            const curIdx = this.crossoverOptions.indexOf(this.currentCrossover);
+            // indexOf is -1 for a legacy/unknown current value; normalise to a
+            // known start index so the cycle advances from a defined position.
+            let curIdx = this.crossoverOptions.indexOf(this.currentCrossover);
+            if (curIdx === -1) curIdx = 0;
             const nextIdx = (curIdx + 1) % this.crossoverOptions.length;
             this.currentCrossover = this.crossoverOptions[nextIdx];
             this.updateCrossoverButtonsUI();
@@ -2151,7 +2104,8 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
         },
         cycleWay: function() {
             this.wayOverride = true;
-            const curIdx = this.wayOptions.indexOf(this.currentWay);
+            let curIdx = this.wayOptions.indexOf(this.currentWay);
+            if (curIdx === -1) curIdx = 0;
             const nextIdx = (curIdx + 1) % this.wayOptions.length;
             this.currentWay = this.wayOptions[nextIdx];
             this.updateWayButtonsUI();
@@ -2228,12 +2182,6 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
         ],
 
         init: function() {
-
-         if (document.getElementById('tonality-tags')) {
-             this.createTags('tonality-tags', this.tonalityTags, this.selectedTags);
-             this.createTags('genre-tags', this.genreTags, this.selectedGenres);
-             this.createTags('bass-tags', this.bassTags, this.selectedBass);
-         }
             this.initGauges();
             this.updateSensUnitUI();
 
@@ -2540,6 +2488,9 @@ label: function(context) {
 
         cycleReviewTag: function(dir) {
             const total = this.allReviewTags.length;
+            // Guard the empty registry: without tags `% 0` is NaN, which then
+            // poisoned currentReviewTagIndex and the preview label.
+            if (!total) return;
             this.currentReviewTagIndex = (this.currentReviewTagIndex + dir + total) % total;
             this.updateReviewTagPreviewLabel();
         },
@@ -2568,16 +2519,12 @@ label: function(context) {
             const totalSelected = this.selectedTags.size + this.selectedGenres.size + this.selectedBass.size;
             if (totalSelected >= 4) {
                 showToast("Limit: Maximum 4 signature tags allowed.", "⚠️");
-                const sel = document.getElementById('review-tag-select');
-                if (sel) sel.value = '';
                 return;
             }
 
             this.selectedTags.add(tagName);
 
             this.renderReviewSelectedTags();
-            const sel = document.getElementById('review-tag-select');
-            if (sel) sel.value = '';
             this.updateAll();
         },
         removeReviewTag: function(tagName) {
@@ -2875,50 +2822,11 @@ label: function(context) {
             this.updateDriverSummary();
         },
         toggleCustomTagMenu: function() {
-            const menu = document.getElementById('menu-review-tag');
-            if (menu) menu.classList.toggle('hidden');
+            // (the review tag menu was removed from the markup)
         },
 
         renderReviewTagMenuOptions: function() {
-            const menu = document.getElementById('menu-review-tag');
-            if (!menu) return;
-            menu.innerHTML = '';
-
-            const groups = [
-                { label: 'Tonality', tags: this.tonalityTags.map(t => t.name) },
-                { label: 'Bass', tags: this.bassTags.map(t => t.name) },
-                { label: 'Genres', tags: this.genreTags.map(t => t.name) }
-            ];
-
-            groups.forEach(g => {
-                const header = document.createElement('div');
-                header.className = "text-[9px] font-black uppercase text-amber-400 px-2 py-1 bg-black/40 border-y border-black mt-1";
-                header.textContent = `--- ${g.label} ---`;
-                menu.appendChild(header);
-
-                g.tags.forEach(tag => {
-                    const match = tag.match(/^(\p{Extended_Pictographic}+(?:\uFE0F|\uFE0E)?)/u);
-                    let emoji = "🏷️";
-                    let text = tag;
-                    if (match) {
-                        emoji = match[1];
-                        text = tag.slice(emoji.length).trim();
-                    }
-                    const animClass = FindEngine.getTagAnimationClass ? FindEngine.getTagAnimationClass(text) : 'anim-match-float';
-
-                    const div = document.createElement('div');
-                    div.className = "px-2 py-1.5 hover:bg-[var(--bg-card)] hover:text-[var(--accent-blue)] cursor-pointer flex items-center gap-2 font-bold group transition-all text-xs";
-                    div.onclick = () => {
-                        IEM.addReviewTagFromSelect(tag);
-                        IEM.toggleCustomTagMenu();
-                    };
-                    div.innerHTML = `
-                        <span class="emoji-font vibrant-emoji ${animClass} text-lg flex-shrink-0 leading-none inline-block">${emoji}</span>
-                        <span>${text}</span>
-                    `;
-                    menu.appendChild(div);
-                });
-            });
+            // (the review tag menu was removed from the markup)
         },
 
         updateDriverSummary: function() {
@@ -3344,8 +3252,6 @@ if(this.radarChart) {
                 EQ_Module.hearingCalEnabled = false;
                 EQ_Module.hearingOffsets = [0, 0, 0, 0, 0, 0, 0, 0];
                 if (EQ_Module.applyHearingCalibrationGains) EQ_Module.applyHearingCalibrationGains();
-                const lbl = document.getElementById('lbl-hearing-cal');
-                if (lbl) lbl.textContent = 'Hearing: Off';
             }
             localStorage.removeItem('settings_hearing_offsets');
 

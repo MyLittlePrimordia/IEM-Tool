@@ -85,8 +85,10 @@ var Mascot = window.Mascot || {
                 hearing_test: '🧐'
         },
 
-        setExpression: function(expr) {
-            if (this.currentExpression === expr) return;
+        setExpression: function(expr, force) {
+            // `force` re-applies the glyph even when the expression name is
+            // unchanged (e.g. the seasonal idle art rolled over).
+            if (this.currentExpression === expr && !force) return;
             const el = document.getElementById('brand-icon-emoji');
             if (!el) return;
 
@@ -566,9 +568,11 @@ var Mascot = window.Mascot || {
                 this.setExpression('vibing');
             }
         } else {
-
+            // setExpression no-ops when the expression is unchanged, so force a
+            // refresh here: otherwise a seasonal/holiday idle rollover keeps
+            // showing the previous art until some other expression intervenes.
             this.expressions.idle = this.getSeasonalExpression();
-            this.setExpression('idle');
+            this.setExpression('idle', true);
         }
     }
 };

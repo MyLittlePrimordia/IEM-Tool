@@ -62,14 +62,21 @@ const DataStore = (function () {
   async function gzipBytes(text) {
     const cs = new CompressionStream('gzip');
     const w = cs.writable.getWriter();
-    w.write(enc.encode(text)); w.close();
-    return new Uint8Array(await new Response(cs.readable).arrayBuffer());
+    // Consume the readable concurrently so a large payload cannot fill the
+    // stream buffer and deadlock, then await the writer so a write failure
+    // surfaces here instead of as an unhandled rejection.
+    const written = w.write(enc.encode(text)).then(() => w.close());
+    const buf = await new Response(cs.readable).arrayBuffer();
+    await written;
+    return new Uint8Array(buf);
   }
   async function gunzipText(buf) {
     const ds = new DecompressionStream('gzip');
     const w = ds.writable.getWriter();
-    w.write(buf); w.close();
-    return await new Response(ds.readable).text();
+    const written = w.write(buf).then(() => w.close());
+    const text = await new Response(ds.readable).text();
+    await written;
+    return text;
   }
   function safeRel(rel) {
     if (typeof rel !== 'string') return null;

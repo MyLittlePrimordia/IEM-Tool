@@ -13,4 +13,15 @@ tools/shots*/
 /npm
 /1536
 app/js/_snippet.txt
+
+# Generated build output (scripts/build-bundle.mjs). Rebuilt by `npm start`
+# (prestart) and by package:prepare before every dist build, so it does not
+# belong in git.
+app/js/app.bundle.js
+app/js/app.bundle.min.js
+
+# Python is not part of the build; the two scripts below are one-off migration
+# tools kept in the repo on purpose.
 *.py
+!scripts/generate_handlers.py
+!scripts/transform_csp.py

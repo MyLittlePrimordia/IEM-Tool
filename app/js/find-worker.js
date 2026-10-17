@@ -70,7 +70,9 @@ function scoreInterp(interp, targetInterp, freqs, weighted) {
 
 function buildCanonicalProfiles(dataset) {
     const CU = CurveUtils;
-    const groups = {};
+    // Null-prototype map: a canonical name of "__proto__" (or "constructor")
+    // would otherwise collide with Object.prototype keys and corrupt grouping.
+    const groups = Object.create(null);
     const freqs = CU.generateLogGrid(100);
 
     dataset.forEach(item => {
@@ -78,7 +80,9 @@ function buildCanonicalProfiles(dataset) {
         // and score as ideal — skip them instead of rewarding missing data.
         if (!item.data || item.data.length < 2) return;
 
-        const nameLower = item.name.toString().toLowerCase();
+        // Coerce: a non-string name (number/object from custom imports)
+        // previously threw on .toLowerCase(). Mirrors the main thread.
+        const nameLower = String(item.name == null ? '' : item.name).toLowerCase();
 
         const isImpedanceEntry = /[Ωω]|\b\d+\s*ohms?\b|\badapter\b|\bimpedance\b/i.test(nameLower);
 
@@ -205,105 +209,14 @@ function buildCanonicalProfiles(dataset) {
     return canonicalList;
 }
 
-function verifyGoalAcoustics(candInterp, baseInterp, freqs, goal) {
-    if (!candInterp || !baseInterp || !freqs) return { passed: false, reason: "Missing Curve Data" };
-
-    const getBandAvg = (interp, minHz, maxHz, offset) => {
-        let sum = 0, count = 0;
-        for (let i = 0; i < freqs.length; i++) {
-            if (freqs[i] >= minHz && freqs[i] <= maxHz) {
-                sum += (interp[i] + (offset || 0));
-                count++;
-            }
-        }
-        return count > 0 ? sum / count : 75;
-    };
-
-    const baseMid = getBandAvg(baseInterp, 400, 1000, 0);
-    const candMidRaw = getBandAvg(candInterp, 400, 1000, 0);
-    const alignOffset = baseMid - candMidRaw;
-
-    const candSubBass = getBandAvg(candInterp, 20, 80, alignOffset);
-    const baseSubBass = getBandAvg(baseInterp, 20, 80, 0);
-    const candMidrange = getBandAvg(candInterp, 400, 1000, alignOffset);
-    const candTreble = getBandAvg(candInterp, 10000, 16000, alignOffset);
-    const baseTreble = getBandAvg(baseInterp, 10000, 16000, 0);
-    const candPinna = getBandAvg(candInterp, 1500, 3500, alignOffset);
-
-    const candBassBoost = candSubBass - candMidrange;
-
-    if (goal === 'direct') {
-        // Level-fit first (mirror scoreInterp): a pure level offset is not
-        // a tuning difference. alignOffset already aligns 400-1000Hz mids.
-        let totalDiff = 0;
-        for (let i = 0; i < freqs.length; i++) totalDiff += Math.abs((candInterp[i] + alignOffset) - baseInterp[i]);
-        const mae = totalDiff / freqs.length;
-        const passed = (mae <= 2.8);
-        return { passed, reason: passed ? "High Tonal Match to Base IEM" : "Tuning Deviates From Base" };
-    } else if (goal === 'bass') {
-        const passed = (candBassBoost >= 6.5) || (candSubBass >= baseSubBass + 1.8);
-        return { passed, reason: passed ? "Measured +6.5dB Sub-Bass Shelf" : "Lacks Measured Sub-Bass Elevation" };
-    } else if (goal === 'detail') {
-        const passed = (candTreble >= baseTreble + 1.0) && (candPinna >= candMidrange + 3.5);
-        return { passed, reason: passed ? "Measured High-Treble Extension" : "Treble Air Rolled Off" };
-    } else if (goal === 'vocal') {
-        const pinnaGain = candPinna - candMidrange;
-        const passed = (pinnaGain >= 5.5 && pinnaGain <= 11.5);
-        return { passed, reason: passed ? "Measured Smooth Vocal Pinna Gain" : "Pinna Gain Too Flat or Harsh" };
-    } else if (goal === 'stage') {
-        const passed = (candTreble >= baseTreble - 1.0) && (candPinna >= candMidrange + 2.5);
-        return { passed, reason: passed ? "Measured Spatial Air & Pinna Balance" : "Narrow High-Frequency Energy" };
-    } else if (goal === 'refine') {
-        let totalDiff = 0;
-        for (let i = 0; i < freqs.length; i++) totalDiff += Math.abs((candInterp[i] + alignOffset) - baseInterp[i]);
-        const mae = totalDiff / freqs.length;
-        const passed = (mae <= 2.2);
-        return { passed, reason: passed ? "High Tonal Shape Continuity" : "Tonal Shape Deviates Too Far" };
-    } else if (goal === 'gaming') {
-        const passed = (candBassBoost >= 3.0) && (candPinna >= candMidrange + 2.5);
-        return { passed, reason: passed ? "Measured Footstep Bass & Pinna Presence" : "Lacks Gaming-Relevant Bass or Presence" };
-    } else if (goal === 'tech') {
-        const passed = (candTreble >= baseTreble + 0.5) && (candPinna >= candMidrange + 3.0);
-        return { passed, reason: passed ? "Measured Technical Treble Extension" : "Technical Treble Too Reserved" };
-    }
-
-    return { passed: false, reason: "No Acoustic Criteria For This Goal" };
-}
-
-function hasGoalTag(tags, goal) {
-    if (!tags || !Array.isArray(tags)) return false;
-    const tagStr = tags.join(' ').toLowerCase();
-    if (goal === 'direct') return /balanced|smooth|reference|neutral|all-rounder|studio-monitoring/i.test(tagStr);
-    if (goal === 'bass') return /basshead|sub-bass|punchy|u-shaped/i.test(tagStr);
-    if (goal === 'detail') return /detailed|resolving|technical|analytical|treble-head|studio-monitoring/i.test(tagStr);
-    if (goal === 'gaming') return /gaming|competitive|imaging|stage/i.test(tagStr);
-    if (goal === 'vocal') return /vocal|smooth|warm|mid/i.test(tagStr);
-    if (goal === 'stage') return /wide-stage|good-imaging|3d/i.test(tagStr);
-    if (goal === 'refine') return /balanced|smooth|reference|neutral|studio-monitoring/i.test(tagStr);
-    return false;
-}
-
-function buildUpgradeInterpList(items, freqs) {
-    const list = [];
-    for (let i = 0; i < items.length; i++) {
-        const it = items[i];
-        const data = it && it.data;
-        const tags = (it && Array.isArray(it.tags)) ? it.tags : [];
-        if (!data || data.length < 2) {
-            list.push({ id: it && it.id, hasData: false, tags: tags });
-            continue;
-        }
-        const norm = CurveUtils.normalizeTo75dB(data, 500, 75);
-        const interp = CurveUtils.cubicSplineInterpolate(norm, freqs);
-        list.push({ id: it && it.id, hasData: true, tags: tags, interp: Array.from(interp) });
-    }
-    return list;
-}
-
+// NOTE: the dead 'prime' and 'upgrade' worker branches (and the helpers that
+// only they used: verifyGoalAcoustics / hasGoalTag / buildUpgradeInterpList)
+// were removed. The main thread only ever posts 'tuning' and 'endgame'
+// (upgrade is scored locally in find-upgrade.js), so the worker-side upgrade
+// scorer was unreachable and its hasGoalTag had silently drifted from the
+// main-thread copy — a single source of truth now lives on the main thread.
 let canonicalKey = null;
 let canonicalList = null;
-let upgradeCacheKey = null;
-let upgradeInterpList = null;
 
 function itemsKey(list) {
     let s = list.length + '|';
@@ -462,18 +375,6 @@ self.onmessage = function (e) {
     // worker and both listeners observe every message).
     const reqId = msg.reqId;
     try {
-        if (msg.type === 'prime') {
-            // Prime: build the canonical profiles from the full payload and
-            // cache them under msg.sig. Follow-up tuning messages with the
-            // same sig skip both the rebuild and the payload transfer, so
-            // repeated scans don't re-clone ~20MB of curve data.
-            if (msg.dataset && Array.isArray(msg.dataset)) {
-                canonicalList = buildCanonicalProfiles(msg.dataset);
-                canonicalKey = (msg.sig !== undefined && msg.sig !== null) ? msg.sig : itemsKey(msg.dataset);
-            }
-            self.postMessage({ type: 'primed', ok: true, reqId: reqId });
-            return;
-        }
         if (msg.type === 'tuning') {
             const freqs = msg.freqs || CurveUtils.generateLogGrid(100);
             const targetInterp = msg.targetInterp || null;
@@ -517,60 +418,6 @@ self.onmessage = function (e) {
                     similarity: matchPct,
                     interp: iem.interp,
                     isTuningMatch: true
-                });
-            }
-
-            self.postMessage({ type: 'result', ok: true, matches: returnList, reqId: reqId });
-        } else if (msg.type === 'upgrade') {
-            const items = msg.items || [];
-            const freqs = msg.freqs || CurveUtils.generateLogGrid(100);
-            const baseInterp = msg.baseInterp || null;
-            const goal = msg.goal || 'direct';
-
-            if (!baseInterp) {
-                self.postMessage({ type: 'result', ok: false, error: 'no baseInterp', reqId: reqId });
-                return;
-            }
-
-            // Memoize the per-item interpolation pass (normalize + spline is
-            // the expensive part). The final score depends on baseInterp/goal,
-            // which change per run, so cache the interp list keyed by the
-            // item-set signature + frequency grid — repeated scans over the
-            // same set don't re-clone or re-spline anything.
-            const sig = (msg.sig !== undefined && msg.sig !== null) ? msg.sig : itemsKey(items);
-            const freqsSig = (freqs && freqs.length) ? freqs.length + '|' + freqs[0] + '|' + freqs[freqs.length - 1] : 'default';
-            const cacheKey = sig + '|' + freqsSig;
-            let interpList;
-            if (cacheKey === upgradeCacheKey && upgradeInterpList) {
-                interpList = upgradeInterpList;
-            } else {
-                // No memoized list: either the set changed (worker expects
-                // items to rebuild) or the worker lost its cache (reply with
-                // reprime so the main thread re-sends the full payload).
-                if (!items || items.length === 0) {
-                    self.postMessage({ type: 'result', ok: false, error: 'no items for rebuild', reprime: true, reqId: reqId });
-                    return;
-                }
-                interpList = buildUpgradeInterpList(items, freqs);
-                upgradeInterpList = interpList;
-                upgradeCacheKey = cacheKey;
-            }
-
-            const returnList = [];
-            for (let i = 0; i < interpList.length; i++) {
-                const c = interpList[i];
-                if (!c.hasData) {
-                    returnList.push({ id: c.id, tonalMatch: 0, acousticPassed: false, acousticReason: "Missing Curve Data", matchedTag: false });
-                    continue;
-                }
-                const tonalMatch = scoreInterp(c.interp, baseInterp, freqs, true);
-                const acoustic = verifyGoalAcoustics(c.interp, baseInterp, freqs, goal);
-                returnList.push({
-                    id: c.id,
-                    tonalMatch: tonalMatch,
-                    acousticPassed: !!acoustic.passed,
-                    acousticReason: acoustic.reason || "",
-                    matchedTag: hasGoalTag(c.tags, goal)
                 });
             }
 

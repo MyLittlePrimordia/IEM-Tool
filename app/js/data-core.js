@@ -124,6 +124,13 @@ const DataCore = (function () {
     'Analytical|Warm': 'remove "Analytical" if warm/bassy, or "Warm" if lean/clinical',
     'Basshead|Treblehead': 'keep the defining signature tag'
   };
+  // The subset of tag conflicts with a *deterministic* resolution: the tag that
+  // must be removed. The other rows depend on the measured frequency response
+  // ("keep the dominant treble character"), so they are reported with guidance
+  // but intentionally carry no auto-fix.
+  const TAG_CONFLICT_DROP_TAG = {
+    'V-Shaped|Vocal-Focused': 'Vocal-Focused'
+  };
   const PRIMARY_TONALITY_RESOLUTION = 'at most one primary tonal profile is allowed; keep the one the measurement curves support';
   const MIN_TAGS = 4;
   const MAX_TAGS = 12;
@@ -503,7 +510,8 @@ const DataCore = (function () {
     tagConflicts(new Set(tags.map(String))).forEach(pair => {
       const c = 'Conflicting tags: ' + pair.join(' + ');
       const r = tagConflictResolution(pair);
-      errors.push(c);
+      // Include the documented resolution instead of discarding it.
+      errors.push(r ? c + ' — ' + r : c);
     });
     const tiers = tags.filter(t => PRICE_TIER_TAGS.indexOf(t) >= 0);
     if (tiers.length !== 1) errors.push('Needs exactly one price-tier tag.');
@@ -1165,7 +1173,17 @@ const DataCore = (function () {
       tagConflicts(new Set(tags.map(String))).forEach(pair => {
         const c = 'Conflicting tags: ' + pair.join(' + ');
         const r = tagConflictResolution(pair);
-        issues.push(makeIssue('Tag Conflict', idx, eid, c, { severity: 'error' }));
+        // Surface the documented resolution (it used to be computed and thrown
+        // away) and attach an auto-fix when the resolution is deterministic.
+        const msg = r ? c + ' — ' + r : c;
+        const dropTag = TAG_CONFLICT_DROP_TAG[pair.slice().sort().join('|')];
+        const opts = { severity: 'error' };
+        if (dropTag) {
+          opts.fix = makeFix(entry, realId || eid, idx, en => {
+            en.tags = (Array.isArray(en.tags) ? en.tags : []).filter(t => t !== dropTag);
+          });
+        }
+        issues.push(makeIssue('Tag Conflict', idx, eid, msg, opts));
       });
       if (tags.length < MIN_TAGS) issues.push(makeIssue('Tag Count', idx, eid, 'Only ' + tags.length + ' tags (min ' + MIN_TAGS + ').', { severity: 'error' }));
       if (tags.length > MAX_TAGS) issues.push(makeIssue('Tag Count', idx, eid, tags.length + ' tags (max ' + MAX_TAGS + ').', { severity: 'error' }));

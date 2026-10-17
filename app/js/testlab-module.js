@@ -15,7 +15,14 @@
             this.switchLeftTab(this.leftTabModes[nextIdx].id);
         },
         switchLeftTab: function(tabId) {
+            const prevTab = this.activeLeftTab;
             this.activeLeftTab = tabId;
+            // Leaving one subtab must silence the outgoing test's generator: a
+            // resonance sweep / channel tone otherwise kept playing under the
+            // now-hidden panel. stopAll preserves an in-progress burn-in (its
+            // preserveBurnin flag) exactly like App.switchTab, so a long run
+            // survives; it only runs on an actual tab change.
+            if (prevTab !== tabId) this.stopAll(true, this.burninActive);
             ['resonance', 'balance', 'burnin'].forEach(id => {
                 const panel = document.getElementById('tl-left-panel-' + id);
                 const btn = document.getElementById('tl-left-tab-' + id);
@@ -52,7 +59,12 @@
             this.switchRightTab(this.rightTabModes[nextIdx].id);
         },
         switchRightTab: function(tabId) {
+            const prevTab = this.activeRightTab;
             this.activeRightTab = tabId;
+            // See switchLeftTab: stop the outgoing tab's tone/AB/hearing audio
+            // (burn-in is preserved) instead of letting it bleed under the
+            // hidden panel.
+            if (prevTab !== tabId) this.stopAll(true, this.burninActive);
             ['tone', 'ab', 'hearing'].forEach(id => {
                 const panel = document.getElementById('tl-right-panel-' + id);
                 const btn = document.getElementById('tl-right-tab-' + id);
@@ -614,12 +626,6 @@ toggleChannelSwap: function() {
             }
 
             EQ_Module.resonanceCalEnabled = true;
-            const calBtn = document.getElementById('btn-resonance-cal');
-            const calLbl = document.getElementById('lbl-resonance-cal');
-            if (calBtn && calLbl) {
-                calBtn.classList.add('active-btn');
-                calLbl.textContent = 'Resonance: ON';
-            }
 
             const fInput = document.getElementById("eq-f8");
             const sSlider = document.getElementById("eq-s8");
@@ -698,8 +704,6 @@ toggleChannelSwap: function() {
             const scanBtn = document.getElementById('resonance-scan-btn');
             const lockBtn = document.getElementById('resonance-lock-btn');
             const readout = document.getElementById('resonance-lock-hz');
-            const calBtn = document.getElementById('btn-resonance-cal');
-            const calLbl = document.getElementById('lbl-resonance-cal');
             const needle = document.getElementById('resonance-gauge-needle');
 
             if (needle) {
@@ -721,9 +725,6 @@ toggleChannelSwap: function() {
                 readout.textContent = '8,000 Hz';
                 readout.className = "text-xs font-mono font-black text-sky-400 bg-sky-950/30 px-2 py-0.5 border border-sky-900/30";
             }
-            if (calBtn) calBtn.classList.remove('active-btn');
-            if (calLbl) calLbl.textContent = 'Resonance: Off';
-
             const b = EQ_Module.bands[8];
             const fInput = document.getElementById("eq-f8");
             const sSlider = document.getElementById("eq-s8");

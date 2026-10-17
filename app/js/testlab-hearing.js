@@ -420,8 +420,6 @@ const TestLab_HearingMethods = {
             const status = document.getElementById('hearing-test-status');
             const hzDisp = document.getElementById('hearing-test-hz');
             const volSlider = document.getElementById('hearing-test-vol');
-            const calBtn = document.getElementById('btn-hearing-cal');
-            const calLbl = document.getElementById('lbl-hearing-cal');
             const generateBtn = document.getElementById('hearing-eq-generate-btn');
             const notHeardBtn = document.getElementById('hearing-not-heard-btn');
 
@@ -432,8 +430,6 @@ const TestLab_HearingMethods = {
             if (volSlider) volSlider.value = 50;
             const calVal = document.getElementById('hearing-cal-val');
             if (calVal) calVal.textContent = '50%';
-            if (calBtn) calBtn.classList.remove('active-btn');
-            if (calLbl) calLbl.textContent = 'Hearing: Off';
             this._updateHearingTestUI({
                 progress: 0,
                 showSlider: true,
@@ -483,13 +479,6 @@ const TestLab_HearingMethods = {
 
             EQ_Module.hearingOffsets = offsets;
             EQ_Module.hearingCalEnabled = true;
-
-            const btn = document.getElementById('btn-hearing-cal');
-            const lbl = document.getElementById('lbl-hearing-cal');
-            if (btn && lbl) {
-                btn.classList.add('active-btn');
-                lbl.textContent = 'Hearing: ON';
-            }
 
             const generateBtn = document.getElementById('hearing-eq-generate-btn');
             if (generateBtn) {
