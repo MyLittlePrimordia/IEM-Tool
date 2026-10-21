@@ -9649,7 +9649,7 @@
     "brand": "Astell & Kern",
     "model": "Stella",
     "variant": "",
-    "year": 2026,
+    "year": 2025,
     "price_usd": 3900,
     "driver_type": "Tribrid",
     "driver_config": "1DD+5BA+2Planar+4EST",
@@ -9658,14 +9658,14 @@
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Flagship",
-      "Collab",
-      "Reference",
       "Balanced",
+      "Collab",
+      "Detailed",
+      "Reference",
       "Resolving",
       "Technical",
-      "Detailed",
-      "Wide-Stage"
+      "Wide-Stage",
+      "Flagship"
     ],
     "files": [
       "data/ELISE AUDIO/ASTELL KERN X VOLK STELLA.txt"
@@ -13348,7 +13348,7 @@
     "model": "ATH-R70x",
     "variant": "a",
     "year": 2025,
-    "price_usd": 380,
+    "price_usd": 350,
     "driver_type": "DD",
     "driver_config": "1DD",
     "impedance": 470,
@@ -18964,9 +18964,9 @@
     ]
   },
   {
-    "id": "binary_acoustics_ep321",
+    "id": "binary_acoustics_ep321_mems",
     "brand": "Binary Acoustics",
-    "model": "EP321",
+    "model": "EP321 MEMS",
     "variant": "",
     "year": 2025,
     "price_usd": 310,
@@ -18977,11 +18977,11 @@
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Mid-Tier",
       "Balanced",
-      "Smooth",
       "Detailed",
-      "Technical"
+      "Smooth",
+      "Technical",
+      "Mid-Tier"
     ],
     "files": [
       "data/AUDIOAMIGO/BINARY EP321.txt",
@@ -20317,7 +20317,7 @@
     "model": "QuietComfort Ultra",
     "variant": "2",
     "year": 2025,
-    "price_usd": 430,
+    "price_usd": 450,
     "driver_type": "DD",
     "driver_config": "1DD",
     "impedance": 32,
@@ -29987,6 +29987,58 @@
     ],
     "files": [
       "data/AUDIOAMIGO/DDHIFI MEMORY.txt"
+    ]
+  },
+  {
+    "id": "ddhifi_memory_al_4_4",
+    "brand": "ddHiFi",
+    "model": "Memory",
+    "variant": "AL 4.4",
+    "year": 2026,
+    "price_usd": 160,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 16,
+    "sensitivity": 121,
+    "connector": "Fixed Cable",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Collab",
+      "Detailed",
+      "Resolving",
+      "Smooth",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/TONEDEAFMONK/DDHIFI MEMORY AL 4.txt"
+    ]
+  },
+  {
+    "id": "ddhifi_memory_pd_4_4",
+    "brand": "ddHiFi",
+    "model": "Memory",
+    "variant": "PD 4.4",
+    "year": 2026,
+    "price_usd": 190,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 16,
+    "sensitivity": 121,
+    "connector": "Fixed Cable",
+    "form_factor": "IEM",
+    "tags": [
+      "Balanced",
+      "Collab",
+      "Detailed",
+      "Good-Imaging",
+      "Resolving",
+      "Smooth",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/TONEDEAFMONK/DDHIFI MEMORY PD 4.txt"
     ]
   },
   {
@@ -62573,19 +62625,21 @@
     "brand": "Kinera",
     "model": "Frigg",
     "variant": "",
-    "year": 2024,
-    "price_usd": 500,
+    "year": 2026,
+    "price_usd": 1100,
     "driver_type": "Hybrid",
     "driver_config": "2DD+4EST",
-    "impedance": 22,
-    "sensitivity": 105,
+    "impedance": 32,
+    "sensitivity": 100,
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Balanced",
-      "Good-Imaging",
       "Detailed",
-      "Premium"
+      "Premium",
+      "Resolving",
+      "Smooth",
+      "Warm",
+      "Wide-Stage"
     ],
     "files": [
       "data/DUCBLOKE/KINERA FRIGG DOWN.txt",
@@ -72388,7 +72442,7 @@
     "brand": "Mackie",
     "model": "MP-460",
     "variant": "",
-    "year": 2025,
+    "year": 2020,
     "price_usd": 500,
     "driver_type": "BA",
     "driver_config": "4BA",
@@ -73465,8 +73519,33 @@
     ]
   },
   {
-    "id": "meze_105_aer",
-    "brand": "Meze",
+    "id": "meze_audio_105_silva",
+    "brand": "Meze Audio",
+    "model": "105",
+    "variant": "Silva",
+    "year": 2025,
+    "price_usd": 500,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 42,
+    "sensitivity": 112,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Good-Imaging",
+      "Smooth",
+      "Warm",
+      "Wide-Stage",
+      "Premium"
+    ],
+    "files": [
+      "data/GADGETRY TECH/MEZE 105 SILVA.txt"
+    ]
+  },
+  {
+    "id": "meze_audio_105_aer",
+    "brand": "Meze Audio",
     "model": "105 AER",
     "variant": "",
     "year": 2024,
@@ -73491,8 +73570,8 @@
     ]
   },
   {
-    "id": "meze_109_pro",
-    "brand": "Meze",
+    "id": "meze_audio_109_pro",
+    "brand": "Meze Audio",
     "model": "109 Pro",
     "variant": "",
     "year": 2022,
@@ -73504,243 +73583,17 @@
     "connector": "Detachable Cable",
     "form_factor": "Over-Ear Headphones (Wired)",
     "tags": [
-      "Premium",
-      "Wide-Stage",
-      "Balanced",
-      "Good-Imaging",
-      "Detailed",
-      "Treblehead"
-    ],
-    "files": [
-      "data/KUULOKENURKKA/MEZE 109 PRO.txt",
-      "data/ORATORY1990/MEZE 109 PRO.txt",
-      "data/SUPER REVIEW/MEZE 109 PRO.txt"
-    ]
-  },
-  {
-    "id": "meze_99_classics",
-    "brand": "Meze",
-    "model": "99 Classics",
-    "variant": "",
-    "year": 2015,
-    "price_usd": 310,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 103,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Mid-Tier",
-      "Fun",
-      "Relaxed",
-      "Warm",
-      "Punchy Bass"
-    ],
-    "files": [
-      "data/AURICULARES ARGENTINA/MEZE 99 CLASSICS.txt",
-      "data/INNERFIDELITY/MEZE 99 CLASSICS.txt",
-      "data/KUULOKENURKKA/MEZE 99 CLASSICS.txt",
-      "data/ORATORY1990/MEZE 99 CLASSICS.txt"
-    ]
-  },
-  {
-    "id": "meze_99_classics_v2",
-    "brand": "Meze",
-    "model": "99 Classics",
-    "variant": "V2",
-    "year": 2025,
-    "price_usd": 350,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 103,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Mid-Tier",
-      "Balanced",
-      "Warm",
-      "Smooth",
-      "Relaxed"
-    ],
-    "files": [
-      "data/AUDIOAMIGO/MEZE 99 CLASSICS V2.txt"
-    ]
-  },
-  {
-    "id": "meze_99_neo",
-    "brand": "Meze",
-    "model": "99 Neo",
-    "variant": "",
-    "year": 2017,
-    "price_usd": 250,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 26,
-    "sensitivity": 103,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Fun",
-      "Relaxed",
-      "Warm",
-      "Mid-Tier"
-    ],
-    "files": [
-      "data/AURICULARES ARGENTINA/MEZE 99 NEO.txt",
-      "data/INNERFIDELITY/MEZE 99 NEO.txt",
-      "data/ORATORY1990/MEZE 99 NEO.txt"
-    ]
-  },
-  {
-    "id": "meze_99_noir",
-    "brand": "Meze",
-    "model": "99 Noir",
-    "variant": "",
-    "year": 2019,
-    "price_usd": 200,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 32,
-    "sensitivity": 103,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Mid-Tier",
-      "Fun",
-      "Relaxed",
-      "Warm",
-      "Collab"
-    ],
-    "files": [
-      "data/ORATORY1990/MEZE 99 NOIR.txt"
-    ]
-  },
-  {
-    "id": "meze_liric",
-    "brand": "Meze",
-    "model": "Liric",
-    "variant": "",
-    "year": 2021,
-    "price_usd": 2000,
-    "driver_type": "Planar",
-    "driver_config": "1Planar",
-    "impedance": 30,
-    "sensitivity": 100,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
       "Balanced",
       "Detailed",
       "Good-Imaging",
       "Treblehead",
       "Wide-Stage",
-      "Flagship"
-    ],
-    "files": [
-      "data/ORATORY1990/MEZE LIRIC.txt",
-      "data/SUPER REVIEW/MEZE LIRIC.txt"
-    ]
-  },
-  {
-    "id": "meze_liric_ii",
-    "brand": "Meze",
-    "model": "Liric",
-    "variant": "II",
-    "year": 2024,
-    "price_usd": 2000,
-    "driver_type": "Planar",
-    "driver_config": "1Planar",
-    "impedance": 61,
-    "sensitivity": 100,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Balanced",
-      "Detailed",
-      "Smooth",
-      "Warm",
-      "Wide-Stage",
-      "Flagship"
-    ],
-    "files": [
-      "data/SUPER REVIEW/MEZE LIRIC II.txt",
-      "data/KUULOKENURKKA/MEZE LIRIC 2.txt",
-      "data/ORATORY1990/MEZE LIRIC 2.txt"
-    ]
-  },
-  {
-    "id": "meze_poet",
-    "brand": "Meze",
-    "model": "Poet",
-    "variant": "",
-    "year": 2025,
-    "price_usd": 2000,
-    "driver_type": "Planar",
-    "driver_config": "1Planar",
-    "impedance": 55,
-    "sensitivity": 101,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Balanced",
-      "Detailed",
-      "Smooth",
-      "Wide-Stage",
-      "Flagship"
-    ],
-    "files": [
-      "data/SUPER REVIEW/MEZE POET.txt"
-    ]
-  },
-  {
-    "id": "meze_strada",
-    "brand": "Meze",
-    "model": "Strada",
-    "variant": "",
-    "year": 2026,
-    "price_usd": 800,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 40,
-    "sensitivity": 111,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Detailed",
-      "Resolving",
-      "Smooth",
-      "Warm",
       "Premium"
     ],
     "files": [
-      "data/GADGETRY TECH/MEZE STRADA.txt"
-    ]
-  },
-  {
-    "id": "meze_audio_105_silva",
-    "brand": "Meze Audio",
-    "model": "105",
-    "variant": "Silva",
-    "year": 2025,
-    "price_usd": 500,
-    "driver_type": "DD",
-    "driver_config": "1DD",
-    "impedance": 42,
-    "sensitivity": 112,
-    "connector": "Detachable Cable",
-    "form_factor": "Over-Ear Headphones (Wired)",
-    "tags": [
-      "Balanced",
-      "Good-Imaging",
-      "Smooth",
-      "Warm",
-      "Wide-Stage",
-      "Premium"
-    ],
-    "files": [
-      "data/GADGETRY TECH/MEZE 105 SILVA.txt"
+      "data/KUULOKENURKKA/MEZE 109 PRO.txt",
+      "data/ORATORY1990/MEZE 109 PRO.txt",
+      "data/SUPER REVIEW/MEZE 109 PRO.txt"
     ]
   },
   {
@@ -73880,6 +73733,106 @@
     ],
     "files": [
       "data/INNERFIDELITY/MEZE 88 CLASSICS.txt"
+    ]
+  },
+  {
+    "id": "meze_audio_99_classics",
+    "brand": "Meze Audio",
+    "model": "99 Classics",
+    "variant": "",
+    "year": 2015,
+    "price_usd": 310,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 103,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Fun",
+      "Punchy Bass",
+      "Relaxed",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/AURICULARES ARGENTINA/MEZE 99 CLASSICS.txt",
+      "data/INNERFIDELITY/MEZE 99 CLASSICS.txt",
+      "data/KUULOKENURKKA/MEZE 99 CLASSICS.txt",
+      "data/ORATORY1990/MEZE 99 CLASSICS.txt"
+    ]
+  },
+  {
+    "id": "meze_audio_99_classics_v2",
+    "brand": "Meze Audio",
+    "model": "99 Classics",
+    "variant": "V2",
+    "year": 2025,
+    "price_usd": 350,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 103,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Relaxed",
+      "Smooth",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/MEZE 99 CLASSICS V2.txt"
+    ]
+  },
+  {
+    "id": "meze_audio_99_neo",
+    "brand": "Meze Audio",
+    "model": "99 Neo",
+    "variant": "",
+    "year": 2017,
+    "price_usd": 250,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 26,
+    "sensitivity": 103,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Fun",
+      "Relaxed",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/AURICULARES ARGENTINA/MEZE 99 NEO.txt",
+      "data/INNERFIDELITY/MEZE 99 NEO.txt",
+      "data/ORATORY1990/MEZE 99 NEO.txt"
+    ]
+  },
+  {
+    "id": "meze_audio_99_noir",
+    "brand": "Meze Audio",
+    "model": "99 Noir",
+    "variant": "",
+    "year": 2019,
+    "price_usd": 200,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 32,
+    "sensitivity": 103,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Collab",
+      "Fun",
+      "Relaxed",
+      "Warm",
+      "Mid-Tier"
+    ],
+    "files": [
+      "data/ORATORY1990/MEZE 99 NOIR.txt"
     ]
   },
   {
@@ -74074,6 +74027,83 @@
     ]
   },
   {
+    "id": "meze_audio_liric",
+    "brand": "Meze Audio",
+    "model": "Liric",
+    "variant": "",
+    "year": 2021,
+    "price_usd": 2000,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 30,
+    "sensitivity": 100,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Good-Imaging",
+      "Treblehead",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/ORATORY1990/MEZE LIRIC.txt",
+      "data/SUPER REVIEW/MEZE LIRIC.txt"
+    ]
+  },
+  {
+    "id": "meze_audio_liric_ii",
+    "brand": "Meze Audio",
+    "model": "Liric",
+    "variant": "II",
+    "year": 2024,
+    "price_usd": 2000,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 61,
+    "sensitivity": 100,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Smooth",
+      "Warm",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/SUPER REVIEW/MEZE LIRIC II.txt",
+      "data/KUULOKENURKKA/MEZE LIRIC 2.txt",
+      "data/ORATORY1990/MEZE LIRIC 2.txt"
+    ]
+  },
+  {
+    "id": "meze_audio_poet",
+    "brand": "Meze Audio",
+    "model": "Poet",
+    "variant": "",
+    "year": 2025,
+    "price_usd": 2000,
+    "driver_type": "Planar",
+    "driver_config": "1Planar",
+    "impedance": 55,
+    "sensitivity": 101,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Balanced",
+      "Detailed",
+      "Smooth",
+      "Wide-Stage",
+      "Flagship"
+    ],
+    "files": [
+      "data/SUPER REVIEW/MEZE POET.txt"
+    ]
+  },
+  {
     "id": "meze_audio_rai_penta",
     "brand": "Meze Audio",
     "model": "Rai Penta",
@@ -74122,6 +74152,30 @@
     "files": [
       "data/HANGOUT.AUDIO/MEZE RAI SOLO.txt",
       "data/ORATORY1990/MEZE RAI SOLO.txt"
+    ]
+  },
+  {
+    "id": "meze_audio_strada",
+    "brand": "Meze Audio",
+    "model": "Strada",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 800,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 40,
+    "sensitivity": 111,
+    "connector": "Detachable Cable",
+    "form_factor": "Over-Ear Headphones (Wired)",
+    "tags": [
+      "Detailed",
+      "Resolving",
+      "Smooth",
+      "Warm",
+      "Premium"
+    ],
+    "files": [
+      "data/GADGETRY TECH/MEZE STRADA.txt"
     ]
   },
   {
@@ -82104,8 +82158,8 @@
     "brand": "Nothing",
     "model": "Ear",
     "variant": "3",
-    "year": 2026,
-    "price_usd": 150,
+    "year": 2025,
+    "price_usd": 180,
     "driver_type": "DD",
     "driver_config": "1DD",
     "impedance": 0,
@@ -82712,6 +82766,32 @@
     ],
     "files": [
       "data/HANGOUT.AUDIO/NXEARS SONATA.txt"
+    ]
+  },
+  {
+    "id": "oasear_alioth",
+    "brand": "OASEAR",
+    "model": "Alioth",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 1100,
+    "driver_type": "Tribrid",
+    "driver_config": "1DD+4BA+4Planar",
+    "impedance": 10,
+    "sensitivity": 108,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Good-Imaging",
+      "Resolving",
+      "Technical",
+      "U-Shaped",
+      "Wide-Stage",
+      "Premium"
+    ],
+    "files": [
+      "data/DCINSIDE/OASEAR ALIOTH.txt"
     ]
   },
   {
@@ -103586,9 +103666,9 @@
     "variant": "720",
     "year": 2026,
     "price_usd": 210,
-    "driver_type": "Hybrid",
-    "driver_config": "1DD+1BC",
-    "impedance": 32,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 36,
     "sensitivity": 100,
     "connector": "Bluetooth",
     "form_factor": "Wireless Over-Ear Headphones",
@@ -114795,7 +114875,7 @@
   {
     "id": "tangzu_he_xiao_qiao",
     "brand": "Tangzu",
-    "model": "He Xiao Qiao",
+    "model": "HE Xiao Qiao",
     "variant": "",
     "year": 2025,
     "price_usd": 70,
@@ -114806,13 +114886,38 @@
     "connector": "2-pin",
     "form_factor": "IEM",
     "tags": [
-      "Budget",
-      "Warm",
       "Relaxed",
-      "Smooth"
+      "Smooth",
+      "Warm",
+      "Budget"
     ],
     "files": [
       "data/HANGOUT.AUDIO/TANGZU HE XIAO QIAO.txt"
+    ]
+  },
+  {
+    "id": "tangzu_he_xiao_qiao_rock_edition",
+    "brand": "Tangzu",
+    "model": "HE Xiao Qiao",
+    "variant": "Rock Edition",
+    "year": 2026,
+    "price_usd": 80,
+    "driver_type": "DD",
+    "driver_config": "1DD",
+    "impedance": 20,
+    "sensitivity": 111,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Fun",
+      "Good-Imaging",
+      "Punchy Bass",
+      "V-Shaped",
+      "Budget"
+    ],
+    "files": [
+      "data/BASS AUDIO/HARMONIC EMPIRE XIAO QIAO ROCK EDITION.txt"
     ]
   },
   {
@@ -116710,7 +116815,7 @@
     "driver_config": "1DD",
     "impedance": 25,
     "sensitivity": 111,
-    "connector": "2-pin",
+    "connector": "QDC",
     "form_factor": "IEM",
     "tags": [
       "Mid-Tier",
@@ -127548,6 +127653,33 @@
     "files": [
       "data/DUNG LE/VIKING DRAUPNIR (BASS SWITCH ON).txt",
       "data/DUNG LE/VIKING DRAUPNIR (BASS SWITCH OFF).txt"
+    ]
+  },
+  {
+    "id": "virtus_audio_apex",
+    "brand": "Virtus Audio",
+    "model": "Apex",
+    "variant": "",
+    "year": 2026,
+    "price_usd": 1300,
+    "driver_type": "DD",
+    "driver_config": "2DD",
+    "impedance": 10,
+    "sensitivity": 108,
+    "connector": "2-pin",
+    "form_factor": "IEM",
+    "tags": [
+      "Detailed",
+      "Fun",
+      "Good-Imaging",
+      "Punchy Bass",
+      "Resolving",
+      "Smooth",
+      "Warm",
+      "Premium"
+    ],
+    "files": [
+      "data/AUDIOAMIGO/VIRTUS APEX.txt"
     ]
   },
   {
