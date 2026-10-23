@@ -6,7 +6,7 @@ const IEM_LibraryMethods = {
         },
 
         saveToLibrary: async function() {
-        const brand = document.getElementById('brand').value.trim(); const model = document.getElementById('model').value.trim();
+        const brand = elValue('brand').trim(); const model = elValue('model').trim();
         if(!brand || !model) { showToast("Enter a Brand and Model name before saving.", "⚠️"); return; }
         await this.ensureChartReady();
 
@@ -39,7 +39,7 @@ const IEM_LibraryMethods = {
         // on-screen easter-egg until next edit. Six digits, not four: real DB
         // entries reach $59,000 and the old slice(0,4) silently corrupted them
         // to a tenth of their value on save (59000 -> 5900).
-        const rawPrice = document.getElementById('price').value || "";
+        const rawPrice = elValue('price');
         const priceDigits = rawPrice.replace(/[^0-9]/g, '').slice(0, 6) || null;
         const price = priceDigits;
 
@@ -147,11 +147,38 @@ const IEM_LibraryMethods = {
             });
         },
 
-        toggleLibraryModal: async function() { const modal = document.getElementById('library-modal'); if(modal.classList.contains('hidden')) { modal.classList.remove('hidden'); this.closeCompare(); await this.renderLibrary(); } else { modal.classList.add('hidden'); } },
+        toggleLibraryModal: async function() {
+            const modal = document.getElementById('library-modal');
+            if (!modal) return;
+            if (modal.classList.contains('hidden')) {
+                // Remember the opener so closing returns focus there instead of
+                // dropping the keyboard user at the top of the document.
+                this._libraryLastFocus = document.activeElement;
+                modal.classList.remove('hidden');
+                this.closeCompare();
+                await this.renderLibrary();
+                const target = document.getElementById('lib-search') || modal.querySelector('button');
+                try { if (target) target.focus(); } catch (_) {}
+            } else {
+                modal.classList.add('hidden');
+                const back = this._libraryLastFocus;
+                this._libraryLastFocus = null;
+                if (back && back.isConnected) { try { back.focus(); } catch (_) {} }
+            }
+        },
 
         loadFromLibrary: async function(id) {
             const profile = await DBCache.getReview(id); if(!profile) return;
-            document.getElementById('brand').value = profile.brand || ''; document.getElementById('model').value = profile.model || ''; document.getElementById('price').value = profile.price || ''; document.getElementById('impedance').value = profile.impedance || '32'; document.getElementById('sensitivity').value = profile.sensitivity || '110'; document.getElementById('review-notes').value = profile.notes || ''; if(profile.refVolume) this.setListeningVolume(profile.refVolume);
+            // Guarded writes: one missing field must not abort the whole load
+            // (previously it threw after the first write, leaving a half-restored
+            // profile on screen). Notes are clamped to the 150-char field limit.
+            setElValue('brand', profile.brand || '');
+            setElValue('model', profile.model || '');
+            setElValue('price', profile.price || '');
+            setElValue('impedance', profile.impedance || '32');
+            setElValue('sensitivity', profile.sensitivity || '110');
+            setElValue('review-notes', String(profile.notes || '').slice(0, 150));
+            if (profile.refVolume) this.setListeningVolume(profile.refVolume);
             if (profile.formFactor) this.setFormFactor(profile.formFactor);
             if (profile.connector) this.setConnector(profile.connector);
             if (profile.image) {
@@ -338,7 +365,10 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
                 document.getElementById('sensitivity').value = data.sensitivity || '80';
                 document.getElementById('sensitivity-slider').value = data.sensitivity || '80';
             }
-            if (document.getElementById('review-notes')) document.getElementById('review-notes').value = data.notes || '';
+            // Clamp imported notes to the field's own 150-char limit. A hand-edited
+            // or third-party export could carry an arbitrarily long string, and the
+            // textarea's maxlength does not apply to programmatic assignment.
+            if (document.getElementById('review-notes')) document.getElementById('review-notes').value = String(data.notes || '').slice(0, 150);
 
             if (data.image) {
                 this._restoreStoredImage(data.image);

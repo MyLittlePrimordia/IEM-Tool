@@ -20,49 +20,6 @@
      eval()/Function() blocked, so this does not weaken script execution.
      connect-src 'self' already covers fetching the local .wasm and .onnx. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: data:; worker-src 'self' blob:; connect-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
 <link rel="stylesheet" href="app/css/app.css">
 </head>
 <body class="bg-[#050507]">
@@ -2835,14 +2792,18 @@ existing module drives this unchanged. -->
         <button data-action="click_111_FindEngine_compareSelected" class="px-3 py-1 bg-[var(--accent-blue)] hover:brightness-110 text-white font-black text-xs border-2 border-black cursor-pointer">Compare Now</button>
     </div>
 
-        <div id="toast-stack" class="fixed top-5 right-4 z-[500] flex flex-col gap-2 items-end pointer-events-none" style="max-width: min(90vw, 380px);"></div>
+        <!-- Toasts announce their own results (save / export / failure). A live
+             region makes them reachable by screen readers; role=status keeps it
+             polite so it does not interrupt the user mid-action. -->
+        <div id="toast-stack" role="status" aria-live="polite" aria-atomic="false" class="fixed top-5 right-4 z-[500] flex flex-col gap-2 items-end pointer-events-none" style="max-width: min(90vw, 380px);"></div>
+        <div id="a11y-announcer" role="status" aria-live="polite" class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;"></div>
 
 
-    <div id="library-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] hidden flex items-center justify-center p-4">
+    <div id="library-modal" role="dialog" aria-modal="true" aria-labelledby="library-modal-title" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] hidden flex items-center justify-center p-4">
         <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-4xl shadow-2xl flex flex-col overflow-hidden p-4 select-none">
 
             <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
-                <span class="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">🏆 Saved IEM Inventory</span>
+                <span id="library-modal-title" class="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">🏆 Saved IEM Inventory</span>
                 <button data-action="click_115_IEM_toggleLibraryModal" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
             </div>
 
@@ -3021,10 +2982,10 @@ existing module drives this unchanged. -->
         </div>
     </div>
 
-    <div id="smart-import-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] hidden flex items-center justify-center p-4">
+    <div id="smart-import-modal" role="dialog" aria-modal="true" aria-labelledby="smart-import-modal-title" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-[250] hidden flex items-center justify-center p-4">
         <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-lg shadow-2xl flex flex-col overflow-hidden p-5 select-none">
             <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
-                <span class="text-xs font-black text-[var(--accent-blue)] uppercase tracking-wider flex items-center gap-1.5">📥 Universal Smart Import</span>
+                <span id="smart-import-modal-title" class="text-xs font-black text-[var(--accent-blue)] uppercase tracking-wider flex items-center gap-1.5">📥 Universal Smart Import</span>
                 <button data-action="click_98_EQ_closeSmartImportModal" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
             </div>
 
@@ -3071,7 +3032,7 @@ existing module drives this unchanged. -->
 <!-- ONNX Runtime Web is loaded on demand by IEM_Module.loadPhotoMatteRuntime();
      see the note next to this tag. -->
 
-<script src="app/js/bundle-version.js?v=a37b25710a0a"></script>
+<script src="app/js/bundle-version.js?v=4c4a28c1450f"></script>
         <!-- Bundle loader. External (app/js/boot-bundle.js) rather than inline so that
          script-src can drop 'unsafe-inline'. -->
         <script src="app/js/boot-bundle.js"></script>

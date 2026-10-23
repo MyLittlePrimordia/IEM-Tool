@@ -40,6 +40,11 @@ jobs:
       - name: No dead controls, safe bundle order, no new inline handlers
         run: npm run check:integrity
 
+      - name: Unit tests for the logic the Worker and the UI share
+        # name-utils.js / endgame-scoring.js: pure modules with no DOM, plus the
+        # worker-scope load test that catches a renderer-only statement in them.
+        run: npm test
+
       - name: This workflow still gates every build on the checks
         # Guards against this file drifting: e.g. someone dropping
         # `needs: [verify, verify-ui]` from a build job, or removing the xvfb /

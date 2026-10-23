@@ -160,6 +160,9 @@ const EQ_SmartImportMethods = {
     },
 
             showSmartImportModal: function() {
+            // Remember what opened the modal so Escape/❌ can hand focus back
+            // instead of dropping it on <body>.
+            this._smartImportOpener = document.activeElement;
             var modal = document.getElementById('smart-import-modal');
             if (modal) { modal.classList.remove('hidden'); Mascot.update(); }
             var textarea = document.getElementById('smart-import-textarea');
@@ -193,6 +196,9 @@ const EQ_SmartImportMethods = {
             var modal = document.getElementById('smart-import-modal');
             if (modal) modal.classList.add('hidden');
             Mascot.update();
+            var opener = this._smartImportOpener;
+            this._smartImportOpener = null;
+            if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus();
         },
 
         /* Expand / collapse the paste field.

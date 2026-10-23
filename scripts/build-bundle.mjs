@@ -29,7 +29,7 @@ const strict = process.argv.includes('--strict');
 // file was removed). They are listed here in the exact sequence they used to
 // appear inline inside app-core.js, so concatenation output is unchanged:
 const src = [
-  'app/js/utils.js','app/js/endgame-categories.js','app/js/audio-engine.js','app/js/safe-storage.js','app/js/accessibility.js','app/js/ui-kit.js',
+  'app/js/utils.js','app/js/name-utils.js','app/js/endgame-categories.js','app/js/endgame-scoring.js','app/js/audio-engine.js','app/js/safe-storage.js','app/js/accessibility.js','app/js/ui-kit.js',
   'app/js/shortcuts.js','app/js/eq-export.js',
   'app/js/eq-playlist.js','app/js/eq-reverb.js','app/js/eq-crossfeed.js','app/js/eq-crossover.js','app/js/eq-dynamics.js',
   'app/js/eq-loudness.js','app/js/eq-tempo.js','app/js/eq-smart-import.js','app/js/eq-history.js','app/js/eq-adapter-impedance.js','app/js/eq-hearing-cal.js','app/js/eq-viz-fullscreen.js',

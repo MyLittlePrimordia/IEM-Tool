@@ -1,3 +1,60 @@
+// ---------------------------------------------------------------------------
+// Diagnostics + safe-DOM helpers.
+//
+// `reportError` is the single funnel for failures the app catches itself. Before
+// it, ~216 empty `catch` blocks (and EventBinding's handler wrapper) meant a
+// failed save, export or click produced no log and no feedback at all.
+//
+// `bestEffort` is for genuinely ignorable tear-down paths; it still logs in
+// debug mode, so a surprisingly-broken cleanup is discoverable.
+// ---------------------------------------------------------------------------
+// These attach to globalThis, not window: find-worker.js importScripts() this
+// file, and a bare `window.x` reference throws in a Worker — which took
+// CurveUtils down with it and broke every off-thread scan. Only the helpers
+// that touch `document` do so inside their body.
+globalThis.iLog = function () {
+    if (typeof IEM_DEBUG !== 'undefined' && IEM_DEBUG) console.log.apply(console, arguments);
+};
+
+const __iemErrorToastAt = Object.create(null);
+globalThis.reportError = function (scope, err, opts) {
+    opts = opts || {};
+    console.error('[IEM] ' + scope, err);
+    if (!opts.toast || typeof showToast !== 'function') return;
+    // One toast per scope per 10s: a failing animation frame or a repeated
+    // background task must not bury the UI in identical messages.
+    const now = Date.now();
+    if (now - (__iemErrorToastAt[scope] || 0) < 10000) return;
+    __iemErrorToastAt[scope] = now;
+    try {
+        showToast(opts.message || 'Something went wrong. See the console for details.', '⚠️', { duration: 3500 });
+    } catch (_) {}
+};
+
+globalThis.bestEffort = function (scope, fn, fallback) {
+    try { return fn(); } catch (e) { reportError(scope, e); return fallback; }
+};
+
+globalThis.bestEffortAsync = function (scope, fn, fallback) {
+    return Promise.resolve().then(fn).catch(function (e) { reportError(scope, e); return fallback; });
+};
+
+// Safe DOM access. The app has 50+ `getElementById(...).value` chains; one
+// renamed id aborted the whole update that contained it (score, power math and
+// radar chart are all written by the same function). These return fallbacks
+// instead of throwing.
+globalThis.elById = function (id) { return document.getElementById(id); };
+globalThis.elValue = function (id, fallback) {
+    const el = document.getElementById(id);
+    if (el && typeof el.value === 'string') return el.value;
+    return fallback === undefined ? '' : fallback;
+};
+globalThis.setElValue = function (id, value) {
+    const el = document.getElementById(id);
+    if (el) { el.value = value; return true; }
+    return false;
+};
+
 const CurveUtils = {
     generateLogGrid: function(numPoints = 500, minF = 20, maxF = 20000) {
         const n = Math.max(2, Math.floor(numPoints) || 500);

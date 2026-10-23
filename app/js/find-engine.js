@@ -1285,13 +1285,15 @@
                         baselineInterp = CurveUtils.cubicSplineInterpolate(rawNorm, freqs);
                     }
 
-                    const bass = parseFloat(document.getElementById('find-bass').value);
-                    const sub = parseFloat(document.getElementById('find-sub').value);
-                    const punch = parseFloat(document.getElementById('find-punch').value);
-                    const warm = parseFloat(document.getElementById('find-warm').value);
-                    const vocals = parseFloat(document.getElementById('find-vocals').value);
-                    const treble = parseFloat(document.getElementById('find-treble').value);
-                    const smooth = parseFloat(document.getElementById('find-smooth').value);
+                    // elValue() keeps a removed/renamed slider from aborting the
+                    // whole tuning scan with a TypeError.
+                    const bass = parseFloat(elValue('find-bass', '0'));
+                    const sub = parseFloat(elValue('find-sub', '0'));
+                    const punch = parseFloat(elValue('find-punch', '0'));
+                    const warm = parseFloat(elValue('find-warm', '0'));
+                    const vocals = parseFloat(elValue('find-vocals', '0'));
+                    const treble = parseFloat(elValue('find-treble', '0'));
+                    const smooth = parseFloat(elValue('find-smooth', '0'));
 
                     const targetData = [];
                     for (let i = 0; i < freqs.length; i++) {
@@ -1422,46 +1424,12 @@
                     ctx.restore();
                 },
 
+                // Delegates to NameUtils (js/name-utils.js), which find-worker.js
+                // also loads via importScripts. Keeping one copy is what stops the
+                // worker and the main-thread fallback from grouping the same
+                // database differently.
                 sanitizeName: function(name) {
-                    // Same boundary coercion as the worker's copy of this
-                    // function (js/find-worker.js) -- kept in sync since
-                    // the main-thread fallback path calls this copy, not
-                    // the worker's.
-                    if (typeof name !== 'string') name = (name == null) ? '' : String(name);
-                    if (!name) return "";
-                    let clean = name.toLowerCase();
-
-                    clean = clean.replace(/[\(\[][^\]\)]*[\)\]]/g, '');
-
-                    clean = clean.replace(/\s*x\s*(?:hbb|crinacle|crin|zeos|gizaudio|fresh reviews|jays audio|divinus|seeaudio|akros|ducbloke|community|fresh|z reviews|z)\b/g, '');
-
-                    clean = clean.replace(/\b(?!dudu\b)[ud]{4}\b/g, '');
-                    clean = clean.replace(/\b[ud]{2,3}\b/g, '');
-                    clean = clean.replace(/\b[01]{2,4}\b/g, '');
-                    clean = clean.replace(/\b[1-5]\s+[1-5]\b/g, '');
-                    clean = clean.replace(/\b(?:all on|all off|bc on|bc off)\b/g, '');
-                    clean = clean.replace(/\s*(?:bass|treble|reference|ref|mid|midrange)?\s*(?:switch|sw|switches)\s*(?:on|off|up|down|1|2|3|4|0)*\b/g, '');
-
-                    clean = clean.replace(/\b\d+\s*(?:Ω|ohm|ohms|o)\b/g, '');
-                    clean = clean.replace(/\b(?:high|low|s\s+high|s\s+low)\s*(?:Ω|ohm|ohms|impedance)\b/g, '');
-
-                    clean = clean.replace(/\b(?:\d+\.\d+mm|\d+mm|3\.5|4\.4|usb\s+c|type\s+c|usb|tws|anc|analog|digital|dsp)\b/g, '');
-                    clean = clean.replace(/\s*(?:gold|grey|gray|silver|default)?\s*(?:plug|cable|connection|connector|adapter|headband|wire)\b/g, '');
-
-                    clean = clean.replace(/\s*(?:foam|silicone|silicon|yaxi|spinfit|symbio|starline|widebore|narrowbore|final|clear|red|blue|grey|gray|stock|custom|my|dunu\s+ss)\s*(?:tips|eartips|eartip|tip|pads|pad)\b/g, '');
-                    clean = clean.replace(/\b(?:tips|eartips|eartip|tip|pads|pad)\b/g, '');
-
-                    clean = clean.replace(/\s*(?:blue|gold|silver|red|black|green|brass|steel|titanium|ti|short\s+black|short\s+red|alt|reference|ref|hifi|pop|vocal|instrumental|monitor|balanced|classic|default|standard|std)?\s*(?:nozzles?|rings?|filters?|mesh|damper|vent|mod|mods|taped?|tanya|microtape)\b/g, '');
-
-                    clean = clean.replace(/\b(?:v\d+(?:\.\d+)?|mk[ivx\d]+b?)\b/g, '');
-                    clean = clean.replace(/\b(?:\d+st|\d+nd|\d+rd|\d+th)\s+(?:gen|generation|unit|anniversary|anniv)\b/g, '');
-                    clean = clean.replace(/\b(?:og|gen|generation|unit|anniversary|anniv|re\s+set|preprod|pre\s+retail|retail|sample\s*\d*|sample)\b/g, '');
-
-                    clean = clean.replace(/\b(?:edition|standard|std|default|reference|ref|stock|base|baseline|pro\s+max|pro|max|ltd|limited|custom\s+resin|resin)\b/g, '');
-
-                    clean = clean.replace(/\s+/g, ' ').trim();
-
-                    return clean.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                    return NameUtils.sanitizeName(name);
                 },
 
                 buildCanonicalProfiles: async function(dataset) {

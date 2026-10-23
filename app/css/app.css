@@ -9119,3 +9119,172 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
 .dt-tagrow { gap: clamp(4px, .7vh, 9px) 6px; }
 .dt-tag { padding: 0 9px; height: clamp(24px, 2.8vh, 28px); }
 .dt-ai-ta { flex: 0 0 auto; height: clamp(190px, 30vh, 330px); }
+/* save preview: a listed row jumps to that entry, so it needs to look clickable */
+.uikit-detail-row {
+    display: block;
+    width: 100%;
+    margin: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 3px;
+}
+.uikit-detail-row:hover,
+.uikit-detail-row:focus-visible {
+    background: var(--bg-hover);
+    outline: none;
+}
+
+/* --- Save-log viewer ------------------------------------------------------
+   The changelog used to be one <pre>. It is a document with a shape - a title,
+   the export's note, then one section per save with its counts and one row per
+   changed entry - so the reader draws that shape. The text itself still comes
+   from the file (and is escaped there); these rules only carry structure and
+   colour, and the ＋ ～ － marks keep their semantic hue for the same reason the
+   save preview does: add / change / remove is the meaning of the row. */
+.slv-doc { font-size: 12px; line-height: 1.5; color: var(--text-main); }
+.slv-title {
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .02em;
+    color: var(--text-hi);
+}
+.slv-note {
+    margin: 0 0 8px;
+    font-size: 11px;
+    font-style: italic;
+    color: var(--text-mid);
+}
+.slv-text { margin: 0 0 8px; font-size: 11px; color: var(--text-mid); }
+.slv-sec {
+    margin: 0 0 10px;
+    padding: 8px 10px;
+    background: var(--bg-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+}
+.slv-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    margin-bottom: 4px;
+}
+.slv-h {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--accent-hi);
+}
+.slv-where {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text-mid);
+}
+.slv-meta {
+    margin: 0 0 6px;
+    font-size: 10.5px;
+    color: var(--text-mid);
+    font-variant-numeric: tabular-nums;
+}
+.slv-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 11px;
+}
+.slv-mark { flex: none; width: 13px; text-align: center; font-weight: 700; }
+.slv-name { color: var(--text-hi); }
+.slv-detail { min-width: 0; color: var(--text-mid); word-break: break-word; }
+.slv-add .slv-mark { color: var(--ok); }
+.slv-mod .slv-mark { color: var(--warn); }
+.slv-del .slv-mark { color: var(--danger); }
+.slv-other .slv-mark { color: var(--text-mid); }
+
+/* --- Save-log viewer filters ---------------------------------------------
+   Three segmented buttons and a month picker above the document. They narrow
+   what is drawn, never what is written: the file is untouched. The count on the
+   right is what keeps a filtered list honest about how much it is hiding. */
+.slv-fbtn {
+    height: 28px;
+    padding: 0 11px;
+    background: var(--bg-raised);
+    color: var(--text-mid);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--d-2, .12s) ease, color var(--d-2, .12s) ease, border-color var(--d-2, .12s) ease;
+}
+.slv-fbtn:hover { color: var(--text-hi); border-color: var(--line-strong); }
+.slv-fbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.slv-fbtn.is-on {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-color: var(--accent);
+}
+.slv-month {
+    height: 28px;
+    padding: 0 6px;
+    background: var(--bg-input);
+    color: var(--text-main);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    font-size: 11px;
+    cursor: pointer;
+}
+.slv-count {
+    margin-left: auto;
+    font-size: 10.5px;
+    color: var(--text-mid);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* The changelog search: one line of the same toolbar, narrow enough that the
+   count stays visible beside it, wide enough to type a model name into. */
+.slv-search {
+    flex: 0 1 208px;
+    min-width: 120px;
+    height: 28px;
+    padding: 0 10px;
+    background: var(--bg-input);
+    color: var(--text-main);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 11px;
+}
+.slv-search::placeholder { color: var(--text-mid); }
+.slv-search:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    border-color: var(--accent);
+}
+
+/* Why a card is here with all of its rows: the search text was in the save's
+   own date or destination, which the card shows right above this label. The
+   quoted search text keeps the reader's own casing rather than being set in
+   caps, so a model name or a path in it still reads as what they typed. */
+.slv-found {
+    padding: 1px 6px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 9.5px;
+    letter-spacing: .02em;
+    color: var(--accent-hi);
+}
+
+/* The month picker keeps or drops whole saves, so it explains itself once above
+   the cards instead of repeating the date on every one. Coloured apart from the
+   file's own notes: this line is the app talking about its filter, not text
+   from save-log.md. */
+.slv-scope {
+    font-style: normal;
+    color: var(--accent-hi);
+}

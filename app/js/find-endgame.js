@@ -23,91 +23,13 @@ const Find_EndgameMethods = {
                     if (disp) disp.textContent = `$${val} Max`;
                 },
 
-                // Main-thread mirror of the worker's scoreEndgameCategories
-                // (find-worker.js). Used only when the Worker is unavailable.
+                // Main-thread fallback used only when the Worker is unavailable.
+                // The rubric itself lives in endgame-scoring.js and is shared
+                // with find-worker.js, so this cannot drift from the worker path.
                 _scoreEndgameCategoriesLocal: function(cc, freqs, maxPrice) {
-                    const EG = window.EndgameCategories;
-                    if (!EG) return null;
-                    const cats = EG.ENDGAME_CATEGORIES || [];
-                    const maxPicks = EG.ENDGAME_MAX_PICKS || 12;
-                    const priced = cc.filter(e => e.price && e.price <= maxPrice);
-                    const out = {};
-                    const champions = [];
-
-                    cats.forEach(cat => {
-                        const scored = priced.map(e => {
-                            const res = EG.scoreCategory(cat, e.tags, e.interp, freqs);
-                            // No price bonus: must stay identical to the worker's
-                            // scoreEndgameCategories (find-worker.js) — at equal
-                            // acoustics the cheapest option should win, not the
-                            // priciest affordable one. The local path previously
-                            // added up to +5 for expensive items, so the same
-                            // query ranked differently depending on whether the
-                            // Worker was available.
-                            const bonus = 0;
-                            return { entry: e, composite: res.score + bonus, reason: res.reason, tagMatch: res.tagMatch, curveScore: res.curveScore };
-                        }).sort((a, b) => b.composite - a.composite);
-                        if (!scored.length) { out[cat.id] = { pool: [] }; return; }
-
-                        const champion = scored[0];
-                        const gkCeiling = champion.entry.price * EG.GIANT_KILLER_PRICE_FRACTION;
-                        const gkSims = {};
-                        for (let i = 1; i < scored.length; i++) {
-                            const s = scored[i];
-                            if (s.entry.price > gkCeiling) continue;
-                            const sim = this._scoreInterp(s.entry.interp, champion.entry.interp, freqs, true);
-                            if (sim >= 75) gkSims[s.entry.id] = { sim: sim, s: s };
-                        }
-
-                        const pool = [];
-                        const limit = Math.min(maxPicks, scored.length);
-                        for (let i = 0; i < limit; i++) {
-                            const s = scored[i];
-                            const gk = gkSims[s.entry.id];
-                            const pick = {
-                                id: s.entry.id, name: s.entry.name, price: s.entry.price,
-                                brand: s.entry.brand || '', score: Math.min(100, Math.round(s.composite)),
-                                reason: s.reason, tagMatch: !!s.tagMatch, curveScore: Math.round(s.curveScore || 0)
-                            };
-                            if (i === 0) pick.isChampion = true;
-                            if (gk) { pick.isGiantKiller = true; pick.similarity = gk.sim; pick.reason = `${gk.sim.toFixed(1)}% tonal match to ${champion.entry.name}`; }
-                            pool.push(pick);
-                        }
-
-                        let bestGkAll = null, bestGk = null;
-                        for (const gkId in gkSims) {
-                            const g = gkSims[gkId];
-                            if (!bestGkAll || g.sim > bestGkAll.sim) bestGkAll = g;
-                            if (pool.some(p => p.id === gkId)) continue;
-                            if (!bestGk || g.sim > bestGk.sim) bestGk = g;
-                        }
-                        if (bestGk) {
-                            pool.push({
-                                id: bestGk.s.entry.id, name: bestGk.s.entry.name, price: bestGk.s.entry.price,
-                                brand: bestGk.s.entry.brand || '', score: Math.min(100, Math.round(bestGk.s.composite)),
-                                reason: `${bestGk.sim.toFixed(1)}% tonal match to ${champion.entry.name}`,
-                                tagMatch: !!bestGk.s.tagMatch, curveScore: Math.round(bestGk.s.curveScore || 0),
-                                isGiantKiller: true, similarity: bestGk.sim
-                            });
-                        }
-
-                        champions.push({ id: champion.entry.id, name: champion.entry.name, price: champion.entry.price, gk: bestGkAll });
-                        out[cat.id] = { pool: pool };
-                    });
-
-                    const valueById = new Map();
-                    champions.forEach(ch => {
-                        const gk = ch.gk;
-                        if (!gk) return;
-                        const e = gk.s.entry;
-                        const existing = valueById.get(e.id);
-                        if (existing && existing.similarity >= gk.sim) return;
-                        valueById.set(e.id, { id: e.id, name: e.name, price: e.price, brand: e.brand || '', similarity: gk.sim, matchName: ch.name });
-                    });
-                    out._value = { pool: Array.from(valueById.values()).sort((a, b) => b.similarity - a.similarity).slice(0, 12) };
-                    return out;
+                    try { return EndgameScoring.scoreEndgameCategories(cc, freqs, maxPrice); }
+                    catch (e) { console.warn("[FindEngine] Local endgame scoring failed:", e); return null; }
                 },
-
                 _runEndgameViaWorker: function(items, maxPrice, freqs) {
                     const worker = this.ensureFindWorker();
                     if (!worker) return Promise.resolve(null);

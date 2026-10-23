@@ -22,10 +22,21 @@ contextBridge.exposeInMainWorld('appBridge', {
   windowToggleMaximize: () => ipcRenderer.send('win:toggle-maximize'),
   windowClose: () => ipcRenderer.send('win:close'),
 
-  // Synchronous: the caption buttons must repaint their maximize/restore glyph
-  // in the same frame the window state changes, and an async round-trip would
-  // leave a stale icon for a frame or two.
-  windowIsMaximized: () => ipcRenderer.sendSync('win:is-maximized'),
+  // Async on purpose: the old sendSync blocked the renderer during boot. The
+  // caption bar paints its default glyph immediately and repaints when this
+  // resolves (and again on every maximize/unmaximize push), so there is no
+  // visible stale-icon frame.
+  windowIsMaximized: () => ipcRenderer.invoke('win:is-maximized'),
+
+  // Pre-close autosave handshake. main.js defers the window close and sends
+  // 'app:flush-before-close'; the renderer persists the Data tab's working copy
+  // and answers with flushBeforeCloseDone(). Returns an unsubscribe function.
+  onFlushBeforeClose: (callback) => {
+    const listener = () => { try { callback(); } catch (e) { console.error('[flush]', e); } };
+    ipcRenderer.on('app:flush-before-close', listener);
+    return () => ipcRenderer.removeListener('app:flush-before-close', listener);
+  },
+  flushBeforeCloseDone: () => ipcRenderer.send('app:flush-done'),
 
   // Renders one theme's real CSS backdrop offscreen and returns it as a PNG
   // data URL, so the review-card export uses the app's actual texture instead
@@ -53,6 +64,13 @@ contextBridge.exposeInMainWorld('appBridge', {
   dataDeleteFile: (rel) => ipcRenderer.invoke('data:delete-file', String(rel)),
   dataWriteDatabase: (payload) => ipcRenderer.invoke('data:write-database', { text: payload && payload.text, json: !(payload && payload.json === false), gz: !(payload && payload.gz === false) }),
   dataWriteFile: (payload) => ipcRenderer.invoke('data:write-file', { rel: payload && payload.rel, text: payload && payload.text, overwrite: !!(payload && payload.overwrite) }),
+  // The save log's Markdown changelog. Fixed filename and the same writable root
+  // as the database, so the renderer still cannot name a path. Reading it back is
+  // how an export appends to the changelog instead of replacing it.
+  dataReadSaveLog: () => ipcRenderer.invoke('data:read-save-log'),
+  // Hands the changelog to the OS (or reveals it) without the renderer naming a path.
+  dataOpenSaveLog: () => ipcRenderer.invoke('data:open-save-log'),
+  dataWriteSaveLog: (payload) => ipcRenderer.invoke('data:write-save-log', { text: payload && payload.text }),
 
   // Push subscription for maximize / unmaximize. Covers all three ways the
   // state can change: the caption button, double-click on the title-bar drag

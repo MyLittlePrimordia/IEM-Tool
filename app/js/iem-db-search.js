@@ -255,11 +255,12 @@ onDbSearchInput: function(value) {
             if (searchInput) this.renderIemDbSearch(searchInput.value);
 
             const snap = this._iemPreApplySnapshot || {};
-            document.getElementById('brand').value = snap.brand || '';
-            document.getElementById('model').value = snap.model || '';
-            document.getElementById('price').value = snap.price || '';
+            // Guarded: clearing a selection must not throw when a field is absent.
+            setElValue('brand', snap.brand || '');
+            setElValue('model', snap.model || '');
+            setElValue('price', snap.price || '');
             this.setListeningVolume(snap.listeningVolume || 'moderate');
-            document.getElementById('sensitivity').value = snap.sensitivity || '110';
+            setElValue('sensitivity', snap.sensitivity || '110');
             if (snap.impedance != null) { const ie = document.getElementById('impedance'); if (ie) ie.value = snap.impedance; }
             this.setFormFactor(snap.formFactor || 'IEM');
             this.setConnector(snap.connector || '2-pin');

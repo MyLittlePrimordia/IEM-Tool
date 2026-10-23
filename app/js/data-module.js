@@ -25,11 +25,11 @@ const DataTab = (function () {
     issues: [], issueByUid: new Map(), auditAt: 0, auditRunning: false, waivers: new Set(), showIgnored: false,
     auditSev: 'all', auditCat: 'all', openIssue: -1, auditSel: new Set(), lastSel: -1,
     diskFiles: null, source: '', gzStale: false, notes: [],
-    changed: new Map(), savedLen: 0,
+    changed: new Map(), savedLen: 0, base: null, saving: false, saveLog: [], openSave: -1,
     curveCache: new Map(), curveRows: null, curveName: '', curveFileIdx: 0, sugg: null,
     ai: { text: '', proposals: [], notes: '', include: new Set(), fieldSel: new Map(), collapsed: new Set(), errors: [], log: '', status: '' },
     cv: { queue: [], plans: [], source: '', newSource: '', overwrite: false, log: '', busy: false },
-    ex: { tokens: 50000, chunks: [], banner: null },
+    ex: { tokens: 50000, chunks: [], banner: null, changelog: null, lastExport: null },
     lastSaved: 0, autosaveTimer: null, auditTimer: null, treeRaf: 0, hasAutosave: null
   };
 
@@ -50,7 +50,19 @@ const DataTab = (function () {
     pane.addEventListener('dragleave', e => { const z = e.target.closest && e.target.closest('.dt-drop'); if (z) z.classList.remove('is-over'); });
     pane.addEventListener('drop', onDrop);
     window.addEventListener('resize', () => { if (T.ready) { clearTimeout(T._rz); T._rz = setTimeout(drawCurve, 120); } });
-    window.addEventListener('beforeunload', e => { if (T.S && T.S.dirty && T.S.undoStack.length) { try { autosaveNow(); } catch (_) {} } });
+    // Autosave must survive a close. `beforeunload` + an un-awaited IndexedDB
+    // write did not: the renderer is torn down immediately after the event, so
+    // an edit inside the debounce window could be lost. pagehide is the more
+    // reliable "page is going away" signal, and main.js additionally defers the
+    // window close until the flush below answers (or 800ms passes).
+    window.addEventListener('pagehide', () => { autosaveNow(); });
+    if (window.appBridge && typeof window.appBridge.onFlushBeforeClose === 'function') {
+      window.appBridge.onFlushBeforeClose(() => {
+        Promise.resolve(autosaveNow()).then(() => {
+          try { window.appBridge.flushBeforeCloseDone(); } catch (_) {}
+        });
+      });
+    }
     // The app styles every <button> with a global !important "tactile" look unless it
     // carries .no-tactile (the tab bar and the pills opt out the same way). The tab
     // re-renders its panels often, so opt new buttons out as they appear instead of
@@ -107,8 +119,18 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       T.source = r.source; T.gzStale = !!r.gzStale; T.notes = parsed.notes;
       if (!T.S) { T.S = new DC.Session(parsed.entries); T.S.onChange(onSessionChange); }
       else T.S.replaceAll(parsed.entries);
+      // What the file contains right now: the baseline every save preview is
+      // diffed against (replaced after each successful save).
+      T.base = DC.snapshotEntries(T.S.entries);
       T.savedLen = 0; T.changed.clear();
       try { const w = await DataStore.kvGet('waivers'); T.waivers = new Set(Array.isArray(w) ? w : []); } catch (_) {}
+      try { const l = await DataStore.kvGet('saveLog'); T.saveLog = Array.isArray(l) ? l : []; } catch (_) { T.saveLog = []; }
+      // The changelog beside the database, so what has been exported is visible
+      // before exporting again. A missing or unreadable file is simply no status.
+      T.ex.changelog = null;
+      try { T.ex.changelog = DC.summarizeSaveLog(await DataStore.readSaveLog()); } catch (_) { T.ex.changelog = null; }
+      T.ex.lastExport = null;
+      T.openSave = -1;
       try { const f = await DataStore.kvGet('curveSource'); if (f) T.cv.source = f; } catch (_) {}
       T.diskFiles = await DataStore.listDataFiles().catch(() => null);
       T.ready = true; T.loading = false;
@@ -147,12 +169,18 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
   }
 
   // ----------------------------------------------------------------- autosave
-  function scheduleAutosave() { clearTimeout(T.autosaveTimer); T.autosaveTimer = setTimeout(autosaveNow, 4000); }
+  // Short debounce: the working copy is only a few hundred KB, and 4s was long
+  // enough that a close between edits and the timer lost the edit.
+  function scheduleAutosave() { clearTimeout(T.autosaveTimer); T.autosaveTimer = setTimeout(autosaveNow, 1500); }
   function autosaveNow() {
-    if (!T.S) return;
-    if (!T.S.dirty && !T.S.undoStack.length) { DataStore.kvDelete('working'); return; }
+    if (!T.S) return Promise.resolve(false);
+    if (!T.S.dirty && !T.S.undoStack.length) return DataStore.kvDelete('working').catch(() => false);
     const b = T.S.toBlob(); b.savedAt = Date.now();
-    DataStore.kvSet('working', b);
+    // Never silent: kvSet resolves false when IndexedDB is unavailable/full.
+    return DataStore.kvSet('working', b).then((ok) => {
+      if (!ok) console.warn('[DataTab] Autosave failed — IndexedDB unavailable or full.');
+      return ok;
+    }).catch((err) => { console.warn('[DataTab] Autosave failed:', err); return false; });
   }
   async function restoreAutosave() {
     const b = T.hasAutosave; if (!b) return;
@@ -162,14 +190,142 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
   }
 
   // ==================================================================== save
+  // Every overwrite of database.json is confirmed with exactly what changes:
+  // added / edited / removed entries by id, the entry-count and size delta, and
+  // a warning when the file on disk has moved since it was loaded. Returns false
+  // when the user cancels (or there is nothing to do), so saveAll writes nothing.
+  async function previewSave(text, opts) {
+    const memory = DataStore.state.mode === 'memory';
+    const base = T.base || DC.snapshotEntries(T.S.entries);
+    const d = DC.diffAgainstSnapshot(base, T.S.entries);
+
+    // Compare against the file as it is NOW: that is what the save replaces, and
+    // it is not necessarily the file this tab loaded (another editor or a second
+    // window may have saved since). A stale tab must not silently undo that.
+    // Only when the save actually writes in place: in memory mode it downloads
+    // instead, so the served file never changes and would always look renewed.
+    let diskBytes = 0, diskMoved = false;
+    if (!memory) {
+      try {
+        const r = await DataStore.readDatabase();
+        diskBytes = textBytes(r.text);
+        diskMoved = DC.diffAgainstSnapshot(base, DC.loadDatabaseText(r.text).entries).total > 0;
+      } catch (e) { console.warn('[DataTab] Could not re-read the database before saving:', e); }
+    }
+
+    if (!d.total && !diskMoved) { toast('No changes to save.', '💾'); return null; }
+
+    const rows = [];
+    [['add', '＋ ', d.added, 'new entry', 'new entries'],
+     ['mod', '～ ', d.modified, 'edited entry', 'edited entries'],
+     ['del', '－ ', d.removed, 'deleted entry', 'deleted entries']].forEach(g => {
+      const kind = g[0], glyph = g[1], items = g[2];
+      if (!items.length) return;
+      rows.push({ kind: 'muted', text: glyph + items.length + ' ' + (items.length === 1 ? g[3] : g[4]) });
+      items.slice(0, 10).forEach(it => {
+        // Name plus the actual field changes, so a whole save can be reviewed
+        // without opening each entry ("->" reads as an arrow in the list).
+        const detail = it.detail ? '  ·  ' + it.detail.replace(/ -> /g, ' → ') : '';
+        const row = { kind: kind, text: '     ' + it.label + detail };
+        // A listed entry opens when clicked. Deleted ones are gone from the
+        // working copy, so they stay plain rows rather than dead links.
+        if (kind !== 'del') row.id = it.id;
+        rows.push(row);
+      });
+      if (items.length > 10) rows.push({ kind: 'muted', text: '     …and ' + (items.length - 10) + ' more' });
+    });
+    if (diskMoved) rows.push({ kind: 'warn', text: '⚠ database.json changed on disk since this tab loaded it — saving replaces those changes.' });
+
+    const after = T.S.entries.length;
+    const before = after - d.added.length + d.removed.length;
+    const names = [opts.json !== false ? 'database.json' : null, opts.gz !== false ? 'database.json.gz' : null].filter(Boolean);
+    const sizeNote = diskBytes && !memory ? ' · ' + fmtBytes(diskBytes) + ' → ' + fmtBytes(textBytes(text)) : '';
+    const message = before.toLocaleString() + ' → ' + after.toLocaleString() + ' entries' + sizeNote +
+      '\n' + (memory
+        ? 'Downloads ' + names.join(' + ') + '.'
+        : 'Writes ' + names.join(' + ') + '. The current ' + (names.length > 1 ? 'files are' : 'file is') + ' copied to backup/ first.');
+
+    const ok = await UIKit.confirm({
+      title: d.total ? 'Save ' + d.total + ' change' + (d.total === 1 ? '' : 's') + '?' : 'Overwrite database.json?',
+      message: message,
+      details: rows,
+      icon: '💾',
+      confirmLabel: d.total ? 'Save' : 'Overwrite',
+      // Deletions are the part that cannot be undone after the backup rotates.
+      danger: d.removed.length > 0,
+      onDetailClick: revealChangedEntry
+    });
+    return ok ? { diff: d, diskMoved: diskMoved } : null;
+  }
+  // Clicking a listed entry closes the preview (as Cancel, so nothing is
+  // written) and takes you to it: tree visible, row scrolled to and selected,
+  // editor on the entry so you can see what the save would write.
+  function revealChangedEntry(id) {
+    if (!T.S) return;
+    const e = T.S.entries.find(x => x.id === id);
+    if (!e) return;
+    setLeft('tree');
+    setMid('editor');
+    revealInTree(e._uid);          // drop a search/filter that would hide the row
+    T._fromTap = true;
+    selectUid(e._uid, false);
+  }
+  function textBytes(s) { try { return new TextEncoder().encode(s).length; } catch (_) { return s.length; } }
+
+  // --------------------------------------------------------------- save log
+  // A record of recent writes: what each save changed, kept after the dialog is
+  // gone so the result can still be reviewed. Stored beside the autosave in
+  // IndexedDB; the 20 newest saves keep their first 25 entries, while the counts
+  // are always the real totals (a big save says "…and N more").
+  const SAVE_LOG_MAX = 20, SAVE_LOG_CHANGES = 25;
+  function summarizeSave(s) {
+    const parts = [];
+    if (s.added) parts.push('＋' + s.added);
+    if (s.modified) parts.push('～' + s.modified);
+    if (s.removed) parts.push('－' + s.removed);
+    return parts.join(' ') || 'no entry changes';
+  }
+  // "2 new saves, 9 in the changelog": how much of the exported file this run
+  // added, in the same words in the toast and in the panel.
+  function exportSummary(added, total) {
+    return added
+      ? added + ' new save' + (added === 1 ? '' : 's') + ', ' + total + ' in the changelog'
+      : 'no new saves, ' + total + ' in the changelog';
+  }
+  async function logSave(preview, res) {
+    try {
+      const d = preview.diff;
+      const row = {
+        ts: Date.now(),
+        mode: res.mode,
+        entries: T.S.entries.length,
+        bytes: (res.files || []).reduce((n, f) => n + (Number(f.bytes) || 0), 0),
+        added: d.added.length, modified: d.modified.length, removed: d.removed.length, total: d.total,
+        changes: d.added.map(x => ({ k: 'add', label: x.label, detail: x.detail }))
+          .concat(d.modified.map(x => ({ k: 'mod', label: x.label, detail: x.detail })))
+          .concat(d.removed.map(x => ({ k: 'del', label: x.label, detail: '' })))
+          .slice(0, SAVE_LOG_CHANGES)
+      };
+      T.saveLog = [row].concat(T.saveLog || []).slice(0, SAVE_LOG_MAX);
+      if (T.openSave >= 0) T.openSave += 1;   // the expanded row stays the same save
+      await DataStore.kvSet('saveLog', T.saveLog);
+    } catch (e) { console.warn('[DataTab] Could not record this save in the save log:', e); }
+  }
+
   async function saveAll(opts) {
     opts = opts || {};
     if (!T.S) return;
+    if (T.saving) return;                 // the preview is async; ignore a second Ctrl+S
     if (T.draftDirty && !(await commitDraft(true))) return;
+    T.saving = true;
     try {
       const text = T.S.serialize();
+      const preview = await previewSave(text, opts);
+      if (!preview) return;
       const res = await DataStore.saveDatabase(text, { json: opts.json !== false, gz: opts.gz !== false });
       T.S.markSaved(); T.savedLen = T.S.undoStack.length; recomputeChanged();
+      T.base = DC.snapshotEntries(T.S.entries);
+      await logSave(preview, res);
       T.lastSaved = Date.now(); T.gzStale = false;
       DataStore.kvDelete('working');
       const sz = res.files.map(f => fmtBytes(f.bytes)).join(' + ');
@@ -178,6 +334,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       T.diskFiles = await DataStore.listDataFiles().catch(() => T.diskFiles);
       renderAll(); runAudit();
     } catch (e) { console.error(e); toast('Save failed: ' + ((e && e.message) || e), '⚠️'); }
+    finally { T.saving = false; }
   }
   async function compressOnly() {
     try {
@@ -188,7 +345,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       toast('Compressed · ' + fmtBytes(f.bytes), '📦'); T.gzStale = false; renderExport();
     } catch (e) { toast('Compress failed: ' + ((e && e.message) || e), '⚠️'); }
   }
-  function fmtBytes(n) { return n > 1048576 ? (n / 1048576).toFixed(2) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+  function fmtBytes(n) { return DC.formatBytes(n); }
   function reloadApp() {
     try { SafeStorage.setItem('iem_data_return', '1'); } catch (_) {}
     (async () => {
@@ -397,7 +554,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       '<button class="dt-btn is-sm is-ico" data-dt="copy-json" id="dt-tb-json" title="Copy this entry as JSON (handy for the AI audit prompt)">{ }</button>' +
       '<span class="dt-sepv"></span>' +
       '<button class="dt-btn is-sm is-ico" data-dt="undo" id="dt-tb-undo" title="Undo (Ctrl+Z)">↶</button><button class="dt-btn is-sm is-ico" data-dt="redo" id="dt-tb-redo" title="Redo (Ctrl+Y)">↷</button>' +
-      '<button class="dt-btn is-sm is-primary" data-dt="save" id="dt-tb-save" title="Write database.json and database.json.gz (Ctrl+S)">💾 Save</button></div>';
+      '<button class="dt-btn is-sm is-primary" data-dt="save" id="dt-tb-save" title="Save - shows exactly what will change, then writes database.json and database.json.gz (Ctrl+S)">💾 Save</button></div>';
   }
   function editorPanelHtml(d) {
     if (!d) return '<div class="dt-empty"><span class="dt-big">🗃️</span>Select an entry in the tree, or<br><br><button class="dt-btn is-primary" data-dt="new">➕ New entry</button></div>';
@@ -533,7 +690,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     const b = T.ex.banner;
     if (b === 'restore') return '<div class="dt-banner">↩️ Restore unsaved edits? <button class="dt-btn is-sm" data-dt="restore">Restore</button><button class="dt-btn is-sm" data-dt="dismiss-banner">Dismiss</button></div>';
     if (b && b.kind === 'saved') return '<div class="dt-banner is-ok">💾 ' + E(b.text) + (b.mode !== 'memory' ? ' <button class="dt-btn is-sm" data-dt="reload-app" title="Reload so every tab uses the saved database">↻ Reload</button>' : '') + '<button class="dt-btn is-sm is-ico" data-dt="dismiss-banner" style="margin-left:auto">✕</button></div>';
-    if (T.gzStale) return '<div class="dt-banner">⚠ The .gz is out of date. <button class="dt-btn is-sm" data-dt="compress">Compress</button></div>';
+    if (T.gzStale) return '<div class="dt-banner">⚠ database.json is newer than the compressed copy. <button class="dt-btn is-sm" data-dt="compress">Compress</button></div>';
     if (T.notes && T.notes.length && !T._notesSeen) return '<div class="dt-banner">ℹ️ ' + T.notes.length + ' fields cleaned on load. <button class="dt-btn is-sm" data-dt="dismiss-notes">OK</button></div>';
     return '';
   }
@@ -1153,6 +1310,245 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
   }
 
   // ===================================================================== export
+  // The parsed changelog as markup: a title, the header note, then one card per
+  // save with its heading, counts and changed entries. Every piece of text comes
+  // from the file, so it is escaped through E() here - the parser hands back
+  // strings, never markup. `filter` narrows the view without touching the file.
+  function saveLogView(doc, filter) {
+    const view = DC.filterSaveLogDocument(doc, filter);
+    const blocks = (list) => (list || []).map(b => {
+      if (b.k === 'row') {
+        return '<div class="slv-row slv-' + E(b.kind) + '"><span class="slv-mark">' + E(b.mark) + '</span>' +
+          '<span class="slv-name">' + E(b.name) + '</span>' +
+          (b.detail ? '<span class="slv-detail">' + E(b.detail) + '</span>' : '') + '</div>';
+      }
+      if (b.k === 'note') return '<p class="slv-note">' + E(b.text) + '</p>';
+      if (b.k === 'meta') return '<p class="slv-meta">' + E(b.text) + '</p>';
+      return '<p class="slv-text">' + E(b.text) + '</p>';
+    }).join('');
+    // The text the reader typed, as they typed it: the label quotes it back, so a
+    // card says which search put it on screen and not just that one did.
+    const typed = String((filter && filter.query) || '').trim();
+    // The month picker drops whole saves rather than narrowing a card, so it
+    // explains itself once above them. Without this, a reader who comes back to a
+    // remembered month sees a shorter document and no reason for it.
+    const monthKey = (filter && filter.month) || 'all';
+    const months = monthKey === 'all' ? [] : DC.saveLogMonths(doc);
+    const monthHit = months.find(m => m.key === monthKey) || null;
+    // The other months are named too, so the line says what the picker can show
+    // without the reader having to open it - every one of them, not a sample, so
+    // a reader never has to wonder which month the note left out. They read
+    // oldest first, the way the changelog itself does: the note is a timeline
+    // with its missing stretches named, not a copy of the picker's menu, which
+    // stays newest first beside it.
+    const others = monthHit ? months.filter(m => m.key !== monthHit.key).reverse() : [];
+    // Reading oldest first buries the month a reader is likeliest to want next,
+    // since it lands at the end of an "and" clause. Marking the last one says
+    // which hidden month is the latest without moving it out of the timeline.
+    // The marker names its own scope: a bare "most recent" would read as the
+    // newest save in the file, which is a different month whenever the reader is
+    // already looking at the newest one. "The others" is that scope in the words
+    // the sentence is already using - the months not shown, said again as hidden
+    // by the clause it sits in - so the marker needs no second "hidden" to say
+    // which months it is comparing. A lone hidden month needs no marker at all:
+    // it is the only candidate, and the label would just make the line longer.
+    // A name also carries how many saves it holds - the answer to the question
+    // that follows from naming the months at all - but only where that number
+    // tells the months apart. A count every other hidden month shares is the same
+    // number written once per month, and a long file of one-save months would
+    // read as a wall of numbers that helps nobody choose. So a month keeps its
+    // count only when no other hidden month has it; a bare name then means "the
+    // same as the rest", not "unknown". The number is still the picker's own, so
+    // a month reads the same here as in the menu, and it goes in brackets rather
+    // than the picker's middot because this is a comma list, and two separators
+    // in a row would fight.
+    // The month on screen always states its count, bracketed the same way: it is
+    // the number the hidden ones are weighed against, and without it a bracket on
+    // the far side of the semicolon is a figure with nothing to compare to. Its
+    // count is unconditional because there is only one shown month - it cannot be
+    // repeated. Silence on a hidden month keeps its one meaning (shared with
+    // another hidden month) rather than becoming "same as the month on screen".
+    const counted = n => n + ' ' + (n === 1 ? 'save' : 'saves');
+    const named = others.map((m, i) => {
+      const last = others.length > 1 && i === others.length - 1;
+      const own = others.filter(o => o.count === m.count).length === 1;
+      const bits = [];
+      if (own) bits.push(counted(m.count));
+      if (last) bits.push('the newest of the others');
+      return bits.length ? m.label + ' (' + bits.join(', ') + ')' : m.label;
+    });
+    // "Sep 2026", "Jun 2026 and Jul 2026", "Jun 2026, Jul 2026 and Aug 2026".
+    const list = named.length > 1
+      ? named.slice(0, -1).join(', ') + ' and ' + named[named.length - 1] : (named[0] || '');
+    const also = !others.length ? '' : '; ' + list +
+      (others.length === 1 ? ' is hidden' : ' are hidden');
+    const scope = monthHit
+      ? '<p class="slv-note slv-scope">' + E('Only saves from ' + monthHit.label + ' (' +
+        counted(monthHit.count) + ') are shown' + also + '.') + '</p>' : '';
+    const secs = view.sections.map(s => {
+      const shown = s.blocks.filter(b => b.k === 'row').length;
+      // A card whose rows are partly filtered keeps its own summary line, so it
+      // says how many of its changes are being shown rather than looking wrong.
+      const hint = s.hidden
+        ? '<p class="slv-text">' + E('Showing ' + shown + ' of ' + (shown + s.hidden) + ' changes this save lists.') + '</p>' : '';
+      // A card can be here because the search text is in the save itself, not in
+      // any of its rows. Quoting the text and naming the part it was found in keeps
+      // a full card among filtered ones legible - and two saves found for different
+      // reasons apart.
+      const field = s.matchedSave === 'date' ? 'date' : 'destination';
+      const found = s.matchedSave
+        ? '<span class="slv-found" title="' + E('The search text matched this save\u2019s ' + field +
+          ', not an entry in it.') + '">' +
+          E('found by its ' + field + (typed ? ' \u201C' + typed + '\u201D' : '')) + '</span>' : '';
+      return '<section class="slv-sec"><div class="slv-head"><span class="slv-h">' + E(s.heading) + '</span>' +
+        (s.where ? '<span class="slv-where">' + E(s.where) + '</span>' : '') + found + '</div>' + blocks(s.blocks) + hint + '</section>';
+    }).join('');
+    const blank = !doc.title && !(doc.blocks || []).length && !view.total;
+    const empty = blank
+      ? '<p class="slv-text">This file has no saves in it yet.</p>'
+      : (!secs ? '<p class="slv-text">' + E('Nothing in ' + DC.SAVE_LOG_FILE + ' matches this filter.') + '</p>' : '');
+    return {
+      html: '<div class="slv-doc">' + (doc.title ? '<div class="slv-title">' + E(doc.title) + '</div>' : '') +
+        blocks(doc.blocks) + scope + secs + empty + '</div>',
+      saves: view.saves, total: view.total, rows: view.rows
+    };
+  }
+  // The view the reader left is the view they return to: reopening the changelog
+  // resumes its kind, month and search instead of starting from the whole file.
+  // This is a preference about reading, so it lives in view storage - never in
+  // the changelog, the database or anything the viewer can write.
+  const SLV_FILTER_KEY = 'iem_savelog_filter_v1';
+  function loadSaveLogFilter(months) {
+    let saved = null;
+    try { saved = JSON.parse(SafeStorage.getItem(SLV_FILTER_KEY) || 'null'); } catch (_) { saved = null; }
+    return DC.sanitizeSaveLogFilter(saved, months);
+  }
+  function storeSaveLogFilter(filter) {
+    try {
+      // A view showing everything has nothing to remember; forgetting it is what
+      // lets a later read open on the whole file without a hidden filter.
+      if (DC.isDefaultSaveLogFilter(filter)) SafeStorage.removeItem(SLV_FILTER_KEY);
+      else SafeStorage.setItem(SLV_FILTER_KEY, JSON.stringify({ kind: filter.kind, month: filter.month, query: filter.query }));
+    } catch (_) {}
+  }
+  // Reading the changelog itself. The list above only holds the newest 20 saves,
+  // so the status line opens the whole document in a read-only view inside the
+  // app, rather than handing the file to the OS or pointing at a copy in
+  // Downloads that the page cannot reach.
+  async function openSaveLogView() {
+    let text = null;
+    try { text = await DataStore.readSaveLog(); } catch (e) {
+      toast('Could not read the save log: ' + ((e && e.message) || e), '⚠️');
+      return;
+    }
+    const onDisk = typeof text === 'string';
+    if (!onDisk) {
+      // Browser-only: the export went to the Downloads folder, so the only copy
+      // this page can show is the one it built from its own log.
+      if (!(T.saveLog || []).length) { toast(DC.SAVE_LOG_FILE + ' is in your Downloads folder — export again to read it here.', '📝'); return; }
+      text = DC.mergeSaveLog(null, T.saveLog, { now: (T.ex.lastExport && T.ex.lastExport.ts) || Date.now() }).text;
+    }
+    const sum = DC.summarizeSaveLog(text);
+    const stamp = sum && sum.updatedAt
+      ? new Date(sum.updatedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : '';
+    const actions = [];
+    // The installed app can still hand the file to whatever owns .md files: the
+    // in-app view is the default way in, not the only one.
+    if (DataStore.state.mode === 'electron') actions.push({
+      label: 'Open in Markdown app',
+      title: 'Hand ' + DC.SAVE_LOG_FILE + ' to the app that opens .md files.',
+      onClick: async () => {
+        try {
+          const r = await DataStore.openSaveLog();
+          toast(r.how === 'revealed' ? r.name + ' selected in its folder.' : 'Opened ' + r.name + '.', '📝');
+        } catch (e) { toast('Could not open the save log: ' + ((e && e.message) || e), '⚠️'); }
+      }
+    });
+    const doc = DC.saveLogDocument(text);
+    const months = DC.saveLogMonths(doc);
+    const filter = loadSaveLogFilter(months);
+    // Write back what was actually applied, so a stale or half-readable entry is
+    // corrected once instead of lingering in storage after every open.
+    storeSaveLogFilter(filter);
+    const kindBtns = new Map();
+    let bodyEl = null, countEl = null;
+    const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+    const draw = () => {
+      const v = saveLogView(doc, filter);
+      if (bodyEl) { bodyEl.innerHTML = v.html; bodyEl.scrollTop = 0; }
+      kindBtns.forEach((b, k) => b.classList.toggle('is-on', filter.kind === k));
+      if (!countEl) return;
+      const narrowed = filter.kind !== 'all' || filter.month !== 'all' || !!filter.query.trim();
+      // "Showing 1 of 3 saves" is what makes a filtered list honest: the file is
+      // not empty, the filter is on.
+      countEl.textContent = (narrowed ? 'Showing ' + v.saves + ' of ' + v.total : String(v.saves)) +
+        ' save' + (v.total === 1 ? '' : 's') + ' · ' + plural(v.rows, 'change', 'changes');
+    };
+    // The controls live above the body and are built once per open, so changing
+    // one redraws the document without taking focus away from the control.
+    const toolbar = (bar) => {
+      [['all', 'All', 'Every change, newest save first'],
+        ['add', '＋ Additions', 'Only saves that added entries, and only those rows'],
+        ['del', '－ Removals', 'Only saves that removed entries, and only those rows']].forEach(([k, label, title]) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'slv-fbtn';
+        b.setAttribute('data-slv-kind', k);
+        b.textContent = label;
+        b.title = title;
+        b.addEventListener('click', () => { filter.kind = k; storeSaveLogFilter(filter); draw(); });
+        kindBtns.set(k, b);
+        bar.appendChild(b);
+      });
+      // Only months the file actually holds are offered, so the picker can never
+      // land on nothing. One month means nothing to choose between.
+      if (months.length > 1) {
+        const sel = document.createElement('select');
+        sel.className = 'slv-month';
+        sel.setAttribute('aria-label', 'Show the saves of one month');
+        sel.title = 'Show one month of saves';
+        sel.innerHTML = '<option value="all">Every month</option>' + months.map(m =>
+          '<option value="' + E(m.key) + '">' + E(m.label + ' · ' + plural(m.count, 'save', 'saves')) + '</option>').join('');
+        // Opened on the month that was last being read, when the file still holds it.
+        sel.value = filter.month;
+        sel.addEventListener('change', () => { filter.month = sel.value; storeSaveLogFilter(filter); draw(); });
+        bar.appendChild(sel);
+      }
+      // Search narrows to rows whose name or change detail contains the text,
+      // and also to saves whose heading or destination does - so "folder" or a
+      // date finds a save by where and when it happened. Debounced so a long
+      // changelog is not re-rendered on every keystroke, and only the body is
+      // redrawn, so the caret stays in this field.
+      const search = document.createElement('input');
+      search.type = 'search';
+      search.className = 'slv-search';
+      search.setAttribute('data-slv-search', '');
+      search.placeholder = 'Name, price or save…';
+      search.setAttribute('aria-label', 'Show only saves and changes whose entry name, change detail, save date or destination contains this text');
+      search.title = 'Narrow to entry names, change details, save dates and destinations that contain this text';
+      search.value = filter.query;
+      let debounce = 0;
+      search.addEventListener('input', () => {
+        clearTimeout(debounce);
+        debounce = setTimeout(() => { filter.query = search.value; storeSaveLogFilter(filter); draw(); }, 120);
+      });
+      bar.appendChild(search);
+      countEl = document.createElement('span');
+      countEl.className = 'slv-count';
+      countEl.setAttribute('aria-live', 'polite');
+      bar.appendChild(countEl);
+    };
+    UIKit.read({
+      title: DC.SAVE_LOG_FILE,
+      subtitle: onDisk
+        ? (sum ? sum.total + ' save' + (sum.total === 1 ? '' : 's') + (stamp ? ' · last updated ' + stamp : '') + ' · read-only' : 'Empty file · read-only')
+        : 'The exported copy · read-only — the file itself is in your Downloads folder',
+      toolbar: toolbar,
+      render: (body) => { bodyEl = body; draw(); },
+      actions: actions
+    });
+  }
   function renderExport() {
     const el = $('dt-ex-body'); if (!el) return;
     if (!T.ready) { el.innerHTML = ''; return; }
@@ -1167,12 +1563,45 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     const folderBtns = st.mode === 'electron' ? '<button class="dt-btn" data-dt="open-folder">📂 Open ' + (st.packaged ? 'my copy' : 'project') + ' folder</button>' :
       (st.fsApi ? '<button class="dt-btn" data-dt="pick-folder">📂 ' + (st.mode === 'folder' ? 'Change folder…' : 'Connect folder…') + '</button>' + (st.savedHandle && st.mode !== 'folder' ? '<button class="dt-btn" data-dt="reconnect-folder">↻ Reconnect ' + E(st.savedHandle.name) + '</button>' : '') : '<p class="dt-help">Folder saving needs Chrome/Edge or the desktop app.</p>');
     const chunkRows = X.chunks.map((c, i) => '<div class="dt-file"><span class="dt-t dt-mono" style="direction:ltr" title="' + E(c.name) + '">' + E(c.name) + '</span><span class="dt-help" style="white-space:nowrap">' + c.count + '</span><button class="dt-btn is-sm" data-dt="chunk-copy" data-a="' + i + '">Copy</button><button class="dt-btn is-sm" data-dt="chunk-dl" data-a="' + i + '">⬇</button></div>').join('');
+    const log = T.saveLog || [];
+    const chLog = T.ex.changelog;
+    // The file itself is the only way to read more than the newest 20 saves, so the
+    // status is the way in to it rather than a caption: clicking it opens the
+    // changelog in a read-only view instead of leaving the app.
+    const changelogHtml = chLog && chLog.total
+      ? '<button class="dt-hist" data-dt="log-open-file" title="' + E('Reads ' + DC.SAVE_LOG_FILE + ' and shows it here, without leaving the app or waiting for an export, so the whole changelog is readable — not just the saves listed above. Browser-only mode shows the copy the export downloaded.') + '">' +
+        '<span class="dt-t"><b>' + E(DC.SAVE_LOG_FILE) + '</b><span class="dt-s">' + E(chLog.total + ' save' + (chLog.total === 1 ? '' : 's') +
+          (chLog.updatedAt ? ' · last updated ' + new Date(chLog.updatedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '')) + '</span></span>' +
+        '<span>👁</span></button>'
+      : '';
+    const lastEx = T.ex.lastExport;
+    const lastExHtml = lastEx
+      ? '<p class="dt-help" style="margin:0">' + E('Last export: ' + exportSummary(lastEx.added, lastEx.total) + ' · ' +
+          new Date(lastEx.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })) + '</p>'
+      : '';
+    const logHtml = log.length
+      ? '<div class="dt-box dt-scroll" style="max-height:190px">' + log.map((s, i) => {
+          const open = T.openSave === i;
+          const bits = [new Date(s.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }), s.entries.toLocaleString() + ' entries'];
+          if (s.bytes) bits.push(fmtBytes(s.bytes));
+          if (s.mode === 'memory') bits.push('downloaded');
+          const rows = open && (s.changes || []).length
+            ? s.changes.map(c => '<div class="dt-help" style="padding:2px 8px">' + (c.k === 'add' ? '＋ ' : c.k === 'mod' ? '～ ' : '－ ') + E(c.label) +
+                (c.detail ? '  ·  ' + E(String(c.detail).replace(/ -> /g, ' → ')) : '') + '</div>').join('') +
+              (s.total > s.changes.length ? '<div class="dt-help" style="padding:2px 8px">…and ' + (s.total - s.changes.length) + ' more</div>' : '')
+            : '';
+          return '<button class="dt-hist" data-dt="log-open" data-a="' + i + '"><span class="dt-t"><b>' + E(summarizeSave(s)) + '</b><span class="dt-s">' + E(bits.join(' · ')) + '</span></span><span>' + (open ? '▾' : '▸') + '</span></button>' + rows;
+        }).join('') + '</div>' +
+        '<div class="dt-g2"><button class="dt-btn" data-dt="log-export" title="' + E('Adds the saves listed here to ' + DC.SAVE_LOG_FILE + ' beside database.json, keeping every save the file already lists so the changelog grows past this list. What this export adds is marked in the file. Browser-only mode downloads it instead.') + '">📝 Export .md</button>' +
+        '<button class="dt-btn" data-dt="log-clear" title="Forget this list. The database files, backups and undo history are untouched.">🗑 Clear log</button></div>' + lastExHtml
+      : '<p class="dt-help">Every save records what it changed here, so the result can be reviewed after the fact.</p>';
     el.innerHTML =
       '<h4 class="dt-h">Save</h4>' + storage +
-      '<div class="dt-g2"><button class="dt-btn is-primary" data-dt="save" title="Writes database.json and database.json.gz together. The previous file goes to backup/.">💾 Save</button><button class="dt-btn" data-dt="compress" title="Write only database.json.gz from the current database">📦 .gz only</button></div>' +
+      '<div class="dt-g2"><button class="dt-btn is-primary" data-dt="save" title="Shows every entry the save will add, edit or delete, then writes database.json and database.json.gz together. The previous files go to backup/.">💾 Save</button><button class="dt-btn" data-dt="compress" title="Write only database.json.gz from the current database">📦 .gz only</button></div>' +
       '<div class="dt-g2"><button class="dt-btn" data-dt="dl-json" title="Download a copy of database.json">⬇ .json</button><button class="dt-btn" data-dt="dl-gz" title="Download a compressed copy">⬇ .gz</button></div>' +
       folderBtns +
       (st.mode === 'memory' ? '<button class="dt-btn" data-dt="zip">🗜️ Download update (.zip' + (pend ? ', ' + pend + ' curve' + (pend === 1 ? '' : 's') : '') + ')</button>' : '') +
+      '<div class="dt-sep"></div><h4 class="dt-h">Recent saves</h4>' + logHtml + changelogHtml +
       '<div class="dt-sep"></div><h4 class="dt-h">Split for AI audit</h4>' +
       '<div class="dt-row"><label class="dt-lbl dt-grow" style="margin:0">Tokens per chunk</label><input class="dt-in input-bg-fix is-num" style="width:90px" data-f="ex-tokens" value="' + X.tokens + '" inputmode="numeric"><button class="dt-btn" data-dt="split">✂ Split</button></div>' +
       (chunkRows ? '<div class="dt-box" style="max-height:150px;overflow-y:auto">' + chunkRows + '</div><button class="dt-btn" data-dt="chunk-zip">⬇ All chunks (.zip)</button>' : '') +
@@ -1248,6 +1677,30 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       case 'copy-json': { const x = T.draft; if (x) copyText(JSON.stringify(x, null, 2), 'Entry JSON'); break; }
       case 'restore': restoreAutosave(); break;
       case 'dismiss-banner': T.ex.banner = null; T.gzStale = false; updateToolbar(); renderExport(); break;
+      case 'log-open': T.openSave = T.openSave === Number(a) ? -1 : Number(a); renderExport(); break;
+      case 'log-open-file': await openSaveLogView(); break;
+      case 'log-export': {
+        try {
+          // Merge into what is already there: the file is the long-term changelog,
+          // the list in this panel is only the newest 20 saves of it.
+          const merged = DC.mergeSaveLog(await DataStore.readSaveLog(), T.saveLog);
+          const r = await DataStore.writeSaveLog(merged.text);
+          const n = merged.added, total = merged.total;
+          // Kept on screen after the toast fades: how much of the file was new.
+          T.ex.lastExport = { ts: Date.now(), added: n, total: total };
+          T.ex.changelog = { total: total, updatedAt: Date.now() };
+          renderExport();
+          toast(r.mode === 'memory' ? r.name + ' downloaded — ' + exportSummary(n, total) + '.'
+            : n ? r.name + ' updated — ' + exportSummary(n, total) + '.'
+              : r.name + ' already lists all ' + total + ' save' + (total === 1 ? '' : 's') + '.', '📝');
+        } catch (e) { toast('Could not export the save log: ' + ((e && e.message) || e), '⚠️'); }
+        break;
+      }
+      case 'log-clear': {
+        const ok = await UIKit.confirm({ title: 'Clear the save log?', message: 'Only this list is forgotten. The database files, the backups and the undo history are untouched.', confirmLabel: 'Clear log', icon: '🗑️', danger: true });
+        if (!ok) break;
+        T.saveLog = []; T.openSave = -1; DataStore.kvDelete('saveLog'); renderExport(); toast('Save log cleared.', '🗑️'); break;
+      }
       case 'dismiss-notes': T._notesSeen = true; console.info('[DataTab] load notes:', T.notes); updateToolbar(); break;
       case 'reload-app': reloadApp(); break;
       case 'reload-db': if (T.S && T.S.dirty) { const ok = await UIKit.confirm({ title: 'Discard unsaved edits?', message: 'Unsaved edits will be lost.', confirmLabel: 'Reload from disk', danger: true }); if (!ok) break; } T.ready = false; T.selUid = null; T.draft = null; T.draftDirty = false; DataStore.kvDelete('working'); T.ex.banner = null; T.load(); break;

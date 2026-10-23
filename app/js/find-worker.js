@@ -10,52 +10,17 @@ try {
     // resolved lazily below and will throw a clear error if genuinely missing.
 }
 try {
+    importScripts('name-utils.js');    // provides NameUtils (canonical name grouping)
     importScripts('endgame-categories.js'); // provides EndgameCategories (Endgame scan rubric)
+    importScripts('endgame-scoring.js');    // provides EndgameScoring (shared with the renderer)
 } catch (e) {
     // Only the 'endgame' message type needs it; the handler reports a clear
     // error if the file failed to load.
 }
 
 function sanitizeName(name) {
-    // Coerce at the boundary: a truthy non-string (e.g. a number,
-    // an object) reaches .toLowerCase() below and throws --
-    // Number.isFinite/typeof guards on null/undefined already work
-    // via the falsy check, this catches everything else.
-    if (typeof name !== 'string') name = (name == null) ? '' : String(name);
-    if (!name) return "";
-    let clean = name.toLowerCase();
-
-    clean = clean.replace(/[\(\[][^\]\)]*[\)\]]/g, '');
-
-    clean = clean.replace(/\s*x\s*(?:hbb|crinacle|crin|zeos|gizaudio|fresh reviews|jays audio|divinus|seeaudio|akros|ducbloke|community|fresh|z reviews|z)\b/g, '');
-
-    clean = clean.replace(/\b(?!dudu\b)[ud]{4}\b/g, '');
-    clean = clean.replace(/\b[ud]{2,3}\b/g, '');
-    clean = clean.replace(/\b[01]{2,4}\b/g, '');
-    clean = clean.replace(/\b[1-5]\s+[1-5]\b/g, '');
-    clean = clean.replace(/\b(?:all on|all off|bc on|bc off)\b/g, '');
-    clean = clean.replace(/\s*(?:bass|treble|reference|ref|mid|midrange)?\s*(?:switch|sw|switches)\s*(?:on|off|up|down|1|2|3|4|0)*\b/g, '');
-
-    clean = clean.replace(/\b\d+\s*(?:Ω|ohm|ohms|o)\b/g, '');
-    clean = clean.replace(/\b(?:high|low|s\s+high|s\s+low)\s*(?:Ω|ohm|ohms|impedance)\b/g, '');
-
-    clean = clean.replace(/\b(?:\d+\.\d+mm|\d+mm|3\.5|4\.4|usb\s+c|type\s+c|usb|tws|anc|analog|digital|dsp)\b/g, '');
-    clean = clean.replace(/\s*(?:gold|grey|gray|silver|default)?\s*(?:plug|cable|connection|connector|adapter|headband|wire)\b/g, '');
-
-    clean = clean.replace(/\s*(?:foam|silicone|silicon|yaxi|spinfit|symbio|starline|widebore|narrowbore|final|clear|red|blue|grey|gray|stock|custom|my|dunu\s+ss)\s*(?:tips|eartips|eartip|tip|pads|pad)\b/g, '');
-    clean = clean.replace(/\b(?:tips|eartips|eartip|tip|pads|pad)\b/g, '');
-
-    clean = clean.replace(/\s*(?:blue|gold|silver|red|black|green|brass|steel|titanium|ti|short\s+black|short\s+red|alt|reference|ref|hifi|pop|vocal|instrumental|monitor|balanced|classic|default|standard|std)?\s*(?:nozzles?|rings?|filters?|mesh|damper|vent|mod|mods|taped?|tanya|microtape)\b/g, '');
-
-    clean = clean.replace(/\b(?:v\d+(?:\.\d+)?|mk[ivx\d]+b?)\b/g, '');
-    clean = clean.replace(/\b(?:\d+st|\d+nd|\d+rd|\d+th)\s+(?:gen|generation|unit|anniversary|anniv)\b/g, '');
-    clean = clean.replace(/\b(?:og|gen|generation|unit|anniversary|anniv|re\s+set|preprod|pre\s+retail|retail|sample\s*\d*|sample)\b/g, '');
-
-    clean = clean.replace(/\b(?:edition|standard|std|default|reference|ref|stock|base|baseline|pro\s+max|pro|max|ltd|limited|custom\s+resin|resin)\b/g, '');
-
-    clean = clean.replace(/\s+/g, ' ').trim();
-
-    return clean.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    // Single implementation: js/name-utils.js (also in the renderer bundle).
+    return NameUtils.sanitizeName(name);
 }
 
 function freqWeight(f) {
@@ -227,147 +192,9 @@ function itemsKey(list) {
     return s;
 }
 
-// Endgame scan: for every rubric category, rank ALL priced candidates and
-// return a top-N pool (Option X of Y card cycling) instead of the old 3
-// curated slots. Each pool member carries its composite score, its tag
-// corroboration result, and role flags: the top pick is the Champion, any
-// budget clone of the Champion (>=75% curve similarity for <=40% of its
-// price) is flagged as a Giant Killer. A value strip then collects the
-// Giant Killers of all 8 champions into one cycling pool.
-// Uses the shared canonical list, so no extra normalize + spline pass
-// beyond what the tuning scan already paid for.
-function scoreEndgameCategories(cc, freqs, maxPrice) {
-    if (!EndgameCategories) {
-        throw new Error('EndgameCategories unavailable — endgame-categories.js did not load');
-    }
-    const EG = EndgameCategories;
-    const cats = EG.ENDGAME_CATEGORIES || [];
-    const maxPicks = EG.ENDGAME_MAX_PICKS || 12;
-
-    // Only items with a real price inside the budget can be any of the
-    // picks (Champion <= budget, Giant Killer <= 40% of the Champion's
-    // price which is already <= budget).
-    const priced = [];
-    for (let i = 0; i < cc.length; i++) {
-        const e = cc[i];
-        if (!e.price || e.price > maxPrice) continue;
-        priced.push(e);
-    }
-
-    const out = {};
-    const champions = [];
-
-    for (let c = 0; c < cats.length; c++) {
-        const cat = cats[c];
-        const scored = [];
-        for (let i = 0; i < priced.length; i++) {
-            const e = priced[i];
-            const res = EG.scoreCategory(cat, e.tags, e.interp, freqs);
-            // No price bonus: at equal acoustics the cheapest option should
-            // win, not the priciest affordable one (price ≠ quality).
-            const bonus = 0;
-            scored.push({
-                entry: e,
-                composite: res.score + bonus,
-                reason: res.reason,
-                tagMatch: res.tagMatch,
-                curveScore: res.curveScore
-            });
-        }
-
-        if (scored.length === 0) {
-            out[cat.id] = { pool: [] };
-            continue;
-        }
-
-        scored.sort((a, b) => b.composite - a.composite);
-        const champion = scored[0];
-
-        // Giant Killer set: closest tuner under 40% of the Champion's price
-        // wins (>=75% curve similarity). No brand constraint: same-brand
-        // cheaper siblings are legit giant killers (e.g. Hexa under Nova).
-        const gkCeiling = champion.entry.price * EG.GIANT_KILLER_PRICE_FRACTION;
-        const gkSims = {};
-        for (let i = 1; i < scored.length; i++) {
-            const s = scored[i];
-            if (s.entry.price > gkCeiling) continue;
-            const sim = scoreInterp(s.entry.interp, champion.entry.interp, freqs, true);
-            if (sim >= 75) gkSims[s.entry.id] = { sim: sim, s: s };
-        }
-
-        const pool = [];
-        const limit = Math.min(maxPicks, scored.length);
-        for (let i = 0; i < limit; i++) {
-            const s = scored[i];
-            const gk = gkSims[s.entry.id];
-            const pick = {
-                id: s.entry.id,
-                name: s.entry.name,
-                price: s.entry.price,
-                brand: s.entry.brand || '',
-                score: Math.min(100, Math.round(s.composite)),
-                reason: s.reason,
-                tagMatch: !!s.tagMatch,
-                curveScore: Math.round(s.curveScore || 0)
-            };
-            if (i === 0) pick.isChampion = true;
-            if (gk) {
-                pick.isGiantKiller = true;
-                pick.similarity = gk.sim;
-                pick.reason = `${gk.sim.toFixed(1)}% tonal match to ${champion.entry.name}`;
-            }
-            pool.push(pick);
-        }
-
-        // A Giant Killer ranked outside the top-N cap still earns a slot —
-        // budget clones are the whole point of the Endgame tab. The best
-        // clone overall is also kept for the value strip.
-        let bestGk = null;
-        let bestGkAll = null;
-        for (const gkId in gkSims) {
-            const g = gkSims[gkId];
-            if (!bestGkAll || g.sim > bestGkAll.sim) bestGkAll = g;
-            if (pool.some(p => p.id === gkId)) continue;
-            if (!bestGk || g.sim > bestGk.sim) bestGk = g;
-        }
-        if (bestGk) {
-            pool.push({
-                id: bestGk.s.entry.id,
-                name: bestGk.s.entry.name,
-                price: bestGk.s.entry.price,
-                brand: bestGk.s.entry.brand || '',
-                score: Math.min(100, Math.round(bestGk.s.composite)),
-                reason: `${bestGk.sim.toFixed(1)}% tonal match to ${champion.entry.name}`,
-                tagMatch: !!bestGk.s.tagMatch,
-                curveScore: Math.round(bestGk.s.curveScore || 0),
-                isGiantKiller: true,
-                similarity: bestGk.sim
-            });
-        }
-
-        champions.push({ id: champion.entry.id, name: champion.entry.name, interp: champion.entry.interp, price: champion.entry.price, gk: bestGkAll });
-        out[cat.id] = { pool: pool };
-    }
-
-    // Value strip: the giant killers of all 8 category champions — the same
-    // budget-clone rule as each category's 💥 pick (<=40% of the champion's
-    // price, >=75% tonal match) — collected into one cycling pool, best
-    // match first. Duplicate clones keep the strongest match.
-    const valueById = new Map();
-    for (let k = 0; k < champions.length; k++) {
-        const ch = champions[k];
-        const gk = ch.gk;
-        if (!gk) continue;
-        const e = gk.s.entry;
-        const existing = valueById.get(e.id);
-        if (existing && existing.similarity >= gk.sim) continue;
-        valueById.set(e.id, { id: e.id, name: e.name, price: e.price, brand: e.brand || '', similarity: gk.sim, matchName: ch.name });
-    }
-    const valuePool = Array.from(valueById.values()).sort((a, b) => b.similarity - a.similarity);
-    out._value = { pool: valuePool.slice(0, 12) };
-    return out;
-}
-
+// Endgame scoring lives in endgame-scoring.js, shared verbatim with the
+// renderer fallback (find-endgame.js) so both paths rank identically.
+// Loaded via importScripts() at the top of this file.
 self.onmessage = function (e) {
     const msg = e.data || {};
     // Echo the caller's request id with every reply so the main thread can
@@ -447,7 +274,7 @@ self.onmessage = function (e) {
                 cc = canonicalList;
             }
 
-            const endgame = scoreEndgameCategories(cc, freqs, maxPrice);
+            const endgame = EndgameScoring.scoreEndgameCategories(cc, freqs, maxPrice);
             self.postMessage({ type: 'result', ok: true, endgame: endgame, reqId: reqId });
         } else {
             self.postMessage({ type: 'result', ok: false, error: 'unknown message type: ' + (msg.type || 'none'), reqId: reqId });

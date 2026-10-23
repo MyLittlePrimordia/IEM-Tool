@@ -129,10 +129,12 @@ const IEM_ImageMethods = {
                         const slider = document.getElementById('image-zoom-slider');
                         if (slider) slider.value = 1.0;
 
-                        document.getElementById('image-preview-canvas').classList.remove('hidden');
-                        document.getElementById('image-controls-bar').classList.remove('hidden');
-                        document.getElementById('image-clear-btn').classList.remove('hidden');
-                        document.getElementById('upload-placeholder').classList.add('hidden');
+                        // Optional chaining: a missing photo-tab node must not
+                        // reject the image upload after the blob was accepted.
+                        document.getElementById('image-preview-canvas')?.classList.remove('hidden');
+                        document.getElementById('image-controls-bar')?.classList.remove('hidden');
+                        document.getElementById('image-clear-btn')?.classList.remove('hidden');
+                        document.getElementById('upload-placeholder')?.classList.add('hidden');
 
                         const checkbox = document.getElementById('image-transparency-chk');
                         if (checkbox && checkbox.checked) {
@@ -206,10 +208,10 @@ const IEM_ImageMethods = {
             this.currentImage = isBlob ? URL.createObjectURL(value) : value;
             this.rawImageObj = new Image();
             this.rawImageObj.onload = () => {
-                document.getElementById('image-preview-canvas').classList.remove('hidden');
-                document.getElementById('image-controls-bar').classList.remove('hidden');
-                document.getElementById('image-clear-btn').classList.remove('hidden');
-                document.getElementById('upload-placeholder').classList.add('hidden');
+                document.getElementById('image-preview-canvas')?.classList.remove('hidden');
+                document.getElementById('image-controls-bar')?.classList.remove('hidden');
+                document.getElementById('image-clear-btn')?.classList.remove('hidden');
+                document.getElementById('upload-placeholder')?.classList.add('hidden');
                 this.renderImagePreview();
             };
             this.rawImageObj.onerror = () => {

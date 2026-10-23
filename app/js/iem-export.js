@@ -136,12 +136,15 @@ exportReviewCard: async function() {
                 showToast("Radar chart not available. Please initialize review first.", "⚠️");
                 return;
             }
-            const brand = document.getElementById('brand').value.trim() || "Generic";
-            const model = document.getElementById('model').value.trim() || "IEM";
-            const price = document.getElementById('price').value.trim() || "N/A";
-            const score = document.getElementById('overall-score').textContent || "5.0";
-            const volume = document.getElementById('listening-volume').value || "Moderate";
-            const notes = document.getElementById('review-notes').value.trim() || "No custom impressions entered.";
+            // Guarded reads: the export card must still render if an optional
+            // field has been removed from the DOM (it used to reject the whole
+            // async export with no card and no toast).
+            const brand = elValue('brand').trim() || "Generic";
+            const model = elValue('model').trim() || "IEM";
+            const price = elValue('price').trim() || "N/A";
+            const score = (elById('overall-score') || {}).textContent || "5.0";
+            const volume = elValue('listening-volume') || "Moderate";
+            const notes = elValue('review-notes').trim() || "No custom impressions entered.";
 
             const selectedThemeId = IEM_Module.exportTheme || localStorage.getItem('settings_theme_id') || 'slate';
             const selectedFontFamily = IEM_Module.exportFont || localStorage.getItem('settings_font_id') || 'JetBrains Mono';
@@ -407,9 +410,9 @@ exportReviewCard: async function() {
             ctx.fillText("SENSITIVITY", 172, 292);
 
             ctx.fillStyle = currentTheme.textMain;
-            const impStr = document.getElementById('impedance').value + " Ω";
+            const impStr = elValue('impedance') + " Ω";
             const sensUnitText = (this.sensUnit === 'V' ? "dB/V" : "dB/mW");
-            const sensStr = document.getElementById('sensitivity').value + " " + sensUnitText;
+            const sensStr = elValue('sensitivity') + " " + sensUnitText;
 
             drawFittedText(impStr, 96, 325, 70, 13, true, 'left');
             drawFittedText(sensStr, 172, 325, 110, 13, true, 'left');
@@ -748,9 +751,9 @@ exportReviewCard: async function() {
             ctx.font = `bold 9px ${activeFont}`;
             ctx.fillText("COMPATIBILITY", 890, 464);
 
-            let impVal = parseFloat(document.getElementById('impedance').value);
+            let impVal = parseFloat(elValue('impedance'));
             if (isNaN(impVal) || impVal <= 0) impVal = 5;
-            let sensVal = parseFloat(document.getElementById('sensitivity').value);
+            let sensVal = parseFloat(elValue('sensitivity'));
             if (isNaN(sensVal)) sensVal = 80;
 
             let pReqIemExport, vReq;

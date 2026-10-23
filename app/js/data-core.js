@@ -625,6 +625,396 @@ const DataCore = (function () {
     return parts.join('; ');
   }
 
+  // --------------------------------------------------------- save previews
+  // A save overwrites database.json, so the Data tab shows exactly what it will
+  // change before writing. `snapshotEntries` records the state the file was
+  // loaded from (or last saved as), keyed by database id; `diffAgainstSnapshot`
+  // reports what the current entries add, edit and remove relative to it.
+  //
+  // A snapshot stores a fingerprint, not the entry itself: the Session edits
+  // entries in place, so holding references would make every diff come back
+  // empty. It also keeps a plain copy of the old values, which is what lets the
+  // save preview say *what* changed ("Price: $400 -> $405") and not just which
+  // entries are affected.
+  function copyEntry(e) {
+    const c = {};
+    for (let i = 0; i < SCHEMA_FIELDS.length; i++) {
+      const f = SCHEMA_FIELDS[i];
+      const v = e[f];
+      c[f] = Array.isArray(v) ? v.slice() : v;
+    }
+    return c;
+  }
+  function fingerprintEntry(e) {
+    let s = '';
+    for (let i = 0; i < SCHEMA_FIELDS.length; i++) {
+      const v = e[SCHEMA_FIELDS[i]];
+      s += (Array.isArray(v) ? v.join('\u0001') : String(v === null || v === undefined ? '' : v)) + '\u0002';
+    }
+    return s;
+  }
+  function snapshotEntries(entries) {
+    const snap = new Map();
+    (entries || []).forEach(e => {
+      if (!e || !e.id) return;
+      snap.set(e.id, { fp: fingerprintEntry(e), label: formatEntryLabel(e), entry: copyEntry(e) });
+    });
+    return snap;
+  }
+  // What a reviewer wants to sanity-check on a brand-new row at a glance:
+  // price, driver config, and how many measurement files came with it.
+  function describeNewEntry(e) {
+    const parts = [];
+    if (e.price_usd) parts.push('$' + e.price_usd);
+    if (e.driver_config) parts.push(e.driver_config);
+    const nFiles = (e.files || []).length;
+    parts.push(nFiles + ' file' + (nFiles === 1 ? '' : 's'));
+    return parts.join(' · ');
+  }
+  // Ids are the join key, so a material change to brand/model/variant shows up
+  // as one removal plus one addition - which is exactly what the file gains.
+  function diffAgainstSnapshot(snap, entries) {
+    const added = [], modified = [], removed = [];
+    const seen = new Set();
+    (entries || []).forEach(e => {
+      if (!e || !e.id) return;
+      seen.add(e.id);
+      const prev = snap.get(e.id);
+      if (!prev) added.push({ id: e.id, label: formatEntryLabel(e), detail: describeNewEntry(e) });
+      else if (prev.fp !== fingerprintEntry(e)) modified.push({ id: e.id, label: formatEntryLabel(e), detail: describeEntryChange(prev.entry, e, 3) });
+    });
+    snap.forEach((prev, id) => { if (!seen.has(id)) removed.push({ id: id, label: prev.label, detail: '' }); });
+    return { added: added, modified: modified, removed: removed, total: added.length + modified.length + removed.length };
+  }
+
+  // ------------------------------------------------------------- save log
+  // Markdown is the save log's export format: the log exists to be a changelog
+  // that lives next to database.json and can be committed with it.
+  const SAVE_LOG_FILE = 'save-log.md';
+  function formatBytes(n) { return n > 1048576 ? (n / 1048576).toFixed(2) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+  function groupDigits(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  // Local time, fixed shape: a changelog should read the same on every machine.
+  function stampDate(ts) {
+    const d = new Date(ts || 0), p = n => (n < 10 ? '0' : '') + n;
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  // Entry labels and deltas are database values, not authored prose: escape the
+  // characters that would otherwise be read as inline Markdown markup.
+  function mdInline(s) { return String(s === null || s === undefined ? '' : s).replace(/([\\`*_[\]<>])/g, '\\$1'); }
+  const SAVE_KINDS = { add: '＋', mod: '～', del: '－' };
+  const SAVE_LOG_TITLE = '# Database save log';
+  // The export's own provenance line. It is written by the export, not by the
+  // save, so it must not make an otherwise identical section look different.
+  const PROVENANCE_RE = /^_added to this changelog on \d{4}-\d{2}-\d{2} \d{2}:\d{2}\._$/;
+  function bodyKey(body) {
+    const lines = body.filter(l => !PROVENANCE_RE.test(l.trim()));
+    while (lines.length && !lines[0].trim()) lines.shift();
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    return lines.join('\n');
+  }
+  function saveLogWhere(s) { return s.mode === 'memory' ? 'downloaded' : s.mode === 'folder' ? 'saved to folder' : 'saved to disk'; }
+  // Minute + destination identifies a save across exports. Two saves in the same
+  // minute to the same place are told apart by counting, below, not by the key.
+  function saveLogHeading(s) { return stampDate(s.ts) + ' — ' + saveLogWhere(s); }
+  function stampToMs(text) {
+    const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(String(text || '').trim());
+    return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).getTime() : 0;
+  }
+  /**
+   * One save as a Markdown section: a heading naming when and where, the counts
+   * the Data tab shows, then the changed entries. Each save keeps only its first
+   * few entries, so a large one says how many it left out rather than looking
+   * complete.
+   */
+  function saveSection(s) {
+    const body = [];
+    const nEntries = s.entries || 0;
+    const meta = [groupDigits(nEntries) + ' entr' + (nEntries === 1 ? 'y' : 'ies')];
+    if (s.bytes) meta.push(formatBytes(s.bytes));
+    const counts = [];
+    if (s.added) counts.push('＋' + s.added);
+    if (s.modified) counts.push('～' + s.modified);
+    if (s.removed) counts.push('－' + s.removed);
+    meta.push(counts.length ? counts.join(' ') : 'no entry changes');
+    body.push(meta.join(' · '));
+    const changes = s.changes || [];
+    if (changes.length) body.push('');
+    changes.forEach(c => {
+      const detail = c.detail ? ' — ' + mdInline(String(c.detail).replace(/ -> /g, ' → ')) : '';
+      body.push('- ' + (SAVE_KINDS[c.k] || '·') + ' ' + mdInline(c.label) + detail);
+    });
+    const hidden = (s.total || 0) - changes.length;
+    if (hidden > 0) body.push('', '_…and ' + hidden + ' more changed ' + (hidden === 1 ? 'entry' : 'entries') + ' (the log keeps the first ' + changes.length + ' of each save)._');
+    return { key: saveLogHeading(s), ts: s.ts || 0, body: body };
+  }
+  function renderSection(sec) {
+    const out = ['## ' + sec.key];
+    if (sec.body.length) out.push('', ...sec.body);
+    out.push('');
+    return out;
+  }
+  /**
+   * Reads a save log back into its sections, keeping each body verbatim so a
+   * hand-edited changelog is not rewritten by the next export. Anything above
+   * the first heading is the preamble: our own header when the file is ours.
+   */
+  function parseSaveLog(text) {
+    const sections = [], preamble = [];
+    let cur = null;
+    String(text || '').split('\n').forEach(raw => {
+      const line = raw.replace(/\r$/, '');
+      const head = /^##\s+(.*)$/.exec(line);
+      if (head) { cur = { key: head[1].trim(), ts: stampToMs(head[1]), body: [] }; sections.push(cur); return; }
+      (cur ? cur.body : preamble).push(line);
+    });
+    sections.forEach(s => {
+      while (s.body.length && !s.body[0].trim()) s.body.shift();
+      while (s.body.length && !s.body[s.body.length - 1].trim()) s.body.pop();
+    });
+    while (preamble.length && !preamble[0].trim()) preamble.shift();
+    while (preamble.length && !preamble[preamble.length - 1].trim()) preamble.pop();
+    return { preamble: preamble, sections: sections };
+  }
+  /**
+   * Renders the stored log into `existing` instead of over it, so the file on
+   * disk becomes a changelog that grows: saves drop out of the 20-row log but
+   * stay in the file. Sections already there are kept verbatim - hand edits
+   * included - and a save is appended only when the file does not already
+   * describe it (matched by content first, then by heading), which makes
+   * re-exporting without new saves a no-op in content.
+   */
+  function mergeSaveLog(existing, rows, opts) {
+    opts = opts || {};
+    const list = (Array.isArray(rows) ? rows : []).filter(Boolean);
+    const parsed = parseSaveLog(existing);
+    // Sections already in the file, grouped by heading, each one claimable once.
+    // Counting per heading is what keeps two saves from the same minute apart.
+    const free = new Map();
+    parsed.sections.forEach(s => {
+      if (!free.has(s.key)) free.set(s.key, []);
+      free.get(s.key).push({ taken: false, body: bodyKey(s.body) });
+    });
+    // Oldest first, so when a heading repeats the newest save is the one in doubt.
+    const pending = list.slice().sort((a, b) => ((a && a.ts) || 0) - ((b && b.ts) || 0)).map(saveSection);
+    // A save whose body is already written (the normal re-export) is claimed
+    // exactly, so a same-minute save is not mistaken for the one already there.
+    const left = [];
+    pending.forEach(sec => {
+      const hit = (free.get(sec.key) || []).find(x => !x.taken && x.body === bodyKey(sec.body));
+      if (hit) hit.taken = true; else left.push(sec);
+    });
+    // What is left may still be in the file under a hand-edited body; pair those
+    // by heading before appending, so a proof-read section is not duplicated.
+    const added = [];
+    left.forEach(sec => {
+      const hit = (free.get(sec.key) || []).find(x => !x.taken);
+      if (hit) hit.taken = true; else added.push(sec);
+    });
+    // Say which sections this export put there. A save's heading is when it was
+    // saved; this line is when it entered the changelog, which is the question
+    // "what did the export just do" asked by whoever opens the file (or the diff).
+    const stamp = stampDate(opts.now || Date.now());
+    added.forEach(sec => { sec.body.unshift('_added to this changelog on ' + stamp + '._', ''); });
+    // Everything the file already lists stays, plus whatever was not there yet.
+    // Sections we could not parse a date from sort last rather than jumping to
+    // the top of a hand-written file.
+    const merged = parsed.sections.concat(added).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    const out = [];
+    // A preamble that is not our own header is someone's text: keep it above the
+    // changelog rather than deleting it.
+    if (parsed.preamble.length && !parsed.preamble.some(l => l.trim() === SAVE_LOG_TITLE)) out.push(...parsed.preamble, '');
+    out.push(SAVE_LOG_TITLE, '');
+    out.push(merged.length
+      ? '_' + merged.length + ' save' + (merged.length === 1 ? '' : 's') + ', newest first — exported from the Data tab on ' + stamp + '._'
+      : '_No saves recorded yet._', '');
+    merged.forEach(sec => { out.push(...renderSection(sec)); });
+    return { text: out.join('\n').replace(/\n+$/, '') + '\n', added: added.length, total: merged.length };
+  }
+  /** The Markdown changelog as text (see mergeSaveLog for the merge rules). */
+  function saveLogMarkdown(rows, opts) {
+    return mergeSaveLog(opts && opts.existing, rows, opts).text;
+  }
+  /**
+   * What the changelog on disk already holds, so the panel can say so before the
+   * next export: how many saves, and when it was last written (the export stamp
+   * in the header, or the newest save if the header was edited away). null when
+   * there is no file, or nothing in it yet - there is no status worth showing.
+   */
+  function summarizeSaveLog(text) {
+    const parsed = parseSaveLog(text);
+    if (!parsed.sections.length) return null;
+    let updatedAt = 0;
+    parsed.preamble.forEach(line => {
+      const m = /exported from the Data tab on (\d{4}-\d{2}-\d{2} \d{2}:\d{2})/.exec(line);
+      if (m) updatedAt = Math.max(updatedAt, stampToMs(m[1]));
+    });
+    if (!updatedAt) updatedAt = parsed.sections.reduce((newest, s) => Math.max(newest, s.ts || 0), 0);
+    return { total: parsed.sections.length, updatedAt: updatedAt };
+  }
+
+  // ------------------------------------------------- save-log document view
+  // The changelog as structure, so a reader can draw sections and changed rows
+  // instead of one wall of text. Deliberately narrow: it recognises what the
+  // export writes (an H1, an italic note, a counts line, bullet rows) and keeps
+  // every other line as text, so a hand-edited file is still shown in full
+  // rather than being dropped.
+  const MD_ESCAPE_RE = /\\([\\`*_[\]<>])/g;
+  // The export escapes Markdown markup in entry labels; the reader shows the
+  // label, not the escaping, so the backslashes come back off for display.
+  function mdPlain(s) { return String(s === null || s === undefined ? '' : s).replace(MD_ESCAPE_RE, '$1'); }
+  const SAVE_LOG_MARKS = { '＋': 'add', '～': 'mod', '－': 'del', '·': 'other' };
+  function saveLogBlocks(lines) {
+    const blocks = [];
+    (lines || []).forEach(raw => {
+      const line = String(raw).replace(/\r$/, '').trim();
+      if (!line) return;
+      const note = /^_(.+)_$/.exec(line);
+      if (note) { blocks.push({ k: 'note', text: mdPlain(note[1].trim()) }); return; }
+      const row = /^-\s+(\S)\s*(.*)$/.exec(line);
+      if (row && SAVE_LOG_MARKS[row[1]]) {
+        const rest = row[2];
+        // The separator the export writes between label and detail. A row with
+        // no detail is still a row: it just has no second half.
+        const cut = rest.indexOf(' — ');
+        blocks.push({
+          k: 'row', mark: row[1], kind: SAVE_LOG_MARKS[row[1]],
+          name: mdPlain(cut >= 0 ? rest.slice(0, cut) : rest),
+          detail: mdPlain(cut >= 0 ? rest.slice(cut + 3) : '')
+        });
+        return;
+      }
+      if (/^[\d,]+ entr(y|ies)\b/.test(line)) { blocks.push({ k: 'meta', text: mdPlain(line) }); return; }
+      blocks.push({ k: 'text', text: mdPlain(line) });
+    });
+    return blocks;
+  }
+  /**
+   * Parses the saved changelog for display: { title, blocks, sections }, where a
+   * section is { heading, where, ts, blocks } and a row block is
+   * { k:'row', mark, kind, name, detail }. Nothing is thrown away - unknown
+   * lines become text blocks - so this can never hide part of the file.
+   */
+  function saveLogDocument(text) {
+    const parsed = parseSaveLog(text);
+    const preamble = parsed.preamble.slice();
+    // Our own H1 becomes the document title when it is there; anything else in
+    // the preamble is somebody's text and stays visible above the sections.
+    let title = '';
+    if (preamble.length && /^#\s+/.test(preamble[0])) title = mdPlain(preamble.shift().replace(/^#\s+/, '').trim());
+    return {
+      title: title,
+      blocks: saveLogBlocks(preamble),
+      sections: parsed.sections.map(s => {
+        // A heading is "when — where"; splitting keeps the two roles legible
+        // without losing a hand-written heading that has neither.
+        const cut = s.key.indexOf(' — ');
+        return {
+          heading: cut >= 0 ? s.key.slice(0, cut).trim() : s.key,
+          where: cut >= 0 ? s.key.slice(cut + 3).trim() : '',
+          ts: s.ts || 0,
+          blocks: saveLogBlocks(s.body)
+        };
+      })
+    };
+  }
+
+  // ------------------------------------------------- save-log filtering
+  // The reader can narrow the changelog instead of scrolling all of it. Both
+  // filters are applied to the parsed document, never to the file: nothing here
+  // writes, and "every month" is the untouched document again.
+  const SAVE_LOG_MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  /** The local calendar month a section belongs to, as YYYY-MM ('' when the
+   *  heading carried no date, which only "every month" can show). */
+  function saveLogMonth(ts) {
+    if (!ts) return '';
+    const d = new Date(ts), p = n => (n < 10 ? '0' : '') + n;
+    return d.getFullYear() + '-' + p(d.getMonth() + 1);
+  }
+  /** The months the file actually holds, newest first, each with how many saves
+   *  it has - so the picker never offers an empty month. */
+  function saveLogMonths(doc) {
+    const seen = new Map();
+    ((doc && doc.sections) || []).forEach(s => {
+      const key = saveLogMonth(s.ts);
+      if (key) seen.set(key, (seen.get(key) || 0) + 1);
+    });
+    return [...seen.keys()].sort().reverse().map(key => {
+      const parts = key.split('-');
+      return { key: key, count: seen.get(key), label: SAVE_LOG_MONTH_LABELS[Number(parts[1]) - 1] + ' ' + parts[0] };
+    });
+  }
+  /**
+   * Applies { kind: 'all'|'add'|'del', month: 'all'|'YYYY-MM', query } to a
+   * parsed changelog. `query` matches a changed row's name or its detail
+   * (case-insensitive, the way a person types a model or a price), and also the
+   * save's own heading and destination - "2026-09", "folder" - so a save can be
+   * found by when and where it happened when the entry is not what is
+   * remembered. A save matched by its heading keeps all of its rows (of the
+   * chosen kind): the whole save is what was asked for, and `matchedSave` says
+   * whether that was its date or its destination, so the view can admit that a
+   * card full of rows was found by the save rather than by an entry in it. A save
+   * with no rows left is hidden entirely - an empty card would be noise - and
+   * `hidden` on each kept section is how many of its listed changes the filters
+   * left out, so the reader can say so rather than letting the card's own counts
+   * line look wrong.
+   */
+  function filterSaveLogDocument(doc, opts) {
+    opts = opts || {};
+    const kind = opts.kind || 'all';
+    const month = opts.month || 'all';
+    const query = String(opts.query === undefined || opts.query === null ? '' : opts.query).trim().toLowerCase();
+    const sections = [];
+    let rows = 0;
+    ((doc && doc.sections) || []).forEach(s => {
+      if (month !== 'all' && saveLogMonth(s.ts) !== month) return;
+      const all = s.blocks.filter(b => b.k === 'row');
+      // Which part of the save the text was found in, if any: its date heading or
+      // the destination it says it went to.
+      const savedBy = !query ? '' : s.heading.toLowerCase().includes(query) ? 'date'
+        : s.where.toLowerCase().includes(query) ? 'destination' : '';
+      // Only the rows the kind filter would draw can explain a match: a row the
+      // reader cannot see is no visible reason for the card being here.
+      const rowHit = !!query && all.some(b => (kind === 'all' || b.kind === kind) &&
+        (b.name + ' ' + b.detail).toLowerCase().includes(query));
+      const blocks = s.blocks.filter(b => {
+        if (b.k !== 'row') return true;
+        if (kind !== 'all' && b.kind !== kind) return false;
+        if (query && !savedBy && !(b.name + ' ' + b.detail).toLowerCase().includes(query)) return false;
+        return true;
+      });
+      const shown = blocks.filter(b => b.k === 'row').length;
+      if ((kind !== 'all' || query) && !shown) return;
+      rows += shown;
+      // Only a save that nothing in the rows on screen accounts for carries the
+      // label: when a visible row also matches, that row is the reason itself.
+      sections.push(Object.assign({}, s, { blocks: blocks, hidden: all.length - shown, matchedSave: savedBy && !rowHit ? savedBy : '' }));
+    });
+    return { total: ((doc && doc.sections) || []).length, saves: sections.length, rows: rows, sections: sections, query: query };
+  }
+  /**
+   * A remembered filter, made safe to use against today's file. The viewer stays
+   * where it was left, but never at the cost of showing nothing for a reason the
+   * reader cannot see: a kind the viewer no longer offers, a month the file no
+   * longer holds (which would open on an empty document) and a runaway query
+   * all fall back to the whole changelog.
+   */
+  function sanitizeSaveLogFilter(saved, months) {
+    const f = { kind: 'all', month: 'all', query: '' };
+    if (!saved || typeof saved !== 'object') return f;
+    if (saved.kind === 'add' || saved.kind === 'del') f.kind = saved.kind;
+    if (saved.month === 'all') f.month = 'all';
+    // With one month there is no picker to show the choice on, so the month is
+    // dropped rather than filtering invisibly.
+    else if (typeof saved.month === 'string' && (months || []).length > 1 && months.some(m => m && m.key === saved.month)) f.month = saved.month;
+    if (typeof saved.query === 'string') f.query = saved.query.slice(0, 200);
+    return f;
+  }
+  /** True when a filter shows the untouched document, so there is nothing worth
+   *  remembering: a plain read should not surprise the next one. */
+  function isDefaultSaveLogFilter(f) {
+    return !f || f.kind === 'all' && f.month === 'all' && !String(f.query === undefined || f.query === null ? '' : f.query).trim();
+  }
+
   // ----------------------------------------------------------- load / save
   function loadDatabaseText(text) {
     // Returns { entries, notes } or throws Error with a friendly message.
@@ -1492,6 +1882,9 @@ const DataCore = (function () {
     tagConflicts, tagConflictResolution, fixTierTags, normRelPath, foldPath, decodeHashU, encodeHashU, seqRatio, pyFloat,
     // entries
     validateEntry, buildCleanEntry, cmpEntries, formatEntryLabel, describeEntryChange,
+    fingerprintEntry, snapshotEntries, diffAgainstSnapshot,
+    SAVE_LOG_FILE, saveLogMarkdown, mergeSaveLog, summarizeSaveLog, saveLogDocument, saveLogMonths, filterSaveLogDocument,
+    sanitizeSaveLogFilter, isDefaultSaveLogFilter, formatBytes,
     loadDatabaseText, serializeCanonical, splitIntoChunks,
     // audit
     runFullAudit, findDuplicatePairs, summarizeIssues, waiverKeyOf,

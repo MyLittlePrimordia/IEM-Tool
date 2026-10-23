@@ -31,7 +31,14 @@ const EventBinding = {
             // Call handler with element as `this` so inline handlers using `this.value`/`this.checked` keep working
             return handler.call(element, event, element);
         } catch (e) {
-            console.error('[EventBinding] Error executing action "' + action + '":', e);
+            // Route through the shared funnel: a swallowed handler exception
+            // looks exactly like a dead button, and because it was caught the
+            // global error banner never fired either.
+            if (window.reportError) {
+                window.reportError('action ' + action, e, { toast: true, message: 'That action failed. See the console for details.' });
+            } else {
+                console.error('[EventBinding] Error executing action "' + action + '":', e);
+            }
         }
     },
 
@@ -51,10 +58,12 @@ const EventBinding = {
             const target = getEventTarget(event).closest('[data-action]');
             if (target) {
                 const action = target.getAttribute('data-action');
-                const args = target.getAttribute('data-action-args');
                 if (action) {
-                    const parsedArgs = args ? args.split(',').map(function(a) { return a.trim(); }) : [];
-                    EventBinding.execute(action, event, target, parsedArgs);
+                    // (A data-action-args parser used to live here and fed a
+                    // fourth argument that execute() never accepted. No markup
+                    // ever carried the attribute; arguments belong to data-cmd,
+                    // which implements them properly.)
+                    EventBinding.execute(action, event, target);
                 }
             }
         }, true);

@@ -1,4 +1,61 @@
 /* ===== app/js/utils.js ===== */
+// ---------------------------------------------------------------------------
+// Diagnostics + safe-DOM helpers.
+//
+// `reportError` is the single funnel for failures the app catches itself. Before
+// it, ~216 empty `catch` blocks (and EventBinding's handler wrapper) meant a
+// failed save, export or click produced no log and no feedback at all.
+//
+// `bestEffort` is for genuinely ignorable tear-down paths; it still logs in
+// debug mode, so a surprisingly-broken cleanup is discoverable.
+// ---------------------------------------------------------------------------
+// These attach to globalThis, not window: find-worker.js importScripts() this
+// file, and a bare `window.x` reference throws in a Worker — which took
+// CurveUtils down with it and broke every off-thread scan. Only the helpers
+// that touch `document` do so inside their body.
+globalThis.iLog = function () {
+    if (typeof IEM_DEBUG !== 'undefined' && IEM_DEBUG) console.log.apply(console, arguments);
+};
+
+const __iemErrorToastAt = Object.create(null);
+globalThis.reportError = function (scope, err, opts) {
+    opts = opts || {};
+    console.error('[IEM] ' + scope, err);
+    if (!opts.toast || typeof showToast !== 'function') return;
+    // One toast per scope per 10s: a failing animation frame or a repeated
+    // background task must not bury the UI in identical messages.
+    const now = Date.now();
+    if (now - (__iemErrorToastAt[scope] || 0) < 10000) return;
+    __iemErrorToastAt[scope] = now;
+    try {
+        showToast(opts.message || 'Something went wrong. See the console for details.', '⚠️', { duration: 3500 });
+    } catch (_) {}
+};
+
+globalThis.bestEffort = function (scope, fn, fallback) {
+    try { return fn(); } catch (e) { reportError(scope, e); return fallback; }
+};
+
+globalThis.bestEffortAsync = function (scope, fn, fallback) {
+    return Promise.resolve().then(fn).catch(function (e) { reportError(scope, e); return fallback; });
+};
+
+// Safe DOM access. The app has 50+ `getElementById(...).value` chains; one
+// renamed id aborted the whole update that contained it (score, power math and
+// radar chart are all written by the same function). These return fallbacks
+// instead of throwing.
+globalThis.elById = function (id) { return document.getElementById(id); };
+globalThis.elValue = function (id, fallback) {
+    const el = document.getElementById(id);
+    if (el && typeof el.value === 'string') return el.value;
+    return fallback === undefined ? '' : fallback;
+};
+globalThis.setElValue = function (id, value) {
+    const el = document.getElementById(id);
+    if (el) { el.value = value; return true; }
+    return false;
+};
+
 const CurveUtils = {
     generateLogGrid: function(numPoints = 500, minF = 20, maxF = 20000) {
         const n = Math.max(2, Math.floor(numPoints) || 500);
@@ -339,6 +396,74 @@ const CurveUtils = {
         return matches;
     },
 };
+
+/* ===== app/js/name-utils.js ===== */
+/* Canonical IEM name normalisation — SINGLE SOURCE OF TRUTH.
+ *
+ * The same ~60 rules existed twice: `FindEngine.sanitizeName` in find-engine.js
+ * (main-thread fallback) and a bare `sanitizeName` in find-worker.js. Their
+ * comments admitted they were "kept in sync" by hand. Any rule added to one and
+ * not the other changes how entries group, so the same database produced
+ * different canonical profiles — and different Endgame/Giant-Killer results —
+ * depending on whether the Worker was available.
+ *
+ * Loaded by:
+ *   - the renderer bundle (before the find-* files), and
+ *   - find-worker.js via importScripts().
+ *
+ * Pure logic: no DOM, no I/O, no page state.
+ */
+const NameUtils = (function () {
+    'use strict';
+
+    // Reduce a measurement's display name to the base model it describes:
+    // strips source suffixes ("x Crinacle"), switch/plug/tip/nozzle variants,
+    // impedance and connector notes, version and edition markers, then
+    // title-cases the result. "" means "cannot be grouped".
+    function sanitizeName(name) {
+        // Coerce at the boundary: a truthy non-string (e.g. a number, an
+        // object) would reach .toLowerCase() and throw.
+        if (typeof name !== 'string') name = (name == null) ? '' : String(name);
+        if (!name) return "";
+        let clean = name.toLowerCase();
+
+        clean = clean.replace(/[\(\[][^\]\)]*[\)\]]/g, '');
+
+        clean = clean.replace(/\s*x\s*(?:hbb|crinacle|crin|zeos|gizaudio|fresh reviews|jays audio|divinus|seeaudio|akros|ducbloke|community|fresh|z reviews|z)\b/g, '');
+
+        clean = clean.replace(/\b(?!dudu\b)[ud]{4}\b/g, '');
+        clean = clean.replace(/\b[ud]{2,3}\b/g, '');
+        clean = clean.replace(/\b[01]{2,4}\b/g, '');
+        clean = clean.replace(/\b[1-5]\s+[1-5]\b/g, '');
+        clean = clean.replace(/\b(?:all on|all off|bc on|bc off)\b/g, '');
+        clean = clean.replace(/\s*(?:bass|treble|reference|ref|mid|midrange)?\s*(?:switch|sw|switches)\s*(?:on|off|up|down|1|2|3|4|0)*\b/g, '');
+
+        clean = clean.replace(/\b\d+\s*(?:Ω|ohm|ohms|o)\b/g, '');
+        clean = clean.replace(/\b(?:high|low|s\s+high|s\s+low)\s*(?:Ω|ohm|ohms|impedance)\b/g, '');
+
+        clean = clean.replace(/\b(?:\d+\.\d+mm|\d+mm|3\.5|4\.4|usb\s+c|type\s+c|usb|tws|anc|analog|digital|dsp)\b/g, '');
+        clean = clean.replace(/\s*(?:gold|grey|gray|silver|default)?\s*(?:plug|cable|connection|connector|adapter|headband|wire)\b/g, '');
+
+        clean = clean.replace(/\s*(?:foam|silicone|silicon|yaxi|spinfit|symbio|starline|widebore|narrowbore|final|clear|red|blue|grey|gray|stock|custom|my|dunu\s+ss)\s*(?:tips|eartips|eartip|tip|pads|pad)\b/g, '');
+        clean = clean.replace(/\b(?:tips|eartips|eartip|tip|pads|pad)\b/g, '');
+
+        clean = clean.replace(/\s*(?:blue|gold|silver|red|black|green|brass|steel|titanium|ti|short\s+black|short\s+red|alt|reference|ref|hifi|pop|vocal|instrumental|monitor|balanced|classic|default|standard|std)?\s*(?:nozzles?|rings?|filters?|mesh|damper|vent|mod|mods|taped?|tanya|microtape)\b/g, '');
+
+        clean = clean.replace(/\b(?:v\d+(?:\.\d+)?|mk[ivx\d]+b?)\b/g, '');
+        clean = clean.replace(/\b(?:\d+st|\d+nd|\d+rd|\d+th)\s+(?:gen|generation|unit|anniversary|anniv)\b/g, '');
+        clean = clean.replace(/\b(?:og|gen|generation|unit|anniversary|anniv|re\s+set|preprod|pre\s+retail|retail|sample\s*\d*|sample)\b/g, '');
+
+        clean = clean.replace(/\b(?:edition|standard|std|default|reference|ref|stock|base|baseline|pro\s+max|pro|max|ltd|limited|custom\s+resin|resin)\b/g, '');
+
+        clean = clean.replace(/\s+/g, ' ').trim();
+
+        return clean.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
+
+    return { sanitizeName: sanitizeName };
+})();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = NameUtils;
 
 /* ===== app/js/endgame-categories.js ===== */
 /* Endgame Sets — category config.
@@ -713,6 +838,178 @@ const CurveUtils = {
     }
 
 })(typeof self !== 'undefined' ? self : this);
+
+/* ===== app/js/endgame-scoring.js ===== */
+/* Endgame rubric — SINGLE SOURCE OF TRUTH.
+ *
+ * This used to exist twice: `scoreEndgameCategories` in find-worker.js and a
+ * ~90-line `_scoreEndgameCategoriesLocal` mirror in find-endgame.js. They had
+ * already drifted once (an extra price bonus in the local copy changed the
+ * ranking depending on whether the Worker was available), and every future
+ * rule change would have had to be made twice.
+ *
+ * Loaded by:
+ *   - the renderer bundle (after utils.js + endgame-categories.js), and
+ *   - find-worker.js via importScripts(), so the worker and the main-thread
+ *     fallback compute byte-identical pools.
+ *
+ * Pure logic: no DOM, no I/O, no page state.
+ *
+ * Pool keys are database ids, which are user-editable strings: they are kept in
+ * a Map rather than an object so an id of "__proto__" cannot collide with
+ * Object.prototype and silently drop a Giant Killer.
+ */
+const EndgameScoring = (function () {
+    'use strict';
+
+    function requireGlobals() {
+        if (typeof EndgameCategories === 'undefined' || !EndgameCategories) {
+            throw new Error('EndgameCategories unavailable — endgame-categories.js did not load');
+        }
+        if (typeof CurveUtils === 'undefined' || !CurveUtils || typeof CurveUtils.scoreInterp !== 'function') {
+            throw new Error('CurveUtils unavailable — utils.js did not load');
+        }
+    }
+
+    // For every rubric category, rank ALL priced candidates and return a
+    // top-N pool (Option X of Y card cycling). Each pool member carries its
+    // composite score, tag corroboration and role flags: the top pick is the
+    // Champion; any budget clone of the Champion (>=75% curve similarity for
+    // <=40% of its price) is flagged as a Giant Killer. A value strip then
+    // collects the Giant Killers of all 8 champions into one cycling pool.
+    function scoreEndgameCategories(cc, freqs, maxPrice) {
+        requireGlobals();
+        const EG = EndgameCategories;
+        const cats = EG.ENDGAME_CATEGORIES || [];
+        const maxPicks = EG.ENDGAME_MAX_PICKS || 12;
+
+        // Only items with a real price inside the budget can be any of the
+        // picks (Champion <= budget, Giant Killer <= 40% of the Champion's
+        // price which is already <= budget).
+        const priced = [];
+        for (let i = 0; i < cc.length; i++) {
+            const e = cc[i];
+            if (!e.price || e.price > maxPrice) continue;
+            priced.push(e);
+        }
+
+        const out = {};
+        const champions = [];
+
+        for (let c = 0; c < cats.length; c++) {
+            const cat = cats[c];
+            const scored = [];
+            for (let i = 0; i < priced.length; i++) {
+                const e = priced[i];
+                const res = EG.scoreCategory(cat, e.tags, e.interp, freqs);
+                // No price bonus: at equal acoustics the cheapest option should
+                // win, not the priciest affordable one (price != quality).
+                const bonus = 0;
+                scored.push({
+                    entry: e,
+                    composite: res.score + bonus,
+                    reason: res.reason,
+                    tagMatch: res.tagMatch,
+                    curveScore: res.curveScore
+                });
+            }
+
+            if (scored.length === 0) {
+                out[cat.id] = { pool: [] };
+                continue;
+            }
+
+            scored.sort((a, b) => b.composite - a.composite);
+            const champion = scored[0];
+
+            // Giant Killer set: closest tuner under 40% of the Champion's price
+            // wins (>=75% curve similarity). No brand constraint: same-brand
+            // cheaper siblings are legit giant killers (e.g. Hexa under Nova).
+            const gkCeiling = champion.entry.price * EG.GIANT_KILLER_PRICE_FRACTION;
+            const gkSims = new Map();
+            for (let i = 1; i < scored.length; i++) {
+                const s = scored[i];
+                if (s.entry.price > gkCeiling) continue;
+                const sim = CurveUtils.scoreInterp(s.entry.interp, champion.entry.interp, freqs, true);
+                if (sim >= 75) gkSims.set(s.entry.id, { sim: sim, s: s });
+            }
+
+            const pool = [];
+            const limit = Math.min(maxPicks, scored.length);
+            for (let i = 0; i < limit; i++) {
+                const s = scored[i];
+                const gk = gkSims.get(s.entry.id);
+                const pick = {
+                    id: s.entry.id,
+                    name: s.entry.name,
+                    price: s.entry.price,
+                    brand: s.entry.brand || '',
+                    score: Math.min(100, Math.round(s.composite)),
+                    reason: s.reason,
+                    tagMatch: !!s.tagMatch,
+                    curveScore: Math.round(s.curveScore || 0)
+                };
+                if (i === 0) pick.isChampion = true;
+                if (gk) {
+                    pick.isGiantKiller = true;
+                    pick.similarity = gk.sim;
+                    pick.reason = `${gk.sim.toFixed(1)}% tonal match to ${champion.entry.name}`;
+                }
+                pool.push(pick);
+            }
+
+            // A Giant Killer ranked outside the top-N cap still earns a slot —
+            // budget clones are the whole point of the Endgame tab. The best
+            // clone overall is also kept for the value strip.
+            let bestGk = null;
+            let bestGkAll = null;
+            for (const [gkId, g] of gkSims) {
+                if (!bestGkAll || g.sim > bestGkAll.sim) bestGkAll = g;
+                if (pool.some(p => p.id === gkId)) continue;
+                if (!bestGk || g.sim > bestGk.sim) bestGk = g;
+            }
+            if (bestGk) {
+                pool.push({
+                    id: bestGk.s.entry.id,
+                    name: bestGk.s.entry.name,
+                    price: bestGk.s.entry.price,
+                    brand: bestGk.s.entry.brand || '',
+                    score: Math.min(100, Math.round(bestGk.s.composite)),
+                    reason: `${bestGk.sim.toFixed(1)}% tonal match to ${champion.entry.name}`,
+                    tagMatch: !!bestGk.s.tagMatch,
+                    curveScore: Math.round(bestGk.s.curveScore || 0),
+                    isGiantKiller: true,
+                    similarity: bestGk.sim
+                });
+            }
+
+            champions.push({ id: champion.entry.id, name: champion.entry.name, interp: champion.entry.interp, price: champion.entry.price, gk: bestGkAll });
+            out[cat.id] = { pool: pool };
+        }
+
+        // Value strip: the giant killers of all 8 category champions — the same
+        // budget-clone rule as each category's pick (<=40% of the champion's
+        // price, >=75% tonal match) — collected into one cycling pool, best
+        // match first. Duplicate clones keep the strongest match.
+        const valueById = new Map();
+        for (let k = 0; k < champions.length; k++) {
+            const ch = champions[k];
+            const gk = ch.gk;
+            if (!gk) continue;
+            const e = gk.s.entry;
+            const existing = valueById.get(e.id);
+            if (existing && existing.similarity >= gk.sim) continue;
+            valueById.set(e.id, { id: e.id, name: e.name, price: e.price, brand: e.brand || '', similarity: gk.sim, matchName: ch.name });
+        }
+        const valuePool = Array.from(valueById.values()).sort((a, b) => b.similarity - a.similarity);
+        out._value = { pool: valuePool.slice(0, 12) };
+        return out;
+    }
+
+    return { scoreEndgameCategories: scoreEndgameCategories };
+})();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = EndgameScoring;
 
 /* ===== app/js/audio-engine.js ===== */
 window.isMonoMode = false;
@@ -1187,14 +1484,23 @@ const UIKit = {
 
         const wrap = document.createElement('div');
         wrap.id = 'uikit-confirm-modal';
-        wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden flex items-center justify-center p-4';
+        // No `flex` here: visibility is driven by adding/removing 'flex' together
+        // with 'hidden'. Shipping both made the dialog's visibility depend on
+        // which utility happened to come last in the generated stylesheet (see
+        // the same fix in shortcuts.js).
+        wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden items-center justify-center p-4';
+        // Announced as a modal dialog, and labelled by its own title.
+        wrap.setAttribute('role', 'dialog');
+        wrap.setAttribute('aria-modal', 'true');
+        wrap.setAttribute('aria-labelledby', 'uikit-confirm-title');
         wrap.innerHTML = `
-            <div class="bg-[var(--bg-card)] border border-[var(--line)] w-full max-w-sm flex flex-col overflow-hidden p-5 select-none" style="border-radius: var(--r-xl); box-shadow: var(--sh-3);">
+            <div id="uikit-confirm-card" class="bg-[var(--bg-card)] border border-[var(--line)] w-full max-w-sm flex flex-col overflow-hidden p-5 select-none" style="border-radius: var(--r-xl); box-shadow: var(--sh-3);">
                 <div class="flex justify-between items-center mb-3 pb-3 border-b border-[var(--line)]">
                     <span id="uikit-confirm-title" class="text-[13px] font-semibold uppercase tracking-wide flex items-center gap-2" style="color: var(--text-hi);">⚠️ Confirm</span>
                     <button id="uikit-confirm-x" class="app-caption-btn" style="width:28px;height:28px;" aria-label="Cancel">✕</button>
                 </div>
-                <p id="uikit-confirm-msg" class="text-[12px] mb-4 leading-relaxed" style="color: var(--text-mid);"></p>
+                <p id="uikit-confirm-msg" class="text-[12px] mb-4 leading-relaxed" style="color: var(--text-mid); white-space: pre-line;"></p>
+                <div id="uikit-confirm-details" class="text-[11px] mb-4 overflow-y-auto hidden" style="max-height:190px;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border-color);border-radius:4px;user-select:text;"></div>
                 <div class="grid grid-cols-2 gap-2">
                     <button id="uikit-confirm-cancel" class="btn-clear cursor-pointer" style="height:36px;border-radius: var(--r-md);">Cancel</button>
                     <button id="uikit-confirm-ok" class="font-semibold text-white transition-all cursor-pointer text-center" style="height:36px;border-radius: var(--r-md);"></button>
@@ -1209,6 +1515,19 @@ const UIKit = {
         wrap.querySelector('#uikit-confirm-x').onclick = () => finish(false);
         wrap.querySelector('#uikit-confirm-cancel').onclick = () => finish(false);
         wrap.querySelector('#uikit-confirm-ok').onclick = () => finish(true);
+        // A detail row can carry an id, and the caller an onDetailClick handler:
+        // clicking the row closes the dialog exactly like Cancel (nothing is
+        // written) and then hands the id back so the caller can navigate to it.
+        // Delegated once, so a long list does not bind a listener per row.
+        wrap.querySelector('#uikit-confirm-details').addEventListener('click', (e) => {
+            const row = e.target && e.target.closest ? e.target.closest('[data-detail-id]') : null;
+            if (!row) return;
+            const id = row.getAttribute('data-detail-id');
+            const fn = this._detailHandler;
+            this._finish(false, wrap);
+            if (typeof fn !== 'function') return;
+            try { fn(id); } catch (err) { console.error('[UIKit] detail click handler failed', err); }
+        });
         // Click on the dark backdrop (not the card itself) cancels, matching
         // the rest of the app's modal behavior.
         wrap.addEventListener('click', (e) => { if (e.target === wrap) finish(false); });
@@ -1234,6 +1553,18 @@ const UIKit = {
         this._keyHandler = (e) => {
             if (wrap.classList.contains('hidden')) return;
             const tag = (e.target && e.target.tagName) || '';
+            if (e.key === 'Tab') {
+                // Focus trap: Tab cycles inside the dialog instead of walking
+                // into the page behind the overlay.
+                const focusables = Array.from(wrap.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+                    .filter((el) => !el.disabled && el.offsetParent !== null);
+                if (!focusables.length) { e.preventDefault(); return; }
+                const first = focusables[0];
+                const last = focusables[focusables.length - 1];
+                if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+                else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+                return;
+            }
             if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
             if (e.key === 'Escape') self._finish(false, wrap);
             else if (e.key === 'Enter') self._finish(true, wrap);
@@ -1243,9 +1574,20 @@ const UIKit = {
 
     _finish: function (result, wrap) {
         wrap.classList.add('hidden');
+        wrap.classList.remove('flex');
         if (this._keyHandler) {
             document.removeEventListener('keydown', this._keyHandler);
             this._keyHandler = null;
+        }
+        // Return focus to whatever opened the dialog, so keyboard users do not
+        // land back at the top of the document.
+        // Per-dialog state must not outlive it: a row handler from the last
+        // dialog must never fire for the next one.
+        this._detailHandler = null;
+        const last = this._lastFocus;
+        this._lastFocus = null;
+        if (last && typeof last.focus === 'function' && last.isConnected) {
+            try { last.focus(); } catch (_) {}
         }
         const resolve = this._resolver;
         this._resolver = null;
@@ -1258,6 +1600,40 @@ const UIKit = {
 
         wrap.querySelector('#uikit-confirm-title').innerHTML = (opts.icon || (opts.danger ? '🗑️' : '⚠️')) + ' ' + esc(opts.title || 'Are you sure?');
         wrap.querySelector('#uikit-confirm-msg').textContent = opts.message || '';
+        // Optional detail list: a scrollable, colour-coded run of rows (a save
+        // preview lists the entries it is about to add, edit and remove). Kept
+        // out of the message so long lists scroll instead of stretching the
+        // dialog past the viewport.
+        const rows = Array.isArray(opts.details) ? opts.details : [];
+        const onDetail = typeof opts.onDetailClick === 'function' ? opts.onDetailClick : null;
+        this._detailHandler = onDetail;
+        const listEl = wrap.querySelector('#uikit-confirm-details');
+        if (listEl) {
+            if (rows.length) {
+                listEl.innerHTML = rows.map(function (r) {
+                    const item = typeof r === 'string' ? { text: r } : (r || {});
+                    const color = item.kind === 'add' ? 'var(--accent)'
+                        : (item.kind === 'del' || item.kind === 'warn') ? 'var(--danger)'
+                        : item.kind === 'muted' ? 'var(--text-secondary)'
+                        : 'var(--text-main)';
+                    const style = 'padding:1px 0;word-break:break-word;color:' + color;
+                    const body = esc(item.text || '');
+                    // A row with an id and a handler becomes a real button, so
+                    // it is reachable with Tab and Enter inside the focus trap.
+                    if (onDetail && item.id !== undefined && item.id !== null && item.id !== '') {
+                        return '<button type="button" class="uikit-detail-row" data-detail-id="' + esc(String(item.id)) + '" title="Show this entry" style="' + style + '">' + body + '</button>';
+                    }
+                    return '<div style="' + style + '">' + body + '</div>';
+                }).join('');
+                listEl.classList.remove('hidden');
+            } else {
+                listEl.innerHTML = '';
+                listEl.classList.add('hidden');
+            }
+        }
+        // Wide enough for entry names only when there is a list to fit.
+        const card = wrap.querySelector('#uikit-confirm-card');
+        if (card) { card.classList.toggle('max-w-md', rows.length > 0); card.classList.toggle('max-w-sm', rows.length === 0); }
         const okBtn = wrap.querySelector('#uikit-confirm-ok');
         okBtn.textContent = opts.confirmLabel || 'Confirm';
         // Primary action carries the accent halo; a destructive one gets the
@@ -1267,9 +1643,16 @@ const UIKit = {
             : 'var(--accent)';
         okBtn.style.color = opts.danger ? '#FFFFFF' : 'var(--accent-ink)';
 
+        this._lastFocus = document.activeElement;
         wrap.classList.remove('hidden');
         wrap.classList.add('flex');
         this._attachKeyHandler(wrap);
+        // Focus the safe action by default: Enter on a destructive dialog must
+        // not confirm it. The dialog's buttons are reachable with Tab.
+        const initial = opts.danger
+            ? wrap.querySelector('#uikit-confirm-cancel')
+            : wrap.querySelector('#uikit-confirm-ok');
+        try { if (initial) initial.focus(); } catch (_) {}
 
         return new Promise((resolve) => {
             // If a previous confirm() is somehow still pending, resolve it false
@@ -1277,6 +1660,169 @@ const UIKit = {
             if (this._resolver) this._resolver(false);
             this._resolver = resolve;
         });
+    },
+
+    /* --- Read-only viewer -------------------------------------------------
+     * A modal for text the app can only read, so a document (the save-log
+     * changelog) can be read without leaving the app or waiting for an export.
+     * Deliberately not confirm(): that one is a question with a promise, this
+     * one is a document. Same overlay, focus trap, Esc and backdrop behaviour,
+     * plus a scrollable body whose text can be selected and copied, and an
+     * optional row of caller-supplied actions beside Close.
+     *
+     *   UIKit.read({ title, subtitle, text, actions: [{ label, title, onClick }] });
+     *   UIKit.read({ title, subtitle, render: (body) => { body.innerHTML = html; } });
+     *   UIKit.read({ title, subtitle, toolbar: (bar) => {...}, render: ... });
+     *
+     * `text` prints verbatim in a <pre>. `render` gets an empty body element and
+     * fills it with structure (the save log draws one section per save) - the
+     * primitive stays Markdown-agnostic, and the caller owns escaping. `toolbar`
+     * gets a bar between the header and the body that is built once per open
+     * and is not part of the body, so a control can re-render the body without
+     * losing its own focus.
+     */
+    _readerEl: null,
+    _readerKey: null,
+    _readerFocus: null,
+
+    _ensureReader: function () {
+        if (this._readerEl) return this._readerEl;
+
+        const wrap = document.createElement('div');
+        wrap.id = 'uikit-reader';
+        // As in _ensureModal: `hidden` only, and `flex` added on show, so the
+        // dialog's visibility never depends on stylesheet order.
+        wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden items-center justify-center p-4';
+        wrap.setAttribute('role', 'dialog');
+        wrap.setAttribute('aria-modal', 'true');
+        wrap.setAttribute('aria-labelledby', 'uikit-reader-title');
+        wrap.innerHTML = `
+            <div id="uikit-reader-card" class="bg-[var(--bg-card)] border border-[var(--line)] w-full max-w-2xl flex flex-col overflow-hidden p-5" style="border-radius: var(--r-xl); box-shadow: var(--sh-3); max-height: calc(100vh - 32px);">
+                <div class="flex justify-between items-start gap-3 mb-3 pb-3 border-b border-[var(--line)]">
+                    <span class="min-w-0">
+                        <span id="uikit-reader-title" class="block text-[13px] font-semibold tracking-wide truncate" style="color: var(--text-hi);"></span>
+                        <span id="uikit-reader-sub" class="block text-[11px] mt-0.5" style="color: var(--text-mid);"></span>
+                    </span>
+                    <button id="uikit-reader-x" type="button" class="app-caption-btn" style="width:28px;height:28px;flex:none;" aria-label="Close">✕</button>
+                </div>
+                <div id="uikit-reader-tools" class="flex flex-wrap items-center gap-2 mb-2" style="display:none;"></div>
+                <div id="uikit-reader-body" style="padding:10px 12px;background:var(--bg-input);border:1px solid var(--border-color);border-radius:4px;user-select:text;overflow:auto;flex:1 1 auto;min-height:120px;"></div>
+                <div id="uikit-reader-actions" class="flex justify-end gap-2 mt-4"></div>
+            </div>`;
+        document.body.appendChild(wrap);
+        wrap.querySelector('#uikit-reader-x').onclick = () => this.closeReader();
+        wrap.addEventListener('click', (e) => { if (e.target === wrap) this.closeReader(); });
+
+        this._readerEl = wrap;
+        return wrap;
+    },
+
+    _attachReaderKeys: function (wrap) {
+        if (this._readerKey) {
+            document.removeEventListener('keydown', this._readerKey);
+            this._readerKey = null;
+        }
+        const self = this;
+        this._readerKey = (e) => {
+            if (wrap.classList.contains('hidden')) return;
+            if (e.key === 'Escape') {
+                // Esc inside a field is the browser's own "clear this", and the
+                // reader's toolbar has a search box: closing the document while
+                // someone is typing in it would be hostile.
+                const tag = (e.target && e.target.tagName) || '';
+                if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+                e.preventDefault(); self.closeReader(); return;
+            }
+            if (e.key !== 'Tab') return;
+            // Same focus trap as confirm(): Tab cycles inside the dialog
+            // instead of walking into the page behind the overlay.
+            const focusables = Array.from(wrap.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+                .filter((el) => !el.disabled && el.offsetParent !== null);
+            if (!focusables.length) { e.preventDefault(); return; }
+            const first = focusables[0];
+            const last = focusables[focusables.length - 1];
+            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        };
+        document.addEventListener('keydown', this._readerKey);
+    },
+
+    read: function (opts) {
+        opts = opts || {};
+        const wrap = this._ensureReader();
+        wrap.querySelector('#uikit-reader-title').textContent = opts.title || 'Read-only view';
+        const sub = wrap.querySelector('#uikit-reader-sub');
+        sub.textContent = opts.subtitle || '';
+        sub.style.display = opts.subtitle ? 'block' : 'none';
+        const tools = wrap.querySelector('#uikit-reader-tools');
+        tools.innerHTML = '';
+        tools.style.display = typeof opts.toolbar === 'function' ? 'flex' : 'none';
+        if (typeof opts.toolbar === 'function') opts.toolbar(tools);
+
+        const body = wrap.querySelector('#uikit-reader-body');
+        body.innerHTML = '';
+        body.scrollTop = 0;
+        if (typeof opts.render === 'function') {
+            opts.render(body);
+        } else {
+            const pre = document.createElement('pre');
+            pre.id = 'uikit-reader-text';
+            // Monospace lives on the text itself rather than the body, so a
+            // structured document is not forced into a code font.
+            pre.style.cssText = 'margin:0;white-space:pre-wrap;word-break:break-word;user-select:text;' +
+                'font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;font-size:11px;line-height:1.6;';
+            pre.textContent = opts.text === undefined || opts.text === null ? '' : String(opts.text);
+            body.appendChild(pre);
+        }
+
+        // Actions are rebuilt per call: a handler from the previous document
+        // must never be reachable from this one.
+        const bar = wrap.querySelector('#uikit-reader-actions');
+        bar.innerHTML = '';
+        (Array.isArray(opts.actions) ? opts.actions : []).forEach((a) => {
+            if (!a || !a.label) return;
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn-clear cursor-pointer';
+            btn.style.cssText = 'height:34px;padding:0 14px;border-radius: var(--r-md);font-size:12px;';
+            btn.textContent = a.label;
+            if (a.title) btn.title = a.title;
+            btn.onclick = () => { try { a.onClick(); } catch (err) { console.error('[UIKit] reader action failed', err); } };
+            bar.appendChild(btn);
+        });
+        const close = document.createElement('button');
+        close.id = 'uikit-reader-close';
+        close.type = 'button';
+        close.className = 'font-semibold cursor-pointer';
+        close.style.cssText = 'height:34px;padding:0 16px;border-radius: var(--r-md);font-size:12px;background:var(--accent);color:var(--accent-ink);';
+        close.textContent = opts.closeLabel || 'Close';
+        close.onclick = () => this.closeReader();
+        bar.appendChild(close);
+
+        this._readerFocus = document.activeElement;
+        wrap.classList.remove('hidden');
+        wrap.classList.add('flex');
+        this._attachReaderKeys(wrap);
+        try { close.focus(); } catch (_) {}
+        return wrap;
+    },
+
+    closeReader: function () {
+        const wrap = this._readerEl;
+        if (!wrap) return;
+        wrap.classList.add('hidden');
+        wrap.classList.remove('flex');
+        if (this._readerKey) {
+            document.removeEventListener('keydown', this._readerKey);
+            this._readerKey = null;
+        }
+        // Back to whatever opened the document, so keyboard users do not land
+        // at the top of the page.
+        const last = this._readerFocus;
+        this._readerFocus = null;
+        if (last && typeof last.focus === 'function' && last.isConnected) {
+            try { last.focus(); } catch (_) {}
+        }
     },
 
     /* --- R1: window caption bar ------------------------------------------
@@ -1316,7 +1862,10 @@ const UIKit = {
             setMaxGlyph(isMax);
             document.documentElement.classList.toggle('win-maximized', !!isMax);
         };
-        applyMaxFrame(bridge.windowIsMaximized());
+        // Async IPC (the old sendSync blocked the renderer during boot). Paint
+        // the default glyph now, then adopt the real state when it resolves.
+        applyMaxFrame(false);
+        Promise.resolve(bridge.windowIsMaximized()).then(applyMaxFrame).catch(() => {});
 
         // main.js pushes this on maximize / unmaximize, which also covers
         // double-click on the drag region and Win+Up / Win+Down. Subscribing
@@ -1437,10 +1986,13 @@ const Shortcuts = {
         // desyncing the two toggles so the first open rendered display:block
         // instead of flex and lost its centering until the second open).
         wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden items-center justify-center p-4';
+        wrap.setAttribute('role', 'dialog');
+        wrap.setAttribute('aria-modal', 'true');
+        wrap.setAttribute('aria-labelledby', 'shortcuts-help-title');
         wrap.innerHTML = `
             <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm shadow-2xl flex flex-col overflow-hidden p-4 select-none max-h-[85vh] overflow-y-auto">
                 <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
-                    <span class="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">⌨️ Keyboard Shortcuts</span>
+                    <span id="shortcuts-help-title" class="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">⌨️ Keyboard Shortcuts</span>
                     <button id="shortcuts-help-close" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
                 </div>
                 ${groupsHtml}
@@ -1453,9 +2005,31 @@ const Shortcuts = {
         // 'flex'. If close() leaves 'flex' behind, the next toggle REMOVES
         // it (instead of adding), the one after ADDS 'hidden', and the modal
         // opens as display:block — an uncentered full-width panel.
-        const close = () => { wrap.classList.add('hidden'); wrap.classList.remove('flex'); };
+        const close = () => {
+            wrap.classList.add('hidden');
+            wrap.classList.remove('flex');
+            const back = Shortcuts._lastFocus;
+            Shortcuts._lastFocus = null;
+            if (back && back.isConnected) { try { back.focus(); } catch (_) {} }
+        };
+        this._closeHelp = close;
         wrap.querySelector('#shortcuts-help-close').onclick = close;
-        wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });        this._modalEl = wrap;
+        wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
+        // Escape closes; Tab is trapped inside the dialog so focus cannot walk
+        // into the workspace behind the overlay.
+        wrap.addEventListener('keydown', (e) => {
+            if (wrap.classList.contains('hidden')) return;
+            if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+            if (e.key !== 'Tab') return;
+            const focusables = Array.from(wrap.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+                .filter((el) => !el.disabled && el.offsetParent !== null);
+            if (!focusables.length) return;
+            const first = focusables[0];
+            const last = focusables[focusables.length - 1];
+            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        });
+        this._modalEl = wrap;
         return wrap;
     },
 
@@ -1473,8 +2047,15 @@ const Shortcuts = {
 
     toggleHelp: function () {
         const modal = this._ensureHelpModal();
-        modal.classList.toggle('hidden');
-        modal.classList.toggle('flex');
+        if (modal.classList.contains('hidden')) {
+            this._lastFocus = document.activeElement;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            const btn = modal.querySelector('#shortcuts-help-close');
+            try { if (btn) btn.focus(); } catch (_) {}
+        } else {
+            this._closeHelp();
+        }
     },
 
     init: function () {
@@ -1504,10 +2085,13 @@ const EQ_ExportMethods = {
                 el.style.display = 'none'; 
                 if (!document.body) { URL.revokeObjectURL(url); return; }
                 document.body.appendChild(el); 
-                try { el.click(); } catch (_) {}
+                try { el.click(); } catch (e) { reportError('Export download', e, { toast: true }); }
                 try { document.body.removeChild(el); } catch (_) {}
                 setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 1000);
-            } catch (e) { console.warn('[Export] download failed', e); }
+            } catch (e) {
+                // A blocked download used to be a console.warn only.
+                reportError('Export download', e, { toast: true, message: 'Export failed — check the console for details.' });
+            }
         },
         getSanitizedExportFilename: function(suffix, extension) {
             const model = (document.getElementById('model')?.value || '').trim() || "IEM";
@@ -4642,6 +5226,9 @@ const EQ_SmartImportMethods = {
     },
 
             showSmartImportModal: function() {
+            // Remember what opened the modal so Escape/❌ can hand focus back
+            // instead of dropping it on <body>.
+            this._smartImportOpener = document.activeElement;
             var modal = document.getElementById('smart-import-modal');
             if (modal) { modal.classList.remove('hidden'); Mascot.update(); }
             var textarea = document.getElementById('smart-import-textarea');
@@ -4675,6 +5262,9 @@ const EQ_SmartImportMethods = {
             var modal = document.getElementById('smart-import-modal');
             if (modal) modal.classList.add('hidden');
             Mascot.update();
+            var opener = this._smartImportOpener;
+            this._smartImportOpener = null;
+            if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus();
         },
 
         /* Expand / collapse the paste field.
@@ -8839,7 +9429,14 @@ const EventBinding = {
             // Call handler with element as `this` so inline handlers using `this.value`/`this.checked` keep working
             return handler.call(element, event, element);
         } catch (e) {
-            console.error('[EventBinding] Error executing action "' + action + '":', e);
+            // Route through the shared funnel: a swallowed handler exception
+            // looks exactly like a dead button, and because it was caught the
+            // global error banner never fired either.
+            if (window.reportError) {
+                window.reportError('action ' + action, e, { toast: true, message: 'That action failed. See the console for details.' });
+            } else {
+                console.error('[EventBinding] Error executing action "' + action + '":', e);
+            }
         }
     },
 
@@ -8859,10 +9456,12 @@ const EventBinding = {
             const target = getEventTarget(event).closest('[data-action]');
             if (target) {
                 const action = target.getAttribute('data-action');
-                const args = target.getAttribute('data-action-args');
                 if (action) {
-                    const parsedArgs = args ? args.split(',').map(function(a) { return a.trim(); }) : [];
-                    EventBinding.execute(action, event, target, parsedArgs);
+                    // (A data-action-args parser used to live here and fed a
+                    // fourth argument that execute() never accepted. No markup
+                    // ever carried the attribute; arguments belong to data-cmd,
+                    // which implements them properly.)
+                    EventBinding.execute(action, event, target);
                 }
             }
         }, true);
@@ -10155,12 +10754,15 @@ exportReviewCard: async function() {
                 showToast("Radar chart not available. Please initialize review first.", "⚠️");
                 return;
             }
-            const brand = document.getElementById('brand').value.trim() || "Generic";
-            const model = document.getElementById('model').value.trim() || "IEM";
-            const price = document.getElementById('price').value.trim() || "N/A";
-            const score = document.getElementById('overall-score').textContent || "5.0";
-            const volume = document.getElementById('listening-volume').value || "Moderate";
-            const notes = document.getElementById('review-notes').value.trim() || "No custom impressions entered.";
+            // Guarded reads: the export card must still render if an optional
+            // field has been removed from the DOM (it used to reject the whole
+            // async export with no card and no toast).
+            const brand = elValue('brand').trim() || "Generic";
+            const model = elValue('model').trim() || "IEM";
+            const price = elValue('price').trim() || "N/A";
+            const score = (elById('overall-score') || {}).textContent || "5.0";
+            const volume = elValue('listening-volume') || "Moderate";
+            const notes = elValue('review-notes').trim() || "No custom impressions entered.";
 
             const selectedThemeId = IEM_Module.exportTheme || localStorage.getItem('settings_theme_id') || 'slate';
             const selectedFontFamily = IEM_Module.exportFont || localStorage.getItem('settings_font_id') || 'JetBrains Mono';
@@ -10426,9 +11028,9 @@ exportReviewCard: async function() {
             ctx.fillText("SENSITIVITY", 172, 292);
 
             ctx.fillStyle = currentTheme.textMain;
-            const impStr = document.getElementById('impedance').value + " Ω";
+            const impStr = elValue('impedance') + " Ω";
             const sensUnitText = (this.sensUnit === 'V' ? "dB/V" : "dB/mW");
-            const sensStr = document.getElementById('sensitivity').value + " " + sensUnitText;
+            const sensStr = elValue('sensitivity') + " " + sensUnitText;
 
             drawFittedText(impStr, 96, 325, 70, 13, true, 'left');
             drawFittedText(sensStr, 172, 325, 110, 13, true, 'left');
@@ -10767,9 +11369,9 @@ exportReviewCard: async function() {
             ctx.font = `bold 9px ${activeFont}`;
             ctx.fillText("COMPATIBILITY", 890, 464);
 
-            let impVal = parseFloat(document.getElementById('impedance').value);
+            let impVal = parseFloat(elValue('impedance'));
             if (isNaN(impVal) || impVal <= 0) impVal = 5;
-            let sensVal = parseFloat(document.getElementById('sensitivity').value);
+            let sensVal = parseFloat(elValue('sensitivity'));
             if (isNaN(sensVal)) sensVal = 80;
 
             let pReqIemExport, vReq;
@@ -10956,7 +11558,7 @@ const IEM_LibraryMethods = {
         },
 
         saveToLibrary: async function() {
-        const brand = document.getElementById('brand').value.trim(); const model = document.getElementById('model').value.trim();
+        const brand = elValue('brand').trim(); const model = elValue('model').trim();
         if(!brand || !model) { showToast("Enter a Brand and Model name before saving.", "⚠️"); return; }
         await this.ensureChartReady();
 
@@ -10989,7 +11591,7 @@ const IEM_LibraryMethods = {
         // on-screen easter-egg until next edit. Six digits, not four: real DB
         // entries reach $59,000 and the old slice(0,4) silently corrupted them
         // to a tenth of their value on save (59000 -> 5900).
-        const rawPrice = document.getElementById('price').value || "";
+        const rawPrice = elValue('price');
         const priceDigits = rawPrice.replace(/[^0-9]/g, '').slice(0, 6) || null;
         const price = priceDigits;
 
@@ -11097,11 +11699,38 @@ const IEM_LibraryMethods = {
             });
         },
 
-        toggleLibraryModal: async function() { const modal = document.getElementById('library-modal'); if(modal.classList.contains('hidden')) { modal.classList.remove('hidden'); this.closeCompare(); await this.renderLibrary(); } else { modal.classList.add('hidden'); } },
+        toggleLibraryModal: async function() {
+            const modal = document.getElementById('library-modal');
+            if (!modal) return;
+            if (modal.classList.contains('hidden')) {
+                // Remember the opener so closing returns focus there instead of
+                // dropping the keyboard user at the top of the document.
+                this._libraryLastFocus = document.activeElement;
+                modal.classList.remove('hidden');
+                this.closeCompare();
+                await this.renderLibrary();
+                const target = document.getElementById('lib-search') || modal.querySelector('button');
+                try { if (target) target.focus(); } catch (_) {}
+            } else {
+                modal.classList.add('hidden');
+                const back = this._libraryLastFocus;
+                this._libraryLastFocus = null;
+                if (back && back.isConnected) { try { back.focus(); } catch (_) {} }
+            }
+        },
 
         loadFromLibrary: async function(id) {
             const profile = await DBCache.getReview(id); if(!profile) return;
-            document.getElementById('brand').value = profile.brand || ''; document.getElementById('model').value = profile.model || ''; document.getElementById('price').value = profile.price || ''; document.getElementById('impedance').value = profile.impedance || '32'; document.getElementById('sensitivity').value = profile.sensitivity || '110'; document.getElementById('review-notes').value = profile.notes || ''; if(profile.refVolume) this.setListeningVolume(profile.refVolume);
+            // Guarded writes: one missing field must not abort the whole load
+            // (previously it threw after the first write, leaving a half-restored
+            // profile on screen). Notes are clamped to the 150-char field limit.
+            setElValue('brand', profile.brand || '');
+            setElValue('model', profile.model || '');
+            setElValue('price', profile.price || '');
+            setElValue('impedance', profile.impedance || '32');
+            setElValue('sensitivity', profile.sensitivity || '110');
+            setElValue('review-notes', String(profile.notes || '').slice(0, 150));
+            if (profile.refVolume) this.setListeningVolume(profile.refVolume);
             if (profile.formFactor) this.setFormFactor(profile.formFactor);
             if (profile.connector) this.setConnector(profile.connector);
             if (profile.image) {
@@ -11288,7 +11917,10 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
                 document.getElementById('sensitivity').value = data.sensitivity || '80';
                 document.getElementById('sensitivity-slider').value = data.sensitivity || '80';
             }
-            if (document.getElementById('review-notes')) document.getElementById('review-notes').value = data.notes || '';
+            // Clamp imported notes to the field's own 150-char limit. A hand-edited
+            // or third-party export could carry an arbitrarily long string, and the
+            // textarea's maxlength does not apply to programmatic assignment.
+            if (document.getElementById('review-notes')) document.getElementById('review-notes').value = String(data.notes || '').slice(0, 150);
 
             if (data.image) {
                 this._restoreStoredImage(data.image);
@@ -11603,10 +12235,12 @@ const IEM_ImageMethods = {
                         const slider = document.getElementById('image-zoom-slider');
                         if (slider) slider.value = 1.0;
 
-                        document.getElementById('image-preview-canvas').classList.remove('hidden');
-                        document.getElementById('image-controls-bar').classList.remove('hidden');
-                        document.getElementById('image-clear-btn').classList.remove('hidden');
-                        document.getElementById('upload-placeholder').classList.add('hidden');
+                        // Optional chaining: a missing photo-tab node must not
+                        // reject the image upload after the blob was accepted.
+                        document.getElementById('image-preview-canvas')?.classList.remove('hidden');
+                        document.getElementById('image-controls-bar')?.classList.remove('hidden');
+                        document.getElementById('image-clear-btn')?.classList.remove('hidden');
+                        document.getElementById('upload-placeholder')?.classList.add('hidden');
 
                         const checkbox = document.getElementById('image-transparency-chk');
                         if (checkbox && checkbox.checked) {
@@ -11680,10 +12314,10 @@ const IEM_ImageMethods = {
             this.currentImage = isBlob ? URL.createObjectURL(value) : value;
             this.rawImageObj = new Image();
             this.rawImageObj.onload = () => {
-                document.getElementById('image-preview-canvas').classList.remove('hidden');
-                document.getElementById('image-controls-bar').classList.remove('hidden');
-                document.getElementById('image-clear-btn').classList.remove('hidden');
-                document.getElementById('upload-placeholder').classList.add('hidden');
+                document.getElementById('image-preview-canvas')?.classList.remove('hidden');
+                document.getElementById('image-controls-bar')?.classList.remove('hidden');
+                document.getElementById('image-clear-btn')?.classList.remove('hidden');
+                document.getElementById('upload-placeholder')?.classList.add('hidden');
                 this.renderImagePreview();
             };
             this.rawImageObj.onerror = () => {
@@ -12200,11 +12834,12 @@ onDbSearchInput: function(value) {
             if (searchInput) this.renderIemDbSearch(searchInput.value);
 
             const snap = this._iemPreApplySnapshot || {};
-            document.getElementById('brand').value = snap.brand || '';
-            document.getElementById('model').value = snap.model || '';
-            document.getElementById('price').value = snap.price || '';
+            // Guarded: clearing a selection must not throw when a field is absent.
+            setElValue('brand', snap.brand || '');
+            setElValue('model', snap.model || '');
+            setElValue('price', snap.price || '');
             this.setListeningVolume(snap.listeningVolume || 'moderate');
-            document.getElementById('sensitivity').value = snap.sensitivity || '110';
+            setElValue('sensitivity', snap.sensitivity || '110');
             if (snap.impedance != null) { const ie = document.getElementById('impedance'); if (ie) ie.value = snap.impedance; }
             this.setFormFactor(snap.formFactor || 'IEM');
             this.setConnector(snap.connector || '2-pin');
@@ -12564,6 +13199,14 @@ function getBandEnergy(dataArray, startBin, endBin) {
         });
 
         stack.appendChild(item);
+        // Also mirror the text into the dedicated live region. The stack itself
+        // is role=status, but entries can be evicted/removed quickly; the
+        // announcer guarantees the message is announced exactly once.
+        const announcer = document.getElementById('a11y-announcer');
+        if (announcer) {
+            announcer.textContent = '';
+            setTimeout(() => { announcer.textContent = String(message == null ? '' : message); }, 30);
+        }
         const duration = action ? (opts.duration || 6000) : (opts.duration || 2600);
         item.timeoutId = setTimeout(() => dismiss(item), duration);
     }
@@ -15413,9 +16056,9 @@ label: function(context) {
             };
             const avgScore = (...ids) => ids.reduce((sum, id) => sum + scoreOf(id), 0) / ids.length;
 
-            let impVal = parseFloat(document.getElementById('impedance').value);
+            let impVal = parseFloat(elValue('impedance'));
             if (isNaN(impVal) || impVal <= 0) impVal = 5;
-            let sensVal = parseFloat(document.getElementById('sensitivity').value);
+            let sensVal = parseFloat(elValue('sensitivity'));
             if (isNaN(sensVal)) sensVal = 80;
 
             this.updateGauge('impedance', impVal);
@@ -15539,9 +16182,10 @@ label: function(context) {
                 powerIconEmoji.textContent = '🔋';
             }
 
-            if (statusNode) {
-                statusNode.innerHTML = `<span class="${matchClass}">${matchText}</span>`;
-            }
+            // NOTE: the compatibility status is written ONCE, above (with the
+            // responsive `text-sm sm:text-base` classes). A second identical
+            // innerHTML assignment used to live here and silently overwrote the
+            // first, so those classes never applied.
 
             const notesInput = document.getElementById('review-notes');
             const counter = document.getElementById('notes-counter');
@@ -15637,6 +16281,7 @@ if(this.radarChart) {
         resetAll: async function() {
             const ok = await UIKit.confirm({
                 title: "Clear all current workspace data?",
+                message: "This clears the current review (specs, scores, notes, tags, photo, hearing profile and the restored EQ state). Saved reviews, custom EQ presets, Find favourites and your theme/font settings are kept.",
                 confirmLabel: "Clear all",
                 danger: true
             });
@@ -15649,6 +16294,10 @@ if(this.radarChart) {
             // workspace this reset is scoped to.
             const preservedKeys = [
                 'iem_library_v2',
+                // User-authored EQ presets are NOT review-workspace data. They
+                // were missing from this list, so "Clear all" deleted every
+                // custom preset the user had saved (eq-presets.js).
+                'iem_custom_eq_presets',
                 'settings_theme_id', 'settings_export_theme_id', 'settings_font_id',
                 'settings_align_hz', 'settings_align_db',
                 'settings_reading_scale',
@@ -22200,20 +22849,24 @@ const CurveIndexer = {
         };
         try {
 
-            let res = await fetch('./database.json.gz');
+            // json FIRST, matching main.js (data:read-database) and the Data
+            // tab (DataStore.readDatabase). This used to prefer the .gz while
+            // the Data tab preferred the .json, so a json/gz divergence showed
+            // one catalogue in the editor and a stale one in Find/EQ. The .json
+            // is the source of truth; .gz is the derived artifact.
+            let res = await fetch('./database.json');
 
             if (!res.ok) {
-                console.warn("database.json.gz not found, trying database.json...");
-                res = await fetch('./database.json');
+                console.warn("database.json not found, trying database.json.gz...");
+                res = await fetch('./database.json.gz');
                 if (!res.ok) throw new Error("Database file missing");
-                accept(await res.json());
+
+                const decompressedStream = res.body.pipeThrough(new DecompressionStream('gzip'));
+                accept(await new Response(decompressedStream).json());
                 return;
             }
 
-            const decompressedStream = res.body.pipeThrough(new DecompressionStream('gzip'));
-            const response = new Response(decompressedStream);
-
-            accept(await response.json());
+            accept(await res.json());
         } catch (e) {
             console.warn("[CurveIndexer] Could not load catalog:", e);
             this.catalog = [];
@@ -30938,91 +31591,13 @@ const Find_EndgameMethods = {
                     if (disp) disp.textContent = `$${val} Max`;
                 },
 
-                // Main-thread mirror of the worker's scoreEndgameCategories
-                // (find-worker.js). Used only when the Worker is unavailable.
+                // Main-thread fallback used only when the Worker is unavailable.
+                // The rubric itself lives in endgame-scoring.js and is shared
+                // with find-worker.js, so this cannot drift from the worker path.
                 _scoreEndgameCategoriesLocal: function(cc, freqs, maxPrice) {
-                    const EG = window.EndgameCategories;
-                    if (!EG) return null;
-                    const cats = EG.ENDGAME_CATEGORIES || [];
-                    const maxPicks = EG.ENDGAME_MAX_PICKS || 12;
-                    const priced = cc.filter(e => e.price && e.price <= maxPrice);
-                    const out = {};
-                    const champions = [];
-
-                    cats.forEach(cat => {
-                        const scored = priced.map(e => {
-                            const res = EG.scoreCategory(cat, e.tags, e.interp, freqs);
-                            // No price bonus: must stay identical to the worker's
-                            // scoreEndgameCategories (find-worker.js) — at equal
-                            // acoustics the cheapest option should win, not the
-                            // priciest affordable one. The local path previously
-                            // added up to +5 for expensive items, so the same
-                            // query ranked differently depending on whether the
-                            // Worker was available.
-                            const bonus = 0;
-                            return { entry: e, composite: res.score + bonus, reason: res.reason, tagMatch: res.tagMatch, curveScore: res.curveScore };
-                        }).sort((a, b) => b.composite - a.composite);
-                        if (!scored.length) { out[cat.id] = { pool: [] }; return; }
-
-                        const champion = scored[0];
-                        const gkCeiling = champion.entry.price * EG.GIANT_KILLER_PRICE_FRACTION;
-                        const gkSims = {};
-                        for (let i = 1; i < scored.length; i++) {
-                            const s = scored[i];
-                            if (s.entry.price > gkCeiling) continue;
-                            const sim = this._scoreInterp(s.entry.interp, champion.entry.interp, freqs, true);
-                            if (sim >= 75) gkSims[s.entry.id] = { sim: sim, s: s };
-                        }
-
-                        const pool = [];
-                        const limit = Math.min(maxPicks, scored.length);
-                        for (let i = 0; i < limit; i++) {
-                            const s = scored[i];
-                            const gk = gkSims[s.entry.id];
-                            const pick = {
-                                id: s.entry.id, name: s.entry.name, price: s.entry.price,
-                                brand: s.entry.brand || '', score: Math.min(100, Math.round(s.composite)),
-                                reason: s.reason, tagMatch: !!s.tagMatch, curveScore: Math.round(s.curveScore || 0)
-                            };
-                            if (i === 0) pick.isChampion = true;
-                            if (gk) { pick.isGiantKiller = true; pick.similarity = gk.sim; pick.reason = `${gk.sim.toFixed(1)}% tonal match to ${champion.entry.name}`; }
-                            pool.push(pick);
-                        }
-
-                        let bestGkAll = null, bestGk = null;
-                        for (const gkId in gkSims) {
-                            const g = gkSims[gkId];
-                            if (!bestGkAll || g.sim > bestGkAll.sim) bestGkAll = g;
-                            if (pool.some(p => p.id === gkId)) continue;
-                            if (!bestGk || g.sim > bestGk.sim) bestGk = g;
-                        }
-                        if (bestGk) {
-                            pool.push({
-                                id: bestGk.s.entry.id, name: bestGk.s.entry.name, price: bestGk.s.entry.price,
-                                brand: bestGk.s.entry.brand || '', score: Math.min(100, Math.round(bestGk.s.composite)),
-                                reason: `${bestGk.sim.toFixed(1)}% tonal match to ${champion.entry.name}`,
-                                tagMatch: !!bestGk.s.tagMatch, curveScore: Math.round(bestGk.s.curveScore || 0),
-                                isGiantKiller: true, similarity: bestGk.sim
-                            });
-                        }
-
-                        champions.push({ id: champion.entry.id, name: champion.entry.name, price: champion.entry.price, gk: bestGkAll });
-                        out[cat.id] = { pool: pool };
-                    });
-
-                    const valueById = new Map();
-                    champions.forEach(ch => {
-                        const gk = ch.gk;
-                        if (!gk) return;
-                        const e = gk.s.entry;
-                        const existing = valueById.get(e.id);
-                        if (existing && existing.similarity >= gk.sim) return;
-                        valueById.set(e.id, { id: e.id, name: e.name, price: e.price, brand: e.brand || '', similarity: gk.sim, matchName: ch.name });
-                    });
-                    out._value = { pool: Array.from(valueById.values()).sort((a, b) => b.similarity - a.similarity).slice(0, 12) };
-                    return out;
+                    try { return EndgameScoring.scoreEndgameCategories(cc, freqs, maxPrice); }
+                    catch (e) { console.warn("[FindEngine] Local endgame scoring failed:", e); return null; }
                 },
-
                 _runEndgameViaWorker: function(items, maxPrice, freqs) {
                     const worker = this.ensureFindWorker();
                     if (!worker) return Promise.resolve(null);
@@ -33217,13 +33792,15 @@ const Find_TasteMethods = {
                         baselineInterp = CurveUtils.cubicSplineInterpolate(rawNorm, freqs);
                     }
 
-                    const bass = parseFloat(document.getElementById('find-bass').value);
-                    const sub = parseFloat(document.getElementById('find-sub').value);
-                    const punch = parseFloat(document.getElementById('find-punch').value);
-                    const warm = parseFloat(document.getElementById('find-warm').value);
-                    const vocals = parseFloat(document.getElementById('find-vocals').value);
-                    const treble = parseFloat(document.getElementById('find-treble').value);
-                    const smooth = parseFloat(document.getElementById('find-smooth').value);
+                    // elValue() keeps a removed/renamed slider from aborting the
+                    // whole tuning scan with a TypeError.
+                    const bass = parseFloat(elValue('find-bass', '0'));
+                    const sub = parseFloat(elValue('find-sub', '0'));
+                    const punch = parseFloat(elValue('find-punch', '0'));
+                    const warm = parseFloat(elValue('find-warm', '0'));
+                    const vocals = parseFloat(elValue('find-vocals', '0'));
+                    const treble = parseFloat(elValue('find-treble', '0'));
+                    const smooth = parseFloat(elValue('find-smooth', '0'));
 
                     const targetData = [];
                     for (let i = 0; i < freqs.length; i++) {
@@ -33354,46 +33931,12 @@ const Find_TasteMethods = {
                     ctx.restore();
                 },
 
+                // Delegates to NameUtils (js/name-utils.js), which find-worker.js
+                // also loads via importScripts. Keeping one copy is what stops the
+                // worker and the main-thread fallback from grouping the same
+                // database differently.
                 sanitizeName: function(name) {
-                    // Same boundary coercion as the worker's copy of this
-                    // function (js/find-worker.js) -- kept in sync since
-                    // the main-thread fallback path calls this copy, not
-                    // the worker's.
-                    if (typeof name !== 'string') name = (name == null) ? '' : String(name);
-                    if (!name) return "";
-                    let clean = name.toLowerCase();
-
-                    clean = clean.replace(/[\(\[][^\]\)]*[\)\]]/g, '');
-
-                    clean = clean.replace(/\s*x\s*(?:hbb|crinacle|crin|zeos|gizaudio|fresh reviews|jays audio|divinus|seeaudio|akros|ducbloke|community|fresh|z reviews|z)\b/g, '');
-
-                    clean = clean.replace(/\b(?!dudu\b)[ud]{4}\b/g, '');
-                    clean = clean.replace(/\b[ud]{2,3}\b/g, '');
-                    clean = clean.replace(/\b[01]{2,4}\b/g, '');
-                    clean = clean.replace(/\b[1-5]\s+[1-5]\b/g, '');
-                    clean = clean.replace(/\b(?:all on|all off|bc on|bc off)\b/g, '');
-                    clean = clean.replace(/\s*(?:bass|treble|reference|ref|mid|midrange)?\s*(?:switch|sw|switches)\s*(?:on|off|up|down|1|2|3|4|0)*\b/g, '');
-
-                    clean = clean.replace(/\b\d+\s*(?:Ω|ohm|ohms|o)\b/g, '');
-                    clean = clean.replace(/\b(?:high|low|s\s+high|s\s+low)\s*(?:Ω|ohm|ohms|impedance)\b/g, '');
-
-                    clean = clean.replace(/\b(?:\d+\.\d+mm|\d+mm|3\.5|4\.4|usb\s+c|type\s+c|usb|tws|anc|analog|digital|dsp)\b/g, '');
-                    clean = clean.replace(/\s*(?:gold|grey|gray|silver|default)?\s*(?:plug|cable|connection|connector|adapter|headband|wire)\b/g, '');
-
-                    clean = clean.replace(/\s*(?:foam|silicone|silicon|yaxi|spinfit|symbio|starline|widebore|narrowbore|final|clear|red|blue|grey|gray|stock|custom|my|dunu\s+ss)\s*(?:tips|eartips|eartip|tip|pads|pad)\b/g, '');
-                    clean = clean.replace(/\b(?:tips|eartips|eartip|tip|pads|pad)\b/g, '');
-
-                    clean = clean.replace(/\s*(?:blue|gold|silver|red|black|green|brass|steel|titanium|ti|short\s+black|short\s+red|alt|reference|ref|hifi|pop|vocal|instrumental|monitor|balanced|classic|default|standard|std)?\s*(?:nozzles?|rings?|filters?|mesh|damper|vent|mod|mods|taped?|tanya|microtape)\b/g, '');
-
-                    clean = clean.replace(/\b(?:v\d+(?:\.\d+)?|mk[ivx\d]+b?)\b/g, '');
-                    clean = clean.replace(/\b(?:\d+st|\d+nd|\d+rd|\d+th)\s+(?:gen|generation|unit|anniversary|anniv)\b/g, '');
-                    clean = clean.replace(/\b(?:og|gen|generation|unit|anniversary|anniv|re\s+set|preprod|pre\s+retail|retail|sample\s*\d*|sample)\b/g, '');
-
-                    clean = clean.replace(/\b(?:edition|standard|std|default|reference|ref|stock|base|baseline|pro\s+max|pro|max|ltd|limited|custom\s+resin|resin)\b/g, '');
-
-                    clean = clean.replace(/\s+/g, ' ').trim();
-
-                    return clean.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                    return NameUtils.sanitizeName(name);
                 },
 
                 buildCanonicalProfiles: async function(dataset) {
@@ -35727,6 +36270,396 @@ const DataCore = (function () {
     return parts.join('; ');
   }
 
+  // --------------------------------------------------------- save previews
+  // A save overwrites database.json, so the Data tab shows exactly what it will
+  // change before writing. `snapshotEntries` records the state the file was
+  // loaded from (or last saved as), keyed by database id; `diffAgainstSnapshot`
+  // reports what the current entries add, edit and remove relative to it.
+  //
+  // A snapshot stores a fingerprint, not the entry itself: the Session edits
+  // entries in place, so holding references would make every diff come back
+  // empty. It also keeps a plain copy of the old values, which is what lets the
+  // save preview say *what* changed ("Price: $400 -> $405") and not just which
+  // entries are affected.
+  function copyEntry(e) {
+    const c = {};
+    for (let i = 0; i < SCHEMA_FIELDS.length; i++) {
+      const f = SCHEMA_FIELDS[i];
+      const v = e[f];
+      c[f] = Array.isArray(v) ? v.slice() : v;
+    }
+    return c;
+  }
+  function fingerprintEntry(e) {
+    let s = '';
+    for (let i = 0; i < SCHEMA_FIELDS.length; i++) {
+      const v = e[SCHEMA_FIELDS[i]];
+      s += (Array.isArray(v) ? v.join('\u0001') : String(v === null || v === undefined ? '' : v)) + '\u0002';
+    }
+    return s;
+  }
+  function snapshotEntries(entries) {
+    const snap = new Map();
+    (entries || []).forEach(e => {
+      if (!e || !e.id) return;
+      snap.set(e.id, { fp: fingerprintEntry(e), label: formatEntryLabel(e), entry: copyEntry(e) });
+    });
+    return snap;
+  }
+  // What a reviewer wants to sanity-check on a brand-new row at a glance:
+  // price, driver config, and how many measurement files came with it.
+  function describeNewEntry(e) {
+    const parts = [];
+    if (e.price_usd) parts.push('$' + e.price_usd);
+    if (e.driver_config) parts.push(e.driver_config);
+    const nFiles = (e.files || []).length;
+    parts.push(nFiles + ' file' + (nFiles === 1 ? '' : 's'));
+    return parts.join(' · ');
+  }
+  // Ids are the join key, so a material change to brand/model/variant shows up
+  // as one removal plus one addition - which is exactly what the file gains.
+  function diffAgainstSnapshot(snap, entries) {
+    const added = [], modified = [], removed = [];
+    const seen = new Set();
+    (entries || []).forEach(e => {
+      if (!e || !e.id) return;
+      seen.add(e.id);
+      const prev = snap.get(e.id);
+      if (!prev) added.push({ id: e.id, label: formatEntryLabel(e), detail: describeNewEntry(e) });
+      else if (prev.fp !== fingerprintEntry(e)) modified.push({ id: e.id, label: formatEntryLabel(e), detail: describeEntryChange(prev.entry, e, 3) });
+    });
+    snap.forEach((prev, id) => { if (!seen.has(id)) removed.push({ id: id, label: prev.label, detail: '' }); });
+    return { added: added, modified: modified, removed: removed, total: added.length + modified.length + removed.length };
+  }
+
+  // ------------------------------------------------------------- save log
+  // Markdown is the save log's export format: the log exists to be a changelog
+  // that lives next to database.json and can be committed with it.
+  const SAVE_LOG_FILE = 'save-log.md';
+  function formatBytes(n) { return n > 1048576 ? (n / 1048576).toFixed(2) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+  function groupDigits(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  // Local time, fixed shape: a changelog should read the same on every machine.
+  function stampDate(ts) {
+    const d = new Date(ts || 0), p = n => (n < 10 ? '0' : '') + n;
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  // Entry labels and deltas are database values, not authored prose: escape the
+  // characters that would otherwise be read as inline Markdown markup.
+  function mdInline(s) { return String(s === null || s === undefined ? '' : s).replace(/([\\`*_[\]<>])/g, '\\$1'); }
+  const SAVE_KINDS = { add: '＋', mod: '～', del: '－' };
+  const SAVE_LOG_TITLE = '# Database save log';
+  // The export's own provenance line. It is written by the export, not by the
+  // save, so it must not make an otherwise identical section look different.
+  const PROVENANCE_RE = /^_added to this changelog on \d{4}-\d{2}-\d{2} \d{2}:\d{2}\._$/;
+  function bodyKey(body) {
+    const lines = body.filter(l => !PROVENANCE_RE.test(l.trim()));
+    while (lines.length && !lines[0].trim()) lines.shift();
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    return lines.join('\n');
+  }
+  function saveLogWhere(s) { return s.mode === 'memory' ? 'downloaded' : s.mode === 'folder' ? 'saved to folder' : 'saved to disk'; }
+  // Minute + destination identifies a save across exports. Two saves in the same
+  // minute to the same place are told apart by counting, below, not by the key.
+  function saveLogHeading(s) { return stampDate(s.ts) + ' — ' + saveLogWhere(s); }
+  function stampToMs(text) {
+    const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(String(text || '').trim());
+    return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).getTime() : 0;
+  }
+  /**
+   * One save as a Markdown section: a heading naming when and where, the counts
+   * the Data tab shows, then the changed entries. Each save keeps only its first
+   * few entries, so a large one says how many it left out rather than looking
+   * complete.
+   */
+  function saveSection(s) {
+    const body = [];
+    const nEntries = s.entries || 0;
+    const meta = [groupDigits(nEntries) + ' entr' + (nEntries === 1 ? 'y' : 'ies')];
+    if (s.bytes) meta.push(formatBytes(s.bytes));
+    const counts = [];
+    if (s.added) counts.push('＋' + s.added);
+    if (s.modified) counts.push('～' + s.modified);
+    if (s.removed) counts.push('－' + s.removed);
+    meta.push(counts.length ? counts.join(' ') : 'no entry changes');
+    body.push(meta.join(' · '));
+    const changes = s.changes || [];
+    if (changes.length) body.push('');
+    changes.forEach(c => {
+      const detail = c.detail ? ' — ' + mdInline(String(c.detail).replace(/ -> /g, ' → ')) : '';
+      body.push('- ' + (SAVE_KINDS[c.k] || '·') + ' ' + mdInline(c.label) + detail);
+    });
+    const hidden = (s.total || 0) - changes.length;
+    if (hidden > 0) body.push('', '_…and ' + hidden + ' more changed ' + (hidden === 1 ? 'entry' : 'entries') + ' (the log keeps the first ' + changes.length + ' of each save)._');
+    return { key: saveLogHeading(s), ts: s.ts || 0, body: body };
+  }
+  function renderSection(sec) {
+    const out = ['## ' + sec.key];
+    if (sec.body.length) out.push('', ...sec.body);
+    out.push('');
+    return out;
+  }
+  /**
+   * Reads a save log back into its sections, keeping each body verbatim so a
+   * hand-edited changelog is not rewritten by the next export. Anything above
+   * the first heading is the preamble: our own header when the file is ours.
+   */
+  function parseSaveLog(text) {
+    const sections = [], preamble = [];
+    let cur = null;
+    String(text || '').split('\n').forEach(raw => {
+      const line = raw.replace(/\r$/, '');
+      const head = /^##\s+(.*)$/.exec(line);
+      if (head) { cur = { key: head[1].trim(), ts: stampToMs(head[1]), body: [] }; sections.push(cur); return; }
+      (cur ? cur.body : preamble).push(line);
+    });
+    sections.forEach(s => {
+      while (s.body.length && !s.body[0].trim()) s.body.shift();
+      while (s.body.length && !s.body[s.body.length - 1].trim()) s.body.pop();
+    });
+    while (preamble.length && !preamble[0].trim()) preamble.shift();
+    while (preamble.length && !preamble[preamble.length - 1].trim()) preamble.pop();
+    return { preamble: preamble, sections: sections };
+  }
+  /**
+   * Renders the stored log into `existing` instead of over it, so the file on
+   * disk becomes a changelog that grows: saves drop out of the 20-row log but
+   * stay in the file. Sections already there are kept verbatim - hand edits
+   * included - and a save is appended only when the file does not already
+   * describe it (matched by content first, then by heading), which makes
+   * re-exporting without new saves a no-op in content.
+   */
+  function mergeSaveLog(existing, rows, opts) {
+    opts = opts || {};
+    const list = (Array.isArray(rows) ? rows : []).filter(Boolean);
+    const parsed = parseSaveLog(existing);
+    // Sections already in the file, grouped by heading, each one claimable once.
+    // Counting per heading is what keeps two saves from the same minute apart.
+    const free = new Map();
+    parsed.sections.forEach(s => {
+      if (!free.has(s.key)) free.set(s.key, []);
+      free.get(s.key).push({ taken: false, body: bodyKey(s.body) });
+    });
+    // Oldest first, so when a heading repeats the newest save is the one in doubt.
+    const pending = list.slice().sort((a, b) => ((a && a.ts) || 0) - ((b && b.ts) || 0)).map(saveSection);
+    // A save whose body is already written (the normal re-export) is claimed
+    // exactly, so a same-minute save is not mistaken for the one already there.
+    const left = [];
+    pending.forEach(sec => {
+      const hit = (free.get(sec.key) || []).find(x => !x.taken && x.body === bodyKey(sec.body));
+      if (hit) hit.taken = true; else left.push(sec);
+    });
+    // What is left may still be in the file under a hand-edited body; pair those
+    // by heading before appending, so a proof-read section is not duplicated.
+    const added = [];
+    left.forEach(sec => {
+      const hit = (free.get(sec.key) || []).find(x => !x.taken);
+      if (hit) hit.taken = true; else added.push(sec);
+    });
+    // Say which sections this export put there. A save's heading is when it was
+    // saved; this line is when it entered the changelog, which is the question
+    // "what did the export just do" asked by whoever opens the file (or the diff).
+    const stamp = stampDate(opts.now || Date.now());
+    added.forEach(sec => { sec.body.unshift('_added to this changelog on ' + stamp + '._', ''); });
+    // Everything the file already lists stays, plus whatever was not there yet.
+    // Sections we could not parse a date from sort last rather than jumping to
+    // the top of a hand-written file.
+    const merged = parsed.sections.concat(added).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    const out = [];
+    // A preamble that is not our own header is someone's text: keep it above the
+    // changelog rather than deleting it.
+    if (parsed.preamble.length && !parsed.preamble.some(l => l.trim() === SAVE_LOG_TITLE)) out.push(...parsed.preamble, '');
+    out.push(SAVE_LOG_TITLE, '');
+    out.push(merged.length
+      ? '_' + merged.length + ' save' + (merged.length === 1 ? '' : 's') + ', newest first — exported from the Data tab on ' + stamp + '._'
+      : '_No saves recorded yet._', '');
+    merged.forEach(sec => { out.push(...renderSection(sec)); });
+    return { text: out.join('\n').replace(/\n+$/, '') + '\n', added: added.length, total: merged.length };
+  }
+  /** The Markdown changelog as text (see mergeSaveLog for the merge rules). */
+  function saveLogMarkdown(rows, opts) {
+    return mergeSaveLog(opts && opts.existing, rows, opts).text;
+  }
+  /**
+   * What the changelog on disk already holds, so the panel can say so before the
+   * next export: how many saves, and when it was last written (the export stamp
+   * in the header, or the newest save if the header was edited away). null when
+   * there is no file, or nothing in it yet - there is no status worth showing.
+   */
+  function summarizeSaveLog(text) {
+    const parsed = parseSaveLog(text);
+    if (!parsed.sections.length) return null;
+    let updatedAt = 0;
+    parsed.preamble.forEach(line => {
+      const m = /exported from the Data tab on (\d{4}-\d{2}-\d{2} \d{2}:\d{2})/.exec(line);
+      if (m) updatedAt = Math.max(updatedAt, stampToMs(m[1]));
+    });
+    if (!updatedAt) updatedAt = parsed.sections.reduce((newest, s) => Math.max(newest, s.ts || 0), 0);
+    return { total: parsed.sections.length, updatedAt: updatedAt };
+  }
+
+  // ------------------------------------------------- save-log document view
+  // The changelog as structure, so a reader can draw sections and changed rows
+  // instead of one wall of text. Deliberately narrow: it recognises what the
+  // export writes (an H1, an italic note, a counts line, bullet rows) and keeps
+  // every other line as text, so a hand-edited file is still shown in full
+  // rather than being dropped.
+  const MD_ESCAPE_RE = /\\([\\`*_[\]<>])/g;
+  // The export escapes Markdown markup in entry labels; the reader shows the
+  // label, not the escaping, so the backslashes come back off for display.
+  function mdPlain(s) { return String(s === null || s === undefined ? '' : s).replace(MD_ESCAPE_RE, '$1'); }
+  const SAVE_LOG_MARKS = { '＋': 'add', '～': 'mod', '－': 'del', '·': 'other' };
+  function saveLogBlocks(lines) {
+    const blocks = [];
+    (lines || []).forEach(raw => {
+      const line = String(raw).replace(/\r$/, '').trim();
+      if (!line) return;
+      const note = /^_(.+)_$/.exec(line);
+      if (note) { blocks.push({ k: 'note', text: mdPlain(note[1].trim()) }); return; }
+      const row = /^-\s+(\S)\s*(.*)$/.exec(line);
+      if (row && SAVE_LOG_MARKS[row[1]]) {
+        const rest = row[2];
+        // The separator the export writes between label and detail. A row with
+        // no detail is still a row: it just has no second half.
+        const cut = rest.indexOf(' — ');
+        blocks.push({
+          k: 'row', mark: row[1], kind: SAVE_LOG_MARKS[row[1]],
+          name: mdPlain(cut >= 0 ? rest.slice(0, cut) : rest),
+          detail: mdPlain(cut >= 0 ? rest.slice(cut + 3) : '')
+        });
+        return;
+      }
+      if (/^[\d,]+ entr(y|ies)\b/.test(line)) { blocks.push({ k: 'meta', text: mdPlain(line) }); return; }
+      blocks.push({ k: 'text', text: mdPlain(line) });
+    });
+    return blocks;
+  }
+  /**
+   * Parses the saved changelog for display: { title, blocks, sections }, where a
+   * section is { heading, where, ts, blocks } and a row block is
+   * { k:'row', mark, kind, name, detail }. Nothing is thrown away - unknown
+   * lines become text blocks - so this can never hide part of the file.
+   */
+  function saveLogDocument(text) {
+    const parsed = parseSaveLog(text);
+    const preamble = parsed.preamble.slice();
+    // Our own H1 becomes the document title when it is there; anything else in
+    // the preamble is somebody's text and stays visible above the sections.
+    let title = '';
+    if (preamble.length && /^#\s+/.test(preamble[0])) title = mdPlain(preamble.shift().replace(/^#\s+/, '').trim());
+    return {
+      title: title,
+      blocks: saveLogBlocks(preamble),
+      sections: parsed.sections.map(s => {
+        // A heading is "when — where"; splitting keeps the two roles legible
+        // without losing a hand-written heading that has neither.
+        const cut = s.key.indexOf(' — ');
+        return {
+          heading: cut >= 0 ? s.key.slice(0, cut).trim() : s.key,
+          where: cut >= 0 ? s.key.slice(cut + 3).trim() : '',
+          ts: s.ts || 0,
+          blocks: saveLogBlocks(s.body)
+        };
+      })
+    };
+  }
+
+  // ------------------------------------------------- save-log filtering
+  // The reader can narrow the changelog instead of scrolling all of it. Both
+  // filters are applied to the parsed document, never to the file: nothing here
+  // writes, and "every month" is the untouched document again.
+  const SAVE_LOG_MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  /** The local calendar month a section belongs to, as YYYY-MM ('' when the
+   *  heading carried no date, which only "every month" can show). */
+  function saveLogMonth(ts) {
+    if (!ts) return '';
+    const d = new Date(ts), p = n => (n < 10 ? '0' : '') + n;
+    return d.getFullYear() + '-' + p(d.getMonth() + 1);
+  }
+  /** The months the file actually holds, newest first, each with how many saves
+   *  it has - so the picker never offers an empty month. */
+  function saveLogMonths(doc) {
+    const seen = new Map();
+    ((doc && doc.sections) || []).forEach(s => {
+      const key = saveLogMonth(s.ts);
+      if (key) seen.set(key, (seen.get(key) || 0) + 1);
+    });
+    return [...seen.keys()].sort().reverse().map(key => {
+      const parts = key.split('-');
+      return { key: key, count: seen.get(key), label: SAVE_LOG_MONTH_LABELS[Number(parts[1]) - 1] + ' ' + parts[0] };
+    });
+  }
+  /**
+   * Applies { kind: 'all'|'add'|'del', month: 'all'|'YYYY-MM', query } to a
+   * parsed changelog. `query` matches a changed row's name or its detail
+   * (case-insensitive, the way a person types a model or a price), and also the
+   * save's own heading and destination - "2026-09", "folder" - so a save can be
+   * found by when and where it happened when the entry is not what is
+   * remembered. A save matched by its heading keeps all of its rows (of the
+   * chosen kind): the whole save is what was asked for, and `matchedSave` says
+   * whether that was its date or its destination, so the view can admit that a
+   * card full of rows was found by the save rather than by an entry in it. A save
+   * with no rows left is hidden entirely - an empty card would be noise - and
+   * `hidden` on each kept section is how many of its listed changes the filters
+   * left out, so the reader can say so rather than letting the card's own counts
+   * line look wrong.
+   */
+  function filterSaveLogDocument(doc, opts) {
+    opts = opts || {};
+    const kind = opts.kind || 'all';
+    const month = opts.month || 'all';
+    const query = String(opts.query === undefined || opts.query === null ? '' : opts.query).trim().toLowerCase();
+    const sections = [];
+    let rows = 0;
+    ((doc && doc.sections) || []).forEach(s => {
+      if (month !== 'all' && saveLogMonth(s.ts) !== month) return;
+      const all = s.blocks.filter(b => b.k === 'row');
+      // Which part of the save the text was found in, if any: its date heading or
+      // the destination it says it went to.
+      const savedBy = !query ? '' : s.heading.toLowerCase().includes(query) ? 'date'
+        : s.where.toLowerCase().includes(query) ? 'destination' : '';
+      // Only the rows the kind filter would draw can explain a match: a row the
+      // reader cannot see is no visible reason for the card being here.
+      const rowHit = !!query && all.some(b => (kind === 'all' || b.kind === kind) &&
+        (b.name + ' ' + b.detail).toLowerCase().includes(query));
+      const blocks = s.blocks.filter(b => {
+        if (b.k !== 'row') return true;
+        if (kind !== 'all' && b.kind !== kind) return false;
+        if (query && !savedBy && !(b.name + ' ' + b.detail).toLowerCase().includes(query)) return false;
+        return true;
+      });
+      const shown = blocks.filter(b => b.k === 'row').length;
+      if ((kind !== 'all' || query) && !shown) return;
+      rows += shown;
+      // Only a save that nothing in the rows on screen accounts for carries the
+      // label: when a visible row also matches, that row is the reason itself.
+      sections.push(Object.assign({}, s, { blocks: blocks, hidden: all.length - shown, matchedSave: savedBy && !rowHit ? savedBy : '' }));
+    });
+    return { total: ((doc && doc.sections) || []).length, saves: sections.length, rows: rows, sections: sections, query: query };
+  }
+  /**
+   * A remembered filter, made safe to use against today's file. The viewer stays
+   * where it was left, but never at the cost of showing nothing for a reason the
+   * reader cannot see: a kind the viewer no longer offers, a month the file no
+   * longer holds (which would open on an empty document) and a runaway query
+   * all fall back to the whole changelog.
+   */
+  function sanitizeSaveLogFilter(saved, months) {
+    const f = { kind: 'all', month: 'all', query: '' };
+    if (!saved || typeof saved !== 'object') return f;
+    if (saved.kind === 'add' || saved.kind === 'del') f.kind = saved.kind;
+    if (saved.month === 'all') f.month = 'all';
+    // With one month there is no picker to show the choice on, so the month is
+    // dropped rather than filtering invisibly.
+    else if (typeof saved.month === 'string' && (months || []).length > 1 && months.some(m => m && m.key === saved.month)) f.month = saved.month;
+    if (typeof saved.query === 'string') f.query = saved.query.slice(0, 200);
+    return f;
+  }
+  /** True when a filter shows the untouched document, so there is nothing worth
+   *  remembering: a plain read should not surprise the next one. */
+  function isDefaultSaveLogFilter(f) {
+    return !f || f.kind === 'all' && f.month === 'all' && !String(f.query === undefined || f.query === null ? '' : f.query).trim();
+  }
+
   // ----------------------------------------------------------- load / save
   function loadDatabaseText(text) {
     // Returns { entries, notes } or throws Error with a friendly message.
@@ -36594,6 +37527,9 @@ const DataCore = (function () {
     tagConflicts, tagConflictResolution, fixTierTags, normRelPath, foldPath, decodeHashU, encodeHashU, seqRatio, pyFloat,
     // entries
     validateEntry, buildCleanEntry, cmpEntries, formatEntryLabel, describeEntryChange,
+    fingerprintEntry, snapshotEntries, diffAgainstSnapshot,
+    SAVE_LOG_FILE, saveLogMarkdown, mergeSaveLog, summarizeSaveLog, saveLogDocument, saveLogMonths, filterSaveLogDocument,
+    sanitizeSaveLogFilter, isDefaultSaveLogFilter, formatBytes,
     loadDatabaseText, serializeCanonical, splitIntoChunks,
     // audit
     runFullAudit, findDuplicatePairs, summarizeIssues, waiverKeyOf,
@@ -37314,6 +38250,10 @@ const DataStore = (function () {
     const n = rel.replace(/\\/g, '/').replace(/\/+/g, '/').trim();
     if (!/^data\/[^/].*\.txt$/i.test(n)) return null;
     if (n.split('/').some(p => p === '..' || p === '.' || p === '')) return null;
+    // Same 400-char ceiling as safeDataRel() in main.js. Without it a long-but-
+    // otherwise-valid path passed here and was rejected by the bridge as a
+    // generic "bad path", which the UI could not explain.
+    if (n.length > 400) return null;
     return n;
   }
   function downloadBlob(name, data, type) {
@@ -37416,30 +38356,39 @@ const DataStore = (function () {
     return true;
   }
 
-  /** Returns { text, source } for the database currently in effect. */
+  /**
+   * Returns { text, source, gzStale } for the database currently in effect.
+   *
+   * Precedence is `database.json` first, everywhere: the main process, this
+   * adapter, and CurveIndexer._loadCatalog (the catalogue the rest of the app
+   * scans). They used to disagree (the IPC handler read .json while the
+   * catalogue read .gz), so a json/gz divergence showed one database in the
+   * Data tab and a different one in Find/EQ. `gzStale` reports that the .json
+   * is newer than the .gz so the Data tab can offer "Compress".
+   */
   async function readDatabase() {
     if (state.mode === 'electron') {
       const r = await bridge.dataReadDatabase();
       if (!r || !r.ok) throw new Error((r && r.error) || 'Could not read database');
-      return { text: r.text, source: r.source };
+      return { text: r.text, source: r.source, gzStale: !!r.gzStale };
     }
     if (state.mode === 'folder') {
       for (const name of ['database.json', 'database.json.gz']) {
         try {
           const fh = await state.dirHandle.getFileHandle(name);
           const file = await fh.getFile();
-          if (name.endsWith('.gz')) return { text: await gunzipText(await file.arrayBuffer()), source: name };
-          return { text: await file.text(), source: name };
+          if (name.endsWith('.gz')) return { text: await gunzipText(await file.arrayBuffer()), source: name, gzStale: false };
+          return { text: await file.text(), source: name, gzStale: false };
         } catch (e) { /* try next */ }
       }
       throw new Error('database.json was not found in the chosen folder.');
     }
-    // memory/web: the same file the rest of the app loaded
-    let res = await fetch('./database.json.gz');
-    if (res.ok) return { text: await gunzipText(await res.arrayBuffer()), source: 'database.json.gz (web)' };
-    res = await fetch('./database.json');
+    // memory/web: read the same file the catalogue loader reads (json first).
+    let res = await fetch('./database.json');
+    if (res.ok) return { text: await res.text(), source: 'database.json (web)', gzStale: false };
+    res = await fetch('./database.json.gz');
     if (!res.ok) throw new Error('Database file missing');
-    return { text: await res.text(), source: 'database.json (web)' };
+    return { text: await gunzipText(await res.arrayBuffer()), source: 'database.json.gz (web)', gzStale: false };
   }
   /** Array of 'data/...' paths, or null when the data folder can't be listed. */
   async function listDataFiles() {
@@ -37476,9 +38425,30 @@ const DataStore = (function () {
         await w.write(text); await w.close(); out.push({ name: 'database.json', bytes: enc.encode(text).length });
       }
       if (opts.gz) {
-        const gz = await gzipBytes(text);
-        const w = await (await state.dirHandle.getFileHandle('database.json.gz', { create: true })).createWritable();
-        await w.write(gz); await w.close(); out.push({ name: 'database.json.gz', bytes: gz.length });
+        // Back up the previous .gz, then report a partial save explicitly. The
+        // File System Access API has no rename, so the pair cannot be made
+        // atomic here; the app reads database.json first, so a failed .gz write
+        // leaves usable data plus a stale-compressed warning instead of a
+        // silently diverging pair.
+        let gz;
+        try {
+          gz = await gzipBytes(text);
+        } catch (e) {
+          throw new Error('database.json was saved, but compressing it failed: ' + ((e && e.message) || e));
+        }
+        try {
+          const oldGz = await (await state.dirHandle.getFileHandle('database.json.gz')).getFile();
+          const bd = await state.dirHandle.getDirectoryHandle('backup', { create: true });
+          const bw = await (await bd.getFileHandle('database.json.gz.bak', { create: true })).createWritable();
+          await bw.write(await oldGz.arrayBuffer()); await bw.close();
+        } catch (e) { /* no previous gz */ }
+        try {
+          const w = await (await state.dirHandle.getFileHandle('database.json.gz', { create: true })).createWritable();
+          await w.write(gz); await w.close();
+        } catch (e) {
+          throw new Error('database.json was saved, but writing database.json.gz failed: ' + ((e && e.message) || e));
+        }
+        out.push({ name: 'database.json.gz', bytes: gz.length });
       }
       return { files: out, mode: 'folder' };
     }
@@ -37523,8 +38493,75 @@ const DataStore = (function () {
     if (!r || !r.ok) throw new Error((r && r.error) || 'reset failed');
     return true;
   }
-  async function exportZip(extra) {
-    const files = [];
+  /**
+   * The changelog already saved next to the database, so an export can add to it
+   * instead of replacing it. null means "nothing there yet". A read that fails
+   * for any other reason throws: silently overwriting a file we could not read
+   * would be the one way to lose a changelog.
+   */
+  async function readSaveLog() {
+    const name = 'save-log.md';
+    if (state.mode === 'electron' && bridge && bridge.dataReadSaveLog) {
+      const r = await bridge.dataReadSaveLog();
+      if (!r || !r.ok) throw new Error((r && r.error) || 'could not read save-log.md');
+      return typeof r.text === 'string' ? r.text : null;
+    }
+    if (state.mode === 'folder' && state.dirHandle) {
+      try {
+        const f = await (await state.dirHandle.getFileHandle(name)).getFile();
+        return await f.text();
+      } catch (e) {
+        if (e && (e.name === 'NotFoundError' || e.name === 'TypeMismatchError')) return null;
+        throw e;
+      }
+    }
+    return null;
+  }
+  /**
+   * Open the changelog for reading. Desktop: the file in whatever app handles
+   * Markdown, or its folder with the file selected when there is no handler.
+   * Browser with a connected folder: a copy, since a page cannot launch a file.
+   * Browser-only: reports that the copy is wherever the export downloaded it.
+   */
+  async function openSaveLog() {
+    const name = 'save-log.md';
+    if (state.mode === 'electron' && bridge && bridge.dataOpenSaveLog) {
+      const r = await bridge.dataOpenSaveLog();
+      if (!r || !r.ok) throw new Error((r && r.error) || 'could not open save-log.md');
+      return { mode: 'electron', name: name, how: r.how };
+    }
+    if (state.mode === 'folder' && state.dirHandle) {
+      const f = await (await state.dirHandle.getFileHandle(name)).getFile();
+      downloadBlob(name, await f.text(), 'text/markdown');
+      return { mode: 'folder', name: name, how: 'downloaded' };
+    }
+    // Browser-only: the last export went to the downloads folder, so there is no
+    // file this page can open. The caller says where it went instead of failing.
+    return { mode: 'memory', name: name, how: 'memory' };
+  }
+  /**
+   * The save log's Markdown export lives next to the database it describes, so
+   * the changelog travels with the files it explains. When there is no writable
+   * folder (browser-only, or an installed app with no working copy yet) it is
+   * downloaded instead. The renderer never names a path: the main process fixes
+   * the filename.
+   */
+  async function writeSaveLog(text) {
+    const name = 'save-log.md';
+    if (state.mode === 'electron' && bridge && bridge.dataWriteSaveLog) {
+      const r = await bridge.dataWriteSaveLog({ text: text });
+      if (r && r.ok) return { mode: 'electron', name: name };
+      if (r && r.error && r.error !== 'needs-working-copy' && r.error !== 'denied') throw new Error(r.error);
+    }
+    if (state.mode === 'folder' && state.dirHandle) {
+      const w = await (await state.dirHandle.getFileHandle(name, { create: true })).createWritable();
+      await w.write(text); await w.close();
+      return { mode: 'folder', name: name };
+    }
+    downloadBlob(name, text, 'text/markdown');
+    return { mode: 'memory', name: name };
+  }
+  async function exportZip(extra) {    const files = [];
     (extra || []).forEach(f => files.push({ name: f.name, data: typeof f.data === 'string' ? enc.encode(f.data) : f.data }));
     state.pending.forEach((text, rel) => files.push({ name: rel, data: enc.encode(text) }));
     downloadBlob('iem-database-update.zip', makeZip(files), 'application/zip');
@@ -37536,7 +38573,7 @@ const DataStore = (function () {
   }
 
   return { state, init, pickFolder, reconnectFolder, readDatabase, listDataFiles, readDataFile, saveDatabase, writeDataFile,
-    exportZip, deleteDataFile, resetWorkingCopy, ensureWritable, openFolder, gzipBytes, gunzipText, downloadBlob, kvGet, kvSet, kvDelete, safeRel, makeZip };
+    exportZip, readSaveLog, openSaveLog, writeSaveLog, deleteDataFile, resetWorkingCopy, ensureWritable, openFolder, gzipBytes, gunzipText, downloadBlob, kvGet, kvSet, kvDelete, safeRel, makeZip };
 })();
 
 /* ===== app/js/data-module.js ===== */
@@ -37567,11 +38604,11 @@ const DataTab = (function () {
     issues: [], issueByUid: new Map(), auditAt: 0, auditRunning: false, waivers: new Set(), showIgnored: false,
     auditSev: 'all', auditCat: 'all', openIssue: -1, auditSel: new Set(), lastSel: -1,
     diskFiles: null, source: '', gzStale: false, notes: [],
-    changed: new Map(), savedLen: 0,
+    changed: new Map(), savedLen: 0, base: null, saving: false, saveLog: [], openSave: -1,
     curveCache: new Map(), curveRows: null, curveName: '', curveFileIdx: 0, sugg: null,
     ai: { text: '', proposals: [], notes: '', include: new Set(), fieldSel: new Map(), collapsed: new Set(), errors: [], log: '', status: '' },
     cv: { queue: [], plans: [], source: '', newSource: '', overwrite: false, log: '', busy: false },
-    ex: { tokens: 50000, chunks: [], banner: null },
+    ex: { tokens: 50000, chunks: [], banner: null, changelog: null, lastExport: null },
     lastSaved: 0, autosaveTimer: null, auditTimer: null, treeRaf: 0, hasAutosave: null
   };
 
@@ -37592,7 +38629,19 @@ const DataTab = (function () {
     pane.addEventListener('dragleave', e => { const z = e.target.closest && e.target.closest('.dt-drop'); if (z) z.classList.remove('is-over'); });
     pane.addEventListener('drop', onDrop);
     window.addEventListener('resize', () => { if (T.ready) { clearTimeout(T._rz); T._rz = setTimeout(drawCurve, 120); } });
-    window.addEventListener('beforeunload', e => { if (T.S && T.S.dirty && T.S.undoStack.length) { try { autosaveNow(); } catch (_) {} } });
+    // Autosave must survive a close. `beforeunload` + an un-awaited IndexedDB
+    // write did not: the renderer is torn down immediately after the event, so
+    // an edit inside the debounce window could be lost. pagehide is the more
+    // reliable "page is going away" signal, and main.js additionally defers the
+    // window close until the flush below answers (or 800ms passes).
+    window.addEventListener('pagehide', () => { autosaveNow(); });
+    if (window.appBridge && typeof window.appBridge.onFlushBeforeClose === 'function') {
+      window.appBridge.onFlushBeforeClose(() => {
+        Promise.resolve(autosaveNow()).then(() => {
+          try { window.appBridge.flushBeforeCloseDone(); } catch (_) {}
+        });
+      });
+    }
     // The app styles every <button> with a global !important "tactile" look unless it
     // carries .no-tactile (the tab bar and the pills opt out the same way). The tab
     // re-renders its panels often, so opt new buttons out as they appear instead of
@@ -37649,8 +38698,18 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       T.source = r.source; T.gzStale = !!r.gzStale; T.notes = parsed.notes;
       if (!T.S) { T.S = new DC.Session(parsed.entries); T.S.onChange(onSessionChange); }
       else T.S.replaceAll(parsed.entries);
+      // What the file contains right now: the baseline every save preview is
+      // diffed against (replaced after each successful save).
+      T.base = DC.snapshotEntries(T.S.entries);
       T.savedLen = 0; T.changed.clear();
       try { const w = await DataStore.kvGet('waivers'); T.waivers = new Set(Array.isArray(w) ? w : []); } catch (_) {}
+      try { const l = await DataStore.kvGet('saveLog'); T.saveLog = Array.isArray(l) ? l : []; } catch (_) { T.saveLog = []; }
+      // The changelog beside the database, so what has been exported is visible
+      // before exporting again. A missing or unreadable file is simply no status.
+      T.ex.changelog = null;
+      try { T.ex.changelog = DC.summarizeSaveLog(await DataStore.readSaveLog()); } catch (_) { T.ex.changelog = null; }
+      T.ex.lastExport = null;
+      T.openSave = -1;
       try { const f = await DataStore.kvGet('curveSource'); if (f) T.cv.source = f; } catch (_) {}
       T.diskFiles = await DataStore.listDataFiles().catch(() => null);
       T.ready = true; T.loading = false;
@@ -37689,12 +38748,18 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
   }
 
   // ----------------------------------------------------------------- autosave
-  function scheduleAutosave() { clearTimeout(T.autosaveTimer); T.autosaveTimer = setTimeout(autosaveNow, 4000); }
+  // Short debounce: the working copy is only a few hundred KB, and 4s was long
+  // enough that a close between edits and the timer lost the edit.
+  function scheduleAutosave() { clearTimeout(T.autosaveTimer); T.autosaveTimer = setTimeout(autosaveNow, 1500); }
   function autosaveNow() {
-    if (!T.S) return;
-    if (!T.S.dirty && !T.S.undoStack.length) { DataStore.kvDelete('working'); return; }
+    if (!T.S) return Promise.resolve(false);
+    if (!T.S.dirty && !T.S.undoStack.length) return DataStore.kvDelete('working').catch(() => false);
     const b = T.S.toBlob(); b.savedAt = Date.now();
-    DataStore.kvSet('working', b);
+    // Never silent: kvSet resolves false when IndexedDB is unavailable/full.
+    return DataStore.kvSet('working', b).then((ok) => {
+      if (!ok) console.warn('[DataTab] Autosave failed — IndexedDB unavailable or full.');
+      return ok;
+    }).catch((err) => { console.warn('[DataTab] Autosave failed:', err); return false; });
   }
   async function restoreAutosave() {
     const b = T.hasAutosave; if (!b) return;
@@ -37704,14 +38769,142 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
   }
 
   // ==================================================================== save
+  // Every overwrite of database.json is confirmed with exactly what changes:
+  // added / edited / removed entries by id, the entry-count and size delta, and
+  // a warning when the file on disk has moved since it was loaded. Returns false
+  // when the user cancels (or there is nothing to do), so saveAll writes nothing.
+  async function previewSave(text, opts) {
+    const memory = DataStore.state.mode === 'memory';
+    const base = T.base || DC.snapshotEntries(T.S.entries);
+    const d = DC.diffAgainstSnapshot(base, T.S.entries);
+
+    // Compare against the file as it is NOW: that is what the save replaces, and
+    // it is not necessarily the file this tab loaded (another editor or a second
+    // window may have saved since). A stale tab must not silently undo that.
+    // Only when the save actually writes in place: in memory mode it downloads
+    // instead, so the served file never changes and would always look renewed.
+    let diskBytes = 0, diskMoved = false;
+    if (!memory) {
+      try {
+        const r = await DataStore.readDatabase();
+        diskBytes = textBytes(r.text);
+        diskMoved = DC.diffAgainstSnapshot(base, DC.loadDatabaseText(r.text).entries).total > 0;
+      } catch (e) { console.warn('[DataTab] Could not re-read the database before saving:', e); }
+    }
+
+    if (!d.total && !diskMoved) { toast('No changes to save.', '💾'); return null; }
+
+    const rows = [];
+    [['add', '＋ ', d.added, 'new entry', 'new entries'],
+     ['mod', '～ ', d.modified, 'edited entry', 'edited entries'],
+     ['del', '－ ', d.removed, 'deleted entry', 'deleted entries']].forEach(g => {
+      const kind = g[0], glyph = g[1], items = g[2];
+      if (!items.length) return;
+      rows.push({ kind: 'muted', text: glyph + items.length + ' ' + (items.length === 1 ? g[3] : g[4]) });
+      items.slice(0, 10).forEach(it => {
+        // Name plus the actual field changes, so a whole save can be reviewed
+        // without opening each entry ("->" reads as an arrow in the list).
+        const detail = it.detail ? '  ·  ' + it.detail.replace(/ -> /g, ' → ') : '';
+        const row = { kind: kind, text: '     ' + it.label + detail };
+        // A listed entry opens when clicked. Deleted ones are gone from the
+        // working copy, so they stay plain rows rather than dead links.
+        if (kind !== 'del') row.id = it.id;
+        rows.push(row);
+      });
+      if (items.length > 10) rows.push({ kind: 'muted', text: '     …and ' + (items.length - 10) + ' more' });
+    });
+    if (diskMoved) rows.push({ kind: 'warn', text: '⚠ database.json changed on disk since this tab loaded it — saving replaces those changes.' });
+
+    const after = T.S.entries.length;
+    const before = after - d.added.length + d.removed.length;
+    const names = [opts.json !== false ? 'database.json' : null, opts.gz !== false ? 'database.json.gz' : null].filter(Boolean);
+    const sizeNote = diskBytes && !memory ? ' · ' + fmtBytes(diskBytes) + ' → ' + fmtBytes(textBytes(text)) : '';
+    const message = before.toLocaleString() + ' → ' + after.toLocaleString() + ' entries' + sizeNote +
+      '\n' + (memory
+        ? 'Downloads ' + names.join(' + ') + '.'
+        : 'Writes ' + names.join(' + ') + '. The current ' + (names.length > 1 ? 'files are' : 'file is') + ' copied to backup/ first.');
+
+    const ok = await UIKit.confirm({
+      title: d.total ? 'Save ' + d.total + ' change' + (d.total === 1 ? '' : 's') + '?' : 'Overwrite database.json?',
+      message: message,
+      details: rows,
+      icon: '💾',
+      confirmLabel: d.total ? 'Save' : 'Overwrite',
+      // Deletions are the part that cannot be undone after the backup rotates.
+      danger: d.removed.length > 0,
+      onDetailClick: revealChangedEntry
+    });
+    return ok ? { diff: d, diskMoved: diskMoved } : null;
+  }
+  // Clicking a listed entry closes the preview (as Cancel, so nothing is
+  // written) and takes you to it: tree visible, row scrolled to and selected,
+  // editor on the entry so you can see what the save would write.
+  function revealChangedEntry(id) {
+    if (!T.S) return;
+    const e = T.S.entries.find(x => x.id === id);
+    if (!e) return;
+    setLeft('tree');
+    setMid('editor');
+    revealInTree(e._uid);          // drop a search/filter that would hide the row
+    T._fromTap = true;
+    selectUid(e._uid, false);
+  }
+  function textBytes(s) { try { return new TextEncoder().encode(s).length; } catch (_) { return s.length; } }
+
+  // --------------------------------------------------------------- save log
+  // A record of recent writes: what each save changed, kept after the dialog is
+  // gone so the result can still be reviewed. Stored beside the autosave in
+  // IndexedDB; the 20 newest saves keep their first 25 entries, while the counts
+  // are always the real totals (a big save says "…and N more").
+  const SAVE_LOG_MAX = 20, SAVE_LOG_CHANGES = 25;
+  function summarizeSave(s) {
+    const parts = [];
+    if (s.added) parts.push('＋' + s.added);
+    if (s.modified) parts.push('～' + s.modified);
+    if (s.removed) parts.push('－' + s.removed);
+    return parts.join(' ') || 'no entry changes';
+  }
+  // "2 new saves, 9 in the changelog": how much of the exported file this run
+  // added, in the same words in the toast and in the panel.
+  function exportSummary(added, total) {
+    return added
+      ? added + ' new save' + (added === 1 ? '' : 's') + ', ' + total + ' in the changelog'
+      : 'no new saves, ' + total + ' in the changelog';
+  }
+  async function logSave(preview, res) {
+    try {
+      const d = preview.diff;
+      const row = {
+        ts: Date.now(),
+        mode: res.mode,
+        entries: T.S.entries.length,
+        bytes: (res.files || []).reduce((n, f) => n + (Number(f.bytes) || 0), 0),
+        added: d.added.length, modified: d.modified.length, removed: d.removed.length, total: d.total,
+        changes: d.added.map(x => ({ k: 'add', label: x.label, detail: x.detail }))
+          .concat(d.modified.map(x => ({ k: 'mod', label: x.label, detail: x.detail })))
+          .concat(d.removed.map(x => ({ k: 'del', label: x.label, detail: '' })))
+          .slice(0, SAVE_LOG_CHANGES)
+      };
+      T.saveLog = [row].concat(T.saveLog || []).slice(0, SAVE_LOG_MAX);
+      if (T.openSave >= 0) T.openSave += 1;   // the expanded row stays the same save
+      await DataStore.kvSet('saveLog', T.saveLog);
+    } catch (e) { console.warn('[DataTab] Could not record this save in the save log:', e); }
+  }
+
   async function saveAll(opts) {
     opts = opts || {};
     if (!T.S) return;
+    if (T.saving) return;                 // the preview is async; ignore a second Ctrl+S
     if (T.draftDirty && !(await commitDraft(true))) return;
+    T.saving = true;
     try {
       const text = T.S.serialize();
+      const preview = await previewSave(text, opts);
+      if (!preview) return;
       const res = await DataStore.saveDatabase(text, { json: opts.json !== false, gz: opts.gz !== false });
       T.S.markSaved(); T.savedLen = T.S.undoStack.length; recomputeChanged();
+      T.base = DC.snapshotEntries(T.S.entries);
+      await logSave(preview, res);
       T.lastSaved = Date.now(); T.gzStale = false;
       DataStore.kvDelete('working');
       const sz = res.files.map(f => fmtBytes(f.bytes)).join(' + ');
@@ -37720,6 +38913,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       T.diskFiles = await DataStore.listDataFiles().catch(() => T.diskFiles);
       renderAll(); runAudit();
     } catch (e) { console.error(e); toast('Save failed: ' + ((e && e.message) || e), '⚠️'); }
+    finally { T.saving = false; }
   }
   async function compressOnly() {
     try {
@@ -37730,7 +38924,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       toast('Compressed · ' + fmtBytes(f.bytes), '📦'); T.gzStale = false; renderExport();
     } catch (e) { toast('Compress failed: ' + ((e && e.message) || e), '⚠️'); }
   }
-  function fmtBytes(n) { return n > 1048576 ? (n / 1048576).toFixed(2) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+  function fmtBytes(n) { return DC.formatBytes(n); }
   function reloadApp() {
     try { SafeStorage.setItem('iem_data_return', '1'); } catch (_) {}
     (async () => {
@@ -37939,7 +39133,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       '<button class="dt-btn is-sm is-ico" data-dt="copy-json" id="dt-tb-json" title="Copy this entry as JSON (handy for the AI audit prompt)">{ }</button>' +
       '<span class="dt-sepv"></span>' +
       '<button class="dt-btn is-sm is-ico" data-dt="undo" id="dt-tb-undo" title="Undo (Ctrl+Z)">↶</button><button class="dt-btn is-sm is-ico" data-dt="redo" id="dt-tb-redo" title="Redo (Ctrl+Y)">↷</button>' +
-      '<button class="dt-btn is-sm is-primary" data-dt="save" id="dt-tb-save" title="Write database.json and database.json.gz (Ctrl+S)">💾 Save</button></div>';
+      '<button class="dt-btn is-sm is-primary" data-dt="save" id="dt-tb-save" title="Save - shows exactly what will change, then writes database.json and database.json.gz (Ctrl+S)">💾 Save</button></div>';
   }
   function editorPanelHtml(d) {
     if (!d) return '<div class="dt-empty"><span class="dt-big">🗃️</span>Select an entry in the tree, or<br><br><button class="dt-btn is-primary" data-dt="new">➕ New entry</button></div>';
@@ -38075,7 +39269,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     const b = T.ex.banner;
     if (b === 'restore') return '<div class="dt-banner">↩️ Restore unsaved edits? <button class="dt-btn is-sm" data-dt="restore">Restore</button><button class="dt-btn is-sm" data-dt="dismiss-banner">Dismiss</button></div>';
     if (b && b.kind === 'saved') return '<div class="dt-banner is-ok">💾 ' + E(b.text) + (b.mode !== 'memory' ? ' <button class="dt-btn is-sm" data-dt="reload-app" title="Reload so every tab uses the saved database">↻ Reload</button>' : '') + '<button class="dt-btn is-sm is-ico" data-dt="dismiss-banner" style="margin-left:auto">✕</button></div>';
-    if (T.gzStale) return '<div class="dt-banner">⚠ The .gz is out of date. <button class="dt-btn is-sm" data-dt="compress">Compress</button></div>';
+    if (T.gzStale) return '<div class="dt-banner">⚠ database.json is newer than the compressed copy. <button class="dt-btn is-sm" data-dt="compress">Compress</button></div>';
     if (T.notes && T.notes.length && !T._notesSeen) return '<div class="dt-banner">ℹ️ ' + T.notes.length + ' fields cleaned on load. <button class="dt-btn is-sm" data-dt="dismiss-notes">OK</button></div>';
     return '';
   }
@@ -38695,6 +39889,245 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
   }
 
   // ===================================================================== export
+  // The parsed changelog as markup: a title, the header note, then one card per
+  // save with its heading, counts and changed entries. Every piece of text comes
+  // from the file, so it is escaped through E() here - the parser hands back
+  // strings, never markup. `filter` narrows the view without touching the file.
+  function saveLogView(doc, filter) {
+    const view = DC.filterSaveLogDocument(doc, filter);
+    const blocks = (list) => (list || []).map(b => {
+      if (b.k === 'row') {
+        return '<div class="slv-row slv-' + E(b.kind) + '"><span class="slv-mark">' + E(b.mark) + '</span>' +
+          '<span class="slv-name">' + E(b.name) + '</span>' +
+          (b.detail ? '<span class="slv-detail">' + E(b.detail) + '</span>' : '') + '</div>';
+      }
+      if (b.k === 'note') return '<p class="slv-note">' + E(b.text) + '</p>';
+      if (b.k === 'meta') return '<p class="slv-meta">' + E(b.text) + '</p>';
+      return '<p class="slv-text">' + E(b.text) + '</p>';
+    }).join('');
+    // The text the reader typed, as they typed it: the label quotes it back, so a
+    // card says which search put it on screen and not just that one did.
+    const typed = String((filter && filter.query) || '').trim();
+    // The month picker drops whole saves rather than narrowing a card, so it
+    // explains itself once above them. Without this, a reader who comes back to a
+    // remembered month sees a shorter document and no reason for it.
+    const monthKey = (filter && filter.month) || 'all';
+    const months = monthKey === 'all' ? [] : DC.saveLogMonths(doc);
+    const monthHit = months.find(m => m.key === monthKey) || null;
+    // The other months are named too, so the line says what the picker can show
+    // without the reader having to open it - every one of them, not a sample, so
+    // a reader never has to wonder which month the note left out. They read
+    // oldest first, the way the changelog itself does: the note is a timeline
+    // with its missing stretches named, not a copy of the picker's menu, which
+    // stays newest first beside it.
+    const others = monthHit ? months.filter(m => m.key !== monthHit.key).reverse() : [];
+    // Reading oldest first buries the month a reader is likeliest to want next,
+    // since it lands at the end of an "and" clause. Marking the last one says
+    // which hidden month is the latest without moving it out of the timeline.
+    // The marker names its own scope: a bare "most recent" would read as the
+    // newest save in the file, which is a different month whenever the reader is
+    // already looking at the newest one. "The others" is that scope in the words
+    // the sentence is already using - the months not shown, said again as hidden
+    // by the clause it sits in - so the marker needs no second "hidden" to say
+    // which months it is comparing. A lone hidden month needs no marker at all:
+    // it is the only candidate, and the label would just make the line longer.
+    // A name also carries how many saves it holds - the answer to the question
+    // that follows from naming the months at all - but only where that number
+    // tells the months apart. A count every other hidden month shares is the same
+    // number written once per month, and a long file of one-save months would
+    // read as a wall of numbers that helps nobody choose. So a month keeps its
+    // count only when no other hidden month has it; a bare name then means "the
+    // same as the rest", not "unknown". The number is still the picker's own, so
+    // a month reads the same here as in the menu, and it goes in brackets rather
+    // than the picker's middot because this is a comma list, and two separators
+    // in a row would fight.
+    // The month on screen always states its count, bracketed the same way: it is
+    // the number the hidden ones are weighed against, and without it a bracket on
+    // the far side of the semicolon is a figure with nothing to compare to. Its
+    // count is unconditional because there is only one shown month - it cannot be
+    // repeated. Silence on a hidden month keeps its one meaning (shared with
+    // another hidden month) rather than becoming "same as the month on screen".
+    const counted = n => n + ' ' + (n === 1 ? 'save' : 'saves');
+    const named = others.map((m, i) => {
+      const last = others.length > 1 && i === others.length - 1;
+      const own = others.filter(o => o.count === m.count).length === 1;
+      const bits = [];
+      if (own) bits.push(counted(m.count));
+      if (last) bits.push('the newest of the others');
+      return bits.length ? m.label + ' (' + bits.join(', ') + ')' : m.label;
+    });
+    // "Sep 2026", "Jun 2026 and Jul 2026", "Jun 2026, Jul 2026 and Aug 2026".
+    const list = named.length > 1
+      ? named.slice(0, -1).join(', ') + ' and ' + named[named.length - 1] : (named[0] || '');
+    const also = !others.length ? '' : '; ' + list +
+      (others.length === 1 ? ' is hidden' : ' are hidden');
+    const scope = monthHit
+      ? '<p class="slv-note slv-scope">' + E('Only saves from ' + monthHit.label + ' (' +
+        counted(monthHit.count) + ') are shown' + also + '.') + '</p>' : '';
+    const secs = view.sections.map(s => {
+      const shown = s.blocks.filter(b => b.k === 'row').length;
+      // A card whose rows are partly filtered keeps its own summary line, so it
+      // says how many of its changes are being shown rather than looking wrong.
+      const hint = s.hidden
+        ? '<p class="slv-text">' + E('Showing ' + shown + ' of ' + (shown + s.hidden) + ' changes this save lists.') + '</p>' : '';
+      // A card can be here because the search text is in the save itself, not in
+      // any of its rows. Quoting the text and naming the part it was found in keeps
+      // a full card among filtered ones legible - and two saves found for different
+      // reasons apart.
+      const field = s.matchedSave === 'date' ? 'date' : 'destination';
+      const found = s.matchedSave
+        ? '<span class="slv-found" title="' + E('The search text matched this save\u2019s ' + field +
+          ', not an entry in it.') + '">' +
+          E('found by its ' + field + (typed ? ' \u201C' + typed + '\u201D' : '')) + '</span>' : '';
+      return '<section class="slv-sec"><div class="slv-head"><span class="slv-h">' + E(s.heading) + '</span>' +
+        (s.where ? '<span class="slv-where">' + E(s.where) + '</span>' : '') + found + '</div>' + blocks(s.blocks) + hint + '</section>';
+    }).join('');
+    const blank = !doc.title && !(doc.blocks || []).length && !view.total;
+    const empty = blank
+      ? '<p class="slv-text">This file has no saves in it yet.</p>'
+      : (!secs ? '<p class="slv-text">' + E('Nothing in ' + DC.SAVE_LOG_FILE + ' matches this filter.') + '</p>' : '');
+    return {
+      html: '<div class="slv-doc">' + (doc.title ? '<div class="slv-title">' + E(doc.title) + '</div>' : '') +
+        blocks(doc.blocks) + scope + secs + empty + '</div>',
+      saves: view.saves, total: view.total, rows: view.rows
+    };
+  }
+  // The view the reader left is the view they return to: reopening the changelog
+  // resumes its kind, month and search instead of starting from the whole file.
+  // This is a preference about reading, so it lives in view storage - never in
+  // the changelog, the database or anything the viewer can write.
+  const SLV_FILTER_KEY = 'iem_savelog_filter_v1';
+  function loadSaveLogFilter(months) {
+    let saved = null;
+    try { saved = JSON.parse(SafeStorage.getItem(SLV_FILTER_KEY) || 'null'); } catch (_) { saved = null; }
+    return DC.sanitizeSaveLogFilter(saved, months);
+  }
+  function storeSaveLogFilter(filter) {
+    try {
+      // A view showing everything has nothing to remember; forgetting it is what
+      // lets a later read open on the whole file without a hidden filter.
+      if (DC.isDefaultSaveLogFilter(filter)) SafeStorage.removeItem(SLV_FILTER_KEY);
+      else SafeStorage.setItem(SLV_FILTER_KEY, JSON.stringify({ kind: filter.kind, month: filter.month, query: filter.query }));
+    } catch (_) {}
+  }
+  // Reading the changelog itself. The list above only holds the newest 20 saves,
+  // so the status line opens the whole document in a read-only view inside the
+  // app, rather than handing the file to the OS or pointing at a copy in
+  // Downloads that the page cannot reach.
+  async function openSaveLogView() {
+    let text = null;
+    try { text = await DataStore.readSaveLog(); } catch (e) {
+      toast('Could not read the save log: ' + ((e && e.message) || e), '⚠️');
+      return;
+    }
+    const onDisk = typeof text === 'string';
+    if (!onDisk) {
+      // Browser-only: the export went to the Downloads folder, so the only copy
+      // this page can show is the one it built from its own log.
+      if (!(T.saveLog || []).length) { toast(DC.SAVE_LOG_FILE + ' is in your Downloads folder — export again to read it here.', '📝'); return; }
+      text = DC.mergeSaveLog(null, T.saveLog, { now: (T.ex.lastExport && T.ex.lastExport.ts) || Date.now() }).text;
+    }
+    const sum = DC.summarizeSaveLog(text);
+    const stamp = sum && sum.updatedAt
+      ? new Date(sum.updatedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : '';
+    const actions = [];
+    // The installed app can still hand the file to whatever owns .md files: the
+    // in-app view is the default way in, not the only one.
+    if (DataStore.state.mode === 'electron') actions.push({
+      label: 'Open in Markdown app',
+      title: 'Hand ' + DC.SAVE_LOG_FILE + ' to the app that opens .md files.',
+      onClick: async () => {
+        try {
+          const r = await DataStore.openSaveLog();
+          toast(r.how === 'revealed' ? r.name + ' selected in its folder.' : 'Opened ' + r.name + '.', '📝');
+        } catch (e) { toast('Could not open the save log: ' + ((e && e.message) || e), '⚠️'); }
+      }
+    });
+    const doc = DC.saveLogDocument(text);
+    const months = DC.saveLogMonths(doc);
+    const filter = loadSaveLogFilter(months);
+    // Write back what was actually applied, so a stale or half-readable entry is
+    // corrected once instead of lingering in storage after every open.
+    storeSaveLogFilter(filter);
+    const kindBtns = new Map();
+    let bodyEl = null, countEl = null;
+    const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+    const draw = () => {
+      const v = saveLogView(doc, filter);
+      if (bodyEl) { bodyEl.innerHTML = v.html; bodyEl.scrollTop = 0; }
+      kindBtns.forEach((b, k) => b.classList.toggle('is-on', filter.kind === k));
+      if (!countEl) return;
+      const narrowed = filter.kind !== 'all' || filter.month !== 'all' || !!filter.query.trim();
+      // "Showing 1 of 3 saves" is what makes a filtered list honest: the file is
+      // not empty, the filter is on.
+      countEl.textContent = (narrowed ? 'Showing ' + v.saves + ' of ' + v.total : String(v.saves)) +
+        ' save' + (v.total === 1 ? '' : 's') + ' · ' + plural(v.rows, 'change', 'changes');
+    };
+    // The controls live above the body and are built once per open, so changing
+    // one redraws the document without taking focus away from the control.
+    const toolbar = (bar) => {
+      [['all', 'All', 'Every change, newest save first'],
+        ['add', '＋ Additions', 'Only saves that added entries, and only those rows'],
+        ['del', '－ Removals', 'Only saves that removed entries, and only those rows']].forEach(([k, label, title]) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'slv-fbtn';
+        b.setAttribute('data-slv-kind', k);
+        b.textContent = label;
+        b.title = title;
+        b.addEventListener('click', () => { filter.kind = k; storeSaveLogFilter(filter); draw(); });
+        kindBtns.set(k, b);
+        bar.appendChild(b);
+      });
+      // Only months the file actually holds are offered, so the picker can never
+      // land on nothing. One month means nothing to choose between.
+      if (months.length > 1) {
+        const sel = document.createElement('select');
+        sel.className = 'slv-month';
+        sel.setAttribute('aria-label', 'Show the saves of one month');
+        sel.title = 'Show one month of saves';
+        sel.innerHTML = '<option value="all">Every month</option>' + months.map(m =>
+          '<option value="' + E(m.key) + '">' + E(m.label + ' · ' + plural(m.count, 'save', 'saves')) + '</option>').join('');
+        // Opened on the month that was last being read, when the file still holds it.
+        sel.value = filter.month;
+        sel.addEventListener('change', () => { filter.month = sel.value; storeSaveLogFilter(filter); draw(); });
+        bar.appendChild(sel);
+      }
+      // Search narrows to rows whose name or change detail contains the text,
+      // and also to saves whose heading or destination does - so "folder" or a
+      // date finds a save by where and when it happened. Debounced so a long
+      // changelog is not re-rendered on every keystroke, and only the body is
+      // redrawn, so the caret stays in this field.
+      const search = document.createElement('input');
+      search.type = 'search';
+      search.className = 'slv-search';
+      search.setAttribute('data-slv-search', '');
+      search.placeholder = 'Name, price or save…';
+      search.setAttribute('aria-label', 'Show only saves and changes whose entry name, change detail, save date or destination contains this text');
+      search.title = 'Narrow to entry names, change details, save dates and destinations that contain this text';
+      search.value = filter.query;
+      let debounce = 0;
+      search.addEventListener('input', () => {
+        clearTimeout(debounce);
+        debounce = setTimeout(() => { filter.query = search.value; storeSaveLogFilter(filter); draw(); }, 120);
+      });
+      bar.appendChild(search);
+      countEl = document.createElement('span');
+      countEl.className = 'slv-count';
+      countEl.setAttribute('aria-live', 'polite');
+      bar.appendChild(countEl);
+    };
+    UIKit.read({
+      title: DC.SAVE_LOG_FILE,
+      subtitle: onDisk
+        ? (sum ? sum.total + ' save' + (sum.total === 1 ? '' : 's') + (stamp ? ' · last updated ' + stamp : '') + ' · read-only' : 'Empty file · read-only')
+        : 'The exported copy · read-only — the file itself is in your Downloads folder',
+      toolbar: toolbar,
+      render: (body) => { bodyEl = body; draw(); },
+      actions: actions
+    });
+  }
   function renderExport() {
     const el = $('dt-ex-body'); if (!el) return;
     if (!T.ready) { el.innerHTML = ''; return; }
@@ -38709,12 +40142,45 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     const folderBtns = st.mode === 'electron' ? '<button class="dt-btn" data-dt="open-folder">📂 Open ' + (st.packaged ? 'my copy' : 'project') + ' folder</button>' :
       (st.fsApi ? '<button class="dt-btn" data-dt="pick-folder">📂 ' + (st.mode === 'folder' ? 'Change folder…' : 'Connect folder…') + '</button>' + (st.savedHandle && st.mode !== 'folder' ? '<button class="dt-btn" data-dt="reconnect-folder">↻ Reconnect ' + E(st.savedHandle.name) + '</button>' : '') : '<p class="dt-help">Folder saving needs Chrome/Edge or the desktop app.</p>');
     const chunkRows = X.chunks.map((c, i) => '<div class="dt-file"><span class="dt-t dt-mono" style="direction:ltr" title="' + E(c.name) + '">' + E(c.name) + '</span><span class="dt-help" style="white-space:nowrap">' + c.count + '</span><button class="dt-btn is-sm" data-dt="chunk-copy" data-a="' + i + '">Copy</button><button class="dt-btn is-sm" data-dt="chunk-dl" data-a="' + i + '">⬇</button></div>').join('');
+    const log = T.saveLog || [];
+    const chLog = T.ex.changelog;
+    // The file itself is the only way to read more than the newest 20 saves, so the
+    // status is the way in to it rather than a caption: clicking it opens the
+    // changelog in a read-only view instead of leaving the app.
+    const changelogHtml = chLog && chLog.total
+      ? '<button class="dt-hist" data-dt="log-open-file" title="' + E('Reads ' + DC.SAVE_LOG_FILE + ' and shows it here, without leaving the app or waiting for an export, so the whole changelog is readable — not just the saves listed above. Browser-only mode shows the copy the export downloaded.') + '">' +
+        '<span class="dt-t"><b>' + E(DC.SAVE_LOG_FILE) + '</b><span class="dt-s">' + E(chLog.total + ' save' + (chLog.total === 1 ? '' : 's') +
+          (chLog.updatedAt ? ' · last updated ' + new Date(chLog.updatedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '')) + '</span></span>' +
+        '<span>👁</span></button>'
+      : '';
+    const lastEx = T.ex.lastExport;
+    const lastExHtml = lastEx
+      ? '<p class="dt-help" style="margin:0">' + E('Last export: ' + exportSummary(lastEx.added, lastEx.total) + ' · ' +
+          new Date(lastEx.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })) + '</p>'
+      : '';
+    const logHtml = log.length
+      ? '<div class="dt-box dt-scroll" style="max-height:190px">' + log.map((s, i) => {
+          const open = T.openSave === i;
+          const bits = [new Date(s.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }), s.entries.toLocaleString() + ' entries'];
+          if (s.bytes) bits.push(fmtBytes(s.bytes));
+          if (s.mode === 'memory') bits.push('downloaded');
+          const rows = open && (s.changes || []).length
+            ? s.changes.map(c => '<div class="dt-help" style="padding:2px 8px">' + (c.k === 'add' ? '＋ ' : c.k === 'mod' ? '～ ' : '－ ') + E(c.label) +
+                (c.detail ? '  ·  ' + E(String(c.detail).replace(/ -> /g, ' → ')) : '') + '</div>').join('') +
+              (s.total > s.changes.length ? '<div class="dt-help" style="padding:2px 8px">…and ' + (s.total - s.changes.length) + ' more</div>' : '')
+            : '';
+          return '<button class="dt-hist" data-dt="log-open" data-a="' + i + '"><span class="dt-t"><b>' + E(summarizeSave(s)) + '</b><span class="dt-s">' + E(bits.join(' · ')) + '</span></span><span>' + (open ? '▾' : '▸') + '</span></button>' + rows;
+        }).join('') + '</div>' +
+        '<div class="dt-g2"><button class="dt-btn" data-dt="log-export" title="' + E('Adds the saves listed here to ' + DC.SAVE_LOG_FILE + ' beside database.json, keeping every save the file already lists so the changelog grows past this list. What this export adds is marked in the file. Browser-only mode downloads it instead.') + '">📝 Export .md</button>' +
+        '<button class="dt-btn" data-dt="log-clear" title="Forget this list. The database files, backups and undo history are untouched.">🗑 Clear log</button></div>' + lastExHtml
+      : '<p class="dt-help">Every save records what it changed here, so the result can be reviewed after the fact.</p>';
     el.innerHTML =
       '<h4 class="dt-h">Save</h4>' + storage +
-      '<div class="dt-g2"><button class="dt-btn is-primary" data-dt="save" title="Writes database.json and database.json.gz together. The previous file goes to backup/.">💾 Save</button><button class="dt-btn" data-dt="compress" title="Write only database.json.gz from the current database">📦 .gz only</button></div>' +
+      '<div class="dt-g2"><button class="dt-btn is-primary" data-dt="save" title="Shows every entry the save will add, edit or delete, then writes database.json and database.json.gz together. The previous files go to backup/.">💾 Save</button><button class="dt-btn" data-dt="compress" title="Write only database.json.gz from the current database">📦 .gz only</button></div>' +
       '<div class="dt-g2"><button class="dt-btn" data-dt="dl-json" title="Download a copy of database.json">⬇ .json</button><button class="dt-btn" data-dt="dl-gz" title="Download a compressed copy">⬇ .gz</button></div>' +
       folderBtns +
       (st.mode === 'memory' ? '<button class="dt-btn" data-dt="zip">🗜️ Download update (.zip' + (pend ? ', ' + pend + ' curve' + (pend === 1 ? '' : 's') : '') + ')</button>' : '') +
+      '<div class="dt-sep"></div><h4 class="dt-h">Recent saves</h4>' + logHtml + changelogHtml +
       '<div class="dt-sep"></div><h4 class="dt-h">Split for AI audit</h4>' +
       '<div class="dt-row"><label class="dt-lbl dt-grow" style="margin:0">Tokens per chunk</label><input class="dt-in input-bg-fix is-num" style="width:90px" data-f="ex-tokens" value="' + X.tokens + '" inputmode="numeric"><button class="dt-btn" data-dt="split">✂ Split</button></div>' +
       (chunkRows ? '<div class="dt-box" style="max-height:150px;overflow-y:auto">' + chunkRows + '</div><button class="dt-btn" data-dt="chunk-zip">⬇ All chunks (.zip)</button>' : '') +
@@ -38790,6 +40256,30 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       case 'copy-json': { const x = T.draft; if (x) copyText(JSON.stringify(x, null, 2), 'Entry JSON'); break; }
       case 'restore': restoreAutosave(); break;
       case 'dismiss-banner': T.ex.banner = null; T.gzStale = false; updateToolbar(); renderExport(); break;
+      case 'log-open': T.openSave = T.openSave === Number(a) ? -1 : Number(a); renderExport(); break;
+      case 'log-open-file': await openSaveLogView(); break;
+      case 'log-export': {
+        try {
+          // Merge into what is already there: the file is the long-term changelog,
+          // the list in this panel is only the newest 20 saves of it.
+          const merged = DC.mergeSaveLog(await DataStore.readSaveLog(), T.saveLog);
+          const r = await DataStore.writeSaveLog(merged.text);
+          const n = merged.added, total = merged.total;
+          // Kept on screen after the toast fades: how much of the file was new.
+          T.ex.lastExport = { ts: Date.now(), added: n, total: total };
+          T.ex.changelog = { total: total, updatedAt: Date.now() };
+          renderExport();
+          toast(r.mode === 'memory' ? r.name + ' downloaded — ' + exportSummary(n, total) + '.'
+            : n ? r.name + ' updated — ' + exportSummary(n, total) + '.'
+              : r.name + ' already lists all ' + total + ' save' + (total === 1 ? '' : 's') + '.', '📝');
+        } catch (e) { toast('Could not export the save log: ' + ((e && e.message) || e), '⚠️'); }
+        break;
+      }
+      case 'log-clear': {
+        const ok = await UIKit.confirm({ title: 'Clear the save log?', message: 'Only this list is forgotten. The database files, the backups and the undo history are untouched.', confirmLabel: 'Clear log', icon: '🗑️', danger: true });
+        if (!ok) break;
+        T.saveLog = []; T.openSave = -1; DataStore.kvDelete('saveLog'); renderExport(); toast('Save log cleared.', '🗑️'); break;
+      }
       case 'dismiss-notes': T._notesSeen = true; console.info('[DataTab] load notes:', T.notes); updateToolbar(); break;
       case 'reload-app': reloadApp(); break;
       case 'reload-db': if (T.S && T.S.dirty) { const ok = await UIKit.confirm({ title: 'Discard unsaved edits?', message: 'Unsaved edits will be lost.', confirmLabel: 'Reload from disk', danger: true }); if (!ok) break; } T.ready = false; T.selUid = null; T.draft = null; T.draftDirty = false; DataStore.kvDelete('working'); T.ex.banner = null; T.load(); break;
@@ -39376,7 +40866,9 @@ const handlers = {
     Object.keys(handlers).forEach(function(action) {
         EventBinding.register(action, handlers[action]);
     });
-    console.log('[HandlerRegistry] Registered ' + Object.keys(handlers).length + ' handlers');
+    // Debug-only: a startup console line is noise in a shipped app, and its
+    // absence was previously the only signal that the registry had not loaded.
+    if (window.IEM_DEBUG) console.log('[HandlerRegistry] Registered ' + Object.keys(handlers).length + ' handlers');
 
 /* ===== app/js/app-init.js ===== */
 

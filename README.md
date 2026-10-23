@@ -100,3 +100,20 @@ npm start
 npm run dist-win
 npm run dist-mac
 npm run dist-linux
+```
+
+</details>
+
+---
+
+## 📜 Third-party notices
+
+Bundled libraries, shipped unmodified (their licence headers are stripped by the
+minified build, so they are recorded here):
+
+| Component | Where | Licence |
+| :--- | :--- | :--- |
+| [Chart.js](https://www.chartjs.org/) 4.5.1 | `app/js/chart.js` | MIT © Chart.js Contributors |
+| [ONNX Runtime Web](https://onnxruntime.ai/) | `app/js/vendor/ort*.js`, `ort-wasm-simd.wasm` | MIT © Microsoft Corporation |
+| [U²-Net](https://github.com/xuebinqin/U-2-Net) (u2netp) | `app/models/u2netp.onnx` | Apache-2.0 © Xuebin Qin |
+| Comfortaa, Comic Sans MS, Hachimarupop, JetBrains Mono, Orbitron, Pixelify Sans, Rubik, Silkscreen | `app/fonts/` | SIL Open Font License 1.1 (per font) |

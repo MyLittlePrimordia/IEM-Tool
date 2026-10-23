@@ -9,10 +9,13 @@ const EQ_ExportMethods = {
                 el.style.display = 'none'; 
                 if (!document.body) { URL.revokeObjectURL(url); return; }
                 document.body.appendChild(el); 
-                try { el.click(); } catch (_) {}
+                try { el.click(); } catch (e) { reportError('Export download', e, { toast: true }); }
                 try { document.body.removeChild(el); } catch (_) {}
                 setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 1000);
-            } catch (e) { console.warn('[Export] download failed', e); }
+            } catch (e) {
+                // A blocked download used to be a console.warn only.
+                reportError('Export download', e, { toast: true, message: 'Export failed — check the console for details.' });
+            }
         },
         getSanitizedExportFilename: function(suffix, extension) {
             const model = (document.getElementById('model')?.value || '').trim() || "IEM";

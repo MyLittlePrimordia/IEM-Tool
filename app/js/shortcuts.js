@@ -103,10 +103,13 @@ const Shortcuts = {
         // desyncing the two toggles so the first open rendered display:block
         // instead of flex and lost its centering until the second open).
         wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden items-center justify-center p-4';
+        wrap.setAttribute('role', 'dialog');
+        wrap.setAttribute('aria-modal', 'true');
+        wrap.setAttribute('aria-labelledby', 'shortcuts-help-title');
         wrap.innerHTML = `
             <div class="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-sm shadow-2xl flex flex-col overflow-hidden p-4 select-none max-h-[85vh] overflow-y-auto">
                 <div class="flex justify-between items-center mb-3 pb-1.5 border-b border-[var(--border-color)]">
-                    <span class="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">⌨️ Keyboard Shortcuts</span>
+                    <span id="shortcuts-help-title" class="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">⌨️ Keyboard Shortcuts</span>
                     <button id="shortcuts-help-close" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
                 </div>
                 ${groupsHtml}
@@ -119,9 +122,31 @@ const Shortcuts = {
         // 'flex'. If close() leaves 'flex' behind, the next toggle REMOVES
         // it (instead of adding), the one after ADDS 'hidden', and the modal
         // opens as display:block — an uncentered full-width panel.
-        const close = () => { wrap.classList.add('hidden'); wrap.classList.remove('flex'); };
+        const close = () => {
+            wrap.classList.add('hidden');
+            wrap.classList.remove('flex');
+            const back = Shortcuts._lastFocus;
+            Shortcuts._lastFocus = null;
+            if (back && back.isConnected) { try { back.focus(); } catch (_) {} }
+        };
+        this._closeHelp = close;
         wrap.querySelector('#shortcuts-help-close').onclick = close;
-        wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });        this._modalEl = wrap;
+        wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
+        // Escape closes; Tab is trapped inside the dialog so focus cannot walk
+        // into the workspace behind the overlay.
+        wrap.addEventListener('keydown', (e) => {
+            if (wrap.classList.contains('hidden')) return;
+            if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+            if (e.key !== 'Tab') return;
+            const focusables = Array.from(wrap.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+                .filter((el) => !el.disabled && el.offsetParent !== null);
+            if (!focusables.length) return;
+            const first = focusables[0];
+            const last = focusables[focusables.length - 1];
+            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        });
+        this._modalEl = wrap;
         return wrap;
     },
 
@@ -139,8 +164,15 @@ const Shortcuts = {
 
     toggleHelp: function () {
         const modal = this._ensureHelpModal();
-        modal.classList.toggle('hidden');
-        modal.classList.toggle('flex');
+        if (modal.classList.contains('hidden')) {
+            this._lastFocus = document.activeElement;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            const btn = modal.querySelector('#shortcuts-help-close');
+            try { if (btn) btn.focus(); } catch (_) {}
+        } else {
+            this._closeHelp();
+        }
     },
 
     init: function () {

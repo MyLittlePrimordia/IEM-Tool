@@ -83,6 +83,10 @@ const DataStore = (function () {
     const n = rel.replace(/\\/g, '/').replace(/\/+/g, '/').trim();
     if (!/^data\/[^/].*\.txt$/i.test(n)) return null;
     if (n.split('/').some(p => p === '..' || p === '.' || p === '')) return null;
+    // Same 400-char ceiling as safeDataRel() in main.js. Without it a long-but-
+    // otherwise-valid path passed here and was rejected by the bridge as a
+    // generic "bad path", which the UI could not explain.
+    if (n.length > 400) return null;
     return n;
   }
   function downloadBlob(name, data, type) {
@@ -185,30 +189,39 @@ const DataStore = (function () {
     return true;
   }
 
-  /** Returns { text, source } for the database currently in effect. */
+  /**
+   * Returns { text, source, gzStale } for the database currently in effect.
+   *
+   * Precedence is `database.json` first, everywhere: the main process, this
+   * adapter, and CurveIndexer._loadCatalog (the catalogue the rest of the app
+   * scans). They used to disagree (the IPC handler read .json while the
+   * catalogue read .gz), so a json/gz divergence showed one database in the
+   * Data tab and a different one in Find/EQ. `gzStale` reports that the .json
+   * is newer than the .gz so the Data tab can offer "Compress".
+   */
   async function readDatabase() {
     if (state.mode === 'electron') {
       const r = await bridge.dataReadDatabase();
       if (!r || !r.ok) throw new Error((r && r.error) || 'Could not read database');
-      return { text: r.text, source: r.source };
+      return { text: r.text, source: r.source, gzStale: !!r.gzStale };
     }
     if (state.mode === 'folder') {
       for (const name of ['database.json', 'database.json.gz']) {
         try {
           const fh = await state.dirHandle.getFileHandle(name);
           const file = await fh.getFile();
-          if (name.endsWith('.gz')) return { text: await gunzipText(await file.arrayBuffer()), source: name };
-          return { text: await file.text(), source: name };
+          if (name.endsWith('.gz')) return { text: await gunzipText(await file.arrayBuffer()), source: name, gzStale: false };
+          return { text: await file.text(), source: name, gzStale: false };
         } catch (e) { /* try next */ }
       }
       throw new Error('database.json was not found in the chosen folder.');
     }
-    // memory/web: the same file the rest of the app loaded
-    let res = await fetch('./database.json.gz');
-    if (res.ok) return { text: await gunzipText(await res.arrayBuffer()), source: 'database.json.gz (web)' };
-    res = await fetch('./database.json');
+    // memory/web: read the same file the catalogue loader reads (json first).
+    let res = await fetch('./database.json');
+    if (res.ok) return { text: await res.text(), source: 'database.json (web)', gzStale: false };
+    res = await fetch('./database.json.gz');
     if (!res.ok) throw new Error('Database file missing');
-    return { text: await res.text(), source: 'database.json (web)' };
+    return { text: await gunzipText(await res.arrayBuffer()), source: 'database.json.gz (web)', gzStale: false };
   }
   /** Array of 'data/...' paths, or null when the data folder can't be listed. */
   async function listDataFiles() {
@@ -245,9 +258,30 @@ const DataStore = (function () {
         await w.write(text); await w.close(); out.push({ name: 'database.json', bytes: enc.encode(text).length });
       }
       if (opts.gz) {
-        const gz = await gzipBytes(text);
-        const w = await (await state.dirHandle.getFileHandle('database.json.gz', { create: true })).createWritable();
-        await w.write(gz); await w.close(); out.push({ name: 'database.json.gz', bytes: gz.length });
+        // Back up the previous .gz, then report a partial save explicitly. The
+        // File System Access API has no rename, so the pair cannot be made
+        // atomic here; the app reads database.json first, so a failed .gz write
+        // leaves usable data plus a stale-compressed warning instead of a
+        // silently diverging pair.
+        let gz;
+        try {
+          gz = await gzipBytes(text);
+        } catch (e) {
+          throw new Error('database.json was saved, but compressing it failed: ' + ((e && e.message) || e));
+        }
+        try {
+          const oldGz = await (await state.dirHandle.getFileHandle('database.json.gz')).getFile();
+          const bd = await state.dirHandle.getDirectoryHandle('backup', { create: true });
+          const bw = await (await bd.getFileHandle('database.json.gz.bak', { create: true })).createWritable();
+          await bw.write(await oldGz.arrayBuffer()); await bw.close();
+        } catch (e) { /* no previous gz */ }
+        try {
+          const w = await (await state.dirHandle.getFileHandle('database.json.gz', { create: true })).createWritable();
+          await w.write(gz); await w.close();
+        } catch (e) {
+          throw new Error('database.json was saved, but writing database.json.gz failed: ' + ((e && e.message) || e));
+        }
+        out.push({ name: 'database.json.gz', bytes: gz.length });
       }
       return { files: out, mode: 'folder' };
     }
@@ -292,8 +326,75 @@ const DataStore = (function () {
     if (!r || !r.ok) throw new Error((r && r.error) || 'reset failed');
     return true;
   }
-  async function exportZip(extra) {
-    const files = [];
+  /**
+   * The changelog already saved next to the database, so an export can add to it
+   * instead of replacing it. null means "nothing there yet". A read that fails
+   * for any other reason throws: silently overwriting a file we could not read
+   * would be the one way to lose a changelog.
+   */
+  async function readSaveLog() {
+    const name = 'save-log.md';
+    if (state.mode === 'electron' && bridge && bridge.dataReadSaveLog) {
+      const r = await bridge.dataReadSaveLog();
+      if (!r || !r.ok) throw new Error((r && r.error) || 'could not read save-log.md');
+      return typeof r.text === 'string' ? r.text : null;
+    }
+    if (state.mode === 'folder' && state.dirHandle) {
+      try {
+        const f = await (await state.dirHandle.getFileHandle(name)).getFile();
+        return await f.text();
+      } catch (e) {
+        if (e && (e.name === 'NotFoundError' || e.name === 'TypeMismatchError')) return null;
+        throw e;
+      }
+    }
+    return null;
+  }
+  /**
+   * Open the changelog for reading. Desktop: the file in whatever app handles
+   * Markdown, or its folder with the file selected when there is no handler.
+   * Browser with a connected folder: a copy, since a page cannot launch a file.
+   * Browser-only: reports that the copy is wherever the export downloaded it.
+   */
+  async function openSaveLog() {
+    const name = 'save-log.md';
+    if (state.mode === 'electron' && bridge && bridge.dataOpenSaveLog) {
+      const r = await bridge.dataOpenSaveLog();
+      if (!r || !r.ok) throw new Error((r && r.error) || 'could not open save-log.md');
+      return { mode: 'electron', name: name, how: r.how };
+    }
+    if (state.mode === 'folder' && state.dirHandle) {
+      const f = await (await state.dirHandle.getFileHandle(name)).getFile();
+      downloadBlob(name, await f.text(), 'text/markdown');
+      return { mode: 'folder', name: name, how: 'downloaded' };
+    }
+    // Browser-only: the last export went to the downloads folder, so there is no
+    // file this page can open. The caller says where it went instead of failing.
+    return { mode: 'memory', name: name, how: 'memory' };
+  }
+  /**
+   * The save log's Markdown export lives next to the database it describes, so
+   * the changelog travels with the files it explains. When there is no writable
+   * folder (browser-only, or an installed app with no working copy yet) it is
+   * downloaded instead. The renderer never names a path: the main process fixes
+   * the filename.
+   */
+  async function writeSaveLog(text) {
+    const name = 'save-log.md';
+    if (state.mode === 'electron' && bridge && bridge.dataWriteSaveLog) {
+      const r = await bridge.dataWriteSaveLog({ text: text });
+      if (r && r.ok) return { mode: 'electron', name: name };
+      if (r && r.error && r.error !== 'needs-working-copy' && r.error !== 'denied') throw new Error(r.error);
+    }
+    if (state.mode === 'folder' && state.dirHandle) {
+      const w = await (await state.dirHandle.getFileHandle(name, { create: true })).createWritable();
+      await w.write(text); await w.close();
+      return { mode: 'folder', name: name };
+    }
+    downloadBlob(name, text, 'text/markdown');
+    return { mode: 'memory', name: name };
+  }
+  async function exportZip(extra) {    const files = [];
     (extra || []).forEach(f => files.push({ name: f.name, data: typeof f.data === 'string' ? enc.encode(f.data) : f.data }));
     state.pending.forEach((text, rel) => files.push({ name: rel, data: enc.encode(text) }));
     downloadBlob('iem-database-update.zip', makeZip(files), 'application/zip');
@@ -305,5 +406,5 @@ const DataStore = (function () {
   }
 
   return { state, init, pickFolder, reconnectFolder, readDatabase, listDataFiles, readDataFile, saveDatabase, writeDataFile,
-    exportZip, deleteDataFile, resetWorkingCopy, ensureWritable, openFolder, gzipBytes, gunzipText, downloadBlob, kvGet, kvSet, kvDelete, safeRel, makeZip };
+    exportZip, readSaveLog, openSaveLog, writeSaveLog, deleteDataFile, resetWorkingCopy, ensureWritable, openFolder, gzipBytes, gunzipText, downloadBlob, kvGet, kvSet, kvDelete, safeRel, makeZip };
 })();

@@ -475,4 +475,6 @@ const handlers = {
     Object.keys(handlers).forEach(function(action) {
         EventBinding.register(action, handlers[action]);
     });
-    console.log('[HandlerRegistry] Registered ' + Object.keys(handlers).length + ' handlers');
+    // Debug-only: a startup console line is noise in a shipped app, and its
+    // absence was previously the only signal that the registry had not loaded.
+    if (window.IEM_DEBUG) console.log('[HandlerRegistry] Registered ' + Object.keys(handlers).length + ' handlers');

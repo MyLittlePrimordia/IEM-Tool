@@ -30,7 +30,8 @@ const SUITES = [
   { file: 'tools/verify-slider-fill.js', what: 'slider bar follows the knob after code-driven changes' },
   { file: 'tools/verify-eq-history.js', what: 'EQ undo/redo, remembered EQ, Settings > Fix settings' },
   { file: 'tools/verify-database-load.js', what: 'catalogue loads once, bad file survives, Refresh picks up a new entry' },
-  { file: 'tools/verify-refresh-database.js', what: 'Settings > Refresh database: one-row hint, cache clear, reload' }
+  { file: 'tools/verify-refresh-database.js', what: 'Settings > Refresh database: one-row hint, cache clear, reload' },
+  { file: 'tools/verify-save-preview.js', what: 'Data tab save preview: listed changes, cancel writes nothing, stale-file warning' }
 ];
 
 function electronBinary() {

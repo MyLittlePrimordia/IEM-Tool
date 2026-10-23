@@ -1,4 +1,4 @@
-const { app, BrowserWindow, screen, ipcMain, shell, Menu } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, shell, Menu, dialog } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
@@ -92,6 +92,23 @@ const CACHEABLE_EXTENSIONS = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico'
 ]);
 
+// Files this server is allowed to hand out at all.
+//
+// The old guard was a deny-list (main.js, preload.js, package.json, .git, ...).
+// That leaked everything nobody had thought to name: crash.log, .env files,
+// editor backups, .map files, database.json.bak and any future stray file in
+// the app folder. An allow-list fails closed instead. Audio is here because the
+// bundled demo tracks live under app/audio; wasm/onnx because the photo tab
+// fetches ONNX Runtime Web and its model through this server.
+const SERVED_FILE_EXTENSIONS = new Set([
+  '.html', '.htm', '.js', '.mjs', '.css', '.json', '.gz', '.txt',
+  '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.bmp',
+  '.woff', '.woff2', '.ttf', '.otf', '.eot',
+  '.mp3', '.wav', '.ogg', '.oga', '.opus', '.flac', '.m4a', '.mp4', '.m4b',
+  '.aac', '.aiff', '.aif', '.ape', '.wv', '.amr', '.mka',
+  '.wasm', '.onnx'
+]);
+
 function cacheControlFor(ext, url) {
   if (!app.isPackaged) return 'no-store';
   if (url && url.includes('bundle-version.js')) return 'no-cache, must-revalidate';
@@ -156,6 +173,11 @@ function sendEmpty(res, status, extraHeaders) {
 
 function serveFile(filePath, stats, req, res) {
   const ext = path.extname(filePath).toLowerCase();
+  // Fail closed on unknown extensions: see SERVED_FILE_EXTENSIONS.
+  if (!SERVED_FILE_EXTENSIONS.has(ext)) {
+    sendEmpty(res, 403);
+    return;
+  }
   const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
   const fileSize = stats.size;
   const range = req.headers.range;
@@ -495,6 +517,57 @@ async function createWindow() {
     if (!url.startsWith(`http://127.0.0.1:${port}/`)) e.preventDefault();
   });
 
+  // Failure recovery.
+  //
+  // The window is created with show:false and is only revealed on
+  // ready-to-show. If the FIRST loadURL fails, that event never fires, so the
+  // old code left no window, no dialog and no log: launching the app simply did
+  // nothing. Every load/crash path below either reloads or quits explicitly.
+  const recoverableFailure = (message, detail) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (!mainWindow.isVisible()) mainWindow.show();
+    let choice = 1;
+    try {
+      choice = dialog.showMessageBoxSync(mainWindow, {
+        type: 'error',
+        title: 'IEM Tool',
+        message: message,
+        detail: detail,
+        buttons: ['Reload', 'Quit'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true
+      });
+    } catch (_) {}
+    if (choice === 0) { try { mainWindow.reload(); } catch (_) {} }
+    else app.quit();
+  };
+
+  mainWindow.webContents.on('did-fail-load', (_event, code, description, validatedURL, isMainFrame) => {
+    if (isMainFrame === false) return;
+    const detail = `${description || 'Load failed'} (${code})\n${validatedURL || ''}`;
+    logCrash(new Error('[did-fail-load] ' + detail));
+    recoverableFailure('The app interface failed to load.', detail);
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    logCrash(new Error('[render-process-gone] ' + JSON.stringify(details || {})));
+    recoverableFailure(
+      'The app interface stopped unexpectedly.',
+      'Reason: ' + ((details && details.reason) || 'unknown') +
+        '. Your saved reviews and settings are stored separately and are not affected.'
+    );
+  });
+
+  // Log only: a transient GC pause can fire this, and a modal on top of a busy
+  // UI would be worse than the pause. The crash log is the durable record.
+  mainWindow.webContents.on('unresponsive', () => {
+    logCrash(new Error('[unresponsive] renderer stopped responding'));
+  });
+  mainWindow.webContents.on('responsive', () => {
+    // No user-facing action needed; kept as a symmetry hook for diagnostics.
+  });
+
   // R1: tell the renderer when maximize/restore changes so the caption button
   // can swap its glyph. Fires for the button, for double-click on the drag
   // region, and for Win+Up / Win+Down, so all three stay in sync.
@@ -508,6 +581,28 @@ async function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+  });
+
+  // Let the renderer flush its Data-tab autosave before the window goes away.
+  //
+  // data-module.js used to rely on `beforeunload` + an un-awaited IndexedDB
+  // write; the renderer is torn down immediately, so the last edit inside the
+  // autosave debounce could be lost. Here the close is deferred until the
+  // renderer answers on `app:flush-done` (or 800ms passes, so a wedged/crashed
+  // renderer can never make the window unclosable).
+  let closeGuardDone = false;
+  mainWindow.on('close', (e) => {
+    if (closeGuardDone || !mainWindow || mainWindow.webContents.isDestroyed()) {
+      closeGuardDone = true;
+      return;
+    }
+    e.preventDefault();
+    // Allow the retry below (and any later close) even if no answer arrives.
+    closeGuardDone = true;
+    try { mainWindow.webContents.send('app:flush-before-close'); } catch (_) {}
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+    }, 800);
   });
 
   mainWindow.on('closed', () => {
@@ -525,8 +620,13 @@ ipcMain.on('win:toggle-maximize', () => {
   else mainWindow.maximize();
 });
 ipcMain.on('win:close', () => { if (mainWindow) mainWindow.close(); });
-ipcMain.on('win:is-maximized', (event) => {
-  event.returnValue = mainWindow ? mainWindow.isMaximized() : false;
+ipcMain.handle('win:is-maximized', () => !!(mainWindow && mainWindow.isMaximized()));
+
+// Renderer finished its pre-close autosave flush (see the close guard in
+// createWindow). Sender-checked because closing the window is a UI action.
+ipcMain.on('app:flush-done', (event) => {
+  if (!dataSenderOk(event)) return;
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
 });
 
 // Settings -> Data -> "Open database folder". Opens the folder where a newer
@@ -615,6 +715,68 @@ function atomicWrite(file, data) {
     try { fs.unlinkSync(tmp); } catch (_) {}
     throw e;
   }
+}
+
+// Writes database.json and database.json.gz as ONE operation.
+//
+// The two files used to be written sequentially with no shared failure
+// handling, so a success on the first and a failure on the second (disk full,
+// permission, process killed) left a NEW database.json next to an OLD .gz. The
+// catalogue loader preferred the .gz, so the app silently kept showing the old
+// catalogue while the Data tab showed the new one.
+//
+// Both payloads are therefore compressed and staged before either file is
+// replaced, and the .json is renamed FIRST. If the .gz rename then fails, the
+// new database is still what every reader (main process, DataStore,
+// CurveIndexer) loads, and the stale .gz is reported through gzStale rather
+// than silently winning. Previous versions of both files go to backup/.
+function writeDatabaseSet(root, text, wantJson, wantGz) {
+  const j = path.join(root, 'database.json');
+  const g = path.join(root, 'database.json.gz');
+  const files = [];
+  fs.mkdirSync(path.join(root, 'backup'), { recursive: true });
+  for (const [src, bak] of [[j, 'database.json.bak'], [g, 'database.json.gz.bak']]) {
+    if (isFile(src)) { try { fs.copyFileSync(src, path.join(root, 'backup', bak)); } catch (_) {} }
+  }
+
+  // Compress before touching disk: a gzip failure must not leave a half-written set.
+  const gz = wantGz ? zlib.gzipSync(Buffer.from(text, 'utf8'), { level: 9 }) : null;
+  const staged = [];
+  try {
+    if (wantJson) {
+      const tmp = j + '.tmp-' + process.pid + '-' + Date.now();
+      const fd = fs.openSync(tmp, 'w');
+      try { fs.writeFileSync(fd, text); try { fs.fsyncSync(fd); } catch (_) {} } finally { fs.closeSync(fd); }
+      staged.push({ tmp, dest: j, name: 'database.json', bytes: Buffer.byteLength(text) });
+    }
+    if (wantGz) {
+      const tmp = g + '.tmp-' + process.pid + '-' + Date.now();
+      const fd = fs.openSync(tmp, 'w');
+      try { fs.writeFileSync(fd, gz); try { fs.fsyncSync(fd); } catch (_) {} } finally { fs.closeSync(fd); }
+      staged.push({ tmp, dest: g, name: 'database.json.gz', bytes: gz.length });
+    }
+  } catch (e) {
+    for (const s of staged) { try { fs.unlinkSync(s.tmp); } catch (_) {} }
+    throw e;
+  }
+
+  for (let i = 0; i < staged.length; i++) {
+    const s = staged[i];
+    try {
+      fs.renameSync(s.tmp, s.dest);
+      files.push({ name: s.name, bytes: s.bytes });
+    } catch (e) {
+      for (let k = i; k < staged.length; k++) { try { fs.unlinkSync(staged[k].tmp); } catch (_) {} }
+      if (i === 0 && wantJson && wantGz) {
+        throw new Error('database.json could not be replaced, so nothing was changed: ' + ((e && e.message) || e));
+      }
+      if (i > 0) {
+        throw new Error('database.json was saved, but database.json.gz could not be replaced (the compressed copy is now stale): ' + ((e && e.message) || e));
+      }
+      throw e;
+    }
+  }
+  return files;
 }
 
 ipcMain.handle('data:info', (event) => {
@@ -725,25 +887,18 @@ ipcMain.handle('data:write-database', (event, payload) => {
   try {
     const root = dataWriteRoot();
     if (!root) return { ok: false, error: 'No writable data folder.' };
-    const text = payload && payload.text;
+    const req = (payload && typeof payload === 'object') ? payload : {};
+    const text = req.text;
     if (typeof text !== 'string' || text.length < 2 || text.length > DATA_MAX_BYTES) return { ok: false, error: 'bad payload' };
     // Refuse anything that is not a JSON array: a corrupted save must never replace a good database.
     let parsed;
     try { parsed = JSON.parse(text); } catch (_) { return { ok: false, error: 'payload is not valid JSON' }; }
     if (!Array.isArray(parsed)) return { ok: false, error: 'payload is not a JSON array' };
     fs.mkdirSync(root, { recursive: true });
-    const files = [];
-    const j = path.join(root, 'database.json');
-    if (payload.json !== false) {
-      if (isFile(j)) { try { fs.mkdirSync(path.join(root, 'backup'), { recursive: true }); fs.copyFileSync(j, path.join(root, 'backup', 'database.json.bak')); } catch (_) {} }
-      atomicWrite(j, text);
-      files.push({ name: 'database.json', bytes: Buffer.byteLength(text) });
-    }
-    if (payload.gz !== false) {
-      const gz = zlib.gzipSync(Buffer.from(text, 'utf8'), { level: 9 });
-      atomicWrite(path.join(root, 'database.json.gz'), gz);
-      files.push({ name: 'database.json.gz', bytes: gz.length });
-    }
+    const wantJson = req.json !== false;
+    const wantGz = req.gz !== false;
+    if (!wantJson && !wantGz) return { ok: false, error: 'nothing to write' };
+    const files = writeDatabaseSet(root, text, wantJson, wantGz);
     return { ok: true, files, path: root };
   } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
 });
@@ -764,6 +919,54 @@ ipcMain.handle('data:write-file', (event, payload) => {
     if (existed && !payload.overwrite) return { ok: true, existed: true, skipped: true };
     atomicWrite(dest, text);
     return { ok: true, existed };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+// Opening the changelog from the panel. shell.openPath hands the file to the
+// OS's Markdown handler; when there is none (or it fails) the file is revealed
+// in its folder instead, so a click always gets the reader somewhere.
+ipcMain.handle('data:open-save-log', async (event) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  try {
+    const root = dataWriteRoot();
+    const file = root ? path.join(root, 'save-log.md') : '';
+    if (!file || !isFile(file)) return { ok: false, error: 'No save-log.md yet.' };
+    const err = await shell.openPath(file);
+    if (!err) return { ok: true, how: 'opened', path: root };
+    shell.showItemInFolder(file);
+    return { ok: true, how: 'revealed', path: root };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+// Reading the changelog back is what lets an export add to it instead of
+// replacing it. Same fixed filename and root as the write, and `text: null`
+// instead of an error when nothing has been exported yet.
+ipcMain.handle('data:read-save-log', (event) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  try {
+    const root = dataWriteRoot();
+    if (!root) return { ok: true, text: null };
+    const file = path.join(root, 'save-log.md');
+    if (!isFile(file)) return { ok: true, text: null };
+    if (fs.statSync(file).size > 8 * 1024 * 1024) return { ok: false, error: 'save-log.md is too large to merge with' };
+    return { ok: true, text: fs.readFileSync(file, 'utf8') };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+// The save log's Markdown changelog. One fixed filename beside the database, no
+// renderer-supplied path, and the same "working copy first" rule as every other
+// write, so an export can never land in the installed app's bundled files.
+ipcMain.handle('data:write-save-log', (event, payload) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  if (writeBlocked()) return { ok: false, error: 'needs-working-copy' };
+  try {
+    const root = dataWriteRoot();
+    if (!root) return { ok: false, error: 'No writable data folder.' };
+    const text = payload && payload.text;
+    if (typeof text !== 'string' || text.length > 8 * 1024 * 1024) return { ok: false, error: 'bad payload' };
+    fs.mkdirSync(root, { recursive: true });
+    atomicWrite(path.join(root, 'save-log.md'), text);
+    return { ok: true, path: root };
   } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
 });
 

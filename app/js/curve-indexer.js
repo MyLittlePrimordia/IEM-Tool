@@ -198,20 +198,24 @@ const CurveIndexer = {
         };
         try {
 
-            let res = await fetch('./database.json.gz');
+            // json FIRST, matching main.js (data:read-database) and the Data
+            // tab (DataStore.readDatabase). This used to prefer the .gz while
+            // the Data tab preferred the .json, so a json/gz divergence showed
+            // one catalogue in the editor and a stale one in Find/EQ. The .json
+            // is the source of truth; .gz is the derived artifact.
+            let res = await fetch('./database.json');
 
             if (!res.ok) {
-                console.warn("database.json.gz not found, trying database.json...");
-                res = await fetch('./database.json');
+                console.warn("database.json not found, trying database.json.gz...");
+                res = await fetch('./database.json.gz');
                 if (!res.ok) throw new Error("Database file missing");
-                accept(await res.json());
+
+                const decompressedStream = res.body.pipeThrough(new DecompressionStream('gzip'));
+                accept(await new Response(decompressedStream).json());
                 return;
             }
 
-            const decompressedStream = res.body.pipeThrough(new DecompressionStream('gzip'));
-            const response = new Response(decompressedStream);
-
-            accept(await response.json());
+            accept(await res.json());
         } catch (e) {
             console.warn("[CurveIndexer] Could not load catalog:", e);
             this.catalog = [];

@@ -120,6 +120,14 @@ function getBandEnergy(dataArray, startBin, endBin) {
         });
 
         stack.appendChild(item);
+        // Also mirror the text into the dedicated live region. The stack itself
+        // is role=status, but entries can be evicted/removed quickly; the
+        // announcer guarantees the message is announced exactly once.
+        const announcer = document.getElementById('a11y-announcer');
+        if (announcer) {
+            announcer.textContent = '';
+            setTimeout(() => { announcer.textContent = String(message == null ? '' : message); }, 30);
+        }
         const duration = action ? (opts.duration || 6000) : (opts.duration || 2600);
         item.timeoutId = setTimeout(() => dismiss(item), duration);
     }
@@ -2969,9 +2977,9 @@ label: function(context) {
             };
             const avgScore = (...ids) => ids.reduce((sum, id) => sum + scoreOf(id), 0) / ids.length;
 
-            let impVal = parseFloat(document.getElementById('impedance').value);
+            let impVal = parseFloat(elValue('impedance'));
             if (isNaN(impVal) || impVal <= 0) impVal = 5;
-            let sensVal = parseFloat(document.getElementById('sensitivity').value);
+            let sensVal = parseFloat(elValue('sensitivity'));
             if (isNaN(sensVal)) sensVal = 80;
 
             this.updateGauge('impedance', impVal);
@@ -3095,9 +3103,10 @@ label: function(context) {
                 powerIconEmoji.textContent = '🔋';
             }
 
-            if (statusNode) {
-                statusNode.innerHTML = `<span class="${matchClass}">${matchText}</span>`;
-            }
+            // NOTE: the compatibility status is written ONCE, above (with the
+            // responsive `text-sm sm:text-base` classes). A second identical
+            // innerHTML assignment used to live here and silently overwrote the
+            // first, so those classes never applied.
 
             const notesInput = document.getElementById('review-notes');
             const counter = document.getElementById('notes-counter');
@@ -3193,6 +3202,7 @@ if(this.radarChart) {
         resetAll: async function() {
             const ok = await UIKit.confirm({
                 title: "Clear all current workspace data?",
+                message: "This clears the current review (specs, scores, notes, tags, photo, hearing profile and the restored EQ state). Saved reviews, custom EQ presets, Find favourites and your theme/font settings are kept.",
                 confirmLabel: "Clear all",
                 danger: true
             });
@@ -3205,6 +3215,10 @@ if(this.radarChart) {
             // workspace this reset is scoped to.
             const preservedKeys = [
                 'iem_library_v2',
+                // User-authored EQ presets are NOT review-workspace data. They
+                // were missing from this list, so "Clear all" deleted every
+                // custom preset the user had saved (eq-presets.js).
+                'iem_custom_eq_presets',
                 'settings_theme_id', 'settings_export_theme_id', 'settings_font_id',
                 'settings_align_hz', 'settings_align_db',
                 'settings_reading_scale',
