@@ -30,7 +30,10 @@ const ALLOWED = new Set(['0px', '2px', '3px', '4px', '6px', '8px', '12px', '16px
 // --r-half: the semicircular resonance gauge cap. Its element is 38px wide, so a
 // 38px top radius is the geometry, not a scale step. Keyed on the full
 // 4-corner string because only the two top corners are rounded.
-const ALLOWED_SHAPES = new Set(['38px 38px 0px 0px']);
+// The photo bar's undo/redo pair: a fused two-button control, so the join reads
+// the zero step (--r-square) while the outer corners stay on the control
+// radius. Keyed as the full 4-corner shorthand, like the gauge above.
+const ALLOWED_SHAPES = new Set(['38px 38px 0px 0px', '6px 0px 0px 6px', '0px 6px 6px 0px']);
 
 const SNAP = `(() => {
   const tally = {};

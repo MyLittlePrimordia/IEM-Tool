@@ -48,8 +48,11 @@
 
         activeRightTab: 'tone',
         rightTabModes: [
-            { id: 'tone', label: 'Tone Gen', emoji: '🔊' },
-            { id: 'ab', label: 'A/B Test', emoji: '🆚' },
+            // Labels and emoji mirror the #tl-right-tabs pills (Tone / A/B).
+            // The list used to say "Tone Gen" and "A/B Test" with older icons,
+            // so the module described a row the reader never sees.
+            { id: 'tone', label: 'Tone', emoji: '🎛️' },
+            { id: 'ab', label: 'A/B', emoji: '🔀' },
             { id: 'hearing', label: 'Hearing', emoji: '👂' }
         ],
         cycleRightTab: function(dir) {
@@ -353,11 +356,11 @@ toggleChannelSwap: function() {
             const lockBtn = document.getElementById('resonance-lock-btn');
             if (scanBtn) {
                 scanBtn.textContent = 'Scan';
-                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5";
+                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold type-micro py-1.5";
             }
             if (lockBtn) {
                 lockBtn.disabled = true;
-                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 opacity-50 cursor-not-allowed";
+                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold type-micro py-1.5 opacity-50 cursor-not-allowed";
             }
 
             if (this.hearingOsc) {
@@ -534,11 +537,11 @@ toggleChannelSwap: function() {
 
             if (scanBtn) {
                 scanBtn.textContent = 'Scan...';
-                scanBtn.className = "w-full bg-sky-500/20 border border-sky-500/50 text-sky-300 font-bold text-[9px] py-1.5 active-btn animate-pulse truncate";
+                scanBtn.className = "w-full bg-sky-500/20 border border-sky-500/50 text-sky-300 font-bold type-micro py-1.5 active-btn animate-pulse truncate";
             }
             if (lockBtn) {
                 lockBtn.disabled = false;
-                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/15 font-bold text-[9px] py-1.5";
+                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/15 font-bold type-micro py-1.5";
             }
 
             this.resonanceOsc = ctx.createOscillator();
@@ -614,11 +617,11 @@ toggleChannelSwap: function() {
 
             if (scanBtn) {
                 scanBtn.textContent = 'Scan';
-                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5";
+                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold type-micro py-1.5";
             }
             if (lockBtn) {
                 lockBtn.disabled = true;
-                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 opacity-50 cursor-not-allowed";
+                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold type-micro py-1.5 opacity-50 cursor-not-allowed";
             }
             if (readout) {
                 readout.textContent = `${PEQDB_Module.resonanceHz.toLocaleString()} Hz`;
@@ -715,11 +718,11 @@ toggleChannelSwap: function() {
 
             if (scanBtn) {
                 scanBtn.textContent = 'Scan';
-                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5";
+                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold type-micro py-1.5";
             }
             if (lockBtn) {
                 lockBtn.disabled = true;
-                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 opacity-50 cursor-not-allowed";
+                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold type-micro py-1.5 opacity-50 cursor-not-allowed";
             }
             if (readout) {
                 readout.textContent = '8,000 Hz';

@@ -102,7 +102,7 @@ const TestLab_BurninMethods = {
 
         if (status === 'idle') {
             statusDisp.textContent = "Idle";
-            statusDisp.className = "text-[10px] font-black uppercase tracking-widest text-zinc-400";
+            statusDisp.className = "type-micro font-black uppercase tracking-widest text-zinc-400";
             statusEmoji.textContent = "💤";
             statusEmoji.className = "text-xs";
             if (hourglass) {
@@ -111,7 +111,7 @@ const TestLab_BurninMethods = {
             }
         } else if (status === 'burning') {
             statusDisp.textContent = "Burning-In";
-            statusDisp.className = "text-[10px] font-black uppercase tracking-widest text-emerald-400 animate-state-active";
+            statusDisp.className = "type-micro font-black uppercase tracking-widest text-emerald-400 animate-state-active";
             statusEmoji.textContent = "🔥";
             statusEmoji.className = "text-xs animate-state-active";
             if (hourglass) {
@@ -120,7 +120,7 @@ const TestLab_BurninMethods = {
             }
         } else if (status === 'resting') {
             statusDisp.textContent = "Resting";
-            statusDisp.className = "text-[10px] font-black uppercase tracking-widest text-amber-500 animate-state-active";
+            statusDisp.className = "type-micro font-black uppercase tracking-widest text-amber-500 animate-state-active";
             statusEmoji.textContent = "💤";
             statusEmoji.className = "text-xs animate-state-active";
             if (hourglass) {

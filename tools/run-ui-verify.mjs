@@ -31,7 +31,9 @@ const SUITES = [
   { file: 'tools/verify-eq-history.js', what: 'EQ undo/redo, remembered EQ, Settings > Fix settings' },
   { file: 'tools/verify-database-load.js', what: 'catalogue loads once, bad file survives, Refresh picks up a new entry' },
   { file: 'tools/verify-refresh-database.js', what: 'Settings > Refresh database: one-row hint, cache clear, reload' },
-  { file: 'tools/verify-save-preview.js', what: 'Data tab save preview: listed changes, cancel writes nothing, stale-file warning' }
+  { file: 'tools/verify-save-preview.js', what: 'Data tab save preview: listed changes, cancel writes nothing, stale-file warning' },
+  { file: 'tools/verify-tab-panels.js', what: 'tab carousels (Data, IEM, TestLab, Find, EQ acoustics/faders + console): each shows exactly one panel, and the one showing is the selected tab\'s' },
+  { file: 'tools/audit-control-corners.js', what: 'control corners: one radius per family across all seven panes, --r-square for the square shapes' }
 ];
 
 function electronBinary() {

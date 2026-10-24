@@ -252,9 +252,9 @@ setSearchMode: function(mode) {
             const badgeFor = (item) => {
                 const loadedCurve = activeCurves.find(c => c.id === item.id);
                 if (loadedCurve) {
-                    return `<span class="text-[8px] uppercase font-bold tracking-widest px-1.5 py-0.5 text-white flex-shrink-0" style="background-color: ${loadedCurve.color}">${loadedCurve.role.toUpperCase()}</span>`;
+                    return `<span class="type-micro uppercase font-bold tracking-widest px-1.5 py-0.5 text-white flex-shrink-0" style="background-color: ${loadedCurve.color}">${loadedCurve.role.toUpperCase()}</span>`;
                 }
-                return `<span class="text-[8px] text-zinc-500 uppercase tracking-widest font-black">LOAD</span>`;
+                return `<span class="type-micro text-zinc-500 uppercase tracking-widest font-black">LOAD</span>`;
             };
 
             // Filter and re-rank by form factor - specs-tab logic: none selected = show all, else filter to selected
@@ -301,14 +301,14 @@ const countEl = document.getElementById('peqdb-result-count');
             });
             filterHtml += '</div>';
 
-            let html = '<div class="text-[9px] text-zinc-555 font-bold uppercase tracking-wider mb-2 border-b border-[var(--border-color)] pb-1 flex justify-between items-center mr-3 select-none">' +
+            let html = '<div class="type-micro text-zinc-555 font-bold uppercase tracking-wider mb-2 border-b border-[var(--border-color)] pb-1 flex justify-between items-center mr-3 select-none">' +
                 '<span>Matches for:</span>' +
                 '<span class="text-[var(--accent-amber)] truncate max-w-[130px]" title="' + esc(refName) + '">' + esc(refName) + '</span>' +
                 '</div>' + filterHtml;
 
             if (filteredMatches.length === 0) {
-                html += '<div class="text-zinc-500 text-[11px] italic text-center mt-8 p-4 border border-dashed border-zinc-800">' +
-                    (anySelected ? 'No matches for selected form factors.<br><span class="text-[10px]">Try enabling more filters.</span>' : '&#9889; 0 matches &mdash; adjust the DSP curve to find similar IEMs.') +
+                html += '<div class="text-zinc-500 type-xs italic text-center mt-8 p-4 border border-dashed border-zinc-800">' +
+                    (anySelected ? 'No matches for selected form factors.<br><span class="type-micro">Try enabling more filters.</span>' : '&#9889; 0 matches &mdash; adjust the DSP curve to find similar IEMs.') +
                     '</div>';
             } else {
                 // Cap the rendered cards. This list had no limit at all while the
@@ -334,7 +334,7 @@ const countEl = document.getElementById('peqdb-result-count');
                 if (filteredMatches.length > shown.length) {
                     // Never hide that the list was truncated — the count above
                     // still reports the true total.
-                    html += '<div class="text-[10px] text-zinc-500 italic text-center mt-4 p-3 border border-dashed border-zinc-800">' +
+                    html += '<div class="type-micro text-zinc-500 italic text-center mt-4 p-3 border border-dashed border-zinc-800">' +
                         'Showing the top ' + shown.length + ' of ' + filteredMatches.length +
                         ' matches &mdash; the closest curves are ranked first. Refine the EQ to narrow the field.' +
                         '</div>';
@@ -389,9 +389,9 @@ const countEl = document.getElementById('peqdb-result-count');
                             const badgeFor = (item) => {
                                 const loadedCurve = activeCurves.find(c => c.id === item.id);
                                 if (loadedCurve) {
-                                    return `<span class="text-[8px] uppercase font-bold tracking-widest px-1.5 py-0.5 text-white flex-shrink-0" style="background-color: ${loadedCurve.color}">${loadedCurve.role.toUpperCase()}</span>`;
+                                    return `<span class="type-micro uppercase font-bold tracking-widest px-1.5 py-0.5 text-white flex-shrink-0" style="background-color: ${loadedCurve.color}">${loadedCurve.role.toUpperCase()}</span>`;
                                 }
-                                return `<span class="text-[8px] text-zinc-500 uppercase tracking-widest font-black">LOAD</span>`;
+                                return `<span class="type-micro text-zinc-500 uppercase tracking-widest font-black">LOAD</span>`;
                             };
                             const rank = groupIdx + 1;
                             drawer.innerHTML = group.items.map(item => {

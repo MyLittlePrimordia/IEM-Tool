@@ -50,11 +50,37 @@ app.whenReady().then(async () => {
   }
 
   console.log('\n[1] clipboard still works under the lockdown');
-  await js("window.focus(); document.body.focus()");
-  const w = await js("navigator.clipboard.writeText('iem-clip-test-123').then(() => 'ok').catch(e => 'ERR ' + e.name)");
-  check('writeText', w, 'ok');
-  const r = await js("navigator.clipboard.readText().catch(e => 'ERR ' + e.name)");
-  check('readText returns what was written', r, 'iem-clip-test-123');
+  // The clipboard is OS state, not app state: another process can hold it, and
+  // Chromium refuses a write while the document is not focused. Both surface as
+  // NotAllowedError and both clear by themselves, so retry the pair a few times
+  // before calling it a failure. A busy clipboard must not fail a green tree -
+  // this flaked once in a full verify:ui run (writeText: NotAllowedError) and
+  // passed when run on its own seconds later.
+  const CLIP = 'iem-clip-test-123';
+  const clipAttempt = async () => {
+    win.show();
+    win.focus();
+    await js("window.focus(); document.body.focus()");
+    const w = await js(`navigator.clipboard.writeText(${JSON.stringify(CLIP)}).then(() => 'ok').catch(e => 'ERR ' + e.name)`);
+    if (w !== 'ok') return { w, r: null };
+    const r = await js("navigator.clipboard.readText().catch(e => 'ERR ' + e.name)");
+    return { w, r };
+  };
+  let clip = await clipAttempt();
+  for (let i = 0; i < 5 && (clip.w !== 'ok' || clip.r !== CLIP); i++) {
+    // Name the state that caused the retry: a lost window focus and a clipboard
+    // held by another process look identical to the caller but not here, and
+    // telling them apart is what makes a recurrence diagnosable.
+    console.log('        retry ' + (i + 1) + ': write=' + clip.w + ' read=' + clip.r +
+      ' focus=' + JSON.stringify({ window: win.isFocused(), document: await js('document.hasFocus()') }));
+    await sleep(250 * (i + 1));
+    clip = await clipAttempt();
+  }
+  check('writeText', clip.w, 'ok');
+  check('readText returns what was written', clip.r, CLIP);
+  if (clip.w !== 'ok' || clip.r !== CLIP) {
+    console.log('        (gave up after 6 attempt(s); if this is NotAllowedError the OS clipboard was held by another process, not the app)');
+  }
 
   console.log('\n[2] everything else is denied');
   for (const perm of ['geolocation', 'notifications']) {

@@ -87,9 +87,9 @@ function getBandEnergy(dataArray, startBin, endBin) {
         let html = '<span class="toast-icon flex-shrink-0 leading-none">' + esc(icon || 'ℹ️') + '</span>';
         html += '<div class="min-w-0 flex-1 leading-snug break-words">' + esc(String(message == null ? '' : message)) + '</div>';
         if (action && action.label) {
-            html += '<button class="toast-act flex-shrink-0 px-2 py-1 border-2 border-black bg-[var(--accent-blue)] text-white text-[10px] font-black cursor-pointer hover:brightness-110">' + esc(action.label) + '</button>';
+            html += '<button class="toast-act flex-shrink-0 px-2 py-1 border-2 border-black bg-[var(--accent-blue)] text-white type-micro font-black cursor-pointer hover:brightness-110">' + esc(action.label) + '</button>';
         }
-        html += '<button class="toast-x flex-shrink-0 text-zinc-500 hover:text-red-400 text-[10px] leading-none cursor-pointer">✕</button>';
+        html += '<button class="toast-x flex-shrink-0 text-zinc-500 hover:text-red-400 type-micro leading-none cursor-pointer">✕</button>';
         item.innerHTML = html;
 
         const dismiss = (el, immediate) => {
@@ -1900,7 +1900,7 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
             { id: 'search', label: 'Search', emoji: '🔍' },
             { id: 'info', label: 'Info', emoji: '📝' },
             { id: 'drivers', label: 'Drivers', emoji: '⚙️' },
-            { id: 'power', label: 'Power', emoji: '⚡' }
+            { id: 'power', label: 'Power', emoji: '🔌' }
         ],
         cycleLeftTab: function(dir) {
             const currentIdx = this.leftTabModes.findIndex(m => m.id === this.activeLeftTab);
@@ -2079,7 +2079,7 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
                 };
                 const show = shortNames[val] || val || 'IEM';
                 const emoji = (FindEngine && FindEngine.formFactorEmojis[val]) ? FindEngine.formFactorEmojis[val] : '<img src="app/icons/iem.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">';
-                label.innerHTML = `<span class="flex items-center justify-center gap-2 truncate" title="${esc(val || '')}">${emoji}<span class="truncate text-[10.5px] tracking-wide">${esc(show)}</span></span>`;
+                label.innerHTML = `<span class="flex items-center justify-center gap-2 truncate" title="${esc(val || '')}">${emoji}<span class="truncate type-xs tracking-wide">${esc(show)}</span></span>`;
             }
         },
         setConnector: function(val) {
@@ -2132,9 +2132,9 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
             };
             btn.textContent = labels[this.currentCrossover] || '🔀 Crossover: Unknown';
             if (this.currentCrossover === 'UNK') {
-                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border border-[var(--border-color)] text-[9px] font-bold text-zinc-400 transition-all flex items-center justify-center gap-1 cursor-pointer";
+                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border border-[var(--border-color)] type-micro font-bold text-zinc-400 transition-all flex items-center justify-center gap-1 cursor-pointer";
             } else {
-                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[var(--accent-blue)] text-[9px] font-bold text-[var(--accent-blue)] transition-all flex items-center justify-center gap-1 cursor-pointer";
+                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[var(--accent-blue)] type-micro font-bold text-[var(--accent-blue)] transition-all flex items-center justify-center gap-1 cursor-pointer";
             }
         },
         updateWayButtonsUI: function() {
@@ -2151,9 +2151,9 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
             };
             btn.textContent = labels[this.currentWay] || '🧩 Way: Unknown';
             if (this.currentWay === 'UNK') {
-                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border border-[var(--border-color)] text-[9px] font-bold text-zinc-400 transition-all flex items-center justify-center gap-1 cursor-pointer";
+                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border border-[var(--border-color)] type-micro font-bold text-zinc-400 transition-all flex items-center justify-center gap-1 cursor-pointer";
             } else {
-                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[var(--accent-blue)] text-[9px] font-bold text-[var(--accent-blue)] transition-all flex items-center justify-center gap-1 cursor-pointer";
+                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[var(--accent-blue)] type-micro font-bold text-[var(--accent-blue)] transition-all flex items-center justify-center gap-1 cursor-pointer";
             }
         },
         dacTiers: ['Phone', 'Laptop', 'Dongle', 'Desktop'],
@@ -2456,12 +2456,16 @@ label: function(context) {
                 btnLabel.innerHTML = `<img src="${info.icon}" class="w-6 h-6 object-contain flex-shrink-0 inline-block anim-toggle-pop"> ${info.label}`;
             }
         },
+        // Must stay in step with #sound-char-tabs: six pills in the markup
+        // (bass / mids / treble / stage / fit / package), so six here. Package
+        // was missing, which made the list disagree with the row it describes.
         soundCharModes: [
             { id: 'bass', label: 'Bass', emoji: '🥁' },
             { id: 'mids', label: 'Mids', emoji: '🎤' },
             { id: 'treble', label: 'Treble', emoji: '✨' },
             { id: 'stage', label: 'Stage', emoji: '🏟️' },
-            { id: 'fit', label: 'Fit', emoji: '🎧' }
+            { id: 'fit', label: 'Fit', emoji: '🎧' },
+            { id: 'package', label: 'Package', emoji: '📦' }
         ],
         activeSoundCharTab: 'bass',
         switchSoundCharTab: function(tabId) {
@@ -2587,14 +2591,14 @@ label: function(context) {
                     emojiSpan.style.cssText = 'display: inline-block; transform-origin: center;';
                     emojiSpan.textContent = emoji;
                     const textSpan = document.createElement('span');
-                    textSpan.className = 'text-[9.5px] font-black text-[var(--text-main)] truncate leading-tight';
+                    textSpan.className = 'type-micro font-black text-[var(--text-main)] truncate leading-tight';
                     textSpan.textContent = text;
                     inner.appendChild(emojiSpan);
                     inner.appendChild(textSpan);
 
                     const rmBtn = document.createElement('button');
                     rmBtn.type = 'button';
-                    rmBtn.className = 'w-4 h-4 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[9px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black';
+                    rmBtn.className = 'w-4 h-4 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white type-micro font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black';
                     rmBtn.title = 'Remove ' + text;
                     rmBtn.textContent = '✕';
                     const tagToRemove = tag;
@@ -2609,7 +2613,7 @@ label: function(context) {
                 } else {
                     const div = document.createElement('div');
                     div.className = 'border-2 border-dashed border-black p-1 flex items-center justify-center select-none w-full h-full bg-black/10';
-                    div.innerHTML = `<span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Slot ${i+1}</span>`;
+                    div.innerHTML = `<span class="type-micro font-black text-stone-400 uppercase tracking-wider">+ Slot ${i+1}</span>`;
                     container.appendChild(div);
                 }
             }

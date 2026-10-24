@@ -254,7 +254,7 @@ function showDebugError(message, source) {
     if (!errDiv) {
         errDiv = document.createElement('div');
         errDiv.id = 'debug-error-banner';
-        errDiv.style = 'position:fixed; bottom:20px; left:20px; right:20px; background:rgba(220,38,38,0.95); color:white; font-family:monospace; font-size:11px; padding:12px; border-radius:6px; z-index:9999; border:1px solid #ef4444; box-shadow:0 10px 30px rgba(0,0,0,0.55); overflow-y:auto; max-height:180px; cursor:pointer;';
+        errDiv.style = 'position:fixed; bottom:20px; left:20px; right:20px; background:rgba(220,38,38,0.95); color:white; font-family:monospace; font-size:var(--t-xs); padding:12px; border-radius:6px; z-index:9999; border:1px solid #ef4444; box-shadow:0 10px 30px rgba(0,0,0,0.55); overflow-y:auto; max-height:180px; cursor:pointer;';
         // Build via DOM text nodes, not innerHTML: message/source derive from
         // error events (e.message can carry attacker-influenced strings from
         // parsed imports; e.filename is URL-controlled) and must never hit an
@@ -265,7 +265,7 @@ function showDebugError(message, source) {
         strong.textContent = '⚠️ JS Runtime Exception: ' + message;
         const br = document.createElement('br');
         const sourceSpan = document.createElement('span');
-        sourceSpan.style.cssText = 'opacity:0.85; font-size:10px; margin-top:4px; display:block;';
+        sourceSpan.style.cssText = 'opacity:0.85; font-size:var(--t-micro); margin-top:4px; display:block;';
         sourceSpan.textContent = String(source) + '  —  click to dismiss';
         errDiv.appendChild(strong);
         errDiv.appendChild(br);

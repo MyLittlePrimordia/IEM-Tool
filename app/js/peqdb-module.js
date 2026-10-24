@@ -391,7 +391,7 @@
             // hides this box is a 150ms setTimeout, and click lands inside that
             // window, so insertSearchSuggestion runs before the box closes.
             box.innerHTML = suggestions.map(s => `
-                <span class="spec-icon-badge" style="width:auto !important; height:24px !important; padding:0 8px; font-size:11px !important; font-weight:800; background:var(--bg-input); border:2px solid #000;" data-tooltip="Search: click to insert" data-cmd="PEQDB_Module.insertSearchSuggestion" data-arg-0="${esc(s)}">${esc(s)}</span>
+                <span class="spec-icon-badge" style="width:auto !important; height:24px !important; padding:0 8px; font-size:var(--t-xs) !important; font-weight:800; background:var(--bg-input); border:2px solid #000;" data-tooltip="Search: click to insert" data-cmd="PEQDB_Module.insertSearchSuggestion" data-arg-0="${esc(s)}">${esc(s)}</span>
             `).join('');
             box.classList.remove('hidden');
         },
@@ -942,8 +942,8 @@ const savedDb = localStorage.getItem('settings_align_db');
                 const connectorEmoji = FindEngine.connectorEmojis[item.connector] || '🔌';
 
                 const specIconsHtml = `
-                    ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:9px;">$${esc(item.price_usd)}</span></span>` : ''}
-                    ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:9px;">${esc(item.year)}</span></span>` : ''}
+                    ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:var(--t-micro);">$${esc(item.price_usd)}</span></span>` : ''}
+                    ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:var(--t-micro);">${esc(item.year)}</span></span>` : ''}
                     ${item.driver_type ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
                     ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${esc(item.connector)}">${connectorEmoji}</span>` : ''}
                     <span class="spec-icon-badge" data-tooltip="${esc(item.form_factor || 'In-Ear Monitor (IEM)')}">${formEmoji}</span>
@@ -962,17 +962,17 @@ const savedDb = localStorage.getItem('settings_align_db');
                 if (isMulti) {
                     fileRowHtml = `
                         <div class="flex items-center gap-1.5 mt-1">
-                            <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
+                            <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center type-micro font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
                             <div class="db-file-name flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
-                                <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
+                                <span class="db-file-marquee-text type-micro font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
                             </div>
-                            <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
+                            <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center type-micro font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
                         </div>
                     `;
                 } else {
                     fileRowHtml = `
                         <div class="db-file-name mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
-                            <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
+                            <span class="db-file-marquee-text type-micro font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
                         </div>
                     `;
                 }
@@ -990,7 +990,7 @@ const savedDb = localStorage.getItem('settings_align_db');
                     <div class="db-title-row overflow-hidden whitespace-nowrap">
                         <span class="db-title-text font-black text-stone-200 text-xs inline-block whitespace-nowrap">${esc(item.name)}</span>
                     </div>
-                    <div class="text-[8.5px] text-zinc-500 font-bold uppercase tracking-wider mt-0.5">${esc(item.source || sourceName)}</div>
+                    <div class="type-micro text-zinc-500 font-bold uppercase tracking-wider mt-0.5">${esc(item.source || sourceName)}</div>
                     <div class="flex flex-wrap items-center justify-center gap-1 mt-1">${specIconsHtml}</div>
                     ${tagsHtml ? `<div class="flex flex-wrap items-center justify-center gap-1 mt-1">${tagsHtml}</div>` : ''}
                     ${fileRowHtml}
@@ -1016,8 +1016,8 @@ const savedDb = localStorage.getItem('settings_align_db');
                         <div class="flex items-center justify-between p-2 cursor-pointer select-none border-2 border-black" style="background: var(--bg-input);" data-cmd="PEQDB_Module.toggleBrandGroup" data-arg-0="${escJs(brandName)}">
                             <span class="text-xs font-black uppercase tracking-wider text-[var(--accent-blue)]">${esc(brandName)}</span>
                             <span class="flex items-center gap-1.5 flex-shrink-0">
-                                <span class="text-[9px] font-black text-zinc-500">${this._brandCounts.get(brandName) || 0}</span>
-                                <span class="brand-group-arrow text-[10px] font-black text-[var(--text-secondary)]">${isExpanded ? '▲' : '▼'}</span>
+                                <span class="type-micro font-black text-zinc-500">${this._brandCounts.get(brandName) || 0}</span>
+                                <span class="brand-group-arrow type-micro font-black text-[var(--text-secondary)]">${isExpanded ? '▲' : '▼'}</span>
                             </span>
                         </div>
                         <div class="brand-items-container pl-2 pt-1.5 ${isExpanded ? '' : 'hidden'}"></div>
@@ -1588,14 +1588,14 @@ const savedDb = localStorage.getItem('settings_align_db');
            symptom, and it came and went with the curve name rather than
            reporting itself as a bug. Pinning the size makes the row
            deterministic. */
-item.innerHTML = `<div class="flex items-center justify-between w-full h-6 select-none" draggable="false"><span class="curve-role-chip px-2 py-0.5 text-[8.5px] font-black tracking-wider text-white uppercase bg-black/60 border border-white/10 flex-shrink-0" title="Drag to rearrange" draggable="false">${roleLabel}</span><div class="flex items-center gap-1.5 flex-shrink-0" draggable="false"><button data-cmd="PEQDB_Module.toggleVisible" data-arg-0="@from:uid" class="w-6 h-6 flex-shrink-0 bg-black/50 hover:bg-black/80 text-white text-[11px] flex items-center justify-center border border-white/10 cursor-pointer" title="Show or hide this curve" draggable="false">${c.visible?'👁️':'🙈'}</button><button data-cmd="PEQDB_Module.cycleColor" data-arg-0="@from:uid" class="curve-card-swatch w-6 h-6 flex-shrink-0 border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style="background-color:${c.color}" title="Change this curve's color" draggable="false">🎨</button><button data-cmd="PEQDB_Module.removeCurve" data-arg-0="@from:uid" class="w-6 h-6 flex-shrink-0 bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-black text-[11px] flex items-center justify-center cursor-pointer" title="Remove this curve" draggable="false">✕</button></div></div><div data-cmd="PEQDB_Module.renameCurve" data-arg-0="@from:uid" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5" draggable="false"><div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none"><span id="marquee-${esc(c.uid)}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span></div></div><div class="flex justify-between items-center w-full h-6" draggable="false"><div class="flex items-center gap-1.5 h-6 decibel-stepper flex-shrink-0 select-none" style="width:110px !important;min-width:110px !important;max-width:110px !important;" draggable="false"><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="-1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve down 1 dB" draggable="false">◄</button><button type="button" data-stop-propagation class="flex-1 h-6 bg-[var(--bg-input)] border-2 border-black text-[#c85a0e] font-mono font-black text-[9px] flex items-center justify-center text-center cursor-default select-none focus:outline-none px-0 min-w-0" draggable="false">${(c.offset||0)>=0?'+':''}${c.offset||0}dB</button><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve up 1 dB" draggable="false">►</button></div><div class="flex items-center gap-1.5" draggable="false"><button data-cmd="PEQDB_Module.exportCurveByUid" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Export this curve as a text file" draggable="false">📥</button><button data-cmd="PEQDB_Module.findMatchesFromDock" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Find similar curves" draggable="false">🔍</button></div></div>`;
+item.innerHTML = `<div class="flex items-center justify-between w-full h-6 select-none" draggable="false"><span class="curve-role-chip px-2 py-0.5 type-micro font-black tracking-wider text-white uppercase bg-black/60 border border-white/10 flex-shrink-0" title="Drag to rearrange" draggable="false">${roleLabel}</span><div class="flex items-center gap-1.5 flex-shrink-0" draggable="false"><button data-cmd="PEQDB_Module.toggleVisible" data-arg-0="@from:uid" class="w-6 h-6 flex-shrink-0 bg-black/50 hover:bg-black/80 text-white type-xs flex items-center justify-center border border-white/10 cursor-pointer" title="Show or hide this curve" draggable="false">${c.visible?'👁️':'🙈'}</button><button data-cmd="PEQDB_Module.cycleColor" data-arg-0="@from:uid" class="curve-card-swatch w-6 h-6 flex-shrink-0 border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style="background-color:${c.color}" title="Change this curve's color" draggable="false">🎨</button><button data-cmd="PEQDB_Module.removeCurve" data-arg-0="@from:uid" class="w-6 h-6 flex-shrink-0 bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-black type-xs flex items-center justify-center cursor-pointer" title="Remove this curve" draggable="false">✕</button></div></div><div data-cmd="PEQDB_Module.renameCurve" data-arg-0="@from:uid" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5" draggable="false"><div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none"><span id="marquee-${esc(c.uid)}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span></div></div><div class="flex justify-between items-center w-full h-6" draggable="false"><div class="flex items-center gap-1.5 h-6 decibel-stepper flex-shrink-0 select-none" style="width:110px !important;min-width:110px !important;max-width:110px !important;" draggable="false"><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="-1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black type-micro flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve down 1 dB" draggable="false">◄</button><button type="button" data-stop-propagation class="flex-1 h-6 bg-[var(--bg-input)] border-2 border-black text-[#c85a0e] font-mono font-black type-micro flex items-center justify-center text-center cursor-default select-none focus:outline-none px-0 min-w-0" draggable="false">${(c.offset||0)>=0?'+':''}${c.offset||0}dB</button><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black type-micro flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve up 1 dB" draggable="false">►</button></div><div class="flex items-center gap-1.5" draggable="false"><button data-cmd="PEQDB_Module.exportCurveByUid" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white type-micro flex items-center justify-center cursor-pointer" title="Export this curve as a text file" draggable="false">📥</button><button data-cmd="PEQDB_Module.findMatchesFromDock" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white type-micro flex items-center justify-center cursor-pointer" title="Find similar curves" draggable="false">🔍</button></div></div>`;
                 if (c.role==='base') { baseSlot.appendChild(item); baseCount++; }
                 else if (c.role==='target') { targetSlot.appendChild(item); targetCount++; }
                 else { referencePile.appendChild(item); refCount++; }
             });
-            if (baseCount===0) { baseSlot.innerHTML='<div class="text-center text-[10px] leading-normal text-zinc-600 px-3 select-none pointer-events-none">📥 Drag or click curve<br>to set as <span class="text-amber-500 font-bold">Base</span></div>'; }
-            if (targetCount===0) { targetSlot.innerHTML='<div class="text-center text-[10px] leading-normal text-zinc-600 px-3 select-none pointer-events-none">🎯 Drag or click curve<br>to set as <span class="text-blue-500 font-bold">Target</span></div>'; }
-            if (refCount===0) { referencePile.innerHTML='<div class="text-center text-[10px] leading-normal text-zinc-650 px-3 w-full select-none pointer-events-none">Empty Reference Pile<br><span class="text-[9px] opacity-80">(Compare overlays)</span></div>'; }
+            if (baseCount===0) { baseSlot.innerHTML='<div class="text-center type-micro leading-normal text-zinc-600 px-3 select-none pointer-events-none">📥 Drag or click curve<br>to set as <span class="text-amber-500 font-bold">Base</span></div>'; }
+            if (targetCount===0) { targetSlot.innerHTML='<div class="text-center type-micro leading-normal text-zinc-600 px-3 select-none pointer-events-none">🎯 Drag or click curve<br>to set as <span class="text-blue-500 font-bold">Target</span></div>'; }
+            if (refCount===0) { referencePile.innerHTML='<div class="text-center type-micro leading-normal text-zinc-650 px-3 w-full select-none pointer-events-none">Empty Reference Pile<br><span class="type-micro opacity-80">(Compare overlays)</span></div>'; }
             setTimeout(()=>{
                 this.STATE.activeCurves.forEach(c=>{
                     const el = document.getElementById(`marquee-${c.uid}`);
@@ -2053,8 +2053,8 @@ item.innerHTML = `<div class="flex items-center justify-between w-full h-6 selec
             const connectorEmoji = FindEngine.connectorEmojis[item.connector] || '🔌';
 
             const specIconsHtml = `
-                ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:9px;">$${esc(item.price_usd)}</span></span>` : ''}
-                ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:9px;">${esc(item.year)}</span></span>` : ''}
+                ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:var(--t-micro);">$${esc(item.price_usd)}</span></span>` : ''}
+                ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:var(--t-micro);">${esc(item.year)}</span></span>` : ''}
                 ${item.driver_type ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
                 ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${esc(item.connector)}">${connectorEmoji}</span>` : ''}
                 <span class="spec-icon-badge" data-tooltip="${esc(item.form_factor || 'In-Ear Monitor (IEM)')}">${formEmoji}</span>
@@ -2066,26 +2066,26 @@ item.innerHTML = `<div class="flex items-center justify-between w-full h-6 selec
             if (isMulti) {
                 fileRowHtml = `
                     <div class="flex items-center gap-1.5 mt-1">
-                        <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
+                        <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center type-micro font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
                         <div class="db-file-name flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
-                            <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
+                            <span class="db-file-marquee-text type-micro font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
                         </div>
-                        <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
+                        <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center type-micro font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
                     </div>
                 `;
             } else {
                 fileRowHtml = `
                     <div class="db-file-name mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
-                        <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
+                        <span class="db-file-marquee-text type-micro font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
                     </div>
                 `;
             }
 
             const similarHeader = similarInfo ? `
                 <div class="flex items-center justify-between gap-2 mb-1.5 border-b border-white/[0.05] pb-1.5">
-                    <span class="text-[9px] font-mono text-[var(--text-secondary)]">#${similarInfo.rank}</span>
+                    <span class="type-micro font-mono text-[var(--text-secondary)]">#${similarInfo.rank}</span>
                     <span class="flex items-center gap-1.5">
-                        <span class="text-[11px] font-black text-[var(--accent-green)]" title="Probe similarity (linear MAE scale) — not the Find tab's exponential tuning-match %">${similarInfo.similarity.toFixed(1)}%</span>
+                        <span class="type-xs font-black text-[var(--accent-green)]" title="Probe similarity (linear MAE scale) — not the Find tab's exponential tuning-match %">${similarInfo.similarity.toFixed(1)}%</span>
                         ${similarInfo.badgeHtml || ''}
                     </span>
                 </div>
@@ -2131,7 +2131,7 @@ item.innerHTML = `<div class="flex items-center justify-between w-full h-6 selec
                 <div class="db-title-row overflow-hidden whitespace-nowrap">
                     <span class="db-title-text font-black text-stone-200 text-xs inline-block whitespace-nowrap">${esc(item.name)}</span>
                 </div>
-                <div class="text-[8.5px] text-zinc-500 font-bold uppercase tracking-wider mt-0.5">${esc(item.source || sourceName)}</div>
+                <div class="type-micro text-zinc-500 font-bold uppercase tracking-wider mt-0.5">${esc(item.source || sourceName)}</div>
                 <div class="flex flex-wrap items-center justify-center gap-1 mt-1">${specIconsHtml}</div>
                 ${tagsHtml ? `<div class="flex flex-wrap items-center justify-center gap-1 mt-1">${tagsHtml}</div>` : ''}
                 ${fileRowHtml}

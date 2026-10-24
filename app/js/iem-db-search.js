@@ -96,8 +96,8 @@ onDbSearchInput: function(value) {
                     <div class="flex items-center justify-between p-2 cursor-pointer select-none border-2 border-black flex-shrink-0 w-full min-w-0" style="background: var(--bg-input);" data-cmd="IEM.toggleIemDbBrand" data-arg-0="${escJs(brandName)}">
                         <span class="text-xs font-black uppercase tracking-wider text-[var(--accent-blue)] truncate min-w-0">${escSafe(brandName)}</span>
                         <span class="flex items-center gap-1.5 flex-shrink-0">
-                            <span class="text-[9px] font-black text-zinc-500">${items.length}</span>
-                            <span class="brand-group-arrow text-[10px] font-black text-[var(--text-secondary)] transition-transform duration-200">${isExpanded ? '▲' : '▼'}</span>
+                            <span class="type-micro font-black text-zinc-500">${items.length}</span>
+                            <span class="brand-group-arrow type-micro font-black text-[var(--text-secondary)] transition-transform duration-200">${isExpanded ? '▲' : '▼'}</span>
                         </span>
                     </div>
                 `;
@@ -139,8 +139,8 @@ onDbSearchInput: function(value) {
             const connectorEmoji = FindEngine.connectorEmojis[item.connector] || '🔌';
 
             const specIconsHtml = `
-                ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:9px;">$${item.price_usd}</span></span>` : ''}
-                ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:9px;">${item.year}</span></span>` : ''}
+                ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:var(--t-micro);">$${item.price_usd}</span></span>` : ''}
+                ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:var(--t-micro);">${item.year}</span></span>` : ''}
                 ${item.driver_type ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
                 ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${esc(item.connector)}">${connectorEmoji}</span>` : ''}
                 <span class="spec-icon-badge" data-tooltip="${esc(item.form_factor || 'In-Ear Monitor (IEM)')}">${formEmoji}</span>
@@ -155,17 +155,17 @@ onDbSearchInput: function(value) {
             if (isMulti) {
                 fileRowHtml = `
                     <div class="flex items-center gap-1.5 mt-1">
-                        <button data-cmd="IEM.cycleIemDbFile" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isActive ? '#fff' : 'var(--text-secondary)'};">◀</button>
+                        <button data-cmd="IEM.cycleIemDbFile" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center type-micro font-black border border-black" style="background:${rowAccentColor}; color:${isActive ? '#fff' : 'var(--text-secondary)'};">◀</button>
                         <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
-                            <span class="iem-db-file-marquee text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isActive ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
+                            <span class="iem-db-file-marquee type-micro font-bold inline-block whitespace-nowrap" style="color:${isActive ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
                         </div>
-                        <button data-cmd="IEM.cycleIemDbFile" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isActive ? '#fff' : 'var(--text-secondary)'};">▶</button>
+                        <button data-cmd="IEM.cycleIemDbFile" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center type-micro font-black border border-black" style="background:${rowAccentColor}; color:${isActive ? '#fff' : 'var(--text-secondary)'};">▶</button>
                     </div>
                 `;
             } else {
                 fileRowHtml = `
                     <div class="mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
-                        <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isActive ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
+                        <span class="db-file-marquee-text type-micro font-bold inline-block whitespace-nowrap" style="color:${isActive ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
                     </div>
                 `;
             }
@@ -183,7 +183,7 @@ onDbSearchInput: function(value) {
                 <div class="db-title-row overflow-hidden whitespace-nowrap">
                     <span class="db-title-text font-black text-stone-200 text-xs inline-block whitespace-nowrap">${esc(itemName)}</span>
                 </div>
-                <div class="text-[8.5px] text-zinc-500 font-bold uppercase tracking-wider mt-0.5">${esc(item.source || sourceName)}</div>
+                <div class="type-micro text-zinc-500 font-bold uppercase tracking-wider mt-0.5">${esc(item.source || sourceName)}</div>
                 <div class="flex flex-wrap items-center justify-center gap-1 mt-1">${specIconsHtml}</div>
                 ${tagsHtml ? `<div class="flex flex-wrap items-center justify-center gap-1 mt-1">${tagsHtml}</div>` : ''}
                 ${fileRowHtml}

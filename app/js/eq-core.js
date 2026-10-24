@@ -238,14 +238,15 @@ document.querySelectorAll('#acoustics-sub-tabs button').forEach(b => {
     switchConsoleTab: function(tabId) {
         this.activeConsoleTab = tabId;
         document.querySelectorAll('.console-panel').forEach(p => p.classList.add('hidden'));
-        document.querySelectorAll('#right-console-tabs button').forEach(b => b.classList.remove('active'));
 
         const panel = document.getElementById('rc-panel-' + tabId);
         if (panel) panel.classList.remove('hidden');
 
-        const btn = document.getElementById('rc-tab-' + tabId);
-        if (btn) btn.classList.add('active');
-
+        // The console's tabs are the ◀/▶ stepper, not buttons: there is no
+        // #right-console-tabs row and no rc-tab-<id> pill to mark active. The
+        // two lookups that used to sit here (a querySelectorAll over the dead
+        // row and a guarded rc-tab-<id>) matched nothing every time. The state
+        // the reader sees is the panel above and the stepper label below.
         const stepperLabel = document.getElementById('rc-tab-stepper-label');
         if (stepperLabel) {
             const info = this.consoleModes.find(m => m.id === tabId) || this.consoleModes[0];
@@ -609,14 +610,14 @@ buildStandardEQ: function() {
             card.style.setProperty('--band-color-hi', colorHi);
 
                 card.innerHTML = `
-                    <div class="flex items-center justify-between text-[10px] select-none font-bold" draggable="false">
+                    <div class="flex items-center justify-between type-micro select-none font-bold" draggable="false">
                         <div class="flex items-center gap-1.5" draggable="false">
-                            <span class="w-3.5 h-3.5 flex items-center justify-center text-[8px] font-black text-white" style="background-color: var(--band-color);">${i + 1}</span>
-                            <span class="text-zinc-350 text-[10px]">${b.emoji} ${b.name}</span>
+                            <span class="w-3.5 h-3.5 flex items-center justify-center type-micro font-black text-white" style="background-color: var(--band-color);">${i + 1}</span>
+                            <span class="text-zinc-350 type-micro">${b.emoji} ${b.name}</span>
                         </div>
                         <div class="flex items-center gap-1.5 font-mono text-zinc-400" draggable="false">
-                            <span class="text-[9px] text-zinc-555">${b.hz}Hz</span>
-                            <span id="eq-s${i}-std-val" class="font-extrabold min-w-[54px] text-right text-[10px] whitespace-nowrap" style="color: var(--band-color);">0.0 dB</span>
+                            <span class="type-micro text-zinc-555">${b.hz}Hz</span>
+                            <span id="eq-s${i}-std-val" class="font-extrabold min-w-[54px] text-right type-micro whitespace-nowrap" style="color: var(--band-color);">0.0 dB</span>
                         </div>
                     </div>
                     <div class="flex items-center h-4 mt-1" draggable="false">
@@ -670,7 +671,7 @@ if (window.bypassedBands === undefined) window.bypassedBands = new Set();
                 bandDiv.innerHTML = `
                     <div class="flex items-center justify-between w-full h-5 select-none" draggable="false">
                         <div class="flex items-center gap-1" draggable="false">
-                            <span class="w-4 h-4 flex items-center justify-center text-[9px] font-black text-white flex-shrink-0" style="background-color: var(--band-color);">${i + 1}</span>
+                            <span class="w-4 h-4 flex items-center justify-center type-micro font-black text-white flex-shrink-0" style="background-color: var(--band-color);">${i + 1}</span>
                             <button data-cmd="EQ.cycleBandType" data-arg-0="${i}" id="eq-t_m${i}" class="eq-card-select px-2" style="color: var(--band-color);" draggable="false">${currentLabel}</button>
                             <button data-cmd="EQ.cycleBandSlope" data-arg-0="${i}" id="eq-sl_m${i}" class="eq-card-select px-1.5 ml-1 ${isSlopeVisible ? '' : 'hidden'}" style="color: var(--text-secondary); border-color: rgba(255,255,255,0.04);" title="Filter steepness (12—48 dB/octave)" draggable="false">${currentSlope}dB</button>
                         </div>
@@ -678,7 +679,7 @@ if (window.bypassedBands === undefined) window.bypassedBands = new Set();
                         <div class="flex items-center gap-1" draggable="false">
                             <button data-cmd="EQ.copyBand" data-arg-0="${i}" class="eq-card-action-btn" draggable="false">Copy</button>
                             <button data-cmd="EQ.resetBand" data-arg-0="${i}" class="eq-card-action-btn" draggable="false">Reset</button>
-                            <button data-cmd="EQ.toggleBandBypass" data-arg-0="${i}" id="eq-bp_m${i}" class="text-[8px] font-black cursor-pointer focus:outline-none ml-1" style="color: ${isBypassed ? 'var(--accent-red)' : 'var(--accent-green)'}" draggable="false">
+                            <button data-cmd="EQ.toggleBandBypass" data-arg-0="${i}" id="eq-bp_m${i}" class="type-micro font-black cursor-pointer focus:outline-none ml-1" style="color: ${isBypassed ? 'var(--accent-red)' : 'var(--accent-green)'}" draggable="false">
                                 ${isBypassed ? '🔴' : '🟢'}
                             </button>
                         </div>
@@ -1113,7 +1114,7 @@ switchCategory: function(catId) {
                     const btn = document.createElement('button');
                     btn.id = 'preset-btn-' + p.id;
 
-                    btn.className = 'w-full text-center text-[10px] h-8 px-1 py-1 bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate flex items-center justify-center gap-1 cursor-pointer';
+                    btn.className = 'w-full text-center type-micro h-8 px-1 py-1 bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate flex items-center justify-center gap-1 cursor-pointer';
                     const lbl = document.createElement('span'); lbl.textContent = p.name; btn.appendChild(lbl);
                     btn.onclick = () => { this.applyPreset(p.id); };
                     grid.appendChild(btn);

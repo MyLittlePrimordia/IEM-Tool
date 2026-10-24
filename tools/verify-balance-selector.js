@@ -28,21 +28,36 @@ const d=await q(`(()=>{
   const gaps=[];
   for(var i=1;i<kids.length;i++) gaps.push(Math.round((kids[i].x-(kids[i-1].x+kids[i-1].w))*10)/10);
   const swap=document.getElementById('c-test-swap');
+  // The chips are a control-height step inside the track, so their expected
+  // height comes from the tokens rather than from a literal: the track is
+  // --control-h (32, the SWAP row) and each chip fills its content box,
+  // which is --control-h-sm (28) once the track's 2px padding is removed.
+  const root=getComputedStyle(document.documentElement);
+  const tok=(n)=>Math.round(parseFloat(root.getPropertyValue(n)));
+  const pill=root.getPropertyValue('--r-pill').trim();
+  const wrapBox=sr;
+  const kidsContained=[...s.children].every(function(e){
+    const r=e.getBoundingClientRect();
+    return r.top>=wrapBox.top-0.6 && r.bottom<=wrapBox.bottom+0.6;
+  });
   return { wrapper:{ w:Math.round(sr.width*10)/10, gap:cs.gap, bg:cs.backgroundColor,
                     border:cs.border, radius:cs.borderRadius, padding:cs.padding,
                     h:Math.round(sr.height) },
-           kids:kids, gapBetweenButtons:gaps,
+           kids:kids, gapBetweenButtons:gaps, kidsContained:kidsContained,
            swapRowHeight:swap?Math.round(swap.getBoundingClientRect().height):null,
-           EXPECT:{ gap:'4px', wrapperBg:'transparent', pillRadius:'6px', h:'32px = SWAP row' } };
+           tokens:{ track:tok('--control-h'), chip:tok('--control-h-sm'), pill:pill },
+           EXPECT:{ gap:'4px', wrapperBg:'transparent', pillRadius:'--r-pill', h:'--control-h (32px = SWAP row)', kidH:'--control-h-sm (28px, the chip step)' } };
 })()`);
 console.log('RESULT '+JSON.stringify(d,null,1));
 const kids=d.kids||[];
 // No overlap (gaps >= 0) AND real separation (gaps >= 3), matching the 4px the
 // grid asks for once sub-pixel distribution across 3 tracks is accounted for.
-const bad = !!d.error || kids.length!==3 || kids.some(k=>k.radius!=='6px') ||
+const bad = !!d.error || kids.length!==3 || kids.some(k=>k.radius!==d.tokens.pill) ||
             (d.gapBetweenButtons||[]).some(g=>g<3) ||
-            d.wrapper.bg!=='rgba(0, 0, 0, 0)' || d.wrapper.radius!=='6px' ||
-            d.wrapper.h!==32 || kids.some(k=>k.h!==32);
+            d.wrapper.bg!=='rgba(0, 0, 0, 0)' || d.wrapper.radius!==d.tokens.pill ||
+            d.wrapper.h!==d.tokens.track ||
+            kids.some(k=>k.h!==d.tokens.chip) ||
+            d.kidsContained!==true;
 console.log(bad?'BALANCE SELECTOR CHECK FAIL':'BALANCE SELECTOR CHECK PASS');
 const img=await win.webContents.capturePage();
 fs.writeFileSync(path.join(os.tmpdir(),'iem-balance.png'),img.toPNG());

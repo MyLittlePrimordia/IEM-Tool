@@ -40,11 +40,11 @@ const UIKit = {
         wrap.innerHTML = `
             <div id="uikit-confirm-card" class="bg-[var(--bg-card)] border border-[var(--line)] w-full max-w-sm flex flex-col overflow-hidden p-5 select-none" style="border-radius: var(--r-xl); box-shadow: var(--sh-3);">
                 <div class="flex justify-between items-center mb-3 pb-3 border-b border-[var(--line)]">
-                    <span id="uikit-confirm-title" class="text-[13px] font-semibold uppercase tracking-wide flex items-center gap-2" style="color: var(--text-hi);">⚠️ Confirm</span>
+                    <span id="uikit-confirm-title" class="type-md font-semibold uppercase tracking-wide flex items-center gap-2" style="color: var(--text-hi);">⚠️ Confirm</span>
                     <button id="uikit-confirm-x" class="app-caption-btn" style="width:28px;height:28px;" aria-label="Cancel">✕</button>
                 </div>
-                <p id="uikit-confirm-msg" class="text-[12px] mb-4 leading-relaxed" style="color: var(--text-mid); white-space: pre-line;"></p>
-                <div id="uikit-confirm-details" class="text-[11px] mb-4 overflow-y-auto hidden" style="max-height:190px;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border-color);border-radius:4px;user-select:text;"></div>
+                <p id="uikit-confirm-msg" class="type-sm mb-4 leading-relaxed" style="color: var(--text-mid); white-space: pre-line;"></p>
+                <div id="uikit-confirm-details" class="type-xs mb-4 overflow-y-auto hidden" style="max-height:190px;padding:6px 8px;background:var(--bg-input);border:1px solid var(--line);border-radius:var(--r-xs);user-select:text;"></div>
                 <div class="grid grid-cols-2 gap-2">
                     <button id="uikit-confirm-cancel" class="btn-clear cursor-pointer" style="height:36px;border-radius: var(--r-md);">Cancel</button>
                     <button id="uikit-confirm-ok" class="font-semibold text-white transition-all cursor-pointer text-center" style="height:36px;border-radius: var(--r-md);"></button>
@@ -181,11 +181,13 @@ const UIKit = {
         const okBtn = wrap.querySelector('#uikit-confirm-ok');
         okBtn.textContent = opts.confirmLabel || 'Confirm';
         // Primary action carries the accent halo; a destructive one gets the
-        // danger token. Both use --accent-ink / #fff for the label.
+        // danger token. Both labels use --accent-ink: white on --danger is
+        // 2.77:1, which fails AA at 13px, while the near-black ink on the same
+        // red is 7.15:1 - and it keeps filled buttons reading as one family.
         okBtn.style.background = opts.danger
             ? 'var(--danger)'
             : 'var(--accent)';
-        okBtn.style.color = opts.danger ? '#FFFFFF' : 'var(--accent-ink)';
+        okBtn.style.color = 'var(--accent-ink)';
 
         this._lastFocus = document.activeElement;
         wrap.classList.remove('hidden');
@@ -244,13 +246,13 @@ const UIKit = {
             <div id="uikit-reader-card" class="bg-[var(--bg-card)] border border-[var(--line)] w-full max-w-2xl flex flex-col overflow-hidden p-5" style="border-radius: var(--r-xl); box-shadow: var(--sh-3); max-height: calc(100vh - 32px);">
                 <div class="flex justify-between items-start gap-3 mb-3 pb-3 border-b border-[var(--line)]">
                     <span class="min-w-0">
-                        <span id="uikit-reader-title" class="block text-[13px] font-semibold tracking-wide truncate" style="color: var(--text-hi);"></span>
-                        <span id="uikit-reader-sub" class="block text-[11px] mt-0.5" style="color: var(--text-mid);"></span>
+                        <span id="uikit-reader-title" class="block type-md font-semibold tracking-wide truncate" style="color: var(--text-hi);"></span>
+                        <span id="uikit-reader-sub" class="block type-xs mt-0.5" style="color: var(--text-mid);"></span>
                     </span>
                     <button id="uikit-reader-x" type="button" class="app-caption-btn" style="width:28px;height:28px;flex:none;" aria-label="Close">✕</button>
                 </div>
                 <div id="uikit-reader-tools" class="flex flex-wrap items-center gap-2 mb-2" style="display:none;"></div>
-                <div id="uikit-reader-body" style="padding:10px 12px;background:var(--bg-input);border:1px solid var(--border-color);border-radius:4px;user-select:text;overflow:auto;flex:1 1 auto;min-height:120px;"></div>
+                <div id="uikit-reader-body" style="padding:10px 12px;background:var(--bg-input);border:1px solid var(--line);border-radius:var(--r-xs);user-select:text;overflow:auto;flex:1 1 auto;min-height:120px;"></div>
                 <div id="uikit-reader-actions" class="flex justify-end gap-2 mt-4"></div>
             </div>`;
         document.body.appendChild(wrap);
@@ -314,7 +316,7 @@ const UIKit = {
             // Monospace lives on the text itself rather than the body, so a
             // structured document is not forced into a code font.
             pre.style.cssText = 'margin:0;white-space:pre-wrap;word-break:break-word;user-select:text;' +
-                'font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;font-size:11px;line-height:1.6;';
+                'font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;font-size:var(--t-xs);line-height:1.6;';
             pre.textContent = opts.text === undefined || opts.text === null ? '' : String(opts.text);
             body.appendChild(pre);
         }
@@ -328,7 +330,7 @@ const UIKit = {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'btn-clear cursor-pointer';
-            btn.style.cssText = 'height:34px;padding:0 14px;border-radius: var(--r-md);font-size:12px;';
+            btn.style.cssText = 'height:34px;padding:0 14px;border-radius: var(--r-md);font-size:var(--t-sm);';
             btn.textContent = a.label;
             if (a.title) btn.title = a.title;
             btn.onclick = () => { try { a.onClick(); } catch (err) { console.error('[UIKit] reader action failed', err); } };
@@ -338,7 +340,7 @@ const UIKit = {
         close.id = 'uikit-reader-close';
         close.type = 'button';
         close.className = 'font-semibold cursor-pointer';
-        close.style.cssText = 'height:34px;padding:0 16px;border-radius: var(--r-md);font-size:12px;background:var(--accent);color:var(--accent-ink);';
+        close.style.cssText = 'height:34px;padding:0 16px;border-radius: var(--r-md);font-size:var(--t-sm);background:var(--accent);color:var(--accent-ink);';
         close.textContent = opts.closeLabel || 'Close';
         close.onclick = () => this.closeReader();
         bar.appendChild(close);

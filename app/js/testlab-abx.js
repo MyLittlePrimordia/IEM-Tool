@@ -219,7 +219,7 @@ const TestLab_AbxMethods = {
             const status = document.getElementById('abx-status-lbl');
             if (status) {
                 status.textContent = 'Playing Target X...';
-                status.className = "text-[9px] text-[var(--accent-amber)] font-mono animate-pulse";
+                status.className = "type-micro text-[var(--accent-amber)] font-mono animate-pulse";
             }
 
             await EQ_Module.ensureDSPGraph();
@@ -322,7 +322,7 @@ const TestLab_AbxMethods = {
             const status = document.getElementById('abx-status-lbl');
             if (status) {
                 status.textContent = `Completed! Score: ${percentage}%`;
-                status.className = "text-[9px] text-emerald-400 font-black uppercase tracking-wider";
+                status.className = "type-micro text-emerald-400 font-black uppercase tracking-wider";
             }
 
             this.setABXPanelState('done');

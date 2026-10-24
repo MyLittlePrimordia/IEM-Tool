@@ -57,12 +57,12 @@
                 
                 if (this.deEsserEnabled) {
                     if (btn) {
-                        btn.className = 'btn-clear text-rose-400 font-bold text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center';
+                        btn.className = 'btn-clear text-rose-400 font-bold type-micro px-1 py-1 h-8 flex flex-col items-center justify-center';
                         btn.classList.add('active-btn');
                     }
                     if (lbl) {
                         lbl.textContent = 'ON';
-                        lbl.className = 'text-[8px] font-bold text-rose-400';
+                        lbl.className = 'type-micro font-bold text-rose-400';
                     }
                     if (sensContainer) {
                         sensContainer.classList.remove('opacity-40', 'pointer-events-none');
@@ -73,12 +73,12 @@
                     showToast("De-Esser active. Monitoring vocal sibilance peaks (4k-8kHz)", "ðŸ›¡ï¸");
                 } else {
                     if (btn) {
-                        btn.className = 'btn-clear text-stone-200 font-bold text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center';
+                        btn.className = 'btn-clear text-stone-200 font-bold type-micro px-1 py-1 h-8 flex flex-col items-center justify-center';
                         btn.classList.remove('active-btn');
                     }
                     if (lbl) {
                         lbl.textContent = 'Off';
-                        lbl.className = 'text-[8px] font-bold text-zinc-400';
+                        lbl.className = 'type-micro font-bold text-zinc-400';
                     }
                     if (sensContainer) {
                         sensContainer.classList.add('opacity-40', 'pointer-events-none');

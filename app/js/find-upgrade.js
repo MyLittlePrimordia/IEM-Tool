@@ -52,7 +52,7 @@ const Find_UpgradeMethods = {
                                 <span class="emoji-font vibrant-emoji text-sm flex-shrink-0 leading-none">📱</span>
                                 <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(name)}</span>
                             </div>
-                            <button type="button" data-cmd="FindEngine.clearUpgradeBaseIem" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the base IEM">✕</button>
+                            <button type="button" data-cmd="FindEngine.clearUpgradeBaseIem" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white type-micro font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the base IEM">✕</button>
                         `;
                     }
 
@@ -89,7 +89,7 @@ const Find_UpgradeMethods = {
                         // hit the change button. `slot-empty` carries the tokenised
                         // dashed outline + --r-md radius that every other slot uses.
                         baseSlot.className = "slot-empty w-full h-9 flex items-center justify-center select-none mt-1.5";
-                        baseSlot.innerHTML = `<span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Select Base IEM</span>`;
+                        baseSlot.innerHTML = `<span class="type-micro font-black text-stone-400 uppercase tracking-wider">+ Select Base IEM</span>`;
                     }
                 },
 
@@ -399,11 +399,11 @@ const Find_UpgradeMethods = {
                                 </div>
 
                                 <div class="flex justify-between items-center text-xs select-none">
-                                    <span class="text-[9px] font-mono text-zinc-400 font-bold">Option ${curIdx + 1} of ${total}</span>
+                                    <span class="type-micro font-mono text-zinc-400 font-bold">Option ${curIdx + 1} of ${total}</span>
                                     ${total > 1 ? `
                                         <div class="flex items-center gap-1">
-                                            <button data-cmd="FindEngine.cycleUpgradeStep" data-arg-0="${stepNum}" data-arg-1="-1" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
-<button data-cmd="FindEngine.cycleUpgradeStep" data-arg-0="${stepNum}" data-arg-1="1" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
+                                            <button data-cmd="FindEngine.cycleUpgradeStep" data-arg-0="${stepNum}" data-arg-1="-1" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black type-micro flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
+<button data-cmd="FindEngine.cycleUpgradeStep" data-arg-0="${stepNum}" data-arg-1="1" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black type-micro flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
                                         </div>
                                     ` : ''}
                                 </div>
@@ -416,8 +416,8 @@ const Find_UpgradeMethods = {
                                 </div>
 
                                 <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
-                                    <span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>
-                                    ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
+                                    <span class="type-micro font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>
+                                    ${year ? `<span class="type-micro font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
                                     ${driverType ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
                                     ${connector ? `<span class="spec-icon-badge" data-tooltip="${esc(connectorTooltip)}">${connectorEmoji}</span>` : ''}
                                     <span class="spec-icon-badge" data-tooltip="${esc(formTooltip)}">${formEmoji}</span>
@@ -428,13 +428,13 @@ const Find_UpgradeMethods = {
                                         <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
                                             <span class="emoji-font vibrant-emoji text-base leading-none">${ugGenreMatch.emoji}</span>
                                         </div>
-                                        <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${ugGenreMatch.name}</span>
+                                        <span class="match-genre-name type-micro font-black uppercase text-stone-200 inline-block whitespace-nowrap">${ugGenreMatch.name}</span>
                                     </div>
                                     <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Game Match: ${ugGameGenreMatch.name}">
                                         <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
                                             <span class="emoji-font vibrant-emoji text-base leading-none">${ugGameGenreMatch.emoji}</span>
                                         </div>
-                                        <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${ugGameGenreMatch.name}</span>
+                                        <span class="match-genre-name type-micro font-black uppercase text-stone-200 inline-block whitespace-nowrap">${ugGameGenreMatch.name}</span>
                                     </div>
                                 </div>
 
@@ -444,19 +444,19 @@ const Find_UpgradeMethods = {
 
                                 ${isMulti ? `
                                     <div class="flex items-center gap-1 w-full h-7 mt-1.5">
-                                        <button type="button" data-cmd="FindEngine.cycleCardSource" data-arg-0="${cardIdx}" data-arg-1="-1" class="w-6 h-7 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0">◀</button>
+                                        <button type="button" data-cmd="FindEngine.cycleCardSource" data-arg-0="${cardIdx}" data-arg-1="-1" class="w-6 h-7 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black type-micro flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0">◀</button>
                                         <div class="flex-1 bg-black/60 border-2 border-black px-1.5 h-7 flex items-center justify-start overflow-hidden text-left relative">
                                             <div id="src-stepper-container-${cardIdx}" class="w-full overflow-hidden text-left flex items-center justify-start">
-                                                <span id="label-src-stepper-${cardIdx}" class="text-[8.5px] font-bold text-left inline-block whitespace-nowrap">
+                                                <span id="label-src-stepper-${cardIdx}" class="type-micro font-bold text-left inline-block whitespace-nowrap">
                                                     <span class="text-stone-300 font-bold">1/${fileCount}</span> <span class="text-[var(--accent-blue)] font-black">${initialSourceName}</span> <span class="text-stone-200 font-bold">(${initialFileName})</span>
                                                 </span>
                                             </div>
                                         </div>
-                                        <button type="button" data-cmd="FindEngine.cycleCardSource" data-arg-0="${cardIdx}" data-arg-1="1" class="w-6 h-7 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0">▶</button>
+                                        <button type="button" data-cmd="FindEngine.cycleCardSource" data-arg-0="${cardIdx}" data-arg-1="1" class="w-6 h-7 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black type-micro flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0">▶</button>
                                     </div>
                                 ` : ''}
 
-                                <div class="flex items-center justify-between w-full mt-2.5 px-1 text-[8.5px] font-mono select-none whitespace-nowrap">
+                                <div class="flex items-center justify-between w-full mt-2.5 px-1 type-micro font-mono select-none whitespace-nowrap">
                                     ${driveHtml}
                                     ${eqHtml}
                                 </div>
@@ -468,7 +468,7 @@ const Find_UpgradeMethods = {
 
                             <div class="flex items-center gap-1.5 mt-3 pt-2 border-t-2 border-black ${hasGraph ? '' : 'hidden'}">
                                 <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${cardIdx}" data-arg-1="-1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${cardIdx}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
+                                <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${cardIdx}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 type-micro border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
                                     <span id="label-role-stepper-${cardIdx}" class="flex items-center justify-center gap-1 truncate">${currentRoleOpt.label}</span>
                                 </button>
                                 <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${cardIdx}" data-arg-1="1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
@@ -628,15 +628,15 @@ const Find_UpgradeMethods = {
 
                                 if (acousticTest.passed && matchedTag) {
                                     score += 35;
-                                    badgeHtml = `<span class="text-[8.5px] font-black text-emerald-400 bg-emerald-950/40 border border-emerald-800/80 px-1.5 py-0.5">✅ Confirmed ${goal.toUpperCase()}</span>`;
+                                    badgeHtml = `<span class="type-micro font-black text-emerald-400 bg-emerald-950/40 border border-emerald-800/80 px-1.5 py-0.5">✅ Confirmed ${goal.toUpperCase()}</span>`;
                                 } else if (acousticTest.passed && !matchedTag) {
                                     score += 20;
-                                    badgeHtml = `<span class="text-[8.5px] font-black text-teal-400 bg-teal-950/40 border border-teal-800/80 px-1.5 py-0.5">🔬 Measured ${goal.toUpperCase()}</span>`;
+                                    badgeHtml = `<span class="type-micro font-black text-teal-400 bg-teal-950/40 border border-teal-800/80 px-1.5 py-0.5">🔬 Measured ${goal.toUpperCase()}</span>`;
                                 } else if (!acousticTest.passed && matchedTag) {
                                     score -= 25;
-                                    badgeHtml = `<span class="text-[8.5px] font-black text-rose-400 bg-rose-950/40 border border-rose-800/80 px-1.5 py-0.5">⚠️ Tag Conflict</span>`;
+                                    badgeHtml = `<span class="type-micro font-black text-rose-400 bg-rose-950/40 border border-rose-800/80 px-1.5 py-0.5">⚠️ Tag Conflict</span>`;
                                 } else {
-                                    badgeHtml = `<span class="text-[8.5px] font-bold text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5">Standard Candidate</span>`;
+                                    badgeHtml = `<span class="type-micro font-bold text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5">Standard Candidate</span>`;
                                 }
 
                                 if (goal === 'tech') {

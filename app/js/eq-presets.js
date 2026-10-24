@@ -102,7 +102,7 @@ const EQ_PresetMethods = {
             const keys = Object.keys(presets);
 
             if (keys.length === 0) {
-                grid.innerHTML = '<div class="col-span-3 text-center text-[9px] text-zinc-650 italic py-4">No custom presets saved yet.</div>';
+                grid.innerHTML = '<div class="col-span-3 text-center type-micro text-zinc-650 italic py-4">No custom presets saved yet.</div>';
                 return;
             }
 
@@ -113,12 +113,12 @@ const EQ_PresetMethods = {
 
                 const btn = document.createElement('button');
                 btn.id = 'preset-btn-' + id;
-                btn.className = 'w-full text-center text-[10px] px-1 py-1 bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate h-7 flex items-center justify-center gap-1';
+                btn.className = 'w-full text-center type-micro px-1 py-1 bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate h-7 flex items-center justify-center gap-1';
                 btn.textContent = '🧪 ' + (p.name || 'Preset');
                 btn.onclick = () => { this.applyCustomPreset(id); };
 
                 const delBtn = document.createElement('button');
-                delBtn.className = 'absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-950/90 border border-red-900/40 text-red-400 text-[8px] font-bold flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-20 cursor-pointer';
+                delBtn.className = 'absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-950/90 border border-red-900/40 text-red-400 type-micro font-bold flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-20 cursor-pointer';
                 delBtn.innerHTML = '❌';
                 delBtn.title = 'Delete Preset';
                 delBtn.onclick = (e) => {

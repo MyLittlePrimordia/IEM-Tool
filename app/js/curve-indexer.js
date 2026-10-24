@@ -154,7 +154,7 @@ const CurveIndexer = {
             if (headerBadge) {
                 headerBadge.classList.remove('hidden');
                 headerBadge.classList.add('flex');
-                headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30 text-[9px] font-mono font-bold text-emerald-400 select-none ml-1.5 whitespace-nowrap flex-shrink-0";
+                headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30 type-micro font-mono font-bold text-emerald-400 select-none ml-1.5 whitespace-nowrap flex-shrink-0";
                 headerBadge.innerHTML = "<span class=\"whitespace-nowrap\">✓ DB Ready</span>";
                 setTimeout(() => {
                     headerBadge.classList.add('hidden');
@@ -163,21 +163,21 @@ const CurveIndexer = {
             }
             if (dbIndicator) {
                 dbIndicator.textContent = "✓ DB Ready";
-                dbIndicator.className = "text-[9px] font-black text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 px-2 py-0.5 uppercase tracking-wider whitespace-nowrap";
+                dbIndicator.className = "type-micro font-black text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 px-2 py-0.5 uppercase tracking-wider whitespace-nowrap";
                 setTimeout(() => dbIndicator.classList.add('hidden'), 2500);
             }
         } else {
             if (headerBadge) {
                 headerBadge.classList.remove('hidden');
                 headerBadge.classList.add('flex');
-                headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 text-[9px] font-mono font-bold text-amber-400 select-none animate-pulse ml-1.5 whitespace-nowrap flex-shrink-0";
+                headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 type-micro font-mono font-bold text-amber-400 select-none animate-pulse ml-1.5 whitespace-nowrap flex-shrink-0";
                 headerBadge.innerHTML = `<span class="whitespace-nowrap">📥 DB:</span><span id="db-download-pct" class="whitespace-nowrap">${pct}%</span>`;
             }
 
             if (dbIndicator) {
                 dbIndicator.classList.remove('hidden');
                 dbIndicator.textContent = `📥 Loading: ${pct}%`;
-                dbIndicator.className = "text-[9px] font-black text-amber-400 bg-amber-950/30 border border-amber-900/40 px-2 py-0.5 animate-pulse uppercase tracking-wider whitespace-nowrap";
+                dbIndicator.className = "type-micro font-black text-amber-400 bg-amber-950/30 border border-amber-900/40 px-2 py-0.5 animate-pulse uppercase tracking-wider whitespace-nowrap";
             }
         }
     },

@@ -134,7 +134,7 @@ const PEQDB_SmartRFMethods = {
                 }
                 if (importBtn) {
                     importBtn.disabled = false;
-                    importBtn.className = "py-2 text-[10px] font-bold bg-[var(--accent-blue)] text-white hover:brightness-110 transition-all text-center cursor-pointer";
+                    importBtn.className = "py-2 type-micro font-bold bg-[var(--accent-blue)] text-white hover:brightness-110 transition-all text-center cursor-pointer";
                 }
             } else {
                 if (detectedEl) detectedEl.textContent = "None";
@@ -145,7 +145,7 @@ const PEQDB_SmartRFMethods = {
                 if (pointsEl) pointsEl.textContent = "0";
                 if (importBtn) {
                     importBtn.disabled = true;
-                    importBtn.className = "py-2 text-[10px] font-bold bg-zinc-800 text-zinc-500 cursor-not-allowed transition-all text-center";
+                    importBtn.className = "py-2 type-micro font-bold bg-zinc-800 text-zinc-500 cursor-not-allowed transition-all text-center";
                 }
             }
         },

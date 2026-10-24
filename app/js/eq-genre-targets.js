@@ -338,7 +338,7 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
             }
             if (textContainer) {
                 textContainer.textContent = label;
-                textContainer.className = `text-[10px] font-black leading-tight ${colorClass} ${animClass}`;
+                textContainer.className = `type-micro font-black leading-tight ${colorClass} ${animClass}`;
                 textContainer.style.display = "inline-block";
                 textContainer.style.transformOrigin = "left center";
             }
@@ -367,7 +367,7 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
             }
             if (textContainer) {
                 textContainer.textContent = label;
-                textContainer.className = `text-[10px] font-black leading-tight ${colorClass} ${animClass}`;
+                textContainer.className = `type-micro font-black leading-tight ${colorClass} ${animClass}`;
                 textContainer.style.display = "inline-block";
                 textContainer.style.transformOrigin = "left center";
             }

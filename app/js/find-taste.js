@@ -79,7 +79,7 @@ const Find_TasteMethods = {
                         html += `
                             <div class="peqdb-row-item flex items-center justify-between p-1.5 cursor-pointer hover:bg-[var(--bg-card)] mb-1 transition-all select-none" data-cmd="FindEngine.addTasteFavorite" data-arg-0="${escJs(item.id)}">
                                 <span class="text-xs text-stone-200 font-bold truncate flex-1 pr-2">${esc(item.name)}</span>
-                                ${isAdded ? '<span class="text-[9px] text-rose-400 font-black flex-shrink-0 ml-1">✓ Added</span>' : '<span class="text-[9px] text-[var(--accent-blue)] font-black flex-shrink-0 ml-1">+ Add</span>'}
+                                ${isAdded ? '<span class="type-micro text-rose-400 font-black flex-shrink-0 ml-1">✓ Added</span>' : '<span class="type-micro text-[var(--accent-blue)] font-black flex-shrink-0 ml-1">+ Add</span>'}
                             </div>
                         `;
                     }
@@ -213,7 +213,7 @@ const Find_TasteMethods = {
                     else traits.push({ emoji: "🧈", label: "Smooth Air" });
 
                     textEl.innerHTML = traits.map(t => `
-                        <span class="spec-icon-badge" style="font-size: 20px !important; width: 26px !important; height: 26px !important;" data-tooltip="${t.label}">${t.emoji}</span>
+                        <span class="spec-icon-badge" style="font-size: var(--t-xl) !important; width: 26px !important; height: 26px !important;" data-tooltip="${t.label}">${t.emoji}</span>
                     `).join('');
                 },
 
@@ -247,7 +247,7 @@ const Find_TasteMethods = {
                             // square corners. Now the shared .slot-empty well.
                             const div = document.createElement('div');
                             div.className = 'slot-empty w-full h-9 flex items-center justify-center select-none';
-                            div.innerHTML = `<span class="text-[9px] font-semibold uppercase tracking-wider">+ Favorite ${i + 1}</span>`;
+                            div.innerHTML = `<span class="type-micro font-semibold uppercase tracking-wider">+ Favorite ${i + 1}</span>`;
                             container.appendChild(div);
                         }
                     }

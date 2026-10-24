@@ -120,13 +120,20 @@ body, .macos-window, #app-window {
                Replaces the collapsed 7/8/8.5/9/9.5/10px -> 10/11px substring
                hack that used to sit at the bottom of this file. Micro is a
                10px FLOOR, not a ceiling: nothing renders below it. */
-            --t-micro: 10px;
-            --t-xs:    11px;
-            --t-sm:    12px;
-            --t-md:    13px;
-            --t-lg:    16px;
-            --t-xl:    22px;
-            --t-2xl:   30px;
+            /* Expressed in rem so the Settings text-size control moves the
+               whole scale, not half of it. At the default root (16px) these
+               resolve to 10 / 11 / 12 / 13 / 16 / 22 / 30px exactly, so
+               nothing moves until the reader asks it to. Before the type
+               scale existed, the control scaled the rem-based Tailwind
+               utilities while every px size in app.css stayed put - text and
+               the boxes around it drifted apart at any scale but 1.0. */
+            --t-micro: 0.625rem;   /* 10 */
+            --t-xs:    0.6875rem;  /* 11 */
+            --t-sm:    0.75rem;    /* 12 */
+            --t-md:    0.8125rem;  /* 13 */
+            --t-lg:    1rem;       /* 16 */
+            --t-xl:    1.375rem;   /* 22 */
+            --t-2xl:   1.875rem;   /* 30 */
             --lh-tight: 1.15;
             --lh-snug:  1.35;
             --lh-body:  1.5;
@@ -145,7 +152,7 @@ body, .macos-window, #app-window {
             --pad-pill-dense: 2px;
             --s-12: 48px; --s-16: 64px;
 
-            /* -- radius scale (7 steps) ----------------------------------- */
+            /* -- radius scale (8 steps, zero included) --------------------- */
             --r-xs:   4px;
             --r-sm:   6px;
             --r-md:   8px;
@@ -153,6 +160,16 @@ body, .macos-window, #app-window {
             --r-xl:  16px;
             --r-2xl: 20px;
             --r-pill: 999px;
+            /* The zero step. Square is a corner VALUE, not a missing corner.
+               Two shapes resolve to it on purpose: the title-bar caption
+               buttons (window chrome - a rounded hover fill would leave black
+               wedges in the window's top corners) and the segments inside a
+               fused .stepper, whose pill already carries the corner and clips
+               them (overflow: hidden), so any radius there would render
+               invisibly. Being a step on the scale means those rules read a
+               token instead of a bare 0, and tools/audit-control-corners.js
+               can tell a deliberate square from a forgot-to-round one. */
+            --r-square: 0px;
             /* Half-round cap for the semicircular resonance gauge: its width is
                38px, so a 38px top radius makes a true half-circle. Not a scale
                step — a shape constant. tools/radius-snapshot.js whitelists it. */
@@ -173,10 +190,29 @@ body, .macos-window, #app-window {
             --d-3: 260ms;
             --transition-speed: var(--d-1);
 
+            /* -- control geometry --------------------------------------------
+               The heights the kit draws at. Before these existed each family
+               invented its own (22 / 28 / 30 / 32 / 34 / 36 / 40), so a chip,
+               a button and a field in one row were three different sizes.
+               Held at the steps already in use (28 / 32 / 36 / 40), so moving
+               a family onto them is value-preserving until the primitives
+               land; graphic sizes (a slider thumb, a glyph box) are not
+               control heights and stay out of this scale. */
+            --control-h-xs: 22px;
+            --control-h-sm: 28px;
+            --control-h:    32px;
+            --control-h-lg: 36px;
+            --control-h-xl: 40px;
+
+            /* One focus ring, consumed by every control rather than
+               re-declared (and sometimes cancelled) per component. */
+            --focus-ring-w: 2px;
+            --focus-offset: 2px;
+
             /* -- base material (shared by ALL nine themes) -----------------
                Measured against --bg-surface #0A0A0B:
-                 --text-hi  16.9:1     --text-mid 6.6:1
-                 --text-lo   3.9:1 (decorative / meta only)
+                 --text-hi  17.8:1     --text-mid 7.8:1
+                 --text-lo   5.3:1 (5.0:1 on the raised surface it labels)
                The old slate card-vs-body contrast was 1.16:1 — invisible.
                Elevation is now carried by TWO channels: a surface lightness
                lift AND a 1px hairline. */
@@ -192,7 +228,12 @@ body, .macos-window, #app-window {
 
             --text-hi: #F2F3F5;
             --text-mid: #9CA3AF;
-            --text-lo: #6B7280;
+            /* Tertiary ink is used at 9-11px, so it is tuned against the
+               raised surface those labels actually sit on, not against black:
+               #6B7280 read 3.87:1 there and 3.73:1 on hover - under AA at the
+               exact size it is used. #7C8595 is 5.03 / 4.85 and still a clear
+               step below --text-mid (7.37). */
+            --text-lo: #7C8595;
 
 /* -- semantic status (used by badges, meters, review card) ---- */
              --ok: #34D399;
@@ -258,6 +299,53 @@ body, .macos-window, #app-window {
                Each reference is migrated to --line in its own view stage. */
             --border-color: var(--line);
             --border-light: var(--line-strong);
+        }
+
+        /*
+         * ============================================================================
+         * TYPE SCALE BINDINGS
+         * ============================================================================
+         * Seven steps, and every size in the app resolves to one of them.
+         *
+         * 1. `.type-*` replaces the `text-[Npx]` arbitrary utilities that markup
+         *    and JS-built markup carry. tailwind.output.css is a checked-in
+         *    prebuilt file, so a new arbitrary class there would silently do
+         *    nothing; these are real classes in the stylesheet that always loads.
+         *    They set font-size only, exactly like the arbitrary utilities they
+         *    replace, so no line-height moves with them.
+         *
+         * 2. The Tailwind text-* utilities that name an off-scale size are
+         *    re-pointed at the nearest step here. One place fixes every consumer
+         *    - static markup and JS templates alike - without renaming classes.
+         *    Line-height is left as Tailwind declared it, so only glyph size
+         *    changes, not the rhythm that was built around it.
+         *
+         * Both sit before the component rules because that is where the Tailwind
+         * utilities they replace used to be: a component's own size rule still
+         * wins, so this changes the scale, not the components' intent.
+         * ========================================================================== */
+        .type-micro { font-size: var(--t-micro); }
+        .type-xs    { font-size: var(--t-xs); }
+        .type-sm    { font-size: var(--t-sm); }
+        .type-md    { font-size: var(--t-md); }
+        .type-lg    { font-size: var(--t-lg); }
+        .type-xl    { font-size: var(--t-xl); }
+        .type-2xl   { font-size: var(--t-2xl); }
+
+        .text-xs   { font-size: var(--t-sm); }     /* 12px - already a step */
+        .text-sm   { font-size: var(--t-md); }     /* 14 -> 13 */
+        .text-base { font-size: var(--t-lg); }     /* 16    */
+        .text-lg   { font-size: var(--t-lg); }     /* 18 -> 16 */
+        .text-xl   { font-size: var(--t-xl); }     /* 20 -> 22 */
+        .text-2xl  { font-size: var(--t-xl); }     /* 24 -> 22 */
+        .text-3xl,
+        .text-4xl,
+        .text-5xl  { font-size: var(--t-2xl); }    /* 30 / 36 / 48 -> 30 */
+        @media (min-width: 640px) {
+            .sm\:text-base { font-size: var(--t-lg); }
+        }
+        @media (min-width: 1280px) {
+            .xl\:text-5xl { font-size: var(--t-2xl); }
         }
 
         /*
@@ -532,7 +620,10 @@ body, .macos-window, #app-window {
 
         button:not(.no-tactile), .category-pill, .tag, label.btn-label {
             border: 1px solid var(--line) !important;
-            border-radius: var(--r-md) !important;
+            /* The shared corner for every rectangular control. Section 9.3
+               lists the families that are not rectangles (chips, circles,
+               tree rows) and keeps them on their own radius token. */
+            border-radius: var(--r-sm) !important;
             box-shadow: none !important;
             transform: none !important;
             background: var(--bg-raised) !important;
@@ -846,7 +937,7 @@ body, .macos-window, #app-window {
                 height: 100% !important;
                 overflow-y: auto !important;
                 -webkit-overflow-scrolling: touch;
-                padding-bottom: 32px !important;
+                padding-bottom: var(--s-8) !important;
             }
         }
 
@@ -854,7 +945,7 @@ body, .macos-window, #app-window {
          .retro-switch-btn:hover,
          .retro-switch-btn:active {
              background: #3b1212 !important;
-             color: #f87171 !important;
+             color: var(--danger) !important;
              border: 2px solid #000000 !important;
              box-shadow: 2px 2px 0px 0px #000000 !important;
              transform: translate(0px, 0px) !important;
@@ -928,7 +1019,7 @@ body, .macos-window, #app-window {
     .sidebar-no-scrollbar {
         height: 100%;
         overflow-y: auto;
-        padding-bottom: 24px !important;
+        padding-bottom: var(--s-6) !important;
         -ms-overflow-style: none;
         scrollbar-width: none;
     }
@@ -1081,7 +1172,7 @@ body, .macos-window, #app-window {
                 align-items: center !important;
                 border-right: none !important;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-                padding: 0 16px !important;
+                padding: 0 var(--s-4) !important;
                 overflow: hidden !important;
                 box-shadow: none !important;
             }
@@ -1107,13 +1198,13 @@ body, .macos-window, #app-window {
             .workspace-sidebar nav {
                 flex-direction: row !important;
                 width: auto !important;
-                gap: 8px !important;
+                gap: var(--s-2) !important;
                 justify-content: center !important;
             }
             .workspace-sidebar button {
                 width: auto !important;
                 height: 38px !important;
-                padding: 0 16px !important;
+                padding: 0 var(--s-4) !important;
                 justify-content: center !important;
             }
             .workspace-sidebar button .sidebar-text {
@@ -1153,7 +1244,7 @@ body, .macos-window, #app-window {
                 flex-wrap: nowrap !important;
                 justify-content: center !important;
                 align-items: center !important;
-                gap: 8px !important;
+                gap: var(--s-2) !important;
                 height: 100% !important;
             }
             .h-14 .w-px {
@@ -1161,16 +1252,16 @@ body, .macos-window, #app-window {
             }
 
             .section-card {
-                padding: 8px !important;
+                padding: var(--s-2) !important;
             }
             .category-pill {
-                padding-top: 4px !important;
-                padding-bottom: 4px !important;
+                padding-top: var(--s-1) !important;
+                padding-bottom: var(--s-1) !important;
             }
             .tag {
                 padding-top: 2px !important;
                 padding-bottom: 2px !important;
-                font-size: 8.5px !important;
+                font-size: var(--t-micro) !important;
             }
         }
 
@@ -1185,7 +1276,7 @@ body, .macos-window, #app-window {
                 flex-direction: column !important;
                 justify-content: center !important;
                 align-items: center !important;
-                gap: 12px !important;
+                gap: var(--s-3) !important;
                 height: auto !important;
             }
             .h-14 .w-px {
@@ -1215,7 +1306,7 @@ body, .macos-window, #app-window {
                 width: 100% !important;
                 justify-content: center !important;
                 flex-direction: column !important;
-                gap: 8px !important;
+                gap: var(--s-2) !important;
             }
             .h-14 > div:first-child {
                 max-width: 100% !important;
@@ -1225,7 +1316,7 @@ body, .macos-window, #app-window {
         @media (min-width: 768px) and (max-width: 1279px) {
             #footer-bar-desktop {
                 flex-wrap: wrap !important;
-                row-gap: 8px !important;
+                row-gap: var(--s-2) !important;
                 height: auto !important;
             }
             #footer-center-group {
@@ -1275,12 +1366,12 @@ body, .macos-window, #app-window {
                 height: 1.875rem !important;
             }
             #rc-panel-filters .flex-1.min-h-0.overflow-hidden.relative {
-                margin-top: 4px !important;
-                margin-bottom: 4px !important;
+                margin-top: var(--s-1) !important;
+                margin-bottom: var(--s-1) !important;
             }
             #rc-panel-filters > div:last-child {
                 gap: 6px !important;
-                padding-top: 4px !important;
+                padding-top: var(--s-1) !important;
             }
             #rc-panel-filters > div:last-child > div:not(.grid) {
                 height: 1.5rem !important;
@@ -1325,7 +1416,7 @@ body, .macos-window, #app-window {
             }
 
             .sound-char-panel .grid {
-                gap: 8px !important;
+                gap: var(--s-2) !important;
             }
             #review-selected-tags-container {
                 min-height: 88px !important;
@@ -1515,7 +1606,7 @@ body, .macos-window, #app-window {
             border: 1px solid rgba(255, 255, 255, 0.05) !important;
             color: var(--text-main) !important;
             transition: all 0.15s ease;
-            font-size: 12px;
+            font-size: var(--t-sm);
         }
         .input-bg-fix:focus {
             border-color: var(--accent-blue) !important;
@@ -1573,24 +1664,23 @@ body, .macos-window, #app-window {
            display to the visible state means the buttons appear only when JS
            asks, regardless of stylesheet order. */
         .photo-matte-btn {
-            height: 32px;
+            height: var(--control-h);
             width: 32px;
             flex-shrink: 0;
             align-items: center;
             justify-content: center;
             cursor: pointer;
             font-weight: 900;
-            font-size: 0.8125rem;
+            font-size: var(--t-md);
             line-height: 1;
             color: var(--text-primary);
             background: var(--bg-input);
             border: 1px solid var(--line);
-            /* --r-md, not --r-sm: the centre button next to these already
-               computes 8px from the app's existing button rule, and eight is
-               the established radius for a control in this app. Introducing a
-               second, smaller radius here would have made the bar inconsistent
-               with itself. */
-            border-radius: var(--r-md);
+            /* --r-sm is the established control corner (section 9.3). These
+               buttons were written when the shared rule happened to resolve
+               8px; that rule now says 6, so the bar follows the scale rather
+               than the memory of it. */
+            border-radius: var(--r-sm);
             transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
         }
         .photo-matte-btn:not(.hidden) { display: inline-flex; }
@@ -1599,34 +1689,37 @@ body, .macos-window, #app-window {
             border-color: var(--accent-blue);
             color: #fff;
         }
-        .photo-matte-btn:focus-visible {
-            outline: 2px solid var(--accent-blue);
-            outline-offset: 2px;
-        }
         .photo-matte-btn:disabled { opacity: 0.35; cursor: default; }
         /* Undo and redo are one decision, so they read as a segmented pair
            rather than two loose buttons that look unrelated. */
-        #photo-matte-undo { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+        /* The inner corners of the pair are the scale's zero step: the join is
+           flush, while the outer corners stay on the control radius. These
+           need !important because the shared control rule sets the shorthand
+           `border-radius` with !important, and a normal declaration loses to
+           it even at ID weight. */
+        #photo-matte-undo {
+            border-top-right-radius: var(--r-square) !important;
+            border-bottom-right-radius: var(--r-square) !important;
+        }
         #photo-matte-redo {
-            border-top-left-radius: 0;
-            border-bottom-left-radius: 0;
+            border-top-left-radius: var(--r-square) !important;
+            border-bottom-left-radius: var(--r-square) !important;
             margin-left: -1px;
         }
-        /* Centre and wand are .btn-clear, and .btn-clear never declared a radius - so
-           they were the last square controls in an otherwise rounded bar,
-           sitting either side of the rounded undo/redo pair. Scoped to the
-           photo bar on purpose: adding a radius to .btn-clear itself would
-           restyle every control in the app, which is a different decision to
-           make on purpose rather than by accident. --r-md matches the centre
-           button's existing 8px and .photo-matte-btn, so all five controls in
-           the bar read as one set. */
+        /* A floating close badge over the photo: a 20px square with the pill
+           radius is a circle, the same shape language as the tile +/- buttons. */
+        #image-clear-btn {
+            border-radius: var(--r-pill) !important;
+        }        /* Centre and wand are .btn-clear and follow the shared control corner
+           like every other .btn-clear; this used to be spelled --r-md here so
+           the two of them matched an 8px bar that no longer exists. */
         #image-controls-bar .btn-clear {
-            border-radius: var(--r-md);
+            border-radius: var(--r-sm);
         }
         .photo-matte-status {
             flex-shrink: 0;
             white-space: nowrap;
-            font-size: 0.6875rem;
+            font-size: var(--t-xs);
             font-weight: 700;
             letter-spacing: 0.02em;
             color: var(--text-secondary);
@@ -1646,7 +1739,7 @@ body, .macos-window, #app-window {
 
         .smart-import-row { margin-bottom: 16px; }
         .smart-import-combo {
-            --combo-h: 34px;
+            --combo-h: var(--control-h);
             display: flex;
             align-items: stretch;
             height: var(--combo-h);
@@ -1672,7 +1765,7 @@ body, .macos-window, #app-window {
             height: 100%;
             margin: 0;
             padding: 0 10px;
-            font-size: 12px;
+            font-size: var(--t-sm);
             color: var(--text-main);
             background: transparent;
             border: none;
@@ -1705,7 +1798,7 @@ body, .macos-window, #app-window {
         }
         .smart-import-expand-btn {
             flex: 0 0 auto;
-            width: 34px;
+            width: var(--control-h);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -1713,7 +1806,7 @@ body, .macos-window, #app-window {
             border: none;
             border-left: 1px solid var(--line);
             color: var(--text-secondary);
-            font-size: 15px;
+            font-size: var(--t-lg);
             line-height: 1;
             cursor: pointer;
             transition: color 0.15s ease, background-color 0.15s ease;
@@ -1721,10 +1814,6 @@ body, .macos-window, #app-window {
         .smart-import-expand-btn:hover {
             color: var(--accent-blue);
             background-color: rgba(255, 255, 255, 0.04);
-        }
-        .smart-import-expand-btn:focus-visible {
-            outline: 2px solid var(--accent-blue);
-            outline-offset: -2px;
         }
         /* Layout lives here rather than in Tailwind utilities on purpose: this
            stylesheet is hand-written and app/css/tailwind.output.css comes
@@ -1738,7 +1827,7 @@ body, .macos-window, #app-window {
             display: none;
             align-items: center;
             justify-content: center;
-            padding: 24px;
+            padding: var(--s-6);
             background: rgba(0, 0, 0, 0.85);
             backdrop-filter: blur(4px);
             -webkit-backdrop-filter: blur(4px);
@@ -1760,21 +1849,21 @@ body, .macos-window, #app-window {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 8px;
+            gap: var(--s-2);
         }
         .smart-import-panel-title {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            font-size: 11px;
+            font-size: var(--t-xs);
             font-weight: 800;
             letter-spacing: 0.08em;
             text-transform: uppercase;
             color: var(--accent-blue);
         }
         .smart-import-collapse-btn {
-            width: 24px;
-            height: 24px;
+            width: var(--control-h-sm);
+            height: var(--control-h-sm);
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -1783,7 +1872,7 @@ body, .macos-window, #app-window {
             border: 1px solid transparent;
             border-radius: var(--r-sm);
             color: var(--text-secondary);
-            font-size: 13px;
+            font-size: var(--t-md);
             line-height: 1;
             cursor: pointer;
             transition: color 0.15s ease, border-color 0.15s ease;
@@ -1791,10 +1880,6 @@ body, .macos-window, #app-window {
         .smart-import-collapse-btn:hover {
             color: #ef4444;
             border-color: var(--line);
-        }
-        .smart-import-collapse-btn:focus-visible {
-            outline: 2px solid var(--accent-blue);
-            outline-offset: 1px;
         }
         /* The typing surface is a nested panel inside the dialog: one step of
            surface-lightness lift plus a 1px hairline, which is how this app
@@ -1805,7 +1890,7 @@ body, .macos-window, #app-window {
             background: var(--bg-input);
             border: 1px solid var(--line);
             border-radius: var(--r-md);
-            padding: 8px;
+            padding: var(--s-2);
             transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
         .smart-import-editor:focus-within {
@@ -1814,7 +1899,7 @@ body, .macos-window, #app-window {
         }
         .smart-import-hint {
             margin: 0;
-            font-size: 10px;
+            font-size: var(--t-micro);
             color: var(--text-secondary);
         }
         /* A DEFINITE height so the textarea height:100% resolves against
@@ -2075,7 +2160,7 @@ body, .macos-window, #app-window {
             display: inline-flex !important;
             align-items: center !important;
             justify-content: center !important;
-            font-size: 18px !important;
+            font-size: var(--t-lg) !important;
             width: 22px !important;
             height: 22px !important;
             line-height: 1 !important;
@@ -2102,7 +2187,7 @@ body, .macos-window, #app-window {
         #find-pick-grid {
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: var(--s-1);
             width: 100%;
             /* Uniform icon size for every spec/tag badge in the Find > Specs
                panel. Sized to fill the panel's spare vertical space without
@@ -2121,7 +2206,7 @@ body, .macos-window, #app-window {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            font-size: 11px;
+            font-size: var(--t-xs);
             font-weight: 900;
             text-transform: uppercase;
             letter-spacing: 0.05em;
@@ -2157,6 +2242,9 @@ body, .macos-window, #app-window {
         }
         /* ---- Genre-Target AutoEQ (🎯 dropdown on the EQ tab Match badges) ---- */
         .genre-target-btn {
+            /* A micro icon button, on the micro step - it shipped as `w-5 h-5`. */
+            width: var(--control-h-xs) !important;
+            height: var(--control-h-xs) !important;
             background: rgba(0, 0, 0, 0.35);
             border: 1px solid rgba(255, 255, 255, 0.15) !important;
             opacity: 0.65;
@@ -2173,7 +2261,7 @@ body, .macos-window, #app-window {
             z-index: 60;
             background: #0d0d14;
             border: 2px solid var(--border-color, #2a2a35);
-            padding: 8px;
+            padding: var(--s-2);
 min-width: 200px;
             box-shadow: 0 6px 18px rgba(0,0,0,0.5);
         }
@@ -2185,15 +2273,15 @@ min-width: 200px;
             gap: 6px;
             background-color: var(--bg-input) !important;
             border: 3px solid #000000 !important;
-            border-radius: 0px !important;
+            border-radius: var(--r-sm) !important;
             box-shadow: none !important;
             color: var(--text-main) !important;
-            font-size: 11px !important;
+            font-size: var(--t-xs) !important;
             font-weight: 800 !important;
-            height: 26px !important;
-            max-height: 26px !important;
-            min-height: 26px !important;
-            line-height: 26px !important;
+            height: var(--control-h-sm) !important;
+            max-height: var(--control-h-sm) !important;
+            min-height: var(--control-h-sm) !important;
+            line-height: var(--control-h-sm) !important;
             padding: 0 6px !important;
             box-sizing: border-box !important;
             cursor: pointer !important;
@@ -2201,7 +2289,7 @@ min-width: 200px;
         }
         .genre-target-arrow {
             color: #a1a1aa;
-            font-size: 8px;
+            font-size: var(--t-micro);
             line-height: 1;
             flex-shrink: 0;
         }
@@ -2215,7 +2303,7 @@ min-width: 200px;
             overflow-y: auto;
             border: 3px solid var(--accent-blue);
             background: #000000;
-            padding: 4px;
+            padding: var(--s-1);
             display: flex;
             flex-direction: column;
             gap: 2px;
@@ -2229,7 +2317,7 @@ min-width: 200px;
             align-items: center;
             gap: 6px;
             padding: 3px 6px;
-            font-size: 11px;
+            font-size: var(--t-xs);
             font-weight: 800;
             color: #d4d4d8;
             cursor: pointer;
@@ -2250,7 +2338,7 @@ min-width: 200px;
             width: 18px;
             flex-shrink: 0;
             text-align: center;
-            font-size: 9px;
+            font-size: var(--t-micro);
             font-weight: 900;
             color: #a1a1aa;
         }
@@ -2258,7 +2346,7 @@ min-width: 200px;
             color: #ffffff;
         }
         .genre-target-count {
-            font-size: 9px;
+            font-size: var(--t-micro);
             font-weight: 700;
             color: var(--accent-violet, #805ad5);
         }
@@ -2266,13 +2354,13 @@ min-width: 200px;
             margin-top: 6px;
             padding-top: 6px;
             border-top: 1px dashed rgba(255, 255, 255, 0.12);
-            font-size: 9px;
+            font-size: var(--t-micro);
             line-height: 1.4;
             color: #9ca3af;
         }
         .genre-target-step-btn {
             width: 22px;
-            height: 22px;
+            height: var(--control-h-xs);
             flex-shrink: 0;
             display: flex;
             align-items: center;
@@ -2281,7 +2369,7 @@ min-width: 200px;
             border: 2px solid black !important;
             color: white;
             font-weight: 900;
-            font-size: 10px;
+            font-size: var(--t-micro);
             cursor: pointer;
         }
         .genre-target-step-btn:hover {
@@ -2292,8 +2380,8 @@ min-width: 200px;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 4px;
-            font-size: 11px;
+            gap: var(--s-1);
+            font-size: var(--t-xs);
             font-weight: 800;
             color: var(--text-main, #e5e5e5);
             white-space: nowrap;
@@ -2301,14 +2389,14 @@ min-width: 200px;
             text-overflow: ellipsis;
         }
         .genre-target-apply-btn {
-            height: 22px;
+            height: var(--control-h-xs);
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 3px;
             background: var(--accent-violet, #805ad5);
             color: white;
-            font-size: 10px;
+            font-size: var(--t-micro);
             font-weight: 900;
             border: 2px solid black !important;
             cursor: pointer;
@@ -2319,7 +2407,7 @@ min-width: 200px;
         }
         .genre-target-close-btn {
             width: 22px;
-            height: 22px;
+            height: var(--control-h-xs);
             flex-shrink: 0;
             display: flex;
             align-items: center;
@@ -2327,7 +2415,7 @@ min-width: 200px;
             background: var(--bg-input);
             border: 2px solid black !important;
             color: white;
-            font-size: 10px;
+            font-size: var(--t-micro);
             font-weight: 900;
             cursor: pointer;
         }
@@ -2357,7 +2445,7 @@ min-width: 200px;
             transform-origin: center center;
         }
         .find-pick-badge .emoji-font {
-            font-size: 19px;
+            font-size: var(--t-lg);
             line-height: 1;
             display: inline-flex;
             align-items: center;
@@ -2415,7 +2503,7 @@ min-width: 200px;
             display: block;
         }
         .spec-chip-grid .find-pick-badge .emoji-font {
-            font-size: 19px;
+            font-size: var(--t-lg);
             line-height: 1;
         }
         .spec-chip-grid .find-pick-badge:hover {
@@ -3182,7 +3270,7 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             display: flex;
             flex-wrap: nowrap;
             overflow-x: auto;
-            gap: 8px;
+            gap: var(--s-2);
             padding: 8px 8px 10px 8px;
             background: rgba(8, 8, 12, 0.5);
             border: 1px solid rgba(255, 255, 255, 0.04);
@@ -3223,7 +3311,7 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             border-left: 3px solid transparent;
             background: rgba(255, 255, 255, 0.015);
             border: 1px solid rgba(255, 255, 255, 0.04);
-            margin-bottom: 4px;
+            margin-bottom: var(--s-1);
         }
         .peqdb-row-item:hover {
             background-color: rgba(255, 255, 255, 0.05);
@@ -3235,9 +3323,9 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             align-items: center;
             justify-content: center;
             width: 22px;
-            height: 22px;
+            height: var(--control-h-xs);
             cursor: help;
-            font-size: 12px;
+            font-size: var(--t-sm);
         }
         .db-sig-tag:hover {
             background: rgba(255, 255, 255, 0.08);
@@ -3247,7 +3335,7 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             display: inline-block;
             min-width: 60px;
             text-align: center;
-            font-size: 8px;
+            font-size: var(--t-micro);
             font-weight: 800;
             text-transform: uppercase;
             letter-spacing: 0.05em;
@@ -3260,7 +3348,7 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
         }
 
         #peqdb-list .peqdb-row-item, #similar-list .peqdb-row-item {
-            margin-right: 8px !important;
+            margin-right: var(--s-2) !important;
             margin-left: 2px !important;
             margin-bottom: 6px !important;
         }
@@ -3269,9 +3357,9 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             cursor: pointer;
             display: inline-flex;
             align-items: center;
-            gap: 4px;
-            padding: 4px 8px;
-            font-size: 11px;
+            gap: var(--s-1);
+            padding: var(--s-1) var(--s-2);
+            font-size: var(--t-xs);
             font-weight: 700;
             background-color: var(--bg-input);
             border: 1px solid rgba(255, 255, 255, 0.04);
@@ -3291,10 +3379,10 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
         }
 
         .meta-tag-panel .tag {
-            font-size: 10px !important;
+            font-size: var(--t-micro) !important;
             padding: 2.5px 7px !important;
             gap: 3px !important;
-            border-radius: 0 !important;
+            border-radius: var(--r-pill) !important;
         }
 
         .gauge-container {
@@ -3362,7 +3450,7 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             0%, 100% { opacity: 1; transform: scale(1.1); }
             50% { opacity: 0.25; transform: scale(0.9); }
         }
-        .gauge-input-overlay { width: 100%; background: transparent; border: none; text-align: center; color: var(--accent-amber); font-size: 12px; font-weight: 700; outline: none; cursor: ew-resize; pointer-events: none; }
+        .gauge-input-overlay { width: 100%; background: transparent; border: none; text-align: center; color: var(--accent-amber); font-size: var(--t-sm); font-weight: 700; outline: none; cursor: ew-resize; pointer-events: none; }
 
         .eq-band {
             padding: 3px 1.5px;
@@ -3372,8 +3460,8 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             align-items: center;
             gap: 1.5px;
         }
-        .eq-emoji { font-size: 11px; margin-bottom: 1px; display: block !important; }
-        .eq-hz-input { font-size: 11px; font-weight: 700; color: var(--text-secondary); margin-bottom: 2px; background: transparent; border-bottom: 1px solid rgba(255,255,255,0.08); width: 40px; text-align: center; outline: none; }
+        .eq-emoji { font-size: var(--t-xs); margin-bottom: 1px; display: block !important; }
+        .eq-hz-input { font-size: var(--t-xs); font-weight: 700; color: var(--text-secondary); margin-bottom: 2px; background: transparent; border-bottom: 1px solid rgba(255,255,255,0.08); width: 40px; text-align: center; outline: none; }
 
         .eq-sliderWrap {
             height: 88px;
@@ -3393,7 +3481,7 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
 .spatial-grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(var(--accent-rgb), 0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--accent-rgb), 0.07) 1px, transparent 1px); background-size: 20px 20px; }
     .spatial-axis-h { position: absolute; top: calc(50% - 1px); left: 0; right: 0; height: 2px; background: rgba(var(--accent-rgb), 0.28); transition: background var(--transition-speed); }
     .spatial-axis-v { position: absolute; left: calc(50% - 1px); top: 0; bottom: 0; width: 2px; background: rgba(var(--accent-rgb), 0.28); transition: background var(--transition-speed); }
-    .spatial-listener { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--text-mid); font-size: 16px; pointer-events: none; }
+    .spatial-listener { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--text-mid); font-size: var(--t-lg); pointer-events: none; }
     .spatial-source { position: absolute; left: 0; top: 0; width: 24px; height: 24px; transform: translate(-50%, -50%); pointer-events: none; will-change: transform; display: flex; align-items: center; justify-content: center; }
     .spatial-core { width: 8px; height: 8px; border-radius: var(--r-pill); background-color: var(--accent); box-shadow: 0 0 10px var(--accent-glow); position: absolute; z-index: 10; }
     .spatial-reticle { width: 16px; height: 16px; border: 1px solid var(--accent); border-radius: var(--r-pill); opacity: 0.4; position: absolute; z-index: 5; }
@@ -3437,7 +3525,7 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
         .eq-q-slider {
             width: 80% !important;
             margin-top: 6px !important;
-            margin-bottom: 4px !important;
+            margin-bottom: var(--s-1) !important;
             display: block;
         }
 
@@ -3482,7 +3570,7 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            padding: 8px !important;
+            padding: var(--s-2) !important;
             z-index: 50;
             background-color: var(--bg-window) !important;
             border-right: 1px solid rgba(255, 255, 255, 0.06);
@@ -3496,7 +3584,7 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             transform: translateX(-8px);
             transition: opacity 0.15s ease, transform 0.15s ease;
             white-space: nowrap;
-            font-size: 10px;
+            font-size: var(--t-micro);
             font-weight: 700;
             letter-spacing: 0.05em;
         }
@@ -3511,11 +3599,11 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             width: 100%;
             height: 38px;
             padding: 0px 8px !important;
-            gap: 12px;
+            gap: var(--s-3);
             overflow: hidden;
         }
         .workspace-sidebar button .sidebar-icon {
-            font-size: 18px;
+            font-size: var(--t-lg);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -3528,7 +3616,7 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             transform: translateX(-10px);
             transition: opacity 0.18s ease, transform 0.18s ease;
             white-space: nowrap;
-            font-size: 11px;
+            font-size: var(--t-xs);
             font-weight: 700;
         }
         .workspace-sidebar:hover button .sidebar-text {
@@ -3717,7 +3805,7 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             border: 1px solid rgba(255, 255, 255, 0.05) !important;
             color: var(--band-color) !important;
             font-family: monospace !important;
-            font-size: 10px !important;
+            font-size: var(--t-micro) !important;
             font-weight: 800 !important;
             text-align: center;
             height: 20px !important;
@@ -3735,12 +3823,12 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             background-color: #08080c !important;
             border: 1px solid rgba(255, 255, 255, 0.08) !important;
             color: #f4f4f7 !important;
-            font-size: 10px !important;
+            font-size: var(--t-micro) !important;
             font-weight: bold !important;
             height: 20px !important;
             outline: none;
             cursor: pointer;
-            padding: 0 4px !important;
+            padding: 0 var(--s-1) !important;
             transition: border-color 0.15s ease;
         }
 
@@ -3749,7 +3837,7 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
         }
 
         .eq-card-label {
-            font-size: 9px !important;
+            font-size: var(--t-micro) !important;
             font-weight: 800 !important;
             text-transform: uppercase;
             color: #8e8e9c;
@@ -3824,10 +3912,10 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             background-color: rgba(255, 255, 255, 0.02) !important;
             border: 1px solid rgba(255, 255, 255, 0.05) !important;
             color: #a1a1aa !important;
-            font-size: 8px !important;
+            font-size: var(--t-micro) !important;
             font-weight: bold !important;
-            border-radius: 0px !important;
-            height: 18px !important;
+            border-radius: var(--r-sm) !important;
+            height: var(--control-h-xs) !important;
             padding: 0 6px !important;
             display: inline-flex !important;
             align-items: center !important;
@@ -3874,7 +3962,7 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
                 width: 100% !important;
                 gap: 6px !important;
                 overflow-x: auto !important;
-                padding: 4px 8px !important;
+                padding: var(--s-1) var(--s-2) !important;
                 -webkit-overflow-scrolling: touch;
             }
             #tl-controls-spatial > div,
@@ -4101,7 +4189,7 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
         flex: 0 0 auto !important;
         z-index: 99999 !important;
         margin: 0 !important;
-        padding: 12px !important;
+        padding: var(--s-3) !important;
         transform: none !important;
         backdrop-filter: none !important;
         -webkit-backdrop-filter: none !important;
@@ -4127,7 +4215,7 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
     #spatial-card.is-expanded-card > div:last-child {
         flex-shrink: 0 !important;
         flex-grow: 0 !important;
-        margin-top: 8px !important;
+        margin-top: var(--s-2) !important;
     }
 
         body.viz-fullscreen-active #pane-visualizer {
@@ -4203,7 +4291,8 @@ div[class*="gap-1.5"].w-full:not(#tl-controls-graph):not(#tl-controls-spatial):n
     transform: none !important;
 }
 div[class*="gap-1.5"].w-full:not(#tl-controls-graph):not(#tl-controls-spatial):not(.grid) > button:not(:first-child):not(:last-child) {
-    border-radius: 0px !important;
+    /* A fused middle segment: the outer buttons own the corner. */
+    border-radius: var(--r-square) !important;
     box-shadow: none !important;
     transform: none !important;
 }
@@ -4217,7 +4306,7 @@ div[class*="gap-1.5"].w-full:not(#tl-controls-graph):not(#tl-controls-spatial):n
     transform: none !important;
     border: 2px solid #000000 !important;
     background: var(--bg-card) !important;
-    height: 32px !important;
+    height: var(--control-h) !important;
     width: 32px !important;
     min-width: 32px !important;
     display: inline-flex !important;
@@ -4246,7 +4335,7 @@ div[class*="gap-1.5"].w-full:not(#tl-controls-graph):not(#tl-controls-spatial):n
     color: #ffffff !important;
 }
 #global-footer-bar .h-8 {
-    height: 32px !important;
+    height: var(--control-h) !important;
     align-items: center !important;
 }
 
@@ -4290,7 +4379,7 @@ input[type="text"]:not(.gauge-input-overlay),
 input[type="number"]:not(.gauge-input-overlay),
 select,
 .input-bg-fix {
-    height: 32px !important;
+    height: var(--control-h) !important;
     max-height: 32px !important;
     min-height: 32px !important;
     line-height: 32px !important;
@@ -4303,12 +4392,12 @@ select,
 #master-graphs-card > div.border-b-2 {
     border-bottom: none !important;
     padding-bottom: 0px !important;
-    margin-bottom: 8px !important;
+    margin-bottom: var(--s-2) !important;
 }
 
 #tl-controls-spatial,
 #tl-controls-graph {
-    gap: 8px !important;
+    gap: var(--s-2) !important;
     padding: 0px !important;
     margin: 0px !important;
     align-items: center !important;
@@ -4330,15 +4419,20 @@ select,
 #btn-spectrum-toggle,
 #btn-expand-spatial,
 #btn-expand-active-graph {
-    height: 32px !important;
+    height: var(--control-h) !important;
     min-height: 32px !important;
     max-height: 32px !important;
     box-sizing: border-box !important;
     border: 2px solid #000000 !important;
-    border-radius: 0px !important;
+    /* The shared control corner. This group - the two Testlab control rows and
+       their spectrum / expand neighbours - was the last place still declaring a
+       literal 0, which made these four controls square while every other button
+       in the app measured 6px. */
+    border-radius: var(--r-sm) !important;
     margin: 0 !important;
     transition: transform 0.05s linear, box-shadow 0.05s linear, filter 0.1s ease !important;
 }
+
 
 #tl-controls-spatial > div.btn-clear,
 #tl-controls-spatial > button.btn-clear,
@@ -4461,7 +4555,7 @@ select,
     background: rgba(0, 0, 0, 0.88);
     border: 2px solid var(--accent-blue);
     color: #ffffff;
-    font-size: 26px;
+    font-size: var(--t-xl);
     font-weight: 900;
     align-items: center;
     justify-content: center;
@@ -4498,11 +4592,11 @@ select,
 .subtab-seg-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
 
 .subtab-seg-btn {
-    height: 28px;
+    height: var(--control-h-sm);
     background: var(--bg-input) !important;
     color: var(--text-secondary) !important;
     font-weight: 700;
-    font-size: 9.5px;
+    font-size: var(--t-micro);
     text-transform: uppercase;
     letter-spacing: .03em;
     display: flex;
@@ -4527,7 +4621,7 @@ select,
     box-shadow: none !important;
 }
 .subtab-seg-btn .subtab-seg-emoji {
-    font-size: 11px;
+    font-size: var(--t-xs);
     line-height: 1;
     flex-shrink: 0;
 }
@@ -4652,7 +4746,11 @@ select,
     background: var(--bg-raised) !important;
     color: var(--text-mid) !important;
     border: 1px solid var(--line) !important;
-    border-radius: var(--r-md) !important;
+    /* --r-sm, and the same value in all three states: this selector list is
+       0,2,0 and so outranks the shared control rule, which means the corner a
+       toggle renders is decided HERE. It said --r-md, so a toggle was 6px at
+       rest and 8px while held. */
+    border-radius: var(--r-sm) !important;
     box-shadow: none !important;
     transform: none !important;
     filter: none !important;
@@ -4731,7 +4829,7 @@ select,
     color: var(--text-mid) !important;
     font-size: var(--t-xs) !important;
     font-weight: 600 !important;
-    height: 28px !important;
+    height: var(--control-h-sm) !important;
     padding: 0 var(--s-2) !important;
     transition: background var(--d-1) var(--e-out),
                 color var(--d-1) var(--e-out),
@@ -5280,13 +5378,14 @@ input[type="range"]::-moz-range-thumb {
 .app-caption-btn {
     -webkit-app-region: no-drag;
     width: 44px;
-    height: 40px;
+    height: var(--control-h-xl);
     display: flex;
     align-items: center;
     justify-content: center;
     background: transparent !important;
     border: none !important;
-    border-radius: 0 !important;
+    /* Window chrome: flush, from the scale's zero step. */
+    border-radius: var(--r-square) !important;
     box-shadow: none !important;
     color: var(--text-mid) !important;
     cursor: pointer;
@@ -5310,7 +5409,7 @@ input[type="range"]::-moz-range-thumb {
     background: #B1271B !important;
 }
 .app-caption-btn:focus-visible {
-    outline: 2px solid var(--accent) !important;
+    outline: var(--focus-ring-w) solid var(--accent) !important;
     outline-offset: -3px !important;
 }
 
@@ -5345,7 +5444,7 @@ input[type="range"]::-moz-range-thumb {
     padding: 3px 4px;
     background: transparent !important;
     border: 1px solid transparent !important;
-    border-radius: var(--r-md) !important;
+    border-radius: var(--r-sm) !important;
     box-shadow: none !important;
     color: var(--text-mid) !important;
     cursor: pointer;
@@ -5356,9 +5455,9 @@ input[type="range"]::-moz-range-thumb {
                 border-color var(--d-1) var(--e-out),
                 color var(--d-1) var(--e-out) !important;
 }
-.app-tab-icon { font-size: 17px; line-height: 1; }
+.app-tab-icon { font-size: var(--t-lg); line-height: 1; }
 .app-tab-label {
-    font-size: 9px;
+    font-size: var(--t-micro);
     line-height: 1.1;
     font-weight: 600;
     letter-spacing: 0.03em;
@@ -5379,10 +5478,6 @@ input[type="range"]::-moz-range-thumb {
    inline styles (accent-soft fill + accent border + accent-hi glyph). Those
    inline values are correct for every theme, so this rule only supplies the
    resting appearance for the other five. */
-.app-tab:focus-visible {
-    outline: 2px solid var(--accent) !important;
-    outline-offset: 1px !important;
-}
 /* ==========================================================================
    R2 — STEPPER  (the "L shaped" control)
    ==========================================================================
@@ -5414,7 +5509,10 @@ input[type="range"]::-moz-range-thumb {
        columns out of sight. */
     align-items: stretch;
     width: 100%;
-    height: 34px;
+    /* One control height for the fused pill, the same as a standalone button:
+       the arrows and label are `height: 100%`, so this is the only number that
+       decides how tall a stepper is anywhere in the app. */
+    height: var(--control-h);
     /* The wrappers all shipped with `gap-1.5`, which would re-introduce the
        very seams this component exists to remove. The only separator is the
        1px hairline below. */
@@ -5441,7 +5539,8 @@ input[type="range"]::-moz-range-thumb {
 .stepper-rail > button {
     background: transparent !important;
     border: none !important;
-    border-radius: 0 !important;
+    /* Fused segments: the rail carries the corner, and clips them anyway. */
+    border-radius: var(--r-square) !important;
     box-shadow: none !important;
     color: var(--text-mid) !important;
     display: flex;
@@ -5468,7 +5567,8 @@ input[type="range"]::-moz-range-thumb {
 .stepper > button {
     background: transparent !important;
     border: none !important;
-    border-radius: 0 !important;
+    /* Fused segments: the pill carries the corner, and clips them anyway. */
+    border-radius: var(--r-square) !important;
     box-shadow: none !important;
     color: var(--text-mid) !important;
     height: 100% !important;
@@ -5513,7 +5613,7 @@ input[type="range"]::-moz-range-thumb {
 /* Arrows: fixed square-ish targets, never truncated. */
 .stepper > button.stepper-arrow {
     width: 34px;
-    font-size: 11px;
+    font-size: var(--t-xs);
     line-height: 1;
     /* Kill LCD subpixel antialiasing on the arrow glyphs.
        Chromium antialiases small text with RGB subpixel filtering by default,
@@ -5866,7 +5966,7 @@ input[type="range"]::-moz-range-thumb {
 }
 .settings-row:last-child { border-bottom: none; }
 .settings-row-icon {
-    font-size: 18px;
+    font-size: var(--t-lg);
     line-height: 1;
     width: 24px;
     text-align: center;
@@ -5903,7 +6003,7 @@ input[type="range"]::-moz-range-thumb {
 .settings-control {
     flex-shrink: 0;
     min-width: 168px;
-    height: 34px;
+    height: var(--control-h);
     padding: 0 var(--s-3);
     display: flex;
     align-items: center;
@@ -5911,7 +6011,7 @@ input[type="range"]::-moz-range-thumb {
     gap: var(--s-2);
     background: var(--bg-raised) !important;
     border: 1px solid var(--line) !important;
-    border-radius: var(--r-md) !important;
+    border-radius: var(--r-sm) !important;
     box-shadow: none !important;
     color: var(--text-hi) !important;
     font-size: var(--t-xs);
@@ -5954,11 +6054,11 @@ input[type="range"]::-moz-range-thumb {
     flex-shrink: 0;
 }
 .settings-btn {
-    height: 34px;
+    height: var(--control-h);
     padding: 0 var(--s-4);
     background: var(--bg-raised) !important;
     border: 1px solid var(--line) !important;
-    border-radius: var(--r-md) !important;
+    border-radius: var(--r-sm) !important;
     box-shadow: none !important;
     color: var(--text-hi) !important;
     font-size: var(--t-xs);
@@ -5988,6 +6088,10 @@ input[type="range"]::-moz-range-thumb {
    set by eq-playlist.js / accessibility.js. */
 .switch {
     flex-shrink: 0;
+    /* The track stays a 46x26 graphic (a shape, not a scale step); the CONTROL
+       around it is a standard one, so a switch sits on the same row height as
+       the buttons beside it in Settings. */
+    height: var(--control-h);
     background: transparent !important;
     border: none !important;
     border-radius: var(--r-pill) !important;
@@ -6040,10 +6144,6 @@ input[type="range"]::-moz-range-thumb {
 .switch.is-on .switch-knob {
     transform: translateX(20px);
     background: var(--accent-ink);
-}
-.switch:focus-visible {
-    outline: 2px solid var(--accent) !important;
-    outline-offset: 3px !important;
 }
 .switch:active .switch-knob { transform: scale(0.92); }
 .switch.is-on:active .switch-knob { transform: translateX(20px) scale(0.92); }
@@ -6160,7 +6260,7 @@ input[type="range"]::-moz-range-thumb {
     transition: opacity var(--d-2) var(--e-out);
 }
 .viz-btn {
-    height: 30px;
+    height: var(--control-h);
     padding: 0 var(--s-3);
     display: flex;
     align-items: center;
@@ -6277,9 +6377,9 @@ input[type="range"]::-moz-range-thumb {
     padding: 2px 6px;
     gap: 1px;
 }
-.app-nav .app-tab-icon { font-size: 18px; line-height: 18px; }
+.app-nav .app-tab-icon { font-size: var(--t-lg); line-height: 18px; }
 .app-nav .app-tab-label {
-    font-size: 10px;
+    font-size: var(--t-micro);
     line-height: 12px;
     font-weight: 600;
     letter-spacing: 0.02em;
@@ -6326,7 +6426,7 @@ button.cta-primary {
     gap: var(--s-2);
     background: var(--accent) !important;
     border: 1px solid var(--accent) !important;
-    border-radius: var(--r-md) !important;
+    border-radius: var(--r-sm) !important;
     box-shadow: 0 0 0 1px var(--accent-glow),
                 0 0 20px var(--accent-glow) !important;
     color: var(--accent-ink) !important;
@@ -6351,10 +6451,6 @@ button.cta-primary {
 .cta-primary:active {
     filter: brightness(0.96) !important;
     transform: translateY(0) !important;
-}
-.cta-primary:focus-visible {
-    outline: 2px solid var(--accent-hi) !important;
-    outline-offset: 2px !important;
 }
 .cta-primary:disabled {
     background: var(--bg-raised) !important;
@@ -6443,7 +6539,7 @@ button.cta-secondary {
     gap: var(--s-2);
     background: var(--bg-raised) !important;
     border: 1px solid var(--line) !important;
-    border-radius: var(--r-md) !important;
+    border-radius: var(--r-sm) !important;
     box-shadow: none !important;
     color: var(--text-mid) !important;
     font-size: var(--t-sm);
@@ -6465,10 +6561,6 @@ button.cta-secondary {
 .cta-secondary:active {
     background: var(--bg-inset) !important;
     transform: translateY(1px) !important;
-}
-.cta-secondary:focus-visible {
-    outline: 2px solid var(--accent-hi) !important;
-    outline-offset: 2px !important;
 }
 .cta-secondary:disabled {
     color: var(--text-lo) !important;
@@ -6518,7 +6610,7 @@ button.cta-secondary {
 button.driver-step-btn {
     flex: 1 1 0;
     min-width: 0;
-    height: 24px;
+    height: var(--control-h-sm);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -6553,10 +6645,6 @@ button.driver-step-btn.driver-step-inc:hover {
 button.driver-step-btn:active {
     transform: translateY(1px) !important;
     background: var(--bg-inset) !important;
-}
-button.driver-step-btn:focus-visible {
-    outline: 2px solid var(--accent-hi) !important;
-    outline-offset: 2px !important;
 }
 /* An inactive driver has no count to decrement: keep the glyph visible so the
    tile does not reflow, but make the affordance obviously inert. */
@@ -6640,11 +6728,6 @@ button.driver-step-btn.is-off {
 .driver-icon:hover {
     transform: scale(1.1);
 }
-.driver-icon:focus-visible {
-    outline: 2px solid var(--accent-hi);
-    outline-offset: 2px;
-    border-radius: var(--r-xs);
-}
 
 /* The count under the icon follows the same state, on theme tokens rather than
    a fixed zinc grey so it re-tints with the theme. */
@@ -6693,9 +6776,9 @@ button.driver-step-btn.is-off {
 #btn-spectrum-toggle,
 #btn-expand-spatial,
 #btn-expand-active-graph {
-    height: 30px !important;
-    min-height: 30px !important;
-    max-height: 30px !important;
+    height: var(--control-h) !important;
+    min-height: var(--control-h) !important;
+    max-height: var(--control-h) !important;
     box-sizing: border-box !important;
     border: 1px solid var(--line) !important;
     border-radius: var(--r-sm) !important;
@@ -6972,12 +7055,25 @@ button.driver-step-btn.is-off {
    [disabled] attribute plus .is-ready, and the accent ramp supplies the fill:
    --accent on --accent-ink is ~8:1 under Void and stays above 7:1 in all nine
    themes. */
+/* `display` is deliberately NOT declared here. The button starts life with
+   Tailwind's `.hidden` and JS shows it by removing that class
+   (testlab-hearing.js: calculateHearingCorrection adds `is-ready` and removes
+   `hidden`). `.tl-eq-bake` and `.hidden` are both 0,1,0 and app.css loads after
+   the Tailwind build, so a `display` here wins and the button can never hide:
+   it sat in the pane, disabled and grey, before any test had been run.
+   Declaring display only in the visible state removes the race, the same way
+   .photo-matte-btn does. */
 .tl-eq-bake {
-    display: block;
     width: 100%;
+    /* The one control height, so this button joins the 22/28/32/36/40 scale -
+       it measured 34px from 8px of vertical padding around an 18px line. */
+    height: var(--control-h);
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
     margin-top: var(--s-1);
-    padding: var(--s-2) var(--s-3);
-    border-radius: var(--r-md);
+    padding: 0 var(--s-3);
+    border-radius: var(--r-sm);
     border: 1px solid var(--line);
     background: var(--bg-raised);
     color: var(--text-lo);
@@ -6989,6 +7085,9 @@ button.driver-step-btn.is-off {
     transition: background var(--d-1) var(--e-out),
                 color var(--d-1) var(--e-out),
                 border-color var(--d-1) var(--e-out) !important;
+}
+.tl-eq-bake:not(.hidden) {
+    display: flex;
 }
 .tl-eq-bake.is-ready {
     background: var(--accent);
@@ -7003,10 +7102,6 @@ button.driver-step-btn.is-off {
 .tl-eq-bake.is-ready:active {
     filter: brightness(0.96);
     transform: translateY(1px);
-}
-.tl-eq-bake:focus-visible {
-    outline: 2px solid var(--accent-hi);
-    outline-offset: 2px;
 }
 /* --- 7.6 Tone generator -----------------------------------------------------
    Play was a .btn-clear sitting beside an identically-weighted "Auto Sweep",
@@ -7259,14 +7354,16 @@ input[type="range"]::-webkit-slider-thumb {
 
    8.2.1 .eq-card-action-btn (Copy / Reset on all 10 advanced band cards).
    R0 tokenised .eq-card-input and .eq-card-select but NOT this one, so it kept
-   border-radius: 0, raw rgba fills, and an 18px height from app.css:3982. */
+   border-radius: 0, raw rgba fills, and an 18px height from app.css:3982.
+   The corner is --r-sm, the shared control corner; the --r-xs it carried here
+   was never visible anyway, because the shared control rule outranks it. */
 .eq-card-action-btn {
     background: var(--bg-raised) !important;
     border: 1px solid var(--line) !important;
-    border-radius: var(--r-xs) !important;
+    border-radius: var(--r-sm) !important;
     box-shadow: none !important;
     color: var(--text-mid) !important;
-    height: 18px !important;
+    height: var(--control-h-xs) !important;
     font-size: var(--t-micro) !important;
     transition: background var(--d-1) var(--e-out),
                 color var(--d-1) var(--e-out),
@@ -7467,7 +7564,7 @@ input[type="range"]::-webkit-slider-thumb {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
+    font-size: var(--t-md);
     font-weight: 700;
     line-height: 1;
     color: var(--accent-hi);
@@ -8046,23 +8143,15 @@ button:not(.no-tactile):active,
    the whole cascade.
 
    `button.switch` (0,1,1) beats both `.switch` and `.retro-switch-btn` (0,1,0).
-   The switch is now just the pill: no frame, no fill of its own. */
-button.switch,
-button.switch:hover,
-button.switch:active,
-button.switch:focus-visible {
+   The switch is now just the pill: no frame, no fill of its own. */button.switch, button.switch:hover, button.switch:active, button.switch:focus-visible {
     border: none !important;
     border-radius: var(--r-pill) !important;
     background: transparent !important;
     box-shadow: none !important;
-    outline: none !important;
 }
-/* Keep a visible keyboard focus ring - removing the frame must not remove the
-   only way a keyboard user can tell which control has focus. */
-button.switch:focus-visible {
-    outline: 2px solid var(--accent) !important;
-    outline-offset: 3px !important;
-}
+/* The track is the visible control, but the <button> is what the keyboard
+   reaches. One shared rule at the end of this file now draws the ring for
+   every control, switches included - see section 9.2. */
 
 /* --- 8.18 Keep three columns at every window size --------------------------
    Bug: below 1280px the workspace collapsed to a single column. The pane is
@@ -8241,19 +8330,18 @@ button.switch:focus-visible {
     align-items: stretch;
     gap: var(--s-1);
     width: 100%;
-    height: 32px;
+    height: var(--control-h);
     padding: 0;
     background: transparent;
     border: none;
-    border-radius: var(--r-sm);
+    border-radius: var(--r-pill);
 }
 #channel-tone-selector > button {
     flex: 1 1 0;
     min-width: 0;
     height: auto;
-    /* Match the wrapper, and the --r-sm used by the other R7 control groups.
-       Leaving them at the global --r-md put an 8px pill inside a 6px row. */
-    border-radius: var(--r-sm) !important;
+    /* The corner comes from the chip rule in 9.3: these are .category-pill
+       chips, so they are capsules like every other chip in the app. */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -8336,12 +8424,12 @@ button.switch:focus-visible {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    height: 28px;
+    height: var(--control-h-sm);
     padding: 0 0.625rem;
 border: 1px solid var(--abx-bd) !important;
     border-radius: var(--r-sm) !important;
     background: var(--abx-bg) !important;
-    font-size: 0.6875rem;
+    font-size: var(--t-xs);
     font-weight: 700;
     letter-spacing: 0.02em;
     white-space: nowrap;
@@ -8359,7 +8447,7 @@ border: 1px solid var(--abx-bd) !important;
 }
 #abx-start-btn:focus-visible {
     outline: 2px solid var(--abx-fg) !important;
-    outline-offset: 2px !important;
+    outline-offset: var(--focus-offset) !important;
 }
 #abx-start-btn.is-stop {
     --abx-fg: #f87171;
@@ -8414,7 +8502,7 @@ border: 1px solid var(--abx-bd) !important;
    its space back too. */
 .panel-brief {
     padding: 6px 8px;
-    font-size: 9px;
+    font-size: var(--t-micro);
     font-weight: 700;
     line-height: 1.5;
     color: var(--text-mid);
@@ -8460,11 +8548,11 @@ border: 1px solid var(--abx-bd) !important;
    user-chosen hue: the glyph has to stay legible on pale yellow as well as on
    near-black. */
 .curve-role-chip {
-    border-radius: var(--r-xs) !important;
+    border-radius: var(--r-pill) !important;
 }
 
 .curve-card-swatch {
-    font-size: 10px;
+    font-size: var(--t-micro);
     line-height: 1;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
 }
@@ -8502,7 +8590,7 @@ border: 1px solid var(--abx-bd) !important;
 .hearing-row-label {
     width: 44px;
     flex-shrink: 0;
-    font-size: 9px;
+    font-size: var(--t-micro);
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -8514,7 +8602,7 @@ border: 1px solid var(--abx-bd) !important;
     flex-shrink: 0;
     text-align: right;
     font-family: var(--font-family);
-    font-size: 9px;
+    font-size: var(--t-micro);
     font-weight: 700;
     color: var(--text-lo);
 }
@@ -8523,7 +8611,7 @@ border: 1px solid var(--abx-bd) !important;
    between the one-line idle copy and the two-line running copy. */
 .hearing-instruction {
     min-height: 2.4em;
-    font-size: 10px;
+    font-size: var(--t-micro);
     line-height: 1.35;
     color: var(--text-mid);
 }
@@ -8553,7 +8641,11 @@ border: 1px solid var(--abx-bd) !important;
 #hearing-test-btn {
     background: var(--accent) !important;
     border: 1px solid var(--accent) !important;
-    border-radius: var(--r-md) !important;
+    /* --r-sm, the shared control corner: an ID selector outranks
+       `button:not(.no-tactile)` on specificity, so this rule decides the
+       corner. It said --r-md, which made this one button 8px while every other
+       button in the app measured 6px. */
+    border-radius: var(--r-sm) !important;
     color: var(--accent-ink) !important;
     font-weight: 700;
     cursor: pointer;
@@ -8564,10 +8656,6 @@ border: 1px solid var(--abx-bd) !important;
 #hearing-test-btn:active {
     transform: translateY(1px) !important;
 }
-#hearing-test-btn:focus-visible {
-    outline: 2px solid var(--accent-hi) !important;
-    outline-offset: 2px !important;
-}
 
 /* Not Heard is a real answer, not a destructive action, so it keeps its own
    semantic amber - distinguishable from the accent fill at a glance, which is
@@ -8575,7 +8663,7 @@ border: 1px solid var(--abx-bd) !important;
 #hearing-not-heard-btn {
     background: rgba(251, 191, 36, 0.10) !important;
     border: 1px solid rgba(251, 191, 36, 0.35) !important;
-    border-radius: var(--r-md) !important;
+    border-radius: var(--r-sm) !important;
     color: var(--warn) !important;
     font-weight: 700;
     cursor: pointer;
@@ -8603,10 +8691,6 @@ border: 1px solid var(--abx-bd) !important;
    focus/utility rules.
 
 /* ===== end recovered rules =========================================== */
-        [data-file-trigger]:focus-visible {
-            outline: 2px solid var(--accent-blue) !important;
-            outline-offset: 2px !important;
-        }
 
         input[type="range"]::-moz-range-progress {
             height: 8px;
@@ -8883,14 +8967,14 @@ border: 1px solid var(--abx-bd) !important;
 .dt-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; min-height: 0; }
 .dt-grow { flex: 1 1 0; min-width: 0; min-height: 0; }
 .dt-fixed { flex: 0 0 auto; }
-.dt-h { font-size: 10.5px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; color: var(--accent-hi, var(--accent)); margin: 0; }
-.dt-lbl { display: block; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-mid); margin-bottom: 2px; }
-.dt-help { margin: 0; font-size: 11px; line-height: 1.35; color: var(--text-mid); }
+.dt-h { font-size: var(--t-xs); font-weight: 900; letter-spacing: .12em; text-transform: uppercase; color: var(--accent-hi, var(--accent)); margin: 0; }
+.dt-lbl { display: block; font-size: var(--t-micro); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-mid); margin-bottom: 2px; }
+.dt-help { margin: 0; font-size: var(--t-xs); line-height: 1.35; color: var(--text-mid); }
 .dt-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .dt-in, .dt-sel, .dt-ta {
   width: 100%; box-sizing: border-box; background: var(--bg-input); color: var(--text-hi);
-  border: 1px solid var(--line); border-radius: var(--r-sm); font-size: 12px; font-weight: 700; outline: none;
-  padding: 0 8px; height: 30px; font-family: inherit;
+  border: 1px solid var(--line); border-radius: var(--r-sm); font-size: var(--t-sm); font-weight: 700; outline: none;
+  padding: 0 8px; height: var(--control-h); font-family: inherit;
 }
 .dt-ta { height: auto; padding: 6px 8px; resize: none; font-weight: 500; line-height: 1.35; }
 .dt-in:focus, .dt-sel:focus, .dt-ta:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow); }
@@ -8898,9 +8982,9 @@ border: 1px solid var(--abx-bd) !important;
 .dt-in.is-bad, .dt-sel.is-bad { border-color: var(--danger); }
 .dt-in.is-num { text-align: center; padding: 0 2px; }
 .dt-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 30px; padding: 0 10px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: var(--control-h); padding: 0 10px;
   background: var(--bg-raised); color: var(--text-hi); border: 1px solid var(--line); border-radius: var(--r-sm);
-  font-size: 11px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; cursor: pointer; white-space: nowrap;
+  font-size: var(--t-xs); font-weight: 800; letter-spacing: .03em; text-transform: uppercase; cursor: pointer; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; min-width: 0; font-family: inherit;
 }
 .dt-btn:hover:not(:disabled) { background: var(--bg-hover, var(--bg-input)); border-color: var(--line-strong, var(--line)); }
@@ -8908,12 +8992,12 @@ border: 1px solid var(--abx-bd) !important;
 .dt-btn.is-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); box-shadow: 0 0 14px var(--accent-glow); }
 .dt-btn.is-primary:hover:not(:disabled) { filter: brightness(1.1); background: var(--accent); }
 .dt-btn.is-danger { color: var(--danger); }
-.dt-btn.is-sm { height: 24px; padding: 0 7px; font-size: 10px; }
+.dt-btn.is-sm { height: var(--control-h-sm); padding: 0 7px; font-size: var(--t-micro); }
 .dt-btn.is-ico { width: 30px; padding: 0; }
 .dt-btn.is-on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-hi, var(--accent)); }
 .dt-chip {
-  display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border-radius: var(--r-pill, 999px);
-  font-size: 10px; font-weight: 800; letter-spacing: .03em; border: 1px solid var(--line); background: var(--bg-input); color: var(--text-mid);
+  display: inline-flex; align-items: center; gap: 4px; height: var(--control-h-xs); padding: 0 7px; border-radius: var(--r-pill, 999px);
+  font-size: var(--t-micro); font-weight: 800; letter-spacing: .03em; border: 1px solid var(--line); background: var(--bg-input); color: var(--text-mid);
   white-space: nowrap; font-family: inherit;
 }
 .dt-chip.is-err { color: var(--danger); border-color: var(--danger); background: var(--danger-soft, transparent); }
@@ -8925,7 +9009,7 @@ button.dt-chip { cursor: pointer; }
 button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
 .dt-box { border: 1px solid var(--line); background: var(--bg-inset, var(--bg-input)); border-radius: var(--r-sm); min-height: 0; }
 .dt-sep { height: 1px; background: var(--line-subtle, var(--line)); flex: 0 0 auto; margin: 2px 0; }
-.dt-tag { display: inline-flex; align-items: center; height: 22px; padding: 0 7px; font-size: 10.5px; font-weight: 800; border-radius: var(--r-sm);
+.dt-tag { display: inline-flex; align-items: center; height: var(--control-h-sm); padding: 0 7px; font-size: var(--t-xs); font-weight: 800; border-radius: var(--r-sm);
   border: 1px solid var(--line); background: var(--bg-input); color: var(--text-mid); cursor: pointer; font-family: inherit; }
 .dt-tag:hover:not(:disabled) { border-color: var(--accent); color: var(--text-hi); }
 .dt-tag.is-on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
@@ -8942,19 +9026,19 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
   display: flex; align-items: center; gap: 6px; width: 100%; box-sizing: border-box; text-align: left; background: transparent; border: 0;
   color: var(--text-hi); font-family: inherit; cursor: pointer; border-radius: var(--r-xs, 3px);
 }
-.dt-brand { height: 24px; padding: 0 6px; font-size: 11px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; color: var(--text-mid); }
+.dt-brand { height: 24px; padding: 0 6px; font-size: var(--t-xs); font-weight: 900; letter-spacing: .04em; text-transform: uppercase; color: var(--text-mid); }
 .dt-brand:hover, .dt-item:hover { background: var(--bg-hover, var(--bg-input)); }
-.dt-brand .dt-caret { width: 10px; font-size: 9px; transition: transform .1s; }
+.dt-brand .dt-caret { width: 10px; font-size: var(--t-micro); transition: transform .1s; }
 .dt-brand.is-open .dt-caret { transform: rotate(90deg); }
-.dt-brand .dt-n { margin-left: auto; font-size: 10px; font-weight: 700; color: var(--text-lo); }
-.dt-item { min-height: 24px; padding: 2px 6px 2px 22px; font-size: 12px; font-weight: 700; }
+.dt-brand .dt-n { margin-left: auto; font-size: var(--t-micro); font-weight: 700; color: var(--text-lo); }
+.dt-item { min-height: 24px; padding: 2px 6px 2px 22px; font-size: var(--t-sm); font-weight: 700; }
 .dt-item .dt-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dt-item.is-sel { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
-.dt-item.is-new .dt-t::after { content: ' \2022 new'; color: var(--ok); font-size: 10px; }
-.dt-item.is-mod .dt-t::after { content: ' \2022 edited'; color: var(--warn); font-size: 10px; }
+.dt-item.is-new .dt-t::after { content: ' \2022 new'; color: var(--ok); font-size: var(--t-micro); }
+.dt-item.is-mod .dt-t::after { content: ' \2022 edited'; color: var(--warn); font-size: var(--t-micro); }
 .dt-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--text-lo); }
 .dt-dot.is-err { background: var(--danger); } .dt-dot.is-warn { background: var(--warn); } .dt-dot.is-info { background: var(--info, var(--accent)); } .dt-dot.is-ok { background: var(--ok); }
-.dt-nocurve { font-size: 10px; opacity: .55; }
+.dt-nocurve { font-size: var(--t-micro); opacity: .55; }
 
 /* editor */
 .dt-ed { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; min-height: 0; flex: 1 1 auto; }
@@ -8963,46 +9047,46 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
 .dt-g4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .dt-curve { position: relative; height: 96px; background: #000; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
 .dt-curve canvas { width: 100%; height: 100%; display: block; }
-.dt-curve .dt-cap { position: absolute; left: 6px; top: 3px; font-size: 9.5px; font-weight: 800; color: var(--text-mid); pointer-events: none; }
-.dt-msgs { font-size: 11px; line-height: 1.35; }
+.dt-curve .dt-cap { position: absolute; left: 6px; top: 3px; font-size: var(--t-micro); font-weight: 800; color: var(--text-mid); pointer-events: none; }
+.dt-msgs { font-size: var(--t-xs); line-height: 1.35; }
 .dt-msg { display: flex; gap: 5px; padding: 2px 0; color: var(--danger); }
 .dt-msg.is-ok { color: var(--ok); }
-.dt-file { display: flex; align-items: center; gap: 4px; padding: 2px 4px; border-bottom: 1px solid var(--line-subtle, var(--line)); font-size: 11px; }
+.dt-file { display: flex; align-items: center; gap: 4px; padding: 2px 4px; border-bottom: 1px solid var(--line-subtle, var(--line)); font-size: var(--t-xs); }
 .dt-file .dt-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .dt-file.is-cur { background: var(--accent-soft); }
 .dt-sug { position: relative; }
 .dt-sugbox { position: absolute; left: 0; right: 0; top: 100%; z-index: 40; background: var(--bg-card); border: 1px solid var(--accent); max-height: 150px; overflow-y: auto; box-shadow: var(--sh-pop, 0 6px 18px #000a); }
-.dt-sugbox button { display: block; width: 100%; text-align: left; padding: 3px 6px; font-size: 11px; background: transparent; color: var(--text-hi); border: 0; cursor: pointer; font-family: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; }
+.dt-sugbox button { display: block; width: 100%; text-align: left; padding: 3px 6px; font-size: var(--t-xs); background: transparent; color: var(--text-hi); border: 0; cursor: pointer; font-family: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; }
 .dt-sugbox button:hover { background: var(--accent-soft); }
-.dt-empty { margin: auto; text-align: center; color: var(--text-mid); font-size: 12px; padding: 16px; }
-.dt-empty .dt-big { font-size: 34px; display: block; margin-bottom: 6px; }
+.dt-empty { margin: auto; text-align: center; color: var(--text-mid); font-size: var(--t-sm); padding: 16px; }
+.dt-empty .dt-big { font-size: var(--t-2xl); display: block; margin-bottom: 6px; }
 
 /* audit / import rows */
 .dt-issue { display: flex; flex-direction: column; gap: 3px; padding: 6px; border-bottom: 1px solid var(--line-subtle, var(--line)); }
 .dt-issue:hover { background: var(--bg-hover, transparent); }
-.dt-issue .dt-top { display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; color: var(--text-mid); }
-.dt-issue .dt-m { font-size: 11px; line-height: 1.35; color: var(--text-hi); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+.dt-issue .dt-top { display: flex; align-items: center; gap: 5px; font-size: var(--t-micro); font-weight: 900; letter-spacing: .05em; text-transform: uppercase; color: var(--text-mid); }
+.dt-issue .dt-m { font-size: var(--t-xs); line-height: 1.35; color: var(--text-hi); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
 .dt-issue.is-open .dt-m { -webkit-line-clamp: unset; }
 .dt-issue .dt-acts { display: flex; gap: 4px; flex-wrap: wrap; }
 .dt-prop { border-bottom: 1px solid var(--line-subtle, var(--line)); padding: 5px 6px; }
 .dt-prop .dt-top { display: flex; align-items: center; gap: 6px; }
 .dt-prop input[type=checkbox], .dt-fld input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; flex: 0 0 auto; }
-.dt-fld { display: flex; align-items: flex-start; gap: 5px; padding: 1px 0 1px 20px; font-size: 10.5px; color: var(--text-mid); }
+.dt-fld { display: flex; align-items: flex-start; gap: 5px; padding: 1px 0 1px 20px; font-size: var(--t-xs); color: var(--text-mid); }
 .dt-fld .dt-v { min-width: 0; word-break: break-word; }
 .dt-fld s { color: var(--danger); opacity: .85; } .dt-fld ins { color: var(--ok); text-decoration: none; }
-.dt-hist { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 5px 6px; border: 0; border-bottom: 1px solid var(--line-subtle, var(--line)); background: transparent; color: var(--text-hi); font-size: 11px; cursor: pointer; font-family: inherit; }
+.dt-hist { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 5px 6px; border: 0; border-bottom: 1px solid var(--line-subtle, var(--line)); background: transparent; color: var(--text-hi); font-size: var(--t-xs); cursor: pointer; font-family: inherit; }
 .dt-hist:hover { background: var(--accent-soft); }
 .dt-hist.is-redo { opacity: .45; font-style: italic; }
 .dt-hist .dt-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dt-hist .dt-s { font-size: 9.5px; color: var(--text-lo); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dt-drop { border: 2px dashed var(--line-strong, var(--line)); border-radius: var(--r-md); padding: 10px; text-align: center; font-size: 11px; font-weight: 700; color: var(--text-mid); cursor: pointer; }
+.dt-hist .dt-s { font-size: var(--t-micro); color: var(--text-lo); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dt-drop { border: 2px dashed var(--line-strong, var(--line)); border-radius: var(--r-md); padding: 10px; text-align: center; font-size: var(--t-xs); font-weight: 700; color: var(--text-mid); cursor: pointer; }
 .dt-drop.is-over, .dt-drop:hover { border-color: var(--accent); color: var(--text-hi); background: var(--accent-soft); }
-.dt-log { font-size: 10.5px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; margin: 0; padding: 4px 6px; color: var(--text-mid); }
-.dt-banner { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--warn); background: var(--warn-soft, transparent); color: var(--warn); font-size: 11px; font-weight: 700; border-radius: var(--r-sm); }
+.dt-log { font-size: var(--t-xs); line-height: 1.4; white-space: pre-wrap; word-break: break-word; margin: 0; padding: 4px 6px; color: var(--text-mid); }
+.dt-banner { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--warn); background: var(--warn-soft, transparent); color: var(--warn); font-size: var(--t-xs); font-weight: 700; border-radius: var(--r-sm); }
 .dt-banner.is-ok { border-color: var(--ok); color: var(--ok); background: var(--ok-soft, transparent); }
 .dt-ed-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.dt-title { font-size: 13px; font-weight: 900; color: var(--text-hi); min-width: 0; flex: 1 1 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dt-kv { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--text-mid); }
+.dt-title { font-size: var(--t-md); font-weight: 900; color: var(--text-hi); min-width: 0; flex: 1 1 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dt-kv { display: flex; justify-content: space-between; gap: 8px; font-size: var(--t-xs); color: var(--text-mid); }
 .dt-kv b { color: var(--text-hi); font-weight: 800; }
 /* The editor reflows on ITS OWN width (not the window's): at ~1280px the centre column is
    narrow even though the window is wide, and on a phone it is the whole screen. In one-column
@@ -9020,19 +9104,19 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
 /* ---- Database tab, round 2: driver tiles, grouped tags, measurement boxes, selection ---- */
 .dt-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
 .dt-tile { display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 5px 6px; background: var(--bg-input); border: 1px solid var(--line); border-radius: var(--r-md, 10px); }
-.dt-tile .dt-tn { display: flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 900; letter-spacing: .04em; color: var(--text-mid); }
+.dt-tile .dt-tn { display: flex; align-items: center; gap: 4px; font-size: var(--t-micro); font-weight: 900; letter-spacing: .04em; color: var(--text-mid); }
 .dt-tile .dt-tn img { width: 18px; height: 18px; object-fit: contain; }
 .dt-tile .dt-tc { display: flex; align-items: center; justify-content: space-between; }
-.dt-tile .dt-tc b { font-size: 14px; font-weight: 900; color: var(--text-hi); min-width: 14px; text-align: center; }
-.dt-tile .dt-tc button { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line); background: var(--bg-raised); color: var(--text-hi); font-weight: 900; cursor: pointer; padding: 0; line-height: 1; font-family: inherit; }
+.dt-tile .dt-tc b { font-size: var(--t-md); font-weight: 900; color: var(--text-hi); min-width: 14px; text-align: center; }
+.dt-tile .dt-tc button { width: var(--control-h-xs); height: var(--control-h-xs); border-radius: 50%; border: 1px solid var(--line); background: var(--bg-raised); color: var(--text-hi); font-weight: 900; cursor: pointer; padding: 0; line-height: 1; font-family: inherit; }
 .dt-tile .dt-tc button:hover { border-color: var(--accent); color: var(--accent-hi, var(--accent)); }
 .dt-tile.is-on { border-color: var(--accent); background: var(--accent-soft); }
 .dt-tile.is-on .dt-tn { color: var(--text-hi); }
 .dt-tg { display: flex; flex-direction: column; gap: 3px; }
-.dt-tgh { font-size: 10px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; color: var(--text-mid); }
+.dt-tgh { font-size: var(--t-micro); font-weight: 900; letter-spacing: .05em; text-transform: uppercase; color: var(--text-mid); }
 .dt-tgnote { text-transform: none; letter-spacing: 0; font-weight: 700; color: var(--warn); margin-left: 4px; }
-.dt-tag { gap: 4px; border-radius: var(--r-pill, 999px); height: 23px; padding: 0 8px; }
-.dt-tag .dt-em { font-size: 12px; line-height: 1; }
+.dt-tag { gap: 4px; border-radius: var(--r-pill, 999px); padding: 0 8px; }
+.dt-tag .dt-em { font-size: var(--t-sm); line-height: 1; }
 .dt-tag.is-on.is-auto { opacity: 1; }
 .dt-tag.is-auto:not(.is-on) { opacity: .45; }
 .dt-file { position: relative; gap: 5px; padding: 3px 4px 3px 2px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-input); cursor: default; }
@@ -9040,13 +9124,13 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
 .dt-file.is-dragging { opacity: .4; }
 .dt-file.is-drop-before::before, .dt-file.is-drop-after::after { content: ''; position: absolute; left: 0; right: 0; height: 3px; background: var(--accent); border-radius: 2px; pointer-events: none; }
 .dt-file.is-drop-before::before { top: -3px; } .dt-file.is-drop-after::after { bottom: -3px; }
-.dt-grip { cursor: grab; color: var(--text-lo); font-size: 14px; line-height: 1; padding: 0 2px; user-select: none; }
+.dt-grip { cursor: grab; color: var(--text-lo); font-size: var(--t-md); line-height: 1; padding: 0 2px; user-select: none; }
 .dt-file:active .dt-grip { cursor: grabbing; }
 .dt-file .dt-t { display: flex; direction: ltr; min-width: 0; flex: 1 1 auto; cursor: pointer; text-overflow: clip; }
 .dt-file .dt-fd { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-lo); }
 .dt-file .dt-fn { flex: 0 1 auto; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-hi); font-weight: 700; }
-.dt-def { height: 16px; font-size: 9px; padding: 0 5px; }
-.dt-file .dt-fb { width: 22px !important; height: 20px; font-size: 11px; flex: 0 0 auto; }
+.dt-def { height: var(--control-h-xs); font-size: var(--t-micro); padding: 0 5px; }
+.dt-file .dt-fb { width: var(--control-h-xs) !important; height: var(--control-h-xs); font-size: var(--t-xs); flex: 0 0 auto; }
 .dt-issue .dt-top input[type=checkbox], .dt-selbar input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; flex: 0 0 auto; margin: 0; cursor: pointer; }
 .dt-issue.is-sel { background: var(--accent-soft); }
 .dt-selbar { padding: 3px 4px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-input); }
@@ -9065,6 +9149,26 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
 .dt-tagrow { gap: 4px; }
 .dt-tg { gap: 4px; }
 .dt-foot { padding-top: 2px; flex: 0 0 auto; }
+
+/* --- Tag sheet -------------------------------------------------------------
+   All five groups are visible at once, as emoji + label pills on the 22px
+   control step. That is deliberate: at 11px/28px the sheet was ~550px tall in
+   a ~490px column, which is what forced a scrollbar (and a flex box that shrank
+   under its content, drawing pills over the status line). At 10px/22px/2-3px
+   gaps it measures 303-423px in this column at every desktop width, so nothing
+   needs a group switcher, a hidden panel, or a scrollbar. The price tier is one
+   heading line rather than a row of disabled buttons - it is derived from the
+   price, not chosen. flex:0 0 auto still matters: it stops the box shrinking
+   below its content if a larger reading size ever pushes the sheet past the
+   column. */
+#dt-tags { flex: 0 0 auto; gap: 6px; }
+#dt-tags .dt-tg { gap: 2px; }
+#dt-tags .dt-tgh { font-size: var(--t-micro); letter-spacing: .03em; }
+#dt-tags .dt-tagrow { column-gap: 3px; row-gap: 2px; }
+#dt-tags .dt-tag { height: var(--control-h-xs); padding: 0 8px; font-size: var(--t-micro); gap: 4px; }
+#dt-tags .dt-tag .dt-em { font-size: var(--t-xs); }
+.dt-msgs { flex: 0 0 auto; }
+.dt-msgs:empty { display: none; }
 .dt-curve.is-tall { height: auto; flex: 1 1 160px; min-height: 120px; }
 .dt-fscroll { overflow-y: auto; overflow-x: hidden; max-height: 36%; min-height: 0; flex: 0 1 auto; scrollbar-width: thin; }
 .dt-cvgrid > .dt-col { overflow: hidden; }
@@ -9078,7 +9182,7 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
 #dt-editor > .dt-banner, #dt-banner-slot .dt-banner { padding: 3px 8px; min-height: 0; line-height: 1.2; }
 #dt-banner-slot:empty { display: none; }
 .dt-tile { padding: 4px 6px; gap: 2px; }
-.dt-tile .dt-tc button { width: 20px; height: 20px; }
+.dt-tile .dt-tc button { width: var(--control-h-xs); height: var(--control-h-xs); }
 .dt-ed > .dt-col { gap: 7px; }
 .dt-ed .dt-h { margin-top: 4px; }
 #dt-editor { gap: 8px !important; }
@@ -9094,16 +9198,16 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
    taller drop zone so the importer no longer feels crammed against the chart. */
 .dt-cvcard { padding: 12px; border: 1px solid var(--line); border-radius: var(--r-md, 10px); background: var(--bg-inset, var(--bg-input)); }
 .dt-cvhead { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
-.dt-cvhead .dt-cvcount { margin-left: auto; font-size: 10px; font-weight: 900; color: var(--text-lo); }
+.dt-cvhead .dt-cvcount { margin-left: auto; font-size: var(--t-micro); font-weight: 900; color: var(--text-lo); }
 .dt-cvsec { display: flex; flex-direction: column; gap: 5px; flex: 0 0 auto; }
 .dt-cvfoot { display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; }
 .dt-cvfoot .dt-btn.is-primary { width: 100%; }
-.dt-cvtab .dt-drop { padding: 16px; font-size: 11.5px; }
-.dt-ai-ta { height: 260px; min-height: 140px; resize: vertical; font-size: 12px; line-height: 1.45; }
+.dt-cvtab .dt-drop { padding: 16px; font-size: var(--t-xs); }
+.dt-ai-ta { height: 260px; min-height: 140px; resize: vertical; font-size: var(--t-sm); line-height: 1.45; }
 .dt-tgwrap { gap: clamp(8px, 1.7vh, 18px); }
 .dt-tg { gap: clamp(4px, .8vh, 8px); }
 .dt-tagrow { gap: clamp(5px, .9vh, 9px) 7px; }
-.dt-tag { height: clamp(24px, 2.9vh, 28px); padding: 0 11px; }
+.dt-tag { padding: 0 11px; }
 @container dt-editor (max-width: 600px) {
   .dt-cvtab { overflow-y: auto; overflow-x: hidden; }
   .dt-cvtab > * { flex: none; }
@@ -9117,7 +9221,7 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
 .dt-tgwrap { gap: clamp(6px, 1.3vh, 18px); }
 .dt-tg { gap: clamp(4px, .7vh, 8px); }
 .dt-tagrow { gap: clamp(4px, .7vh, 9px) 6px; }
-.dt-tag { padding: 0 9px; height: clamp(24px, 2.8vh, 28px); }
+.dt-tag { padding: 0 9px; }
 .dt-ai-ta { flex: 0 0 auto; height: clamp(190px, 30vh, 330px); }
 /* save preview: a listed row jumps to that entry, so it needs to look clickable */
 .uikit-detail-row {
@@ -9134,7 +9238,6 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
 .uikit-detail-row:hover,
 .uikit-detail-row:focus-visible {
     background: var(--bg-hover);
-    outline: none;
 }
 
 /* --- Save-log viewer ------------------------------------------------------
@@ -9144,21 +9247,21 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
    from the file (and is escaped there); these rules only carry structure and
    colour, and the ＋ ～ － marks keep their semantic hue for the same reason the
    save preview does: add / change / remove is the meaning of the row. */
-.slv-doc { font-size: 12px; line-height: 1.5; color: var(--text-main); }
+.slv-doc { font-size: var(--t-sm); line-height: 1.5; color: var(--text-main); }
 .slv-title {
-    margin: 0 0 4px;
-    font-size: 13px;
+    margin: 0 0 var(--s-1);
+    font-size: var(--t-md);
     font-weight: 700;
     letter-spacing: .02em;
     color: var(--text-hi);
 }
 .slv-note {
-    margin: 0 0 8px;
-    font-size: 11px;
+    margin: 0 0 var(--s-2);
+    font-size: var(--t-xs);
     font-style: italic;
     color: var(--text-mid);
 }
-.slv-text { margin: 0 0 8px; font-size: 11px; color: var(--text-mid); }
+.slv-text { margin: 0 0 8px; font-size: var(--t-xs); color: var(--text-mid); }
 .slv-sec {
     margin: 0 0 10px;
     padding: 8px 10px;
@@ -9170,24 +9273,24 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
     display: flex;
     align-items: baseline;
     flex-wrap: wrap;
-    gap: 4px 8px;
-    margin-bottom: 4px;
+    gap: var(--s-1) var(--s-2);
+    margin-bottom: var(--s-1);
 }
 .slv-h {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 11.5px;
+    font-size: var(--t-xs);
     font-weight: 700;
     color: var(--accent-hi);
 }
 .slv-where {
-    font-size: 10px;
+    font-size: var(--t-micro);
     text-transform: uppercase;
     letter-spacing: .06em;
     color: var(--text-mid);
 }
 .slv-meta {
     margin: 0 0 6px;
-    font-size: 10.5px;
+    font-size: var(--t-xs);
     color: var(--text-mid);
     font-variant-numeric: tabular-nums;
 }
@@ -9196,7 +9299,7 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
     align-items: baseline;
     gap: 6px;
     padding: 2px 0;
-    font-size: 11px;
+    font-size: var(--t-xs);
 }
 .slv-mark { flex: none; width: 13px; text-align: center; font-weight: 700; }
 .slv-name { color: var(--text-hi); }
@@ -9211,37 +9314,36 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
    what is drawn, never what is written: the file is untouched. The count on the
    right is what keeps a filtered list honest about how much it is hiding. */
 .slv-fbtn {
-    height: 28px;
+    height: var(--control-h-sm);
     padding: 0 11px;
     background: var(--bg-raised);
     color: var(--text-mid);
     border: 1px solid var(--line);
     border-radius: 999px;
-    font-size: 11px;
+    font-size: var(--t-xs);
     font-weight: 600;
     cursor: pointer;
     transition: background var(--d-2, .12s) ease, color var(--d-2, .12s) ease, border-color var(--d-2, .12s) ease;
 }
 .slv-fbtn:hover { color: var(--text-hi); border-color: var(--line-strong); }
-.slv-fbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .slv-fbtn.is-on {
     background: var(--accent);
     color: var(--accent-ink);
     border-color: var(--accent);
 }
 .slv-month {
-    height: 28px;
+    height: var(--control-h-sm);
     padding: 0 6px;
     background: var(--bg-input);
     color: var(--text-main);
     border: 1px solid var(--line);
     border-radius: var(--r-md);
-    font-size: 11px;
+    font-size: var(--t-xs);
     cursor: pointer;
 }
 .slv-count {
     margin-left: auto;
-    font-size: 10.5px;
+    font-size: var(--t-xs);
     color: var(--text-mid);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -9252,17 +9354,17 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
 .slv-search {
     flex: 0 1 208px;
     min-width: 120px;
-    height: 28px;
+    height: var(--control-h-sm);
     padding: 0 10px;
     background: var(--bg-input);
     color: var(--text-main);
     border: 1px solid var(--line);
     border-radius: 999px;
-    font-size: 11px;
+    font-size: var(--t-xs);
 }
 .slv-search::placeholder { color: var(--text-mid); }
 .slv-search:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: var(--focus-ring-w) solid var(--accent);
     outline-offset: 1px;
     border-color: var(--accent);
 }
@@ -9272,10 +9374,13 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
    quoted search text keeps the reader's own casing rather than being set in
    caps, so a model name or a path in it still reads as what they typed. */
 .slv-found {
-    padding: 1px 6px;
+    display: inline-flex;
+    align-items: center;
+    height: var(--control-h-xs);
+    padding: 0 6px;
     border: 1px solid var(--line);
-    border-radius: 999px;
-    font-size: 9.5px;
+    border-radius: var(--r-pill);
+    font-size: var(--t-micro);
     letter-spacing: .02em;
     color: var(--accent-hi);
 }
@@ -9287,4 +9392,179 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
 .slv-scope {
     font-style: normal;
     color: var(--accent-hi);
+}
+
+/* ==========================================================================
+   9. CONTROL PRIMITIVES — one height per role, one focus ring everywhere
+   ==========================================================================
+   The control-height and focus tokens were declared at the top of this file
+   before the components moved onto them. This section finishes the move for
+   the families whose size lived in a Tailwind utility in markup, where no
+   component rule could reach it. Every toggle, chip and button CONTROL is now
+   one of five heights, chosen by what the control IS, not by which pane it
+   happened to be drawn in. (Two things stay out of the scale on purpose: an
+   icon swatch cell - the 26px spec-picker badge, sized to its artwork - and a
+   list row, such as the Data tree or the app tabs, which is a row rather than
+   a control. A slider thumb is a graphic too.)
+
+     --control-h-xs  22   a badge (status pill, DEFAULT tag) and the micro
+                          buttons that live inside a 20px band row
+     --control-h-sm  28   a chip you can click (genre tag, filter pill) and the
+                          compact button rank (data rows, driver steppers,
+                          save-log filters, subtab segments)
+     --control-h     32   a standard button, a field, a toggle, a stepper, a
+                          switch, a settings value button
+     --control-h-lg  36   a large CTA
+     --control-h-xl  40   a full-width CTA
+
+   The heights this replaces - 16, 18, 20, 23, 24, 26, 30, 34 and a 24-28
+   viewport clamp - are gone from every control family, so a button in the Data
+   tab and a button in Settings are the same height, and a genre chip in EQ is
+   the same height as a tag in the Data tab.
+   ========================================================================== */
+
+/* 9.1 Heights that came from markup utilities ------------------------------
+   .btn-clear shipped as h-8, h-7, py-1.5 and py-2 depending on where it was
+   written, which is why the same button measured 30px in EQ and 32px in
+   Testlab. The family declares its height now and the utility is ignored. */
+.btn-clear,
+.retro-switch-btn {
+    height: var(--control-h) !important;
+}
+
+/* .category-pill measured 24-26 from `py-1` + line-height, so its height moved
+   with the font scale. It is a chip now, at the chip step, in every pane. */
+.category-pill,
+.tag,
+.db-sig-tag {
+    height: var(--control-h-sm) !important;
+}
+
+/* The CTAs' h-8 / h-9 / h-10 were already the md / lg / xl steps, but named in
+   Tailwind's scale rather than ours. They are the same three sizes, read from
+   the control scale, so a change there reaches every CTA at once. */
+.cta-primary,
+.cta-secondary {
+    height: var(--control-h) !important;
+}
+.cta-primary.h-9,
+.cta-secondary.h-9 { height: var(--control-h-lg) !important; }
+.cta-primary.h-10,
+.cta-secondary.h-10 { height: var(--control-h-xl) !important; }
+
+/* 9.2 One focus ring -------------------------------------------------------
+   Every control, in every pane, gets the same ring: --focus-ring-w wide, in the
+   lighter accent so it stays visible on an accent-filled chip as well as on
+   black, and --focus-offset clear of the control's own border. This replaces
+   the dozen hand-written focus rules that used to sit next to each component,
+   and it also covers the controls that never had one (the data buttons, the
+   tags, the steppers, whose markup carried `focus:outline-none`). */
+:is(button, [role="button"], label.btn-label, .tag, .category-pill):focus-visible,
+:is(label.btn-label, .tag, .category-pill):has(input:focus-visible) {
+    outline: var(--focus-ring-w) solid var(--accent-hi) !important;
+    outline-offset: var(--focus-offset) !important;
+}
+
+/* Where an outward ring would be clipped by its container, or would collide
+   with the next control across a 2-4px gap, it is drawn inside the control:
+   same width, same colour, only the side of the border it sits on changes. */
+.stepper > button:focus-visible,
+.stepper-rail > button:focus-visible,
+.subtab-seg-grid > .subtab-seg-btn:focus-visible,
+.dt-tagrow > .dt-tag:focus-visible,
+.btn-clear :is(button, [role="button"]):focus-visible,
+.smart-import-combo button:focus-visible {
+    outline-offset: calc(var(--focus-offset) * -1) !important;
+}
+
+/* 9.3 One corner -----------------------------------------------------------
+   The base is the shared control rule earlier in this file
+   (`button:not(.no-tactile), .category-pill, .tag, label.btn-label`), which every
+   rectangular control already resolved through. It used to say --r-md, and
+   because it outranked each family's own `border-radius` (its
+   `button:not(.no-tactile)` is 0,1,1) it was the corner in practice: that is why
+   the same .btn-clear measured 6px where its own rule set --r-sm and 8px
+   everywhere else. It says --r-sm now, so one family-wide declaration is enough
+   and the CTAs, Settings buttons, app tabs and Data buttons share a corner.
+   (Controls that carry `no-tactile` are excluded from that rule by its own
+   `:not()`; the CTAs, app tabs and subtab segments among them declare --r-sm
+   in their own rules instead.)
+
+   What is left is the list of controls that are NOT rectangles. Each one is
+   written with its element type so it matches at the same 0,1,1 weight as the
+   base and, being later, wins:
+
+     chip                --r-pill   a capsule
+     round icon button   --r-pill   a 22x22 square + 999px = a circle
+     tree row            --r-xs     a row, not a control
+
+   Two shapes are square on purpose, and they are listed too - through the
+   scale's zero step, --r-square, rather than a bare 0: the title-bar caption
+   buttons (window chrome, square in every pane) and the segments inside a
+   fused .stepper (square because the pill around them carries the corner, and
+   because `overflow: hidden` clips them). Neither can take a visible corner,
+   so the honest declaration is 0px with a reason, not an unexplained 0. */
+
+/* Chips are capsules - in EQ, in the Data tab, in the save-log viewer. Includes
+   the month picker (<select>) that sits in the same filter row as .slv-fbtn. */
+button.category-pill,
+label.category-pill,
+button.tag,
+button.db-sig-tag,
+button.dt-tag,
+button.dt-chip,
+button.dt-def,
+button.slv-fbtn,
+select.slv-month,
+.slv-found,
+.curve-role-chip {
+    border-radius: var(--r-pill) !important;
+}
+
+/* Round is its own shape, not the absence of a corner: the tile steppers are
+   22x22 squares, so the pill radius renders them as circles. */
+.dt-tile .dt-tc button {
+    border-radius: var(--r-pill) !important;
+}
+
+/* A row in a tree is a row, not a control: it keeps the smaller row radius. */
+button.dt-brand,
+button.dt-item {
+    border-radius: var(--r-xs) !important;
+}
+
+/* Deliberate square, declared once here so the two shapes have the same kind of
+   entry as the chips and the round buttons above: window chrome, and the fused
+   segments whose pill owns the corner. */
+.app-caption .app-caption-btn,
+.stepper > button,
+.stepper-rail > button {
+    border-radius: var(--r-square) !important;
+}
+
+/* Tailwind's `rounded-full` resolves to 9999px, which is not a step on this
+   scale (tools/radius-snapshot.js flags it). It is the same shape as
+   --r-pill, so the two progress fills that carry it read from the token. */
+.rounded-full {
+    border-radius: var(--r-pill) !important;
+}
+
+/* ==========================================================================
+   REDUCED MOTION
+   ==========================================================================
+   The app carries ~170 animations and ~87 transitions, and until now not one
+   of them respected the OS setting: a reader who has asked their system for
+   less motion still got pulsing status dots, a spinning scan overlay and every
+   hover lift. One rule at the end of the cascade covers every component at
+   once, including ones added later, so this never has to be re-applied per
+   view. Durations are collapsed rather than removed, so state still changes -
+   only the travel between states is gone.
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
 }

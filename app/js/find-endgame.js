@@ -276,7 +276,7 @@ const Find_EndgameMethods = {
                                     <div class="flex justify-between items-center select-none pb-1 border-b border-white/[0.06]">
                                         <div class="flex items-center gap-1.5 min-w-0 pr-1 truncate">
                                             <span class="vibrant-emoji flex-shrink-0 text-sm leading-none">${headerEmoji}</span>
-                                            <span class="text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${isValueStrip ? 'text-amber-300' : 'text-sky-400'} truncate">${esc(headerTitle)}</span>
+                                            <span class="type-micro font-black uppercase tracking-wider whitespace-nowrap ${isValueStrip ? 'text-amber-300' : 'text-sky-400'} truncate">${esc(headerTitle)}</span>
                                         </div>
                                         <div class="flex items-center gap-1.5 flex-shrink-0">
                                             ${badgeHtml || ''}
@@ -285,7 +285,7 @@ const Find_EndgameMethods = {
                                     </div>
 
                                     <div class="flex justify-between items-center text-xs select-none">
-                                        <span class="text-[9px] font-mono text-zinc-400 font-bold uppercase tracking-wider">Option ${curOption} of ${totalOptions}</span>
+                                        <span class="type-micro font-mono text-zinc-400 font-bold uppercase tracking-wider">Option ${curOption} of ${totalOptions}</span>
     ${totalOptions > 1 ? (() => {
     // The stepper used to pick the whole call inside the attribute:
     //   onclick="FindEngine.${isValueStrip ? 'cycleEndgameValue(-1)' : `cycleEndgamePick('${catId}', -1)`}"
@@ -297,8 +297,8 @@ const Find_EndgameMethods = {
     const nextArgs = isValueStrip ? ' data-arg-0="1"' : ` data-arg-0="${esc(catId)}" data-arg-1="1"`;
     return `
     <div class="flex items-center gap-1">
-    <button data-cmd="${prevCmd}"${prevArgs} class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
-    <button data-cmd="${nextCmd}"${nextArgs} class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
+    <button data-cmd="${prevCmd}"${prevArgs} class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black type-micro flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
+    <button data-cmd="${nextCmd}"${nextArgs} class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black type-micro flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
     </div>
     `; })() : ''}
                                     </div>
@@ -308,13 +308,13 @@ const Find_EndgameMethods = {
                                             <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
                                                 <span class="emoji-font vibrant-emoji text-base leading-none">${genreMatch.emoji}</span>
                                             </div>
-                                            <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${genreMatch.name}</span>
+                                            <span class="match-genre-name type-micro font-black uppercase text-stone-200 inline-block whitespace-nowrap">${genreMatch.name}</span>
                                         </div>
                                         <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Game Match: ${gameGenreMatch.name}">
                                             <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
                                                 <span class="emoji-font vibrant-emoji text-base leading-none">${gameGenreMatch.emoji}</span>
                                             </div>
-                                            <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${gameGenreMatch.name}</span>
+                                            <span class="match-genre-name type-micro font-black uppercase text-stone-200 inline-block whitespace-nowrap">${gameGenreMatch.name}</span>
                                         </div>
                                     </div>
 
@@ -327,8 +327,8 @@ const Find_EndgameMethods = {
                                         </div>
 
                                         <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
-                                            ${price !== null && price !== undefined ? `<span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>` : ''}
-                                            ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
+                                            ${price !== null && price !== undefined ? `<span class="type-micro font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>` : ''}
+                                            ${year ? `<span class="type-micro font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
                         ${driverType ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
                         ${connector ? `<span class="spec-icon-badge" data-tooltip="${esc(connectorTooltip)}">${connectorEmoji}</span>` : ''}
                         <span class="spec-icon-badge" data-tooltip="${esc(formTooltip)}">${formEmoji}</span>
@@ -338,7 +338,7 @@ const Find_EndgameMethods = {
                                             <canvas id="${sparkId}" class="absolute inset-0 w-full h-full block opacity-85"></canvas>
                                         </div>
 
-                                        <div class="flex items-center justify-between w-full mt-2.5 px-1 text-[8.5px] font-mono select-none">
+                                        <div class="flex items-center justify-between w-full mt-2.5 px-1 type-micro font-mono select-none">
                                             <div class="flex-shrink-0">${driveHtml}</div>
                                             <div class="flex items-center justify-end overflow-hidden ml-1">
                                                 ${trustHtml || ''}
@@ -353,7 +353,7 @@ const Find_EndgameMethods = {
 
                                 <div class="flex items-center gap-1.5 mt-3 pt-2 border-t-2 border-black ${hasGraph ? '' : 'hidden'}">
                                     <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${cardIdx}" data-arg-1="-1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                    <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${cardIdx}" data-arg-1="${escJs(curveIdToLoad)}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none">
+                                    <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${cardIdx}" data-arg-1="${escJs(curveIdToLoad)}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 type-micro border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none">
                                         <span id="label-role-stepper-${cardIdx}" class="flex items-center justify-center gap-1 truncate">${currentRoleOpt.label}</span>
                                     </button>
                                     <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${cardIdx}" data-arg-1="1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
@@ -369,7 +369,7 @@ const Find_EndgameMethods = {
                         const v = vpool[vi];
                         const dsItem = dataset.find(i => i.id === v.id) || { id: v.id, name: v.name, data: v.data };
                         const badgeHtml = '';
-                        const trustHtml = `<span class="text-[9px] font-bold text-emerald-400 whitespace-nowrap truncate" title="Clone of ${esc(v.matchName)}">💥 ${esc(v.matchName)}</span>`;
+                        const trustHtml = `<span class="type-micro font-bold text-emerald-400 whitespace-nowrap truncate" title="Clone of ${esc(v.matchName)}">💥 ${esc(v.matchName)}</span>`;
 
                         cardsHtml += buildCardHtml('eg_val', 'Value', '💎', v.similarity.toFixed(1), 'text-amber-300', vi + 1, vpool.length, dsItem, '_value', true, v.matchName, '', badgeHtml, trustHtml);
                         sparkJobs.push({ cardIdx: 'eg_val', item: dsItem });
@@ -386,11 +386,11 @@ const Find_EndgameMethods = {
                         const dsItem = dataset.find(i => i.id === p.id) || { id: p.id, name: p.name, data: p.data };
 
                         const badgeHtml = p.isChampion
-                            ? '<span class="text-[9.5px] font-black text-amber-300 whitespace-nowrap">👑 Champion</span>'
-                            : (p.isGiantKiller ? '<span class="text-[9.5px] font-black text-emerald-400 whitespace-nowrap">💥 Gem</span>' : '');
+                            ? '<span class="type-micro font-black text-amber-300 whitespace-nowrap">👑 Champion</span>'
+                            : (p.isGiantKiller ? '<span class="type-micro font-black text-emerald-400 whitespace-nowrap">💥 Gem</span>' : '');
                         const trustHtml = p.tagMatch
-                            ? (p.curveScore >= 40 ? '<span class="text-[9px] font-bold text-emerald-400 whitespace-nowrap">✅ Confirmed</span>' : '<span class="text-[9px] font-bold text-rose-400 whitespace-nowrap">⚠️ Tag Conflict</span>')
-                            : '<span class="text-[9px] font-bold text-sky-400 whitespace-nowrap">🔬 Measured</span>';
+                            ? (p.curveScore >= 40 ? '<span class="type-micro font-bold text-emerald-400 whitespace-nowrap">✅ Confirmed</span>' : '<span class="type-micro font-bold text-rose-400 whitespace-nowrap">⚠️ Tag Conflict</span>')
+                            : '<span class="type-micro font-bold text-sky-400 whitespace-nowrap">🔬 Measured</span>';
 
                         const headerEmoji = cat.emoji || (p.isChampion ? '👑' : '🎧');
                         const cardKey = `eg_${cat.id}`;
@@ -522,7 +522,7 @@ const Find_EndgameMethods = {
                                 <span class="emoji-font vibrant-emoji text-sm flex-shrink-0 leading-none">👑</span>
                                 <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(name)} ($${this.selectedGkFlagshipPrice})</span>
                             </div>
-                            <button type="button" data-cmd="FindEngine.clearGkFlagship" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the flagship target">✕</button>
+                            <button type="button" data-cmd="FindEngine.clearGkFlagship" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white type-micro font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the flagship target">✕</button>
                         `;
                     }
                 },
@@ -534,7 +534,7 @@ const Find_EndgameMethods = {
                     const slot = document.getElementById('find-gk-flagship-slot');
                     if (slot) {
                         slot.className = "w-full h-9 border-2 border-dashed border-black bg-black/10 flex items-center justify-center select-none";
-                        slot.innerHTML = `<span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Select Flagship Target</span>`;
+                        slot.innerHTML = `<span class="type-micro font-black text-stone-400 uppercase tracking-wider">+ Select Flagship Target</span>`;
                     }
                 },
 

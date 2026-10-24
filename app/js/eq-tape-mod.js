@@ -54,8 +54,8 @@ const EQ_TapeModMethods = {
                 if (subLabel) {
                     subLabel.textContent = subNames[this.tapeModState] || 'Off';
                     subLabel.className = this.tapeModState === 'off'
-                        ? "font-mono text-emerald-400 font-bold text-[10px]"
-                        : "font-mono text-amber-400 font-bold text-[10px]";
+                        ? "font-mono text-emerald-400 font-bold type-micro"
+                        : "font-mono text-amber-400 font-bold type-micro";
                 }
             },
 };

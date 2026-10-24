@@ -83,13 +83,13 @@ const Shortcuts = {
             groups[b.group].push(b);
         });
 
-        const keyChip = (b) => `<span class="inline-flex items-center justify-center min-w-[22px] px-1.5 py-0.5 border border-[var(--border-color)] bg-[var(--bg-input)] text-[10px] font-mono font-bold">${b.ctrl ? 'Ctrl+' : ''}${b.displayKey || b.key.toUpperCase()}</span>`;
+        const keyChip = (b) => `<span class="inline-flex items-center justify-center min-w-[22px] px-1.5 py-0.5 border border-[var(--border-color)] bg-[var(--bg-input)] type-micro font-mono font-bold">${b.ctrl ? 'Ctrl+' : ''}${b.displayKey || b.key.toUpperCase()}</span>`;
 
         let groupsHtml = '';
         Object.keys(groups).forEach(g => {
-            groupsHtml += `<div class="mb-3"><p class="text-[9px] uppercase tracking-wider text-zinc-500 font-bold mb-1.5">${g}</p><div class="space-y-1.5">`;
+            groupsHtml += `<div class="mb-3"><p class="type-micro uppercase tracking-wider text-zinc-500 font-bold mb-1.5">${g}</p><div class="space-y-1.5">`;
             groups[g].forEach(b => {
-                groupsHtml += `<div class="flex items-center justify-between gap-3"><span class="text-[11px] text-[var(--text-main)]">${b.label}</span>${keyChip(b)}</div>`;
+                groupsHtml += `<div class="flex items-center justify-between gap-3"><span class="type-xs text-[var(--text-main)]">${b.label}</span>${keyChip(b)}</div>`;
             });
             groupsHtml += `</div></div>`;
         });
@@ -113,7 +113,7 @@ const Shortcuts = {
                     <button id="shortcuts-help-close" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
                 </div>
                 ${groupsHtml}
-                <p class="text-[9px] text-zinc-600 mt-1 leading-normal">Shortcuts are disabled while typing in a text field.</p>
+                <p class="type-micro text-zinc-600 mt-1 leading-normal">Shortcuts are disabled while typing in a text field.</p>
             </div>`;
         document.body.appendChild(wrap);
 

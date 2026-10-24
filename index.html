@@ -32,25 +32,25 @@
             </div>
             <nav class="flex flex-col gap-2">
             <button data-action="click_140_App_switchTab__iem____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
-                <span class="text-[18px]">📝</span> <span>Review</span>
+                <span class="type-lg">📝</span> <span>Review</span>
             </button>
             <button data-action="click_257_App_switchTab__eq____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
-                <span class="text-[18px]">🎚️</span> <span>EQ</span>
+                <span class="type-lg">🎚️</span> <span>EQ</span>
             </button>
             <button data-action="click_188_App_switchTab__testlab____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
-                <span class="text-[18px]">🔬</span> <span>Test</span>
+                <span class="type-lg">🔬</span> <span>Test</span>
             </button>
             <button data-action="click_341_App_switchTab__database____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
-                <span class="text-[18px]">🗃️</span> <span>Database</span>
+                <span class="type-lg">🗃️</span> <span>Database</span>
             </button>
             <button data-action="click_147_App_switchTab__visualizer____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
-                <span class="text-[18px]">📊</span> <span>Visualizer</span>
+                <span class="type-lg">📊</span> <span>Visualizer</span>
             </button>
             <button data-action="click_121_App_switchTab__find____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
-                <span class="text-[18px]">🔍</span> <span>Find</span>
+                <span class="type-lg">🔍</span> <span>Find</span>
             </button>
             <button data-action="click_26_App_switchTab__settings____App_toggleMobileDrawer" class="flex items-center gap-3 px-3 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/40 text-left h-10 w-full cursor-pointer">
-                <span class="text-[18px]">⚙️</span> <span>Settings</span>
+                <span class="type-lg">⚙️</span> <span>Settings</span>
             </button>
         </nav>
         </div>
@@ -69,14 +69,14 @@
                  (the right spacer was display:none). The nav is now absolutely
                  centred, so no side content can skew it at any width. -->
             <div class="app-brand flex items-center gap-2 select-none flex-shrink-0">
-                <button data-action="click_267_App_toggleMobileSidebar" class="md:hidden p-1 px-2 bg-[var(--bg-input)] hover:bg-zinc-800 text-stone-200 cursor-pointer text-[13px] leading-none flex items-center justify-center app-no-drag" style="border-radius: var(--r-sm); border: 1px solid var(--line);" title="Open menu">
+                <button data-action="click_267_App_toggleMobileSidebar" class="md:hidden p-1 px-2 bg-[var(--bg-input)] hover:bg-zinc-800 text-stone-200 cursor-pointer type-md leading-none flex items-center justify-center app-no-drag" style="border-radius: var(--r-sm); border: 1px solid var(--line);" title="Open menu">
                     ☰
                 </button>
-                <span id="brand-icon-emoji" class="inline select-none emoji-font" style="font-size: 22px; line-height: 1;">😐</span>
-                <span id="tb-label-3" data-action="click_87_App_tbClick_3" class="text-[11px] font-semibold tracking-widest text-[var(--text-hi)] uppercase hover:text-[var(--accent-hi)] cursor-pointer select-none transition-colors">IEM Tool</span>
-                <span class="cursor-pointer inline-block ml-0.5 hover:brightness-125 select-none transition-all duration-300 emoji-font app-no-drag" data-action="click_287_App_triggerMushroomEgg_this" style="font-size: 13px;">🍄</span>
+                <span id="brand-icon-emoji" class="inline select-none emoji-font" style="font-size: var(--t-xl); line-height: 1;">😐</span>
+                <span id="tb-label-3" data-action="click_87_App_tbClick_3" class="type-xs font-semibold tracking-widest text-[var(--text-hi)] uppercase hover:text-[var(--accent-hi)] cursor-pointer select-none transition-colors">IEM Tool</span>
+                <span class="cursor-pointer inline-block ml-0.5 hover:brightness-125 select-none transition-all duration-300 emoji-font app-no-drag" data-action="click_287_App_triggerMushroomEgg_this" style="font-size: var(--t-md);">🍄</span>
 
-                <div id="db-download-progress" class="hidden items-center gap-1.5 px-2 py-0.5 bg-[var(--accent-soft)] border text-[var(--accent-hi)] text-[9px] font-mono font-bold select-none animate-pulse ml-1.5" style="border-radius: var(--r-xs); border-color: var(--accent);" title="Loading IEM database…">
+                <div id="db-download-progress" class="hidden items-center gap-1.5 px-2 py-0.5 bg-[var(--accent-soft)] border text-[var(--accent-hi)] type-micro font-mono font-bold select-none animate-pulse ml-1.5" style="border-radius: var(--r-xs); border-color: var(--accent);" title="Loading IEM database…">
                     <span>📥 DB:</span>
                     <span id="db-download-pct">0%</span>
                 </div>
@@ -215,8 +215,8 @@
                                 </div>
                                 <div id="iem-db-results-box" class="iem-db-results-box flex-1 min-h-0 flex flex-col border-2 border-black bg-black/30">
                                     <div class="flex items-center justify-between px-1.5 py-1 flex-shrink-0 border-b border-black/60 bg-[var(--bg-input)]">
-                                        <span class="text-[9px] font-black uppercase tracking-widest text-fuchsia-300">Results</span>
-                                        <span id="iem-db-result-count" class="text-[9px] font-black text-zinc-400">0</span>
+                                        <span class="type-micro font-black uppercase tracking-widest text-fuchsia-300">Results</span>
+                                        <span id="iem-db-result-count" class="type-micro font-black text-zinc-400">0</span>
                                     </div>
                                     <div id="iem-db-search-list" class="flex-1 min-h-0 space-y-1.5 overflow-y-auto overflow-x-hidden p-1.5" style="scrollbar-width: thin;"></div>
                                 </div>
@@ -659,7 +659,7 @@
 
                                     <canvas id="image-preview-canvas" class="hidden w-full h-full"></canvas>
 
-                                    <button id="image-clear-btn" data-action="click_175_IEM_clearImage_event" style="top: 6px; right: 6px;" class="no-tactile hidden absolute w-5 h-5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black flex items-center justify-center shadow-lg transition-all z-30 cursor-pointer border border-white/20">✕</button>
+                                    <button id="image-clear-btn" data-action="click_175_IEM_clearImage_event" style="top: 6px; right: 6px;" class="no-tactile hidden absolute w-5 h-5 bg-red-600 hover:bg-red-700 text-white type-micro font-black flex items-center justify-center shadow-lg transition-all z-30 cursor-pointer border border-white/20">✕</button>
                                 </div>
 
                                 <div id="image-controls-bar" class="hidden bg-[var(--bg-input)] border-2 border-black p-1.5 flex items-center justify-between gap-2 flex-shrink-0 select-none">
@@ -869,8 +869,8 @@ existing module drives this unchanged. -->
 
                         <div id="find-results-container" class="flex-1 min-h-0 overflow-y-auto pr-1 relative">
                             <div id="find-results-count" class="hidden sticky top-0 z-10 mb-2 flex items-center justify-between px-1 pb-1 border-b-2 border-black bg-[var(--bg-card)]">
-                                <span id="find-results-count-text" class="text-[9.5px] font-black uppercase tracking-wider text-emerald-400">0 matches</span>
-                                <button data-action="click_73_FindEngine_resetFindResults" class="text-[9px] font-black uppercase tracking-wider text-rose-400 hover:text-rose-300 cursor-pointer">✕ Clear</button>
+                                <span id="find-results-count-text" class="type-micro font-black uppercase tracking-wider text-emerald-400">0 matches</span>
+                                <button data-action="click_73_FindEngine_resetFindResults" class="type-micro font-black uppercase tracking-wider text-rose-400 hover:text-rose-300 cursor-pointer">✕ Clear</button>
                             </div>
                             <div id="find-matches-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
                             <div id="find-empty-state" class="flex flex-col items-center justify-center text-center py-16 gap-2" style="color: var(--text-secondary) !important;">
@@ -927,7 +927,7 @@ existing module drives this unchanged. -->
                         </button>
 
                             <div id="find-taste-fingerprint" class="hidden p-2 bg-black/60 border-2 border-black text-xs space-y-1 mt-1 flex-shrink-0">
-                                <span class="text-[9px] font-black uppercase text-rose-400 tracking-wider block select-none">🧬 Taste Fingerprint</span>
+                                <span class="type-micro font-black uppercase text-rose-400 tracking-wider block select-none">🧬 Taste Fingerprint</span>
                                 <div id="find-taste-fingerprint-text" class="flex flex-wrap items-center justify-center gap-2 pt-0.5">
 
                                 </div>
@@ -950,7 +950,7 @@ existing module drives this unchanged. -->
                                 </div>
                                 </div>
                                 <div id="find-gk-flagship-slot" class="slot-empty w-full h-9 flex flex-col items-center justify-center select-none mt-1.5">
-                                    <span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Select Flagship Target</span>
+                                    <span class="type-micro font-black text-stone-400 uppercase tracking-wider">+ Select Flagship Target</span>
 </div>
                             </div>
 
@@ -975,13 +975,13 @@ existing module drives this unchanged. -->
                                 <div id="gk-filter-drawer" class="space-y-1.5">
 
                                     <input type="hidden" id="gk-filter-formfactor" value="[]">
-                                    <span class="text-[9px] font-black uppercase tracking-wider text-zinc-400 block">Form Factor</span>
+                                    <span class="type-micro font-black uppercase tracking-wider text-zinc-400 block">Form Factor</span>
                                     <div id="grid-gk-filter-formfactor" class="spec-chip-grid"></div>
                                     <input type="hidden" id="gk-filter-driver" value="[]">
-                                    <span class="text-[9px] font-black uppercase tracking-wider text-zinc-400 block">Driver Type</span>
+                                    <span class="type-micro font-black uppercase tracking-wider text-zinc-400 block">Driver Type</span>
                                     <div id="grid-gk-filter-driver" class="spec-chip-grid"></div>
                                     <input type="hidden" id="gk-filter-connector" value="[]">
-                                    <span class="text-[9px] font-black uppercase tracking-wider text-zinc-400 block">Connector</span>
+                                    <span class="type-micro font-black uppercase tracking-wider text-zinc-400 block">Connector</span>
                                     <div id="grid-gk-filter-connector" class="spec-chip-grid"></div>
 
                                 </div>
@@ -1010,7 +1010,7 @@ existing module drives this unchanged. -->
                                 </div>
 
                                 <div id="find-upgrade-base-slot" class="slot-empty w-full h-9 flex items-center justify-center select-none mt-1.5">
-                                    <span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Select Base IEM</span>
+                                    <span class="type-micro font-black text-stone-400 uppercase tracking-wider">+ Select Base IEM</span>
                                 </div>
                             </div>
 
@@ -1033,15 +1033,15 @@ existing module drives this unchanged. -->
                                 <div id="ug-filter-drawer" class="space-y-1.5">
 
                                     <input type="hidden" id="ug-filter-formfactor" value="[]">
-                                    <span class="text-[9px] font-black uppercase tracking-wider text-zinc-400 block">Form Factor</span>
+                                    <span class="type-micro font-black uppercase tracking-wider text-zinc-400 block">Form Factor</span>
                                     <div id="grid-ug-filter-formfactor" class="spec-chip-grid"></div>
 
                                     <input type="hidden" id="ug-filter-driver" value="[]">
-                                    <span class="text-[9px] font-black uppercase tracking-wider text-zinc-400 block">Driver Type</span>
+                                    <span class="type-micro font-black uppercase tracking-wider text-zinc-400 block">Driver Type</span>
                                     <div id="grid-ug-filter-driver" class="spec-chip-grid"></div>
 
                                     <input type="hidden" id="ug-filter-connector" value="[]">
-                                    <span class="text-[9px] font-black uppercase tracking-wider text-zinc-400 block">Connector</span>
+                                    <span class="type-micro font-black uppercase tracking-wider text-zinc-400 block">Connector</span>
                                     <div id="grid-ug-filter-connector" class="spec-chip-grid"></div>
 
                                     <div class="pt-1">
@@ -1096,15 +1096,15 @@ existing module drives this unchanged. -->
                                 <div id="eg-filter-drawer" class="space-y-1.5">
 
                                     <input type="hidden" id="eg-filter-formfactor" value="[]">
-                                    <span class="text-[9px] font-black uppercase tracking-wider text-zinc-400 block">Form Factor</span>
+                                    <span class="type-micro font-black uppercase tracking-wider text-zinc-400 block">Form Factor</span>
                                     <div id="grid-eg-filter-formfactor" class="spec-chip-grid"></div>
 
                                     <input type="hidden" id="eg-filter-driver" value="[]">
-                                    <span class="text-[9px] font-black uppercase tracking-wider text-zinc-400 block">Driver Type</span>
+                                    <span class="type-micro font-black uppercase tracking-wider text-zinc-400 block">Driver Type</span>
                                     <div id="grid-eg-filter-driver" class="spec-chip-grid"></div>
 
                                     <input type="hidden" id="eg-filter-connector" value="[]">
-                                    <span class="text-[9px] font-black uppercase tracking-wider text-zinc-400 block">Connector</span>
+                                    <span class="type-micro font-black uppercase tracking-wider text-zinc-400 block">Connector</span>
                                     <div id="grid-eg-filter-connector" class="spec-chip-grid"></div>
 
                                 </div>
@@ -1156,7 +1156,7 @@ existing module drives this unchanged. -->
                                     <button type="button" id="btn-db-mode" data-action="click_79_PEQDB_Module_setSearchMode__database" class="subtab-seg-btn no-tactile active" role="tab" aria-selected="true" title="Browse database"><span class="subtab-seg-emoji">📚</span> Database</button>
                                     <button type="button" id="btn-sim-mode" data-action="click_300_PEQDB_Module_setSearchMode__similar" class="subtab-seg-btn no-tactile" role="tab" aria-selected="false" title="Find similar curves"><span class="subtab-seg-emoji">🔎</span> Similar</button>
                                 </div>
-                                <div id="peqdb-indexing-indicator" class="text-[9px] font-black text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 px-2 py-0.5 animate-pulse uppercase tracking-wider hidden flex-shrink-0">⚡ Indexing: 0%</div>
+                                <div id="peqdb-indexing-indicator" class="type-micro font-black text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 px-2 py-0.5 animate-pulse uppercase tracking-wider hidden flex-shrink-0">⚡ Indexing: 0%</div>
                                 <button data-action="click_108_EQ_showSmartImportModal" class="px-2.5 py-1 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] text-[var(--text-main)] font-black text-xs border-[3px] border-black cursor-pointer shadow-sm flex items-center justify-center gap-1.5 h-9 flex-shrink-0" title="Import EQ file">
                                     <span class="text-xl w-6 h-6 inline-flex items-center justify-center leading-none">📥</span> Import
                                 </button>
@@ -1169,8 +1169,8 @@ existing module drives this unchanged. -->
 
                             <div id="peqdb-list-wrapper" class="flex-1 min-h-0 overflow-hidden relative border-2 border-black bg-zinc-950/40 mt-1 flex flex-col">
                                 <div class="flex items-center justify-between px-1.5 py-1 flex-shrink-0 border-b border-black/60 bg-[var(--bg-input)]">
-                                    <span class="text-[9px] font-black uppercase tracking-widest text-amber-400">Results</span>
-                                    <span id="peqdb-result-count" class="text-[9px] font-black text-zinc-400">0</span>
+                                    <span class="type-micro font-black uppercase tracking-widest text-amber-400">Results</span>
+                                    <span id="peqdb-result-count" class="type-micro font-black text-zinc-400">0</span>
                                 </div>
                                 <div id="peqdb-list" class="flex-1 min-h-0 overflow-y-auto space-y-1 pr-0.5 mt-1 mx-1" style="scrollbar-width: thin;">
                                     <div id="peqdb-loading" class="absolute inset-0 bg-zinc-950/80 flex flex-col items-center justify-center z-10" style="display: none;">
@@ -1287,7 +1287,7 @@ existing module drives this unchanged. -->
                                         <span class="vibrant-emoji anim-match-breath">🚫</span>
                                     </div>
                                     <div class="truncate">
-                                        <div class="text-[8px] uppercase font-black text-[var(--accent-blue)] leading-none">Music Match</div>
+                                        <div class="type-micro uppercase font-black text-[var(--accent-blue)] leading-none">Music Match</div>
                                         <div id="music-match-genre-text" class="text-xs text-zinc-200 font-extrabold leading-tight truncate mt-0.5">No Match</div>
                                     </div>
                                     <button type="button" data-action="click_77_EQ_toggleGenreTargetPicker__music" title="AutoEQ to this genre" class="genre-target-btn flex-shrink-0 w-5 h-5 flex items-center justify-center cursor-pointer">
@@ -1313,7 +1313,7 @@ existing module drives this unchanged. -->
                                         <span class="vibrant-emoji anim-match-breath">🚫</span>
                                     </div>
                                     <div class="truncate">
-                                        <div class="text-[8px] uppercase font-black text-[var(--accent-amber)] leading-none">Gaming Match</div>
+                                        <div class="type-micro uppercase font-black text-[var(--accent-amber)] leading-none">Gaming Match</div>
                                         <div id="game-match-genre-text" class="text-xs text-zinc-200 font-extrabold leading-tight truncate mt-0.5">No Match</div>
                                     </div>
                                     <button type="button" data-action="click_63_EQ_toggleGenreTargetPicker__game" title="AutoEQ to this genre" class="genre-target-btn flex-shrink-0 w-5 h-5 flex items-center justify-center cursor-pointer">
@@ -1348,27 +1348,27 @@ existing module drives this unchanged. -->
                             <div id="canvas-container-squig" class="w-full h-full">
                                 <canvas id="eq-squiglinkViz" class="w-full h-full bg-[#050507] border border-zinc-800 cursor-default"></canvas>
                             </div>
-                            <div id="graph-tooltip" class="absolute bg-black/90 text-[11px] p-1.5 border border-zinc-800 pointer-events-none hidden z-50"></div>
+                            <div id="graph-tooltip" class="absolute bg-black/90 type-xs p-1.5 border border-zinc-800 pointer-events-none hidden z-50"></div>
                         </div>
 
                         <div id="graph-slots-row" class="flex flex-row items-center gap-3 w-full min-h-[156px] h-[156px] overflow-x-auto no-scrollbar flex-shrink-0 pt-1 border-t-0">
 
                             <div id="base-slot-wrapper" class="flex flex-col gap-1 flex-1 min-w-0 h-full">
-                                <span class="text-[10px] font-black text-amber-500 uppercase tracking-wider flex items-center gap-1">🔒 Base Slot</span>
+                                <span class="type-micro font-black text-amber-500 uppercase tracking-wider flex items-center gap-1">🔒 Base Slot</span>
                                 <div id="base-slot" class="slot-drop flex-1 p-1.5 flex items-center justify-center transition-all hover:border-amber-500/60 overflow-hidden" data-drop-slot="base" data-drop-border="rgba(245, 158, 11, 0.8)" data-action-dragover="dragover_904_EQ_highlightDropSlot" data-action-dragleave="dragleave_905_EQ_unhighlightDropSlot" data-action-drop="drop_906_EQ_handleSlotDrop">
 
                                 </div>
                             </div>
 
                             <div id="target-slot-wrapper" class="flex flex-col gap-1 flex-1 min-w-0 h-full">
-                                <span class="text-[10px] font-black text-blue-500 uppercase tracking-wider flex items-center gap-1">🎯 Target Slot</span>
+                                <span class="type-micro font-black text-blue-500 uppercase tracking-wider flex items-center gap-1">🎯 Target Slot</span>
                                 <div id="target-slot" class="slot-drop flex-1 p-1.5 flex items-center justify-center transition-all hover:border-blue-500/60 overflow-hidden" data-drop-slot="target" data-drop-border="rgba(59, 130, 246, 0.8)" data-action-dragover="dragover_904_EQ_highlightDropSlot" data-action-dragleave="dragleave_905_EQ_unhighlightDropSlot" data-action-drop="drop_906_EQ_handleSlotDrop">
 
                                 </div>
                             </div>
 
                             <div id="reference-slot-wrapper" class="flex flex-col gap-1 min-w-0 h-full">
-                                <span class="text-[10px] font-black text-zinc-400 tracking-wider uppercase flex items-center gap-1">🆚 Reference Slot</span>
+                                <span class="type-micro font-black text-zinc-400 tracking-wider uppercase flex items-center gap-1">🆚 Reference Slot</span>
                                 <div id="reference-pile" class="slot-drop flex-1 p-1.5 flex flex-row items-center gap-2.5 overflow-x-auto transition-all hover:border-white/40" data-drop-slot="reference" data-drop-border="rgba(255, 255, 255, 0.6)" data-action-dragover="dragover_904_EQ_highlightDropSlot" data-action-dragleave="dragleave_905_EQ_unhighlightDropSlot" data-action-drop="drop_906_EQ_handleSlotDrop">
 
                                 </div>
@@ -1459,19 +1459,19 @@ existing module drives this unchanged. -->
                                 <div id="as-panel-coupling" class="acoustics-sub-panel flex flex-col gap-2.5">
                                     <div class="grid grid-cols-4 gap-1 w-full flex-shrink-0">
                                         <button id="btn-tip-sound" data-action="click_235_EQ_cycleTipSound" class="btn-clear text-stone-200 font-bold text-xs px-1 py-1 h-8 flex flex-col items-center justify-center" title="Change tip shape">
-                                            <span class="text-[8px] text-zinc-400 uppercase tracking-wider block">Tip</span>
+                                            <span class="type-micro text-zinc-400 uppercase tracking-wider block">Tip</span>
                                             <span id="lbl-tip-sound" class="text-xs font-bold">Off</span>
                                         </button>
                                         <button id="btn-fit-depth" data-action="click_170_EQ_cycleFitDepth" class="btn-clear text-stone-200 font-bold text-xs px-1 py-1 h-8 flex flex-col items-center justify-center" title="Change nozzle depth">
-                                            <span class="text-[8px] text-zinc-400 uppercase tracking-wider block">Depth</span>
+                                            <span class="type-micro text-zinc-400 uppercase tracking-wider block">Depth</span>
                                             <span id="lbl-fit-depth" class="text-xs font-bold">Off</span>
                                         </button>
                                         <button id="btn-seal-quality" data-action="click_72_EQ_cycleSealQuality" class="btn-clear text-stone-200 font-bold text-xs px-1 py-1 h-8 flex flex-col items-center justify-center" title="Change seal">
-                                            <span class="text-[8px] text-zinc-400 uppercase tracking-wider block">Seal</span>
+                                            <span class="type-micro text-zinc-400 uppercase tracking-wider block">Seal</span>
                                             <span id="lbl-seal-quality" class="text-xs font-bold">Off</span>
                                         </button>
                                         <button id="btn-deesser-toggle" data-action="click_105_EQ_toggleDeEsser" class="btn-clear text-stone-200 font-bold text-xs px-1 py-1 h-8 flex flex-col items-center justify-center" title="Soften sibilance">
-                                            <span class="text-[8px] text-zinc-400 uppercase tracking-wider block">De-Ess</span>
+                                            <span class="type-micro text-zinc-400 uppercase tracking-wider block">De-Ess</span>
                                             <span id="lbl-deesser-state" class="text-xs font-bold text-zinc-400">Off</span>
                                         </button>
                                     </div>
@@ -1487,7 +1487,7 @@ existing module drives this unchanged. -->
                                     <div class="flex flex-col gap-1.5 py-0.5 pt-1">
                                         <div class="flex justify-between items-center text-xs font-bold text-zinc-300 uppercase tracking-wider">
                                             <span>📻 Source Gear</span>
-                                            <span id="gear-sim-sub-label" class="font-mono text-emerald-400 font-bold text-[10px]">Off</span>
+                                            <span id="gear-sim-sub-label" class="font-mono text-emerald-400 font-bold type-micro">Off</span>
                                         </div>
                                         <div class="stepper flex items-center gap-1.5 w-full h-9">
                                             <button type="button" data-action="click_260_EQ_cycleGearSim__1" class="stepper-arrow w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
@@ -1503,7 +1503,7 @@ existing module drives this unchanged. -->
                                     <div class="flex flex-col gap-1.5 py-0.5 pt-1">
                                         <div class="flex justify-between items-center text-xs font-bold text-zinc-300 uppercase tracking-wider">
                                             <span>🩹 Vent Tape Mod</span>
-                                            <span id="tape-mod-sub-label" class="font-mono text-emerald-400 font-bold text-[10px]">Off</span>
+                                            <span id="tape-mod-sub-label" class="font-mono text-emerald-400 font-bold type-micro">Off</span>
                                         </div>
                                         <div class="stepper flex items-center gap-1.5 w-full h-9">
                                             <button type="button" data-action="click_4_EQ_cycleTapeMod__1" class="stepper-arrow w-8 h-9 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-[3px] border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◀</button>
@@ -1545,7 +1545,7 @@ existing module drives this unchanged. -->
                                             </div>
                                             <input type="range" id="loudness-strength-slider" min="0" max="100" value="100" class="w-full h-1 cursor-pointer" data-action-input="input_270_EQ_updateLoudnessParam__strength___this_value">
                                         </div>
-                                        <button data-action="click_250_EQ_calibrateLoudnessFromVolume" class="w-full retro-switch-btn font-black text-[10px] h-7 flex items-center justify-center gap-1 cursor-pointer truncate" title="Calibrate to current volume">🎯 Use Current Volume</button>
+                                        <button data-action="click_250_EQ_calibrateLoudnessFromVolume" class="w-full retro-switch-btn font-black type-micro h-7 flex items-center justify-center gap-1 cursor-pointer truncate" title="Calibrate to current volume">🎯 Use Current Volume</button>
                                     </div>
                                 </div>
 
@@ -1634,8 +1634,8 @@ existing module drives this unchanged. -->
 </button>
                                         <div id="gr-meter-wrap" class="mt-1 hidden">
                                             <div class="flex items-center justify-between mb-0.5">
-                                                <span class="text-[8px] font-black uppercase tracking-wider text-zinc-500">Limiter GR</span>
-                                                <span id="gr-meter-label" class="text-[9px] font-mono font-bold text-zinc-400">0.0 dB</span>
+                                                <span class="type-micro font-black uppercase tracking-wider text-zinc-500">Limiter GR</span>
+                                                <span id="gr-meter-label" class="type-micro font-mono font-bold text-zinc-400">0.0 dB</span>
                                             </div>
                                             <div class="w-full h-1.5 bg-black/60 border border-white/10 overflow-hidden">
                                                 <div id="gr-meter-bar" class="h-full" style="width:0%; background: linear-gradient(90deg, var(--accent-green), var(--accent-amber) 60%, #f87171 100%);"></div>
@@ -2123,7 +2123,7 @@ existing module drives this unchanged. -->
                                             <input type="file" id="ab-file-a" accept="audio/*" class="hidden">
                                         </label>
                                         <div class="overflow-hidden flex-1 min-w-0 relative">
-                                            <div class="text-[8px] uppercase font-black text-[var(--accent-amber)] mb-0.5 block leading-none">Source A</div>
+                                            <div class="type-micro uppercase font-black text-[var(--accent-amber)] mb-0.5 block leading-none">Source A</div>
                                             <div class="overflow-hidden w-full relative flex items-center h-4">
                                                 <span id="ab-file-name-a" class="text-xs text-zinc-400 font-semibold inline-block whitespace-nowrap">Browse or drop...</span>
                                             </div>
@@ -2139,7 +2139,7 @@ existing module drives this unchanged. -->
                                             <input type="file" id="ab-file-b" accept="audio/*" class="hidden">
                                         </label>
                                         <div class="overflow-hidden flex-1 min-w-0 relative">
-                                            <div class="text-[8px] uppercase font-black text-indigo-400 mb-0.5 block leading-none">Source B</div>
+                                            <div class="type-micro uppercase font-black text-indigo-400 mb-0.5 block leading-none">Source B</div>
                                             <div class="overflow-hidden w-full relative flex items-center h-4">
                                                 <span id="ab-file-name-b" class="text-xs text-zinc-400 font-semibold inline-block whitespace-nowrap">Browse or drop...</span>
                                             </div>
@@ -2221,12 +2221,12 @@ existing module drives this unchanged. -->
                                              `.abx-start-btn` / `.is-stop`, because all three state
                                              changes used to rewrite className with a full copy of the
                                              button's styling (and those copies had already drifted from
-                                             this markup's `text-xs h-8` to `text-[10px] h-7`). -->
+                                             this markup's `text-xs h-8` to `type-micro h-7`). -->
                                         <button id="abx-start-btn" class="abx-start-btn">START TEST</button>
                                     </div>
 
                                     <div class="flex items-center justify-center min-h-[14px]">
-                                        <span id="abx-status-lbl" class="text-[9px] text-zinc-400 font-mono italic truncate max-w-full"></span>
+                                        <span id="abx-status-lbl" class="type-micro text-zinc-400 font-mono italic truncate max-w-full"></span>
                                     </div>
 
 <div class="grid grid-cols-2 gap-1.5" id="abx-choices-row" style="display: none; pointer-events: none;">
@@ -2239,7 +2239,7 @@ existing module drives this unchanged. -->
                                          any trial has run, and reading "Correct: 0 Wrong: 0 /
                                          Conf: 0.0% (No Trials)" on a fresh panel made the control
                                          look like it had already scored a run of zeros. -->
-                                    <div id="abx-idle-hint" class="text-center text-[10px] text-zinc-500 leading-relaxed py-1 select-none">
+                                    <div id="abx-idle-hint" class="text-center type-micro text-zinc-500 leading-relaxed py-1 select-none">
                                         Press <span class="font-bold text-zinc-400">START TEST</span> to run a blind A/B trial.
                                     </div>
 
@@ -2255,7 +2255,7 @@ existing module drives this unchanged. -->
                                             <span class="text-red-400">Wrong: <span id="abx-incorrect-count" class="font-mono">0</span></span>
                                             <span class="text-zinc-400" id="abx-confidence-wrapper">Conf: <span id="abx-confidence-pct" class="font-mono">0.0%</span> (<span id="abx-confidence-text">No Trials</span>)</span>
                                         </div>
-                                        <div class="text-zinc-500 uppercase tracking-widest text-[8px]" id="abx-progress-lbl">Trial 0/10</div>
+                                        <div class="text-zinc-500 uppercase tracking-widest type-micro" id="abx-progress-lbl">Trial 0/10</div>
                                     </div>
                                 </div>
                             </div>
@@ -2615,7 +2615,7 @@ existing module drives this unchanged. -->
                     <div id="music-now-legacy" class="flex items-center gap-2 w-full overflow-hidden">
                         <span class="text-xs animate-pulse flex-shrink-0">🎵</span>
                         <div class="overflow-hidden flex-1 relative flex items-center h-full">
-                            <div id="playlist-track-info" class="text-[10px] text-[var(--text-main)] font-black whitespace-nowrap leading-none">No tracks Loaded</div>
+                            <div id="playlist-track-info" class="type-micro text-[var(--text-main)] font-black whitespace-nowrap leading-none">No tracks Loaded</div>
                         </div>
                     </div>
                 </div>
@@ -2623,7 +2623,7 @@ existing module drives this unchanged. -->
                 <div class="flex items-center gap-1.5 flex-shrink-0 select-none">
                     <span id="eq-volIcon" class="text-xs cursor-pointer select-none flex-shrink-0 themed-emoji" data-action="click_305_EQ_toggleMute">🔊</span>
                     <input type="range" id="eq-musicVolumeSlider" min="0" max="100" value="50" style="accent-color: var(--accent-blue) !important;" class="w-[110px] flex-shrink-0 h-1 cursor-pointer" data-action-input="input_39_EQ_updateMusicVolume_this_value" aria-label="Music volume">
-                    <div id="eq-volDisplay" class="text-[9px] font-mono font-extrabold text-[var(--text-secondary)] w-9 text-right flex-shrink-0 pr-1">50%</div>
+                    <div id="eq-volDisplay" class="type-micro font-mono font-extrabold text-[var(--text-secondary)] w-9 text-right flex-shrink-0 pr-1">50%</div>
                 </div>
             </div>
 
@@ -2656,29 +2656,29 @@ existing module drives this unchanged. -->
 
             <div id="footer-right-group" class="flex items-center justify-between gap-2 px-2 py-1 w-full max-w-[460px] flex-1 h-8 min-w-[340px]">
                 <div class="flex items-center gap-1.5 flex-1 min-w-0 justify-center">
-                    <span class="text-[9px] font-mono text-zinc-555 flex-shrink-0" id="playlist-time-current">0:00</span>
+                    <span class="type-micro font-mono text-zinc-555 flex-shrink-0" id="playlist-time-current">0:00</span>
                     <input type="range" id="playlist-scrub" min="0" max="100" value="0" class="w-[110px] flex-shrink-0 cursor-pointer" aria-label="Track position">
-                    <span class="text-[9px] font-mono text-zinc-555 flex-shrink-0" id="playlist-time-duration">0:00</span>
+                    <span class="type-micro font-mono text-zinc-555 flex-shrink-0" id="playlist-time-duration">0:00</span>
                 </div>
 
                 <div class="flex items-center gap-2 flex-shrink-0" >
                     <div class="flex-grow flex flex-col gap-1 justify-center h-full w-[80px] flex-shrink-0">
                         <div class="flex items-center gap-1.5 h-3.5">
-                            <span class="text-[8px] font-black text-zinc-400 w-1.5 text-center leading-none">L</span>
+                            <span class="type-micro font-black text-zinc-400 w-1.5 text-center leading-none">L</span>
                             <div class="vu-well flex-grow h-3">
                                 <div class="vu-meter-fill h-full meter-bar-l-vu-vu" style="width: 0%"></div>
                                 <div class="absolute top-0 bottom-0 w-1 bg-[var(--accent-blue)] border-x border-black meter-bar-l-peak-hold" style="left: 0%"></div>
                             </div>
                         </div>
                         <div class="flex items-center gap-1.5 h-3.5">
-                            <span class="text-[8px] font-black text-zinc-400 w-1.5 text-center leading-none">R</span>
+                            <span class="type-micro font-black text-zinc-400 w-1.5 text-center leading-none">R</span>
                             <div class="vu-well flex-grow h-3">
                                 <div class="vu-meter-fill h-full meter-bar-r-vu-vu" style="width: 0%"></div>
                                 <div class="absolute top-0 bottom-0 w-1 bg-[var(--accent-blue)] border-x border-black meter-bar-r-peak-hold" style="left: 0%"></div>
                             </div>
                         </div>
                     </div>
-                    <span class="vu-meter-clipping-text text-[8px] font-black text-emerald-400 w-16 min-w-[64px] max-w-[64px] text-center leading-none uppercase tracking-tighter flex-shrink-0 truncate">Stable</span>
+                    <span class="vu-meter-clipping-text type-micro font-black text-emerald-400 w-16 min-w-[64px] max-w-[64px] text-center leading-none uppercase tracking-tighter flex-shrink-0 truncate">Stable</span>
                 </div>
             </div>
         </div>
@@ -2693,7 +2693,7 @@ existing module drives this unchanged. -->
 
                 <div class="flex-1 min-w-0 flex items-center h-full gap-2">
                     <div id="music-now-legacy-mobile" class="overflow-hidden relative flex items-center w-full">
-                        <div id="mobile-track-info" class="text-[10px] text-[var(--text-main)] font-black whitespace-nowrap leading-none truncate">No tracks Loaded</div>
+                        <div id="mobile-track-info" class="type-micro text-[var(--text-main)] font-black whitespace-nowrap leading-none truncate">No tracks Loaded</div>
                     </div>
                 </div>
 
@@ -2721,20 +2721,20 @@ existing module drives this unchanged. -->
                 -->
                 <div class="flex items-center gap-1 flex-shrink-0" style="width: 86px;">
                     <input type="range" id="mobile-music-volume" min="0" max="100" value="50" aria-label="Music volume" class="flex-1 min-w-0 cursor-pointer" data-action-input="input_39_EQ_updateMusicVolume_this_value">
-                    <span id="mobile-vol-display" class="text-[7.5px] font-mono text-zinc-400 text-right flex-shrink-0" style="width: 22px;">50%</span>
+                    <span id="mobile-vol-display" class="type-micro font-mono text-zinc-400 text-right flex-shrink-0" style="width: 26px;">50%</span>
                 </div>
 
                 <div class="flex items-center gap-1.5 flex-shrink-0 w-20" >
                     <div class="flex-grow flex flex-col gap-1 justify-center">
                         <div class="flex items-center gap-1 h-2">
-                            <span class="text-[7px] font-bold text-zinc-500 w-1.5 text-center leading-none">L</span>
+                            <span class="type-micro font-bold text-zinc-500 w-1.5 text-center leading-none">L</span>
                             <div class="flex-grow bg-zinc-950/80 h-1.5 overflow-hidden border border-white/[0.02] relative">
                                 <div class="vu-meter-fill h-full meter-bar-l-vu-vu" style="width: 0%"></div>
                                 <div class="absolute top-0 bottom-0 w-0.5 bg-white/70 meter-bar-l-peak-hold" style="left: 0%"></div>
                             </div>
                         </div>
                         <div class="flex items-center gap-1 h-2">
-                            <span class="text-[7px] font-bold text-zinc-500 w-1.5 text-center leading-none">R</span>
+                            <span class="type-micro font-bold text-zinc-500 w-1.5 text-center leading-none">R</span>
                             <div class="flex-grow bg-zinc-950/80 h-1.5 overflow-hidden border border-white/[0.02] relative">
                                 <div class="vu-meter-fill h-full meter-bar-r-vu-vu" style="width: 0%"></div>
                                 <div class="absolute top-0 bottom-0 w-0.5 bg-white/70 meter-bar-r-peak-hold" style="left: 0%"></div>
@@ -2745,9 +2745,9 @@ existing module drives this unchanged. -->
             </div>
 
             <div class="flex items-center justify-between gap-3 w-full h-4 mt-0.5">
-                <span class="text-[7.5px] font-mono text-zinc-500" id="mobile-time-current">0:00</span>
+                <span class="type-micro font-mono text-zinc-500" id="mobile-time-current">0:00</span>
                 <input type="range" id="mobile-scrub" min="0" max="100" value="0" class="flex-grow h-1 cursor-pointer">
-                <span class="text-[7.5px] font-mono text-zinc-500" id="mobile-time-duration">0:00</span>
+                <span class="type-micro font-mono text-zinc-500" id="mobile-time-duration">0:00</span>
             </div>
 
             <div class="flex items-center justify-center w-full h-8 mt-1 gap-2">
@@ -2760,25 +2760,25 @@ existing module drives this unchanged. -->
                 </label>
 
                 <button id="mobile-volIcon" data-action="click_305_EQ_toggleMute" class="btn-playback-reactive w-8 h-8 flex items-center justify-center cursor-pointer" title="Mute or unmute">
-                    <span class="text-[13px] leading-none themed-emoji">🔊</span>
+                    <span class="type-md leading-none themed-emoji">🔊</span>
                 </button>
                 <button id="mobile-shuffle-btn" data-action="click_218_EQ_toggleShuffle" class="btn-playback-reactive w-8 h-8 flex items-center justify-center cursor-pointer" >
-                    <span class="text-[13px] leading-none">⤭</span>
+                    <span class="type-md leading-none">⤭</span>
                 </button>
                 <button data-action="click_20_EQ_prevTrack" class="btn-playback-reactive w-8 h-8 flex items-center justify-center cursor-pointer" >
-                    <span class="text-[13px] leading-none">⏮</span>
+                    <span class="type-md leading-none">⏮</span>
                 </button>
                 <button id="mobile-play-btn" data-action="click_306_EQ_togglePlayState" class="btn-playback-reactive w-8 h-8 flex items-center justify-center cursor-pointer" >
-                    <span class="text-[13px] leading-none">▶</span>
+                    <span class="type-md leading-none">▶</span>
                 </button>
                 <button data-action="click_81_EQ_nextTrack" class="btn-playback-reactive w-8 h-8 flex items-center justify-center cursor-pointer" >
-                    <span class="text-[13px] leading-none">⏭</span>
+                    <span class="type-md leading-none">⏭</span>
                 </button>
                 <button id="mobile-repeat-btn" data-action="click_263_EQ_toggleRepeat" class="btn-playback-reactive w-8 h-8 flex items-center justify-center cursor-pointer" >
-                    <span class="text-[13px] leading-none">⟲</span>
+                    <span class="type-md leading-none">⟲</span>
                 </button>
                 <button data-action="click_282_EQ_clearPlaylist" class="btn-playback-reactive w-8 h-8 flex items-center justify-center text-red-500 hover:text-red-400 cursor-pointer" >
-                    <span class="text-[13px] leading-none">✕</span>
+                    <span class="type-md leading-none">✕</span>
                 </button>
             </div>
         </div>
@@ -2849,7 +2849,7 @@ existing module drives this unchanged. -->
 
             <div class="space-y-3 mb-5">
                 <div>
-                    <label class="block text-[9px] uppercase text-zinc-500 font-bold mb-1">Step 1: Card Color Theme</label>
+                    <label class="block type-micro uppercase text-zinc-500 font-bold mb-1">Step 1: Card Color Theme</label>
                     <div class="flex items-center gap-1 w-full h-8">
                         <button type="button" data-action="click_253_IEM_cycleExportThemeDirection__1" class="w-8 h-full bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border border-[var(--border-color)] text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◄</button>
                         <button id="export-theme-cycle-btn" data-action="click_201_IEM_cycleExportThemeDirection_1" class="flex-1 h-full bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer truncate">
@@ -2859,7 +2859,7 @@ existing module drives this unchanged. -->
                     </div>
                 </div>
                 <div>
-                    <label class="block text-[9px] uppercase text-zinc-500 font-bold mb-1">Step 2: Card Font</label>
+                    <label class="block type-micro uppercase text-zinc-500 font-bold mb-1">Step 2: Card Font</label>
                     <div class="flex items-center gap-1 w-full h-8">
                         <button type="button" data-action="click_78_IEM_cycleExportFontDirection__1" class="w-8 h-full bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border border-[var(--border-color)] text-white font-black text-xs flex items-center justify-center cursor-pointer select-none">◄</button>
                         <button id="export-font-cycle-btn" data-action="click_308_IEM_cycleExportFontDirection_1" class="flex-1 h-full bg-[var(--bg-input)] text-[var(--text-main)] hover:border-[var(--accent-blue)] text-xs font-bold border border-[var(--border-color)] transition-all shadow-inner flex items-center justify-center gap-2 cursor-pointer truncate">
@@ -2869,7 +2869,7 @@ existing module drives this unchanged. -->
                     </div>
                 </div>
                 <div>
-                    <label class="block text-[9px] uppercase text-zinc-500 font-bold mb-1">Step 3: Confirm Grade Badge</label>
+                    <label class="block type-micro uppercase text-zinc-500 font-bold mb-1">Step 3: Confirm Grade Badge</label>
                     <div style="display: flex; gap: 6px; width: 100%; height: 32px;">
                         <button type="button" id="exp-grade-S" data-action="click_3_IEM_selectExportGrade__S" class="btn-clear text-xs font-black cursor-pointer" style="flex: 1; height: 100%; display: flex; align-items: center; justify-content: center;">S</button>
                         <button type="button" id="exp-grade-A" data-action="click_280_IEM_selectExportGrade__A" class="btn-clear text-xs font-black cursor-pointer" style="flex: 1; height: 100%; display: flex; align-items: center; justify-content: center;">A</button>
@@ -2884,7 +2884,7 @@ existing module drives this unchanged. -->
             <button id="export-confirm-btn" data-action="click_191_IEM_confirmAndTriggerExport" class="w-full py-2 bg-[var(--bg-input)] text-zinc-500 font-bold text-xs transition-all text-center mb-3 cursor-not-allowed" disabled style="opacity: 0.5;">
                 🖼️ Confirm & Export Card
             </button>
-            <div class="text-center text-[10px] text-zinc-555 font-semibold">Generates High-DPI Symmetrical Infographic PNG</div>
+            <div class="text-center type-micro text-zinc-555 font-semibold">Generates High-DPI Symmetrical Infographic PNG</div>
         </div>
     </div>
 
@@ -2927,7 +2927,7 @@ existing module drives this unchanged. -->
                 <button data-action="click_135_PEQDB_Module_closeSmartRFModal" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
             </div>
 
-            <p class="text-[10px] text-zinc-500 mb-2 leading-normal">
+            <p class="type-micro text-zinc-500 mb-2 leading-normal">
                 Paste raw FR coordinate data or drop files below, or
                 <span data-action="click_172_document_getElementById__smart_rf_file___click" class="text-[var(--accent-blue)] underline cursor-pointer hover:brightness-110 font-black">browse files</span>.
                 <input type="file" id="smart-rf-file" class="hidden" accept=".txt,.csv" multiple data-action-change="change_182_PEQDB_Module_handleSmartRFFile_event">
@@ -2937,10 +2937,10 @@ existing module drives this unchanged. -->
 
             <div class="flex items-center gap-2 mb-3 px-1">
                 <input type="checkbox" id="smart-rf-auto-average" class="accent-[var(--accent-blue)] w-3.5 h-3.5 cursor-pointer" checked>
-                <label for="smart-rf-auto-average" class="text-[10px] text-zinc-400 cursor-pointer font-bold select-none">Auto-average detected L/R channel pairs</label>
+                <label for="smart-rf-auto-average" class="type-micro text-zinc-400 cursor-pointer font-bold select-none">Auto-average detected L/R channel pairs</label>
             </div>
 
-            <div class="bg-[var(--bg-input)] p-3 border border-[var(--border-color)] space-y-2 mb-4 text-[11px] font-bold">
+            <div class="bg-[var(--bg-input)] p-3 border border-[var(--border-color)] space-y-2 mb-4 type-xs font-bold">
                 <div class="flex justify-between">
                     <span class="text-zinc-500">Detected Source:</span>
                     <span id="srf-detected" class="text-sky-400">None</span>
@@ -2949,17 +2949,17 @@ existing module drives this unchanged. -->
                     <span class="text-zinc-500">Status:</span>
                     <span id="srf-status" class="text-red-400">⚠ No valid coordinates found</span>
                 </div>
-                <div class="pt-1.5 border-t border-zinc-900/60 grid grid-cols-2 gap-2 text-[10px] text-zinc-400">
+                <div class="pt-1.5 border-t border-zinc-900/60 grid grid-cols-2 gap-2 type-micro text-zinc-400">
                     <div>• Points parsed: <span id="srf-stat-points" class="text-zinc-200">0</span></div>
                     <div class="col-span-2 hidden" id="srf-failed-row">• Failed files: <span id="srf-stat-failed" class="text-red-400">None</span></div>
                 </div>
             </div>
 
             <div class="grid grid-cols-4 gap-2">
-                <button id="srf-clear-btn" data-action="click_166_PEQDB_Module_clearSmartRF" class="py-2 text-[10px] font-bold btn-clear cursor-pointer">🗑 Clear</button>
-                <button id="srf-paste-btn" data-action="click_225_PEQDB_Module_pasteSmartRF" class="py-2 text-[10px] font-bold btn-clear cursor-pointer">📋 Paste</button>
-                <button data-action="click_135_PEQDB_Module_closeSmartRFModal" class="py-2 text-[10px] font-bold btn-clear cursor-pointer">Cancel</button>
-                <button id="srf-import-btn" data-action="click_62_PEQDB_Module_confirmSmartRF" class="py-2 text-[10px] font-bold bg-[var(--bg-input)] text-zinc-500 cursor-not-allowed transition-all text-center" disabled>📥 Import</button>
+                <button id="srf-clear-btn" data-action="click_166_PEQDB_Module_clearSmartRF" class="py-2 type-micro font-bold btn-clear cursor-pointer">🗑 Clear</button>
+                <button id="srf-paste-btn" data-action="click_225_PEQDB_Module_pasteSmartRF" class="py-2 type-micro font-bold btn-clear cursor-pointer">📋 Paste</button>
+                <button data-action="click_135_PEQDB_Module_closeSmartRFModal" class="py-2 type-micro font-bold btn-clear cursor-pointer">Cancel</button>
+                <button id="srf-import-btn" data-action="click_62_PEQDB_Module_confirmSmartRF" class="py-2 type-micro font-bold bg-[var(--bg-input)] text-zinc-500 cursor-not-allowed transition-all text-center" disabled>📥 Import</button>
             </div>
         </div>
     </div>
@@ -2989,16 +2989,16 @@ existing module drives this unchanged. -->
                 <button data-action="click_98_EQ_closeSmartImportModal" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
             </div>
 
-            <p class="text-[10px] text-zinc-500 mb-3 leading-normal">Peace / Wavelet, sound coordinates, or drop a txt / csv / json file:</p>
+            <p class="type-micro text-zinc-500 mb-3 leading-normal">Peace / Wavelet, sound coordinates, or drop a txt / csv / json file:</p>
 
             <div id="smart-import-dropzone" role="button" tabindex="0" data-file-trigger aria-label="Choose a smart import file, or drop one here" class="slot-drop w-full h-24 flex flex-col items-center justify-center bg-[var(--bg-input)] hover:brightness-90 transition-all cursor-pointer mb-3 text-center p-4">
                 <span class="text-lg">📂</span>
-                <span class="text-[10px] font-bold text-zinc-400 mt-1">Drag & Drop File Here</span>
-                <span class="text-[9px] text-zinc-650 mt-0.5">Supports .txt, .csv, .json</span>
+                <span class="type-micro font-bold text-zinc-400 mt-1">Drag & Drop File Here</span>
+                <span class="type-micro text-zinc-650 mt-0.5">Supports .txt, .csv, .json</span>
                 <input type="file" id="smart-file-input" class="hidden" data-action-change="change_279_EQ_handleSmartFileSelect_event">
             </div>
 
-            <p class="text-[10px] uppercase font-bold text-zinc-500 tracking-wider mb-2">Or Paste Raw Text String</p>
+            <p class="type-micro uppercase font-bold text-zinc-500 tracking-wider mb-2">Or Paste Raw Text String</p>
             <div class="smart-import-row">
                 <div class="smart-import-combo">
                     <div id="smart-import-textarea-home" class="smart-import-home">
@@ -3032,7 +3032,7 @@ existing module drives this unchanged. -->
 <!-- ONNX Runtime Web is loaded on demand by IEM_Module.loadPhotoMatteRuntime();
      see the note next to this tag. -->
 
-<script src="app/js/bundle-version.js?v=4c4a28c1450f"></script>
+<script src="app/js/bundle-version.js?v=d1cbf6d7d5ed"></script>
         <!-- Bundle loader. External (app/js/boot-bundle.js) rather than inline so that
          script-src can drop 'unsafe-inline'. -->
         <script src="app/js/boot-bundle.js"></script>

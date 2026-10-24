@@ -917,7 +917,7 @@ _applyGaplessButton: function() {
             const playBtn = document.getElementById("playlist-play-btn");
             const mobPlayBtn = document.getElementById("mobile-play-btn");
             if (playBtn) playBtn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
-            if (mobPlayBtn) mobPlayBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
+            if (mobPlayBtn) mobPlayBtn.innerHTML = "<span class=\"type-md leading-none\">▶</span>";
             
             showToast("Playlist cleared and ghost memory buffers revoked.", "🗑️");
         },
@@ -1019,7 +1019,7 @@ _applyGaplessButton: function() {
             const btn = document.getElementById("playlist-play-btn");
             if (btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
             const mobBtn = document.getElementById("mobile-play-btn");
-            if (mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
+            if (mobBtn) mobBtn.innerHTML = "<span class=\"type-md leading-none\">▶</span>";
             return wasPlaying;
         },
 
@@ -1090,11 +1090,11 @@ return;
                         console.log("Playback blocked or interrupted.");
                         if (playPauseSeq !== this._pauseSeq) return;
                         if (btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
-                        if (mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
+                        if (mobBtn) mobBtn.innerHTML = "<span class=\"type-md leading-none\">▶</span>";
                     });
                 }
                 if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
-                if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
+                if(mobBtn) mobBtn.innerHTML = "<span class=\"type-md leading-none\">⏸</span>";
             } else {
                                 // Fade-out pause
                 this.fadeMusicVolume(0, 0.015);
@@ -1110,7 +1110,7 @@ return;
                     }
                 }, 80); // Wait 80ms for the fade-out to complete before pausing
                 if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
-                if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
+                if(mobBtn) mobBtn.innerHTML = "<span class=\"type-md leading-none\">▶</span>";
             }
         },
 

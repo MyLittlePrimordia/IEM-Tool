@@ -2082,7 +2082,7 @@
                         if (bar) bar.classList.remove('hidden');
                         if (txt) {
                             txt.textContent = '⚠️ ' + ((err && err.message) ? err.message : String(err));
-                            txt.className = 'text-[9.5px] font-black uppercase tracking-wider text-rose-400';
+                            txt.className = 'type-micro font-black uppercase tracking-wider text-rose-400';
                         }
                     } catch (_) {}
                 },
@@ -2476,7 +2476,7 @@
                 rightTabModes: [
                     { id: 'taste', label: 'Taste', emoji: '❤️' },
                     { id: 'upgrade', label: 'Upgrade', emoji: '🚀' },
-                    { id: 'giantkiller', label: 'Gem', emoji: '💎' },
+                    { id: 'giantkiller', label: 'Gems', emoji: '💎' },
                     { id: 'endgame', label: 'Endgame', emoji: '👑' }
                 ],
                 cycleRightTab: function(dir) {
@@ -2647,7 +2647,7 @@
                     if (countBar) countBar.classList.remove('hidden');
                     if (countText) {
                         countText.textContent = `${matches.length} matches`;
-                        countText.className = 'text-[9.5px] font-black uppercase tracking-wider text-emerald-400';
+                        countText.className = 'type-micro font-black uppercase tracking-wider text-emerald-400';
                     }
 
                     const isBlind = false; // (the Find blind-mode checkbox was removed)
@@ -2758,20 +2758,20 @@
                         let rankEmoji = "🏆";
                         let rankText = `RANK #${idx}`;
                         let rankColorClass = "text-zinc-500";
-                        let emojiStyle = "font-size: 18px; line-height: 1;";
+                        let emojiStyle = "font-size: var(--t-lg); line-height: 1;";
 
                         if (idx === 1) {
                             cardStyle = `background: linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, rgba(120, 53, 4, 0.03) 100%), var(--bg-card) !important; border: 2px solid var(--border-color) !important; box-shadow: 6px 6px 0px 0px var(--border-color) !important;`;
                             rankEmoji = "👑"; rankText = "1ST"; rankColorClass = "text-amber-400";
-                            emojiStyle = "font-size: 32px; line-height: 1; filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.5));";
+                            emojiStyle = "font-size: var(--t-2xl); line-height: 1; filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.5));";
                         } else if (idx === 2) {
                             cardStyle = `background: linear-gradient(135deg, rgba(148, 163, 184, 0.08) 0%, rgba(30, 41, 59, 0.02) 100%), var(--bg-card) !important; border: 2px solid var(--border-color) !important; box-shadow: 5px 5px 0px 0px var(--border-color) !important;`;
                             rankEmoji = "🥈"; rankText = "2ND"; rankColorClass = "text-slate-300";
-                            emojiStyle = "font-size: 28px; line-height: 1; filter: drop-shadow(0 0 4px rgba(148, 163, 184, 0.4));";
+                            emojiStyle = "font-size: var(--t-2xl); line-height: 1; filter: drop-shadow(0 0 4px rgba(148, 163, 184, 0.4));";
                         } else if (idx === 3) {
                             cardStyle = `background: linear-gradient(135deg, rgba(217, 119, 6, 0.06) 0%, rgba(120, 53, 4, 0.01) 100%), var(--bg-card) !important; border: 2px solid var(--border-color) !important; box-shadow: 4px 4px 0px 0px var(--border-color) !important;`;
                             rankEmoji = "🥉"; rankText = "3RD"; rankColorClass = "text-amber-600";
-                            emojiStyle = "font-size: 28px; line-height: 1; filter: drop-shadow(0 0 4px rgba(217, 119, 6, 0.3));";
+                            emojiStyle = "font-size: var(--t-2xl); line-height: 1; filter: drop-shadow(0 0 4px rgba(217, 119, 6, 0.3));";
                         } else {
                             cardStyle = `background: var(--bg-card) !important; border: 2px solid var(--border-color) !important; box-shadow: 4px 4px 0px 0px var(--border-color) !important;`;
                         }
@@ -2859,19 +2859,19 @@
                                     <div class="flex justify-between items-center select-none pb-1">
                                         <div class="flex items-center gap-1.5 min-w-0 pr-1">
                                             <span style="${emojiStyle}" class="vibrant-emoji flex-shrink-0">${rankEmoji}</span>
-                                            <span class="text-[9.5px] font-black uppercase tracking-wider ${rankColorClass}">${rankText}</span>
+                                            <span class="type-micro font-black uppercase tracking-wider ${rankColorClass}">${rankText}</span>
                                         </div>
                                         <span class="text-xs font-black ${badgeColorClass}">${badgeText}</span>
                                     </div>
                                     <div class="space-y-1">
                                         <h4 id="blind-title-${idx}" class="text-xs font-bold select-none" style="filter: blur(5px);">Reveal Required</h4>
                                         <div class="flex flex-wrap gap-1 mt-1.5">
-                                            <span class="text-[8.5px] font-bold text-zinc-500">🔐 Profile Locked</span>
+                                            <span class="type-micro font-bold text-zinc-500">🔐 Profile Locked</span>
                                         </div>
                                     </div>
                                 </div>
                                 <div class="flex gap-2 mt-3 pt-2.5 border-t-2 border-black">
-                                    <button data-cmd="FindEngine.revealIEM" data-arg-0="@self" data-arg-1="${escJs(finalName)}" data-arg-2="blind-title-${idx}" class="flex-1 py-1.5 btn-clear text-[9px] font-black cursor-pointer">🔓 Reveal IEM</button>
+                                    <button data-cmd="FindEngine.revealIEM" data-arg-0="@self" data-arg-1="${escJs(finalName)}" data-arg-2="blind-title-${idx}" class="flex-1 py-1.5 btn-clear type-micro font-black cursor-pointer">🔓 Reveal IEM</button>
                                 </div>
                             `;
                         } else {
@@ -2880,7 +2880,7 @@
                                     <div class="flex justify-between items-center select-none pb-1">
                                         <div class="flex items-center gap-1.5 min-w-0 pr-1">
                                             <span style="${emojiStyle}" class="vibrant-emoji flex-shrink-0">${rankEmoji}</span>
-                                            <span class="text-[9.5px] font-black uppercase tracking-wider whitespace-nowrap ${rankColorClass}">${rankText}</span>
+                                            <span class="type-micro font-black uppercase tracking-wider whitespace-nowrap ${rankColorClass}">${rankText}</span>
                                         </div>
                                         <span class="text-lg font-black ${badgeColorClass} flex-shrink-0">${badgeText}</span>
                                     </div>
@@ -2890,13 +2890,13 @@
                                             <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
                                                 <span class="emoji-font vibrant-emoji text-base leading-none">${genreMatch.emoji}</span>
                                             </div>
-                                            <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${genreMatch.name}</span>
+                                            <span class="match-genre-name type-micro font-black uppercase text-stone-200 inline-block whitespace-nowrap">${genreMatch.name}</span>
                                         </div>
                                         <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Game Match: ${gameGenreMatch.name}">
                                             <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
                                                 <span class="emoji-font vibrant-emoji text-base leading-none">${gameGenreMatch.emoji}</span>
                                             </div>
-                                            <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${gameGenreMatch.name}</span>
+                                            <span class="match-genre-name type-micro font-black uppercase text-stone-200 inline-block whitespace-nowrap">${gameGenreMatch.name}</span>
                                         </div>
                                     </div>
 
@@ -2909,8 +2909,8 @@
                                         </div>
 
                                         <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
-                                            ${price !== null && price !== undefined ? `<span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${esc(price)}</span>` : ''}
-                                            ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${esc(year)}</span>` : ''}
+                                            ${price !== null && price !== undefined ? `<span class="type-micro font-black text-amber-400 whitespace-nowrap">💰 $${esc(price)}</span>` : ''}
+                                            ${year ? `<span class="type-micro font-black text-stone-300 whitespace-nowrap">📅 ${esc(year)}</span>` : ''}
                                             ${driverType ? `<span class="spec-icon-badge" data-tooltip="${escDriverTip}">${driverEmoji}</span>` : ''}
                                             ${connector ? `<span class="spec-icon-badge" data-tooltip="${escConnectorTip}">${connectorEmoji}</span>` : ''}
                                             <span class="spec-icon-badge" data-tooltip="${escFormTip}">${formEmoji}</span>
@@ -2920,7 +2920,7 @@
                                             <canvas id="spark-${idx}" class="absolute inset-0 w-full h-full block opacity-85"></canvas>
                                         </div>
 
-                                        <div class="flex items-center justify-between w-full mt-2.5 px-1 text-[8.5px] font-mono select-none whitespace-nowrap">
+                                        <div class="flex items-center justify-between w-full mt-2.5 px-1 type-micro font-mono select-none whitespace-nowrap">
                                             ${driveHtml}
                                             ${eqHtml}
                                         </div>
@@ -2933,7 +2933,7 @@
 
                                 <div class="flex items-center gap-1.5 mt-3 pt-2 border-t-2 border-black ${hasGraph ? '' : 'hidden'}">
                                     <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${idx}" data-arg-1="-1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                    <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${idx}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
+                                    <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${idx}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 type-micro border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
                                         <span id="label-role-stepper-${idx}" class="flex items-center justify-center gap-1 truncate">${currentRoleOpt.label}</span>
                                     </button>
                                     <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${idx}" data-arg-1="1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
@@ -3011,7 +3011,7 @@
 
                         const sigs = PEQDB_Module.analyzeCurveSignature(iem.data);
                         const tagsHtml = sigs.map(t => {
-                            return `<span class="text-[8px] font-black px-1.5 py-0.5 bg-white/[0.04] border border-white/[0.05] text-zinc-400 whitespace-nowrap">${t}</span>`;
+                            return `<span class="type-micro font-black px-1.5 py-0.5 bg-white/[0.04] border border-white/[0.05] text-zinc-400 whitespace-nowrap">${t}</span>`;
                         }).join('');
 
                         const cardBody = parent.previousElementSibling;
@@ -3021,8 +3021,8 @@
                         }
 
                         parent.innerHTML = `
-                            <button data-cmd="FindEngine.loadToGraph" data-arg-0="${escJs(iem.id)}" data-arg-1="base" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-stone-200 font-black text-[9px] cursor-pointer">📈 Base</button>
-                            <button data-cmd="FindEngine.loadToGraph" data-arg-0="${escJs(iem.id)}" data-arg-1="reference" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-750 text-stone-200 font-black text-[9px] cursor-pointer">🆚 Reference</button>
+                            <button data-cmd="FindEngine.loadToGraph" data-arg-0="${escJs(iem.id)}" data-arg-1="base" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-stone-200 font-black type-micro cursor-pointer">📈 Base</button>
+                            <button data-cmd="FindEngine.loadToGraph" data-arg-0="${escJs(iem.id)}" data-arg-1="reference" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-750 text-stone-200 font-black type-micro cursor-pointer">🆚 Reference</button>
                         `;
                     }
                     showToast("IEM identity unlocked!", "🔓");

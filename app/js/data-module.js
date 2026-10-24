@@ -143,7 +143,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     } catch (e) {
       console.error('[DataTab] load failed', e);
       T.loading = false; T.loadError = String((e && e.message) || e);
-      $('dt-editor').innerHTML = '<div class="dt-empty"><span class="dt-big">⚠️</span>Could not load the database.<br><span class="dt-mono" style="font-size:10px">' + E(T.loadError) + '</span><br><br><button class="dt-btn" data-dt="reload-db">Try again</button></div>';
+      $('dt-editor').innerHTML = '<div class="dt-empty"><span class="dt-big">⚠️</span>Could not load the database.<br><span class="dt-mono" style="font-size:var(--t-micro)">' + E(T.loadError) + '</span><br><br><button class="dt-btn" data-dt="reload-db">Try again</button></div>';
     }
   };
   function onSessionChange(kind) {
@@ -512,7 +512,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     const e = T.S.byUid(T.selUid); if (!e) return;
     T.draft = cloneDraft(e); T.draftBase = cloneDraft(e); T.draftDirty = false; renderEditor();
   }
-  async function newEntry() {
+  async  function newEntry() {
     if (T.draftDirty && !T.isNew) { if (draftErrors().length === 0) { if (!(await commitDraft(true))) return; } }
     T.selUid = null; T.isNew = true; T.draft = blankDraft(); T.draftBase = cloneDraft(T.draft); T.draftDirty = true;
     T.curveRows = null; T.sugg = null; renderEditor(); scheduleTree();
@@ -546,6 +546,14 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
   }
   const DRV_ICON = { DD: 'dd', BA: 'ba', Planar: 'planar', EST: 'est', MEMS: 'mems', PZT: 'pzt', BC: 'bc' };
   const TIER_RANGE = { 'Budget': '$0–99', 'Mid-Tier': '$100–499', 'Premium': '$500–1,499', 'Flagship': '$1,500+' };
+  // The Tags column shows one group at a time. Thirty-one pills at once needed
+  // more height than the editor column has, so the column grew its own scrollbar
+  // (and, worse, the flex item shrank below its content and drew the pills over
+  // the status line). A five-tab carousel keeps the group one click away and the
+  // column ~230px tall at any window size. `label` is deliberately a prefix of
+  // the canonical group name rather than a new vocabulary; `group` is the key
+  // into DC.TAG_GROUPS. The ids are what the carousel audit walks.
+
   function headerHtml(d) {
     return '<div class="dt-ed-head"><div class="dt-title" id="dt-e-title">' + (d ? '' : 'No entry selected') + '</div>' + (d ? '<span class="dt-chip" id="dt-e-status"></span>' : '') +
       '<button class="dt-btn is-sm" data-dt="new" title="Add a new entry">➕ New</button>' +
@@ -567,14 +575,16 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
         '<h4 class="dt-h">Specs</h4>' +
         '<div class="dt-g4">' + inp('year', 'Year', { num: 1 }) + inp('price_usd', 'Price $', { num: 1 }) + inp('impedance', 'Ω', { num: 1 }) + inp('sensitivity', 'dB', { num: 1 }) + '</div>' +
         '<h4 class="dt-h">Hardware</h4>' +
-        '<div><label class="dt-lbl">Form factor</label><div id="dt-ff"></div></div>' +
-        '<div><label class="dt-lbl">Connector</label><div id="dt-cn"></div></div>' +
+        // Form factor and connector are the same control (a stepper showing a
+        // short value), so they share one row. Stacked, the form column was 56px
+        // taller than the editor at 1366x768 and grew its own scrollbar.
+        '<div class="dt-g2"><div><label class="dt-lbl">Form factor</label><div id="dt-ff"></div></div><div><label class="dt-lbl">Connector</label><div id="dt-cn"></div></div></div>' +
         '<div><label class="dt-lbl">Drivers per side</label><div class="dt-tiles">' + tiles + '</div></div>' +
         '<div class="dt-g2"><div><label class="dt-lbl" for="dt-e-driver_config">Config (e.g. 1DD+2BA)</label><input id="dt-e-driver_config" class="dt-in input-bg-fix dt-mono" data-f="e:driver_config" value="' + E(d.driver_config) + '" autocomplete="off" spellcheck="false"></div><div><label class="dt-lbl">Type (auto)</label><div id="dt-dtype" class="dt-in input-bg-fix" style="display:flex;align-items:center;gap:6px"></div></div></div>' +
       '</div><div class="dt-col">' +
         '<h4 class="dt-h">Tags <span id="dt-tagcount" class="dt-help" style="display:inline"></span></h4>' +
         '<div id="dt-tags" class="dt-col dt-tgwrap"></div>' +
-        '<div id="dt-msgs" class="dt-msgs" style="margin-top:auto"></div>' +
+        '<div id="dt-msgs" class="dt-msgs"></div>' +
       '</div></div>' +
       '<div class="dt-row dt-foot"><button class="dt-btn is-primary dt-grow" data-dt="apply" id="dt-apply">✅ Apply changes</button><button class="dt-btn" data-dt="revert" id="dt-revert">↺ Revert</button></div>';
   }
@@ -617,8 +627,36 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     T.S.entries.forEach(e => { if (e.brand && !seen.has(e.brand)) { seen.add(e.brand); h += '<option value="' + E(e.brand) + '">'; } });
     return h;
   }
-  function tagChip(t, sel, clash, auto) {
-    return '<button class="dt-tag' + (sel.has(t) ? ' is-on' : '') + (clash.has(t) ? ' is-clash' : '') + (auto ? ' is-auto' : '') + '" data-dt="tag" data-a="' + t + '"' + (auto ? ' disabled title="Set automatically from the price"' : '') + '><span class="dt-em">' + (DC.TAG_EMOJI[t] || '') + '</span>' + t + '</button>';
+  function tagChip(t, sel, clash) {
+    return '<button class="dt-tag' + (sel.has(t) ? ' is-on' : '') + (clash.has(t) ? ' is-clash' : '') + '" data-dt="tag" data-a="' + t + '">' +
+      '<span class="dt-em">' + (DC.TAG_EMOJI[t] || '') + '</span>' + t + '</button>';
+  }
+  // The whole tag vocabulary, grouped, in one sheet: no group tabs, no hidden
+  // panel. Five groups of text-only pills at 22px fit in ~300-340px beside the
+  // form at every desktop width, so nothing has to be switched or scrolled to
+  // see the other groups. The price tier is derived, not chosen, so it renders
+  // as one read-only chip with its range rather than four disabled buttons.
+  function renderTags() {
+    const d = T.draft, box = $('dt-tags'); if (!d || !box) return;
+    const sel = new Set(d.tags), clash = new Set();
+    DC.tagConflicts(sel).forEach(p => p.forEach(t => clash.add(t)));
+    const suggest = (T.sugg && T.sugg.suggestions || []).filter(s => {
+      if (sel.has(s.tag) || DC.PRICE_TIER_TAGS.indexOf(s.tag) >= 0) return false;
+      const withIt = new Set(sel); withIt.add(s.tag);          // never offer a tag that would clash with what is already ticked
+      return DC.tagConflicts(withIt).length <= DC.tagConflicts(sel).length;
+    });
+    const tier = DC.priceTierFor(DC.priceTierBasis(d.price_usd));
+    box.innerHTML = Object.keys(DC.TAG_GROUPS).map(g => {
+      const head = '<div class="dt-tgh">' + DC.TAG_GROUP_EMOJI[g] + ' ' + E(g);
+      if (g === DC.PRICE_GROUP) {
+        // Derived, not chosen: one heading line, no second row of buttons.
+        return '<div class="dt-tg">' + head + ' <span class="dt-tgnote">' + tier + ' · ' + TIER_RANGE[tier] + '</span></div></div>';
+      }
+      const tags = DC.TAG_GROUPS[g].slice().sort((a, b) => (a < b ? -1 : 1));
+      return '<div class="dt-tg">' + head + '</div><div class="dt-tagrow">' + tags.map(t => tagChip(t, sel, clash)).join('') + '</div></div>';
+    }).join('') +
+      (suggest.length ? '<div class="dt-tg"><div class="dt-tgh">🧪 From the measurement <span class="dt-tgnote">' + E(DCV.summarizeMetrics(T.sugg.metrics)) + ' · click to add</span></div><div class="dt-tagrow">' + suggest.map(s => '<button class="dt-tag is-sugg" data-dt="tag" data-a="' + s.tag + '" title="' + E(s.reason) + '"><span class="dt-em">' + (DC.TAG_EMOJI[s.tag] || '') + '</span>+ ' + s.tag + '</button>').join('') + '</div></div>' : '');
+    $('dt-tagcount').textContent = '· ' + d.tags.length + '/' + DC.MAX_TAGS;
   }
   function refreshDerived() {
     const d = T.draft; if (!d || !$('dt-e-id')) return;
@@ -636,22 +674,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     DC.DRIVER_TECH_ORDER.forEach(t => { const n = $('dt-drv-' + t), tile = $('dt-tile-' + t); if (n) n.textContent = counts[t] || 0; if (tile) tile.classList.toggle('is-on', !!counts[t]); });
     const dc = $('dt-e-driver_config'); if (dc && document.activeElement !== dc) dc.value = d.driver_config;
     $('dt-dtype').innerHTML = d.driver_type ? (DC.DRIVER_TYPE_ICON[d.driver_type] ? '<img src="' + ICON(DC.DRIVER_TYPE_ICON[d.driver_type]) + '" alt="" style="width:20px;height:20px;object-fit:contain">' : '') + '<b>' + E(d.driver_type) + '</b>' : '<span style="opacity:.6">—</span>';
-    // tags: the Database Tool's five groups, emoji on every tag, price tier shown as automatic
-    const sel = new Set(d.tags), clash = new Set();
-    DC.tagConflicts(sel).forEach(p => p.forEach(t => clash.add(t)));
-    const suggest = (T.sugg && T.sugg.suggestions || []).filter(s => {
-      if (sel.has(s.tag) || DC.PRICE_TIER_TAGS.indexOf(s.tag) >= 0) return false;
-      const withIt = new Set(sel); withIt.add(s.tag);          // never offer a tag that would clash with what is already ticked
-      return DC.tagConflicts(withIt).length <= DC.tagConflicts(sel).length;
-    });
-    const tier = DC.priceTierFor(DC.priceTierBasis(d.price_usd));
-    $('dt-tags').innerHTML = Object.keys(DC.TAG_GROUPS).map(g => {
-      const isPrice = g === DC.PRICE_GROUP;
-      const tags = DC.TAG_GROUPS[g].slice().sort((a, b) => (isPrice ? DC.PRICE_TIER_TAGS.indexOf(a) - DC.PRICE_TIER_TAGS.indexOf(b) : (a < b ? -1 : 1)));
-      return '<div class="dt-tg"><div class="dt-tgh">' + DC.TAG_GROUP_EMOJI[g] + ' ' + E(g) + (isPrice ? ' <span class="dt-tgnote">Auto: ' + tier + ' (' + TIER_RANGE[tier] + ')</span>' : '') + '</div><div class="dt-tagrow">' + tags.map(t => tagChip(t, sel, clash, isPrice)).join('') + '</div></div>';
-    }).join('') +
-      (suggest.length ? '<div class="dt-tg"><div class="dt-tgh">🧪 From the measurement <span class="dt-tgnote">' + E(DCV.summarizeMetrics(T.sugg.metrics)) + ' · click to add</span></div><div class="dt-tagrow">' + suggest.map(s => '<button class="dt-tag is-sugg" data-dt="tag" data-a="' + s.tag + '" title="' + E(s.reason) + '"><span class="dt-em">' + (DC.TAG_EMOJI[s.tag] || '') + '</span>+ ' + s.tag + '</button>').join('') + '</div></div>' : '');
-    $('dt-tagcount').textContent = '· ' + d.tags.length + '/' + DC.MAX_TAGS;
+    renderTags();
     // linked measurement files: first one is the default curve EQ loads. Drag to reorder.
     const cur = Math.min(T.curveFileIdx, Math.max(0, d.files.length - 1));
     const filesBox = $('dt-files');
@@ -665,7 +688,9 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
         '<button class="dt-btn is-sm is-ico dt-fb" data-dt="file-dl" data-a="' + i + '" title="Download this raw curve file">⬇</button>' +
         '<button class="dt-btn is-sm is-ico dt-fb" data-dt="unlink" data-a="' + i + '" title="Unlink (file stays on disk)">✕</button></div>';
     }).join('') : '<div class="dt-box dt-help" style="padding:8px">No files linked.</div>';
-    $('dt-msgs').innerHTML = errs.length ? errs.map(m => '<div class="dt-msg"><span>⚠</span><span>' + E(m) + '</span></div>').join('') : '<div class="dt-msg is-ok"><span>✓</span><span>All good.</span></div>';
+    // Errors only: the header chip already says "✓ valid", and the green line sat
+    // at the bottom of the tags column where a short column left it stranded.
+    $('dt-msgs').innerHTML = errs.length ? errs.map(m => '<div class="dt-msg"><span>⚠</span><span>' + E(m) + '</span></div>').join('') : '';
     updateToolbar();
   }
   function updateToolbar() {
@@ -943,7 +968,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       '<div class="dt-row" style="flex-wrap:wrap;gap:4px">' + sevChip('all', 'All', live.length, '') + sevChip('error', 'Errors', sum.error, 'is-err') + sevChip('warning', 'Warn', sum.warning, 'is-warn') + sevChip('info', 'Info', sum.info, 'is-info') + '</div>' +
       '<div class="dt-row"><select class="dt-sel input-bg-fix" data-f="audit-cat" style="height:26px"><option value="all">All categories</option>' + cats.map(c => '<option' + (c === T.auditCat ? ' selected' : '') + '>' + E(c) + '</option>').join('') + '</select>' +
       '<button class="dt-btn is-sm' + (T.showIgnored ? ' is-on' : '') + '" data-dt="audit-ignored" title="' + (T.showIgnored ? 'Back to findings' : 'Show ignored findings') + '">🙈 ' + ignoredN + '</button></div>' +
-      '<div class="dt-row dt-selbar"><label class="dt-row" style="gap:5px;cursor:pointer;font-size:11px;font-weight:800"><input type="checkbox" data-dt="audit-selall"' + (allSel ? ' checked' : '') + (vis.length ? '' : ' disabled') + '> All ' + vis.length + '</label><span class="dt-grow"></span>' +
+      '<div class="dt-row dt-selbar"><label class="dt-row" style="gap:5px;cursor:pointer;font-size:var(--t-xs);font-weight:800"><input type="checkbox" data-dt="audit-selall"' + (allSel ? ' checked' : '') + (vis.length ? '' : ' disabled') + '> All ' + vis.length + '</label><span class="dt-grow"></span>' +
       '<button class="dt-btn is-sm" data-dt="audit-ign-sel"' + (selVis.length ? '' : ' disabled') + '>' + (T.showIgnored ? '↩ Restore ' : '🙈 Ignore ') + selVis.length + '</button>' +
       (!T.showIgnored ? '<button class="dt-btn is-sm" data-dt="audit-fix-sel"' + (selFix ? '' : ' disabled') + '>🔧 ' + selFix + '</button>' : '') +
       (selDel && !T.showIgnored ? '<button class="dt-btn is-sm is-danger" data-dt="audit-del-sel" title="Delete the selected unlinked files">🗑 ' + selDel + '</button>' : '') + '</div>' +
@@ -1095,7 +1120,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       else if (p.action === 'delete') detail = '<div class="dt-fld"><span class="dt-v">Removes <span class="dt-mono">' + E(p.old.id) + '</span>.</span></div>';
       const selectable = p.action === 'new' || p.action === 'changed' || p.action === 'delete';
       return '<div class="dt-prop' + (p.action === 'same' ? ' is-dim' : '') + '"><div class="dt-top">' + (selectable ? '<input type="checkbox" data-dt="ai-inc" data-a="' + i + '"' + (A.include.has(i) ? ' checked' : '') + ' aria-label="Include this entry">' : '<span style="width:14px"></span>') +
-        '<span class="dt-chip ' + badge[0] + '">' + badge[1] + '</span><span class="dt-t" style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;font-weight:700" title="' + E(label) + '">' + E(label) + '</span>' +
+        '<span class="dt-chip ' + badge[0] + '">' + badge[1] + '</span><span class="dt-t" style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--t-xs);font-weight:700" title="' + E(label) + '">' + E(label) + '</span>' +
         ((p.action === 'new' || p.action === 'changed') ? '<span class="dt-help">' + sel.size + '/' + fields.length + '</span><button class="dt-btn is-sm is-ico" data-dt="ai-open" data-a="' + i + '" style="width:22px;height:20px" title="Show / hide fields">' + (open ? '▾' : '▸') + '</button>' : '') + '</div>' + detail + '</div>';
     }).join('');
     const nSel = A.include.size;
@@ -1558,7 +1583,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       ? (st.workingCopy ? '🛡️ Built-in files are protected.' : '🛡️ Your copy is made on first save.')
       : '⚠️ Dev mode: saves change the shipped files.';
     const storage = '<div class="dt-box" style="padding:8px"><div class="dt-kv"><span>Source</span><b>' + E(T.source) + '</b></div><div class="dt-kv"><span>Saves to</span><b>' + E(st.mode === 'memory' ? 'Downloads' : st.label) + '</b></div><div class="dt-kv"><span>Entries</span><b>' + T.S.entries.length + '</b></div>' +
-      (st.mode === 'electron' && st.rootPath ? '<div class="dt-help dt-mono" style="word-break:break-all;margin-top:4px;font-size:10px">' + E(st.rootPath) + '</div>' : '') +
+      (st.mode === 'electron' && st.rootPath ? '<div class="dt-help dt-mono" style="word-break:break-all;margin-top:4px;font-size:var(--t-micro)">' + E(st.rootPath) + '</div>' : '') +
       (wcNote ? '<div class="dt-help" style="margin-top:5px">' + wcNote + '</div>' : '') + '</div>';
     const folderBtns = st.mode === 'electron' ? '<button class="dt-btn" data-dt="open-folder">📂 Open ' + (st.packaged ? 'my copy' : 'project') + ' folder</button>' :
       (st.fsApi ? '<button class="dt-btn" data-dt="pick-folder">📂 ' + (st.mode === 'folder' ? 'Change folder…' : 'Connect folder…') + '</button>' + (st.savedHandle && st.mode !== 'folder' ? '<button class="dt-btn" data-dt="reconnect-folder">↻ Reconnect ' + E(st.savedHandle.name) + '</button>' : '') : '<p class="dt-help">Folder saving needs Chrome/Edge or the desktop app.</p>');

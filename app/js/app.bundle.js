@@ -1496,11 +1496,11 @@ const UIKit = {
         wrap.innerHTML = `
             <div id="uikit-confirm-card" class="bg-[var(--bg-card)] border border-[var(--line)] w-full max-w-sm flex flex-col overflow-hidden p-5 select-none" style="border-radius: var(--r-xl); box-shadow: var(--sh-3);">
                 <div class="flex justify-between items-center mb-3 pb-3 border-b border-[var(--line)]">
-                    <span id="uikit-confirm-title" class="text-[13px] font-semibold uppercase tracking-wide flex items-center gap-2" style="color: var(--text-hi);">⚠️ Confirm</span>
+                    <span id="uikit-confirm-title" class="type-md font-semibold uppercase tracking-wide flex items-center gap-2" style="color: var(--text-hi);">⚠️ Confirm</span>
                     <button id="uikit-confirm-x" class="app-caption-btn" style="width:28px;height:28px;" aria-label="Cancel">✕</button>
                 </div>
-                <p id="uikit-confirm-msg" class="text-[12px] mb-4 leading-relaxed" style="color: var(--text-mid); white-space: pre-line;"></p>
-                <div id="uikit-confirm-details" class="text-[11px] mb-4 overflow-y-auto hidden" style="max-height:190px;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border-color);border-radius:4px;user-select:text;"></div>
+                <p id="uikit-confirm-msg" class="type-sm mb-4 leading-relaxed" style="color: var(--text-mid); white-space: pre-line;"></p>
+                <div id="uikit-confirm-details" class="type-xs mb-4 overflow-y-auto hidden" style="max-height:190px;padding:6px 8px;background:var(--bg-input);border:1px solid var(--line);border-radius:var(--r-xs);user-select:text;"></div>
                 <div class="grid grid-cols-2 gap-2">
                     <button id="uikit-confirm-cancel" class="btn-clear cursor-pointer" style="height:36px;border-radius: var(--r-md);">Cancel</button>
                     <button id="uikit-confirm-ok" class="font-semibold text-white transition-all cursor-pointer text-center" style="height:36px;border-radius: var(--r-md);"></button>
@@ -1637,11 +1637,13 @@ const UIKit = {
         const okBtn = wrap.querySelector('#uikit-confirm-ok');
         okBtn.textContent = opts.confirmLabel || 'Confirm';
         // Primary action carries the accent halo; a destructive one gets the
-        // danger token. Both use --accent-ink / #fff for the label.
+        // danger token. Both labels use --accent-ink: white on --danger is
+        // 2.77:1, which fails AA at 13px, while the near-black ink on the same
+        // red is 7.15:1 - and it keeps filled buttons reading as one family.
         okBtn.style.background = opts.danger
             ? 'var(--danger)'
             : 'var(--accent)';
-        okBtn.style.color = opts.danger ? '#FFFFFF' : 'var(--accent-ink)';
+        okBtn.style.color = 'var(--accent-ink)';
 
         this._lastFocus = document.activeElement;
         wrap.classList.remove('hidden');
@@ -1700,13 +1702,13 @@ const UIKit = {
             <div id="uikit-reader-card" class="bg-[var(--bg-card)] border border-[var(--line)] w-full max-w-2xl flex flex-col overflow-hidden p-5" style="border-radius: var(--r-xl); box-shadow: var(--sh-3); max-height: calc(100vh - 32px);">
                 <div class="flex justify-between items-start gap-3 mb-3 pb-3 border-b border-[var(--line)]">
                     <span class="min-w-0">
-                        <span id="uikit-reader-title" class="block text-[13px] font-semibold tracking-wide truncate" style="color: var(--text-hi);"></span>
-                        <span id="uikit-reader-sub" class="block text-[11px] mt-0.5" style="color: var(--text-mid);"></span>
+                        <span id="uikit-reader-title" class="block type-md font-semibold tracking-wide truncate" style="color: var(--text-hi);"></span>
+                        <span id="uikit-reader-sub" class="block type-xs mt-0.5" style="color: var(--text-mid);"></span>
                     </span>
                     <button id="uikit-reader-x" type="button" class="app-caption-btn" style="width:28px;height:28px;flex:none;" aria-label="Close">✕</button>
                 </div>
                 <div id="uikit-reader-tools" class="flex flex-wrap items-center gap-2 mb-2" style="display:none;"></div>
-                <div id="uikit-reader-body" style="padding:10px 12px;background:var(--bg-input);border:1px solid var(--border-color);border-radius:4px;user-select:text;overflow:auto;flex:1 1 auto;min-height:120px;"></div>
+                <div id="uikit-reader-body" style="padding:10px 12px;background:var(--bg-input);border:1px solid var(--line);border-radius:var(--r-xs);user-select:text;overflow:auto;flex:1 1 auto;min-height:120px;"></div>
                 <div id="uikit-reader-actions" class="flex justify-end gap-2 mt-4"></div>
             </div>`;
         document.body.appendChild(wrap);
@@ -1770,7 +1772,7 @@ const UIKit = {
             // Monospace lives on the text itself rather than the body, so a
             // structured document is not forced into a code font.
             pre.style.cssText = 'margin:0;white-space:pre-wrap;word-break:break-word;user-select:text;' +
-                'font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;font-size:11px;line-height:1.6;';
+                'font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;font-size:var(--t-xs);line-height:1.6;';
             pre.textContent = opts.text === undefined || opts.text === null ? '' : String(opts.text);
             body.appendChild(pre);
         }
@@ -1784,7 +1786,7 @@ const UIKit = {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'btn-clear cursor-pointer';
-            btn.style.cssText = 'height:34px;padding:0 14px;border-radius: var(--r-md);font-size:12px;';
+            btn.style.cssText = 'height:34px;padding:0 14px;border-radius: var(--r-md);font-size:var(--t-sm);';
             btn.textContent = a.label;
             if (a.title) btn.title = a.title;
             btn.onclick = () => { try { a.onClick(); } catch (err) { console.error('[UIKit] reader action failed', err); } };
@@ -1794,7 +1796,7 @@ const UIKit = {
         close.id = 'uikit-reader-close';
         close.type = 'button';
         close.className = 'font-semibold cursor-pointer';
-        close.style.cssText = 'height:34px;padding:0 16px;border-radius: var(--r-md);font-size:12px;background:var(--accent);color:var(--accent-ink);';
+        close.style.cssText = 'height:34px;padding:0 16px;border-radius: var(--r-md);font-size:var(--t-sm);background:var(--accent);color:var(--accent-ink);';
         close.textContent = opts.closeLabel || 'Close';
         close.onclick = () => this.closeReader();
         bar.appendChild(close);
@@ -1966,13 +1968,13 @@ const Shortcuts = {
             groups[b.group].push(b);
         });
 
-        const keyChip = (b) => `<span class="inline-flex items-center justify-center min-w-[22px] px-1.5 py-0.5 border border-[var(--border-color)] bg-[var(--bg-input)] text-[10px] font-mono font-bold">${b.ctrl ? 'Ctrl+' : ''}${b.displayKey || b.key.toUpperCase()}</span>`;
+        const keyChip = (b) => `<span class="inline-flex items-center justify-center min-w-[22px] px-1.5 py-0.5 border border-[var(--border-color)] bg-[var(--bg-input)] type-micro font-mono font-bold">${b.ctrl ? 'Ctrl+' : ''}${b.displayKey || b.key.toUpperCase()}</span>`;
 
         let groupsHtml = '';
         Object.keys(groups).forEach(g => {
-            groupsHtml += `<div class="mb-3"><p class="text-[9px] uppercase tracking-wider text-zinc-500 font-bold mb-1.5">${g}</p><div class="space-y-1.5">`;
+            groupsHtml += `<div class="mb-3"><p class="type-micro uppercase tracking-wider text-zinc-500 font-bold mb-1.5">${g}</p><div class="space-y-1.5">`;
             groups[g].forEach(b => {
-                groupsHtml += `<div class="flex items-center justify-between gap-3"><span class="text-[11px] text-[var(--text-main)]">${b.label}</span>${keyChip(b)}</div>`;
+                groupsHtml += `<div class="flex items-center justify-between gap-3"><span class="type-xs text-[var(--text-main)]">${b.label}</span>${keyChip(b)}</div>`;
             });
             groupsHtml += `</div></div>`;
         });
@@ -1996,7 +1998,7 @@ const Shortcuts = {
                     <button id="shortcuts-help-close" class="text-zinc-555 hover:text-red-500 text-xs cursor-pointer">❌</button>
                 </div>
                 ${groupsHtml}
-                <p class="text-[9px] text-zinc-600 mt-1 leading-normal">Shortcuts are disabled while typing in a text field.</p>
+                <p class="type-micro text-zinc-600 mt-1 leading-normal">Shortcuts are disabled while typing in a text field.</p>
             </div>`;
         document.body.appendChild(wrap);
 
@@ -3719,7 +3721,7 @@ _applyGaplessButton: function() {
             const playBtn = document.getElementById("playlist-play-btn");
             const mobPlayBtn = document.getElementById("mobile-play-btn");
             if (playBtn) playBtn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
-            if (mobPlayBtn) mobPlayBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
+            if (mobPlayBtn) mobPlayBtn.innerHTML = "<span class=\"type-md leading-none\">▶</span>";
             
             showToast("Playlist cleared and ghost memory buffers revoked.", "🗑️");
         },
@@ -3821,7 +3823,7 @@ _applyGaplessButton: function() {
             const btn = document.getElementById("playlist-play-btn");
             if (btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
             const mobBtn = document.getElementById("mobile-play-btn");
-            if (mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
+            if (mobBtn) mobBtn.innerHTML = "<span class=\"type-md leading-none\">▶</span>";
             return wasPlaying;
         },
 
@@ -3892,11 +3894,11 @@ return;
                         console.log("Playback blocked or interrupted.");
                         if (playPauseSeq !== this._pauseSeq) return;
                         if (btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
-                        if (mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
+                        if (mobBtn) mobBtn.innerHTML = "<span class=\"type-md leading-none\">▶</span>";
                     });
                 }
                 if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
-                if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
+                if(mobBtn) mobBtn.innerHTML = "<span class=\"type-md leading-none\">⏸</span>";
             } else {
                                 // Fade-out pause
                 this.fadeMusicVolume(0, 0.015);
@@ -3912,7 +3914,7 @@ return;
                     }
                 }, 80); // Wait 80ms for the fade-out to complete before pausing
                 if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
-                if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
+                if(mobBtn) mobBtn.innerHTML = "<span class=\"type-md leading-none\">▶</span>";
             }
         },
 
@@ -6102,12 +6104,12 @@ const EQ_AdapterImpedanceMethods = {
                 
                 if (this.deEsserEnabled) {
                     if (btn) {
-                        btn.className = 'btn-clear text-rose-400 font-bold text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center';
+                        btn.className = 'btn-clear text-rose-400 font-bold type-micro px-1 py-1 h-8 flex flex-col items-center justify-center';
                         btn.classList.add('active-btn');
                     }
                     if (lbl) {
                         lbl.textContent = 'ON';
-                        lbl.className = 'text-[8px] font-bold text-rose-400';
+                        lbl.className = 'type-micro font-bold text-rose-400';
                     }
                     if (sensContainer) {
                         sensContainer.classList.remove('opacity-40', 'pointer-events-none');
@@ -6118,12 +6120,12 @@ const EQ_AdapterImpedanceMethods = {
                     showToast("De-Esser active. Monitoring vocal sibilance peaks (4k-8kHz)", "ðŸ›¡ï¸");
                 } else {
                     if (btn) {
-                        btn.className = 'btn-clear text-stone-200 font-bold text-[8px] px-1 py-1 h-8 flex flex-col items-center justify-center';
+                        btn.className = 'btn-clear text-stone-200 font-bold type-micro px-1 py-1 h-8 flex flex-col items-center justify-center';
                         btn.classList.remove('active-btn');
                     }
                     if (lbl) {
                         lbl.textContent = 'Off';
-                        lbl.className = 'text-[8px] font-bold text-zinc-400';
+                        lbl.className = 'type-micro font-bold text-zinc-400';
                     }
                     if (sensContainer) {
                         sensContainer.classList.add('opacity-40', 'pointer-events-none');
@@ -6817,7 +6819,7 @@ const EQ_PresetMethods = {
             const keys = Object.keys(presets);
 
             if (keys.length === 0) {
-                grid.innerHTML = '<div class="col-span-3 text-center text-[9px] text-zinc-650 italic py-4">No custom presets saved yet.</div>';
+                grid.innerHTML = '<div class="col-span-3 text-center type-micro text-zinc-650 italic py-4">No custom presets saved yet.</div>';
                 return;
             }
 
@@ -6828,12 +6830,12 @@ const EQ_PresetMethods = {
 
                 const btn = document.createElement('button');
                 btn.id = 'preset-btn-' + id;
-                btn.className = 'w-full text-center text-[10px] px-1 py-1 bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate h-7 flex items-center justify-center gap-1';
+                btn.className = 'w-full text-center type-micro px-1 py-1 bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate h-7 flex items-center justify-center gap-1';
                 btn.textContent = '🧪 ' + (p.name || 'Preset');
                 btn.onclick = () => { this.applyCustomPreset(id); };
 
                 const delBtn = document.createElement('button');
-                delBtn.className = 'absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-950/90 border border-red-900/40 text-red-400 text-[8px] font-bold flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-20 cursor-pointer';
+                delBtn.className = 'absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-950/90 border border-red-900/40 text-red-400 type-micro font-bold flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-20 cursor-pointer';
                 delBtn.innerHTML = '❌';
                 delBtn.title = 'Delete Preset';
                 delBtn.onclick = (e) => {
@@ -9999,7 +10001,7 @@ function showDebugError(message, source) {
     if (!errDiv) {
         errDiv = document.createElement('div');
         errDiv.id = 'debug-error-banner';
-        errDiv.style = 'position:fixed; bottom:20px; left:20px; right:20px; background:rgba(220,38,38,0.95); color:white; font-family:monospace; font-size:11px; padding:12px; border-radius:6px; z-index:9999; border:1px solid #ef4444; box-shadow:0 10px 30px rgba(0,0,0,0.55); overflow-y:auto; max-height:180px; cursor:pointer;';
+        errDiv.style = 'position:fixed; bottom:20px; left:20px; right:20px; background:rgba(220,38,38,0.95); color:white; font-family:monospace; font-size:var(--t-xs); padding:12px; border-radius:6px; z-index:9999; border:1px solid #ef4444; box-shadow:0 10px 30px rgba(0,0,0,0.55); overflow-y:auto; max-height:180px; cursor:pointer;';
         // Build via DOM text nodes, not innerHTML: message/source derive from
         // error events (e.message can carry attacker-influenced strings from
         // parsed imports; e.filename is URL-controlled) and must never hit an
@@ -10010,7 +10012,7 @@ function showDebugError(message, source) {
         strong.textContent = '⚠️ JS Runtime Exception: ' + message;
         const br = document.createElement('br');
         const sourceSpan = document.createElement('span');
-        sourceSpan.style.cssText = 'opacity:0.85; font-size:10px; margin-top:4px; display:block;';
+        sourceSpan.style.cssText = 'opacity:0.85; font-size:var(--t-micro); margin-top:4px; display:block;';
         sourceSpan.textContent = String(source) + '  —  click to dismiss';
         errDiv.appendChild(strong);
         errDiv.appendChild(br);
@@ -11683,7 +11685,7 @@ const IEM_LibraryMethods = {
                 loadBtn.textContent = 'Load';
                 loadBtn.addEventListener('click', () => IEM_Module.loadFromLibrary(item.id));
                 const delBtn = document.createElement('button');
-                delBtn.className = 'ml-2.5 text-red-500 hover:text-red-400 cursor-pointer text-[8px]';
+                delBtn.className = 'ml-2.5 text-red-500 hover:text-red-400 cursor-pointer type-micro';
                 delBtn.textContent = '❌';
                 delBtn.addEventListener('click', () => IEM_Module.deleteFromLibrary(item.id));
                 const btnTd = document.createElement('td');
@@ -12675,8 +12677,8 @@ onDbSearchInput: function(value) {
                     <div class="flex items-center justify-between p-2 cursor-pointer select-none border-2 border-black flex-shrink-0 w-full min-w-0" style="background: var(--bg-input);" data-cmd="IEM.toggleIemDbBrand" data-arg-0="${escJs(brandName)}">
                         <span class="text-xs font-black uppercase tracking-wider text-[var(--accent-blue)] truncate min-w-0">${escSafe(brandName)}</span>
                         <span class="flex items-center gap-1.5 flex-shrink-0">
-                            <span class="text-[9px] font-black text-zinc-500">${items.length}</span>
-                            <span class="brand-group-arrow text-[10px] font-black text-[var(--text-secondary)] transition-transform duration-200">${isExpanded ? '▲' : '▼'}</span>
+                            <span class="type-micro font-black text-zinc-500">${items.length}</span>
+                            <span class="brand-group-arrow type-micro font-black text-[var(--text-secondary)] transition-transform duration-200">${isExpanded ? '▲' : '▼'}</span>
                         </span>
                     </div>
                 `;
@@ -12718,8 +12720,8 @@ onDbSearchInput: function(value) {
             const connectorEmoji = FindEngine.connectorEmojis[item.connector] || '🔌';
 
             const specIconsHtml = `
-                ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:9px;">$${item.price_usd}</span></span>` : ''}
-                ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:9px;">${item.year}</span></span>` : ''}
+                ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:var(--t-micro);">$${item.price_usd}</span></span>` : ''}
+                ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:var(--t-micro);">${item.year}</span></span>` : ''}
                 ${item.driver_type ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
                 ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${esc(item.connector)}">${connectorEmoji}</span>` : ''}
                 <span class="spec-icon-badge" data-tooltip="${esc(item.form_factor || 'In-Ear Monitor (IEM)')}">${formEmoji}</span>
@@ -12734,17 +12736,17 @@ onDbSearchInput: function(value) {
             if (isMulti) {
                 fileRowHtml = `
                     <div class="flex items-center gap-1.5 mt-1">
-                        <button data-cmd="IEM.cycleIemDbFile" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isActive ? '#fff' : 'var(--text-secondary)'};">◀</button>
+                        <button data-cmd="IEM.cycleIemDbFile" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center type-micro font-black border border-black" style="background:${rowAccentColor}; color:${isActive ? '#fff' : 'var(--text-secondary)'};">◀</button>
                         <div class="flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
-                            <span class="iem-db-file-marquee text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isActive ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
+                            <span class="iem-db-file-marquee type-micro font-bold inline-block whitespace-nowrap" style="color:${isActive ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
                         </div>
-                        <button data-cmd="IEM.cycleIemDbFile" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isActive ? '#fff' : 'var(--text-secondary)'};">▶</button>
+                        <button data-cmd="IEM.cycleIemDbFile" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center type-micro font-black border border-black" style="background:${rowAccentColor}; color:${isActive ? '#fff' : 'var(--text-secondary)'};">▶</button>
                     </div>
                 `;
             } else {
                 fileRowHtml = `
                     <div class="mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
-                        <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isActive ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
+                        <span class="db-file-marquee-text type-micro font-bold inline-block whitespace-nowrap" style="color:${isActive ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
                     </div>
                 `;
             }
@@ -12762,7 +12764,7 @@ onDbSearchInput: function(value) {
                 <div class="db-title-row overflow-hidden whitespace-nowrap">
                     <span class="db-title-text font-black text-stone-200 text-xs inline-block whitespace-nowrap">${esc(itemName)}</span>
                 </div>
-                <div class="text-[8.5px] text-zinc-500 font-bold uppercase tracking-wider mt-0.5">${esc(item.source || sourceName)}</div>
+                <div class="type-micro text-zinc-500 font-bold uppercase tracking-wider mt-0.5">${esc(item.source || sourceName)}</div>
                 <div class="flex flex-wrap items-center justify-center gap-1 mt-1">${specIconsHtml}</div>
                 ${tagsHtml ? `<div class="flex flex-wrap items-center justify-center gap-1 mt-1">${tagsHtml}</div>` : ''}
                 ${fileRowHtml}
@@ -13166,9 +13168,9 @@ function getBandEnergy(dataArray, startBin, endBin) {
         let html = '<span class="toast-icon flex-shrink-0 leading-none">' + esc(icon || 'ℹ️') + '</span>';
         html += '<div class="min-w-0 flex-1 leading-snug break-words">' + esc(String(message == null ? '' : message)) + '</div>';
         if (action && action.label) {
-            html += '<button class="toast-act flex-shrink-0 px-2 py-1 border-2 border-black bg-[var(--accent-blue)] text-white text-[10px] font-black cursor-pointer hover:brightness-110">' + esc(action.label) + '</button>';
+            html += '<button class="toast-act flex-shrink-0 px-2 py-1 border-2 border-black bg-[var(--accent-blue)] text-white type-micro font-black cursor-pointer hover:brightness-110">' + esc(action.label) + '</button>';
         }
-        html += '<button class="toast-x flex-shrink-0 text-zinc-500 hover:text-red-400 text-[10px] leading-none cursor-pointer">✕</button>';
+        html += '<button class="toast-x flex-shrink-0 text-zinc-500 hover:text-red-400 type-micro leading-none cursor-pointer">✕</button>';
         item.innerHTML = html;
 
         const dismiss = (el, immediate) => {
@@ -14979,7 +14981,7 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
             { id: 'search', label: 'Search', emoji: '🔍' },
             { id: 'info', label: 'Info', emoji: '📝' },
             { id: 'drivers', label: 'Drivers', emoji: '⚙️' },
-            { id: 'power', label: 'Power', emoji: '⚡' }
+            { id: 'power', label: 'Power', emoji: '🔌' }
         ],
         cycleLeftTab: function(dir) {
             const currentIdx = this.leftTabModes.findIndex(m => m.id === this.activeLeftTab);
@@ -15158,7 +15160,7 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
                 };
                 const show = shortNames[val] || val || 'IEM';
                 const emoji = (FindEngine && FindEngine.formFactorEmojis[val]) ? FindEngine.formFactorEmojis[val] : '<img src="app/icons/iem.png" style="width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:2px;" class="object-contain">';
-                label.innerHTML = `<span class="flex items-center justify-center gap-2 truncate" title="${esc(val || '')}">${emoji}<span class="truncate text-[10.5px] tracking-wide">${esc(show)}</span></span>`;
+                label.innerHTML = `<span class="flex items-center justify-center gap-2 truncate" title="${esc(val || '')}">${emoji}<span class="truncate type-xs tracking-wide">${esc(show)}</span></span>`;
             }
         },
         setConnector: function(val) {
@@ -15211,9 +15213,9 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
             };
             btn.textContent = labels[this.currentCrossover] || '🔀 Crossover: Unknown';
             if (this.currentCrossover === 'UNK') {
-                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border border-[var(--border-color)] text-[9px] font-bold text-zinc-400 transition-all flex items-center justify-center gap-1 cursor-pointer";
+                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border border-[var(--border-color)] type-micro font-bold text-zinc-400 transition-all flex items-center justify-center gap-1 cursor-pointer";
             } else {
-                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[var(--accent-blue)] text-[9px] font-bold text-[var(--accent-blue)] transition-all flex items-center justify-center gap-1 cursor-pointer";
+                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[var(--accent-blue)] type-micro font-bold text-[var(--accent-blue)] transition-all flex items-center justify-center gap-1 cursor-pointer";
             }
         },
         updateWayButtonsUI: function() {
@@ -15230,9 +15232,9 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
             };
             btn.textContent = labels[this.currentWay] || '🧩 Way: Unknown';
             if (this.currentWay === 'UNK') {
-                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border border-[var(--border-color)] text-[9px] font-bold text-zinc-400 transition-all flex items-center justify-center gap-1 cursor-pointer";
+                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border border-[var(--border-color)] type-micro font-bold text-zinc-400 transition-all flex items-center justify-center gap-1 cursor-pointer";
             } else {
-                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[var(--accent-blue)] text-[9px] font-bold text-[var(--accent-blue)] transition-all flex items-center justify-center gap-1 cursor-pointer";
+                btn.className = "w-full h-7 bg-[var(--bg-input)] hover:bg-zinc-800 border-[var(--accent-blue)] type-micro font-bold text-[var(--accent-blue)] transition-all flex items-center justify-center gap-1 cursor-pointer";
             }
         },
         dacTiers: ['Phone', 'Laptop', 'Dongle', 'Desktop'],
@@ -15535,12 +15537,16 @@ label: function(context) {
                 btnLabel.innerHTML = `<img src="${info.icon}" class="w-6 h-6 object-contain flex-shrink-0 inline-block anim-toggle-pop"> ${info.label}`;
             }
         },
+        // Must stay in step with #sound-char-tabs: six pills in the markup
+        // (bass / mids / treble / stage / fit / package), so six here. Package
+        // was missing, which made the list disagree with the row it describes.
         soundCharModes: [
             { id: 'bass', label: 'Bass', emoji: '🥁' },
             { id: 'mids', label: 'Mids', emoji: '🎤' },
             { id: 'treble', label: 'Treble', emoji: '✨' },
             { id: 'stage', label: 'Stage', emoji: '🏟️' },
-            { id: 'fit', label: 'Fit', emoji: '🎧' }
+            { id: 'fit', label: 'Fit', emoji: '🎧' },
+            { id: 'package', label: 'Package', emoji: '📦' }
         ],
         activeSoundCharTab: 'bass',
         switchSoundCharTab: function(tabId) {
@@ -15666,14 +15672,14 @@ label: function(context) {
                     emojiSpan.style.cssText = 'display: inline-block; transform-origin: center;';
                     emojiSpan.textContent = emoji;
                     const textSpan = document.createElement('span');
-                    textSpan.className = 'text-[9.5px] font-black text-[var(--text-main)] truncate leading-tight';
+                    textSpan.className = 'type-micro font-black text-[var(--text-main)] truncate leading-tight';
                     textSpan.textContent = text;
                     inner.appendChild(emojiSpan);
                     inner.appendChild(textSpan);
 
                     const rmBtn = document.createElement('button');
                     rmBtn.type = 'button';
-                    rmBtn.className = 'w-4 h-4 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[9px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black';
+                    rmBtn.className = 'w-4 h-4 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white type-micro font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black';
                     rmBtn.title = 'Remove ' + text;
                     rmBtn.textContent = '✕';
                     const tagToRemove = tag;
@@ -15688,7 +15694,7 @@ label: function(context) {
                 } else {
                     const div = document.createElement('div');
                     div.className = 'border-2 border-dashed border-black p-1 flex items-center justify-center select-none w-full h-full bg-black/10';
-                    div.innerHTML = `<span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Slot ${i+1}</span>`;
+                    div.innerHTML = `<span class="type-micro font-black text-stone-400 uppercase tracking-wider">+ Slot ${i+1}</span>`;
                     container.appendChild(div);
                 }
             }
@@ -17797,14 +17803,15 @@ document.querySelectorAll('#acoustics-sub-tabs button').forEach(b => {
     switchConsoleTab: function(tabId) {
         this.activeConsoleTab = tabId;
         document.querySelectorAll('.console-panel').forEach(p => p.classList.add('hidden'));
-        document.querySelectorAll('#right-console-tabs button').forEach(b => b.classList.remove('active'));
 
         const panel = document.getElementById('rc-panel-' + tabId);
         if (panel) panel.classList.remove('hidden');
 
-        const btn = document.getElementById('rc-tab-' + tabId);
-        if (btn) btn.classList.add('active');
-
+        // The console's tabs are the ◀/▶ stepper, not buttons: there is no
+        // #right-console-tabs row and no rc-tab-<id> pill to mark active. The
+        // two lookups that used to sit here (a querySelectorAll over the dead
+        // row and a guarded rc-tab-<id>) matched nothing every time. The state
+        // the reader sees is the panel above and the stepper label below.
         const stepperLabel = document.getElementById('rc-tab-stepper-label');
         if (stepperLabel) {
             const info = this.consoleModes.find(m => m.id === tabId) || this.consoleModes[0];
@@ -18168,14 +18175,14 @@ buildStandardEQ: function() {
             card.style.setProperty('--band-color-hi', colorHi);
 
                 card.innerHTML = `
-                    <div class="flex items-center justify-between text-[10px] select-none font-bold" draggable="false">
+                    <div class="flex items-center justify-between type-micro select-none font-bold" draggable="false">
                         <div class="flex items-center gap-1.5" draggable="false">
-                            <span class="w-3.5 h-3.5 flex items-center justify-center text-[8px] font-black text-white" style="background-color: var(--band-color);">${i + 1}</span>
-                            <span class="text-zinc-350 text-[10px]">${b.emoji} ${b.name}</span>
+                            <span class="w-3.5 h-3.5 flex items-center justify-center type-micro font-black text-white" style="background-color: var(--band-color);">${i + 1}</span>
+                            <span class="text-zinc-350 type-micro">${b.emoji} ${b.name}</span>
                         </div>
                         <div class="flex items-center gap-1.5 font-mono text-zinc-400" draggable="false">
-                            <span class="text-[9px] text-zinc-555">${b.hz}Hz</span>
-                            <span id="eq-s${i}-std-val" class="font-extrabold min-w-[54px] text-right text-[10px] whitespace-nowrap" style="color: var(--band-color);">0.0 dB</span>
+                            <span class="type-micro text-zinc-555">${b.hz}Hz</span>
+                            <span id="eq-s${i}-std-val" class="font-extrabold min-w-[54px] text-right type-micro whitespace-nowrap" style="color: var(--band-color);">0.0 dB</span>
                         </div>
                     </div>
                     <div class="flex items-center h-4 mt-1" draggable="false">
@@ -18229,7 +18236,7 @@ if (window.bypassedBands === undefined) window.bypassedBands = new Set();
                 bandDiv.innerHTML = `
                     <div class="flex items-center justify-between w-full h-5 select-none" draggable="false">
                         <div class="flex items-center gap-1" draggable="false">
-                            <span class="w-4 h-4 flex items-center justify-center text-[9px] font-black text-white flex-shrink-0" style="background-color: var(--band-color);">${i + 1}</span>
+                            <span class="w-4 h-4 flex items-center justify-center type-micro font-black text-white flex-shrink-0" style="background-color: var(--band-color);">${i + 1}</span>
                             <button data-cmd="EQ.cycleBandType" data-arg-0="${i}" id="eq-t_m${i}" class="eq-card-select px-2" style="color: var(--band-color);" draggable="false">${currentLabel}</button>
                             <button data-cmd="EQ.cycleBandSlope" data-arg-0="${i}" id="eq-sl_m${i}" class="eq-card-select px-1.5 ml-1 ${isSlopeVisible ? '' : 'hidden'}" style="color: var(--text-secondary); border-color: rgba(255,255,255,0.04);" title="Filter steepness (12—48 dB/octave)" draggable="false">${currentSlope}dB</button>
                         </div>
@@ -18237,7 +18244,7 @@ if (window.bypassedBands === undefined) window.bypassedBands = new Set();
                         <div class="flex items-center gap-1" draggable="false">
                             <button data-cmd="EQ.copyBand" data-arg-0="${i}" class="eq-card-action-btn" draggable="false">Copy</button>
                             <button data-cmd="EQ.resetBand" data-arg-0="${i}" class="eq-card-action-btn" draggable="false">Reset</button>
-                            <button data-cmd="EQ.toggleBandBypass" data-arg-0="${i}" id="eq-bp_m${i}" class="text-[8px] font-black cursor-pointer focus:outline-none ml-1" style="color: ${isBypassed ? 'var(--accent-red)' : 'var(--accent-green)'}" draggable="false">
+                            <button data-cmd="EQ.toggleBandBypass" data-arg-0="${i}" id="eq-bp_m${i}" class="type-micro font-black cursor-pointer focus:outline-none ml-1" style="color: ${isBypassed ? 'var(--accent-red)' : 'var(--accent-green)'}" draggable="false">
                                 ${isBypassed ? '🔴' : '🟢'}
                             </button>
                         </div>
@@ -18672,7 +18679,7 @@ switchCategory: function(catId) {
                     const btn = document.createElement('button');
                     btn.id = 'preset-btn-' + p.id;
 
-                    btn.className = 'w-full text-center text-[10px] h-8 px-1 py-1 bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate flex items-center justify-center gap-1 cursor-pointer';
+                    btn.className = 'w-full text-center type-micro h-8 px-1 py-1 bg-[var(--bg-card)] border border-[var(--border-color)]/50 text-[var(--text-main)] hover:bg-[var(--bg-input)] transition-all font-semibold shadow-sm truncate flex items-center justify-center gap-1 cursor-pointer';
                     const lbl = document.createElement('span'); lbl.textContent = p.name; btn.appendChild(lbl);
                     btn.onclick = () => { this.applyPreset(p.id); };
                     grid.appendChild(btn);
@@ -18990,8 +18997,8 @@ const EQ_TapeModMethods = {
                 if (subLabel) {
                     subLabel.textContent = subNames[this.tapeModState] || 'Off';
                     subLabel.className = this.tapeModState === 'off'
-                        ? "font-mono text-emerald-400 font-bold text-[10px]"
-                        : "font-mono text-amber-400 font-bold text-[10px]";
+                        ? "font-mono text-emerald-400 font-bold type-micro"
+                        : "font-mono text-amber-400 font-bold type-micro";
                 }
             },
 };
@@ -19926,7 +19933,7 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
             }
             if (textContainer) {
                 textContainer.textContent = label;
-                textContainer.className = `text-[10px] font-black leading-tight ${colorClass} ${animClass}`;
+                textContainer.className = `type-micro font-black leading-tight ${colorClass} ${animClass}`;
                 textContainer.style.display = "inline-block";
                 textContainer.style.transformOrigin = "left center";
             }
@@ -19955,7 +19962,7 @@ const EQ_GenreTargetMethods = {        _genreTargetState: { music: { open: false
             }
             if (textContainer) {
                 textContainer.textContent = label;
-                textContainer.className = `text-[10px] font-black leading-tight ${colorClass} ${animClass}`;
+                textContainer.className = `type-micro font-black leading-tight ${colorClass} ${animClass}`;
                 textContainer.style.display = "inline-block";
                 textContainer.style.transformOrigin = "left center";
             }
@@ -20572,7 +20579,7 @@ const EQ_MediaTransportMethods = {
                     const btn = document.getElementById("playlist-play-btn");
                     const mobBtn = document.getElementById("mobile-play-btn");
                     if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
-                    if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
+                    if(mobBtn) mobBtn.innerHTML = "<span class=\"type-md leading-none\">⏸</span>";
 
                     if (SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
                         await SharedAudio.ctx.resume();
@@ -20617,7 +20624,7 @@ const EQ_MediaTransportMethods = {
                         const btn = document.getElementById("playlist-play-btn");
                         if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
                         const mobBtn = document.getElementById("mobile-play-btn");
-                        if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
+                        if(mobBtn) mobBtn.innerHTML = "<span class=\"type-md leading-none\">▶</span>";
                     }
                 });
                 // During a crossfade the retiring element keeps playing until
@@ -20641,7 +20648,7 @@ const EQ_MediaTransportMethods = {
                         const btn = document.getElementById("playlist-play-btn");
                         const mobBtn = document.getElementById("mobile-play-btn");
                         if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M6 19h4V5H6v14zm8-14v14h4V5h-4z\"/></svg>";
-                        if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">⏸</span>";
+                        if(mobBtn) mobBtn.innerHTML = "<span class=\"type-md leading-none\">⏸</span>";
                         if (SharedAudio.ctx && SharedAudio.ctx.state === 'suspended') {
                             await SharedAudio.ctx.resume();
                         }
@@ -20661,7 +20668,7 @@ const EQ_MediaTransportMethods = {
                             const btn = document.getElementById("playlist-play-btn");
                             if(btn) btn.innerHTML = "<svg class=\"w-[18px] h-[18px]\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>";
                             const mobBtn = document.getElementById("mobile-play-btn");
-                            if(mobBtn) mobBtn.innerHTML = "<span class=\"text-[13px] leading-none\">▶</span>";
+                            if(mobBtn) mobBtn.innerHTML = "<span class=\"type-md leading-none\">▶</span>";
                         }
                     });
                     this.gaplessEl.addEventListener('ended', () => {
@@ -22805,7 +22812,7 @@ const CurveIndexer = {
             if (headerBadge) {
                 headerBadge.classList.remove('hidden');
                 headerBadge.classList.add('flex');
-                headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30 text-[9px] font-mono font-bold text-emerald-400 select-none ml-1.5 whitespace-nowrap flex-shrink-0";
+                headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30 type-micro font-mono font-bold text-emerald-400 select-none ml-1.5 whitespace-nowrap flex-shrink-0";
                 headerBadge.innerHTML = "<span class=\"whitespace-nowrap\">✓ DB Ready</span>";
                 setTimeout(() => {
                     headerBadge.classList.add('hidden');
@@ -22814,21 +22821,21 @@ const CurveIndexer = {
             }
             if (dbIndicator) {
                 dbIndicator.textContent = "✓ DB Ready";
-                dbIndicator.className = "text-[9px] font-black text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 px-2 py-0.5 uppercase tracking-wider whitespace-nowrap";
+                dbIndicator.className = "type-micro font-black text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 px-2 py-0.5 uppercase tracking-wider whitespace-nowrap";
                 setTimeout(() => dbIndicator.classList.add('hidden'), 2500);
             }
         } else {
             if (headerBadge) {
                 headerBadge.classList.remove('hidden');
                 headerBadge.classList.add('flex');
-                headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 text-[9px] font-mono font-bold text-amber-400 select-none animate-pulse ml-1.5 whitespace-nowrap flex-shrink-0";
+                headerBadge.className = "flex items-center gap-1 px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 type-micro font-mono font-bold text-amber-400 select-none animate-pulse ml-1.5 whitespace-nowrap flex-shrink-0";
                 headerBadge.innerHTML = `<span class="whitespace-nowrap">📥 DB:</span><span id="db-download-pct" class="whitespace-nowrap">${pct}%</span>`;
             }
 
             if (dbIndicator) {
                 dbIndicator.classList.remove('hidden');
                 dbIndicator.textContent = `📥 Loading: ${pct}%`;
-                dbIndicator.className = "text-[9px] font-black text-amber-400 bg-amber-950/30 border border-amber-900/40 px-2 py-0.5 animate-pulse uppercase tracking-wider whitespace-nowrap";
+                dbIndicator.className = "type-micro font-black text-amber-400 bg-amber-950/30 border border-amber-900/40 px-2 py-0.5 animate-pulse uppercase tracking-wider whitespace-nowrap";
             }
         }
     },
@@ -23488,9 +23495,9 @@ setSearchMode: function(mode) {
             const badgeFor = (item) => {
                 const loadedCurve = activeCurves.find(c => c.id === item.id);
                 if (loadedCurve) {
-                    return `<span class="text-[8px] uppercase font-bold tracking-widest px-1.5 py-0.5 text-white flex-shrink-0" style="background-color: ${loadedCurve.color}">${loadedCurve.role.toUpperCase()}</span>`;
+                    return `<span class="type-micro uppercase font-bold tracking-widest px-1.5 py-0.5 text-white flex-shrink-0" style="background-color: ${loadedCurve.color}">${loadedCurve.role.toUpperCase()}</span>`;
                 }
-                return `<span class="text-[8px] text-zinc-500 uppercase tracking-widest font-black">LOAD</span>`;
+                return `<span class="type-micro text-zinc-500 uppercase tracking-widest font-black">LOAD</span>`;
             };
 
             // Filter and re-rank by form factor - specs-tab logic: none selected = show all, else filter to selected
@@ -23537,14 +23544,14 @@ const countEl = document.getElementById('peqdb-result-count');
             });
             filterHtml += '</div>';
 
-            let html = '<div class="text-[9px] text-zinc-555 font-bold uppercase tracking-wider mb-2 border-b border-[var(--border-color)] pb-1 flex justify-between items-center mr-3 select-none">' +
+            let html = '<div class="type-micro text-zinc-555 font-bold uppercase tracking-wider mb-2 border-b border-[var(--border-color)] pb-1 flex justify-between items-center mr-3 select-none">' +
                 '<span>Matches for:</span>' +
                 '<span class="text-[var(--accent-amber)] truncate max-w-[130px]" title="' + esc(refName) + '">' + esc(refName) + '</span>' +
                 '</div>' + filterHtml;
 
             if (filteredMatches.length === 0) {
-                html += '<div class="text-zinc-500 text-[11px] italic text-center mt-8 p-4 border border-dashed border-zinc-800">' +
-                    (anySelected ? 'No matches for selected form factors.<br><span class="text-[10px]">Try enabling more filters.</span>' : '&#9889; 0 matches &mdash; adjust the DSP curve to find similar IEMs.') +
+                html += '<div class="text-zinc-500 type-xs italic text-center mt-8 p-4 border border-dashed border-zinc-800">' +
+                    (anySelected ? 'No matches for selected form factors.<br><span class="type-micro">Try enabling more filters.</span>' : '&#9889; 0 matches &mdash; adjust the DSP curve to find similar IEMs.') +
                     '</div>';
             } else {
                 // Cap the rendered cards. This list had no limit at all while the
@@ -23570,7 +23577,7 @@ const countEl = document.getElementById('peqdb-result-count');
                 if (filteredMatches.length > shown.length) {
                     // Never hide that the list was truncated — the count above
                     // still reports the true total.
-                    html += '<div class="text-[10px] text-zinc-500 italic text-center mt-4 p-3 border border-dashed border-zinc-800">' +
+                    html += '<div class="type-micro text-zinc-500 italic text-center mt-4 p-3 border border-dashed border-zinc-800">' +
                         'Showing the top ' + shown.length + ' of ' + filteredMatches.length +
                         ' matches &mdash; the closest curves are ranked first. Refine the EQ to narrow the field.' +
                         '</div>';
@@ -23625,9 +23632,9 @@ const countEl = document.getElementById('peqdb-result-count');
                             const badgeFor = (item) => {
                                 const loadedCurve = activeCurves.find(c => c.id === item.id);
                                 if (loadedCurve) {
-                                    return `<span class="text-[8px] uppercase font-bold tracking-widest px-1.5 py-0.5 text-white flex-shrink-0" style="background-color: ${loadedCurve.color}">${loadedCurve.role.toUpperCase()}</span>`;
+                                    return `<span class="type-micro uppercase font-bold tracking-widest px-1.5 py-0.5 text-white flex-shrink-0" style="background-color: ${loadedCurve.color}">${loadedCurve.role.toUpperCase()}</span>`;
                                 }
-                                return `<span class="text-[8px] text-zinc-500 uppercase tracking-widest font-black">LOAD</span>`;
+                                return `<span class="type-micro text-zinc-500 uppercase tracking-widest font-black">LOAD</span>`;
                             };
                             const rank = groupIdx + 1;
                             drawer.innerHTML = group.items.map(item => {
@@ -23849,7 +23856,7 @@ const PEQDB_SmartRFMethods = {
                 }
                 if (importBtn) {
                     importBtn.disabled = false;
-                    importBtn.className = "py-2 text-[10px] font-bold bg-[var(--accent-blue)] text-white hover:brightness-110 transition-all text-center cursor-pointer";
+                    importBtn.className = "py-2 type-micro font-bold bg-[var(--accent-blue)] text-white hover:brightness-110 transition-all text-center cursor-pointer";
                 }
             } else {
                 if (detectedEl) detectedEl.textContent = "None";
@@ -23860,7 +23867,7 @@ const PEQDB_SmartRFMethods = {
                 if (pointsEl) pointsEl.textContent = "0";
                 if (importBtn) {
                     importBtn.disabled = true;
-                    importBtn.className = "py-2 text-[10px] font-bold bg-zinc-800 text-zinc-500 cursor-not-allowed transition-all text-center";
+                    importBtn.className = "py-2 type-micro font-bold bg-zinc-800 text-zinc-500 cursor-not-allowed transition-all text-center";
                 }
             }
         },
@@ -24375,7 +24382,7 @@ const PEQDB_SmartRFMethods = {
             // hides this box is a 150ms setTimeout, and click lands inside that
             // window, so insertSearchSuggestion runs before the box closes.
             box.innerHTML = suggestions.map(s => `
-                <span class="spec-icon-badge" style="width:auto !important; height:24px !important; padding:0 8px; font-size:11px !important; font-weight:800; background:var(--bg-input); border:2px solid #000;" data-tooltip="Search: click to insert" data-cmd="PEQDB_Module.insertSearchSuggestion" data-arg-0="${esc(s)}">${esc(s)}</span>
+                <span class="spec-icon-badge" style="width:auto !important; height:24px !important; padding:0 8px; font-size:var(--t-xs) !important; font-weight:800; background:var(--bg-input); border:2px solid #000;" data-tooltip="Search: click to insert" data-cmd="PEQDB_Module.insertSearchSuggestion" data-arg-0="${esc(s)}">${esc(s)}</span>
             `).join('');
             box.classList.remove('hidden');
         },
@@ -24926,8 +24933,8 @@ const savedDb = localStorage.getItem('settings_align_db');
                 const connectorEmoji = FindEngine.connectorEmojis[item.connector] || '🔌';
 
                 const specIconsHtml = `
-                    ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:9px;">$${esc(item.price_usd)}</span></span>` : ''}
-                    ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:9px;">${esc(item.year)}</span></span>` : ''}
+                    ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:var(--t-micro);">$${esc(item.price_usd)}</span></span>` : ''}
+                    ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:var(--t-micro);">${esc(item.year)}</span></span>` : ''}
                     ${item.driver_type ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
                     ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${esc(item.connector)}">${connectorEmoji}</span>` : ''}
                     <span class="spec-icon-badge" data-tooltip="${esc(item.form_factor || 'In-Ear Monitor (IEM)')}">${formEmoji}</span>
@@ -24946,17 +24953,17 @@ const savedDb = localStorage.getItem('settings_align_db');
                 if (isMulti) {
                     fileRowHtml = `
                         <div class="flex items-center gap-1.5 mt-1">
-                            <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
+                            <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center type-micro font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
                             <div class="db-file-name flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
-                                <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
+                                <span class="db-file-marquee-text type-micro font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
                             </div>
-                            <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
+                            <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center type-micro font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
                         </div>
                     `;
                 } else {
                     fileRowHtml = `
                         <div class="db-file-name mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
-                            <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
+                            <span class="db-file-marquee-text type-micro font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
                         </div>
                     `;
                 }
@@ -24974,7 +24981,7 @@ const savedDb = localStorage.getItem('settings_align_db');
                     <div class="db-title-row overflow-hidden whitespace-nowrap">
                         <span class="db-title-text font-black text-stone-200 text-xs inline-block whitespace-nowrap">${esc(item.name)}</span>
                     </div>
-                    <div class="text-[8.5px] text-zinc-500 font-bold uppercase tracking-wider mt-0.5">${esc(item.source || sourceName)}</div>
+                    <div class="type-micro text-zinc-500 font-bold uppercase tracking-wider mt-0.5">${esc(item.source || sourceName)}</div>
                     <div class="flex flex-wrap items-center justify-center gap-1 mt-1">${specIconsHtml}</div>
                     ${tagsHtml ? `<div class="flex flex-wrap items-center justify-center gap-1 mt-1">${tagsHtml}</div>` : ''}
                     ${fileRowHtml}
@@ -25000,8 +25007,8 @@ const savedDb = localStorage.getItem('settings_align_db');
                         <div class="flex items-center justify-between p-2 cursor-pointer select-none border-2 border-black" style="background: var(--bg-input);" data-cmd="PEQDB_Module.toggleBrandGroup" data-arg-0="${escJs(brandName)}">
                             <span class="text-xs font-black uppercase tracking-wider text-[var(--accent-blue)]">${esc(brandName)}</span>
                             <span class="flex items-center gap-1.5 flex-shrink-0">
-                                <span class="text-[9px] font-black text-zinc-500">${this._brandCounts.get(brandName) || 0}</span>
-                                <span class="brand-group-arrow text-[10px] font-black text-[var(--text-secondary)]">${isExpanded ? '▲' : '▼'}</span>
+                                <span class="type-micro font-black text-zinc-500">${this._brandCounts.get(brandName) || 0}</span>
+                                <span class="brand-group-arrow type-micro font-black text-[var(--text-secondary)]">${isExpanded ? '▲' : '▼'}</span>
                             </span>
                         </div>
                         <div class="brand-items-container pl-2 pt-1.5 ${isExpanded ? '' : 'hidden'}"></div>
@@ -25572,14 +25579,14 @@ const savedDb = localStorage.getItem('settings_align_db');
            symptom, and it came and went with the curve name rather than
            reporting itself as a bug. Pinning the size makes the row
            deterministic. */
-item.innerHTML = `<div class="flex items-center justify-between w-full h-6 select-none" draggable="false"><span class="curve-role-chip px-2 py-0.5 text-[8.5px] font-black tracking-wider text-white uppercase bg-black/60 border border-white/10 flex-shrink-0" title="Drag to rearrange" draggable="false">${roleLabel}</span><div class="flex items-center gap-1.5 flex-shrink-0" draggable="false"><button data-cmd="PEQDB_Module.toggleVisible" data-arg-0="@from:uid" class="w-6 h-6 flex-shrink-0 bg-black/50 hover:bg-black/80 text-white text-[11px] flex items-center justify-center border border-white/10 cursor-pointer" title="Show or hide this curve" draggable="false">${c.visible?'👁️':'🙈'}</button><button data-cmd="PEQDB_Module.cycleColor" data-arg-0="@from:uid" class="curve-card-swatch w-6 h-6 flex-shrink-0 border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style="background-color:${c.color}" title="Change this curve's color" draggable="false">🎨</button><button data-cmd="PEQDB_Module.removeCurve" data-arg-0="@from:uid" class="w-6 h-6 flex-shrink-0 bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-black text-[11px] flex items-center justify-center cursor-pointer" title="Remove this curve" draggable="false">✕</button></div></div><div data-cmd="PEQDB_Module.renameCurve" data-arg-0="@from:uid" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5" draggable="false"><div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none"><span id="marquee-${esc(c.uid)}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span></div></div><div class="flex justify-between items-center w-full h-6" draggable="false"><div class="flex items-center gap-1.5 h-6 decibel-stepper flex-shrink-0 select-none" style="width:110px !important;min-width:110px !important;max-width:110px !important;" draggable="false"><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="-1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve down 1 dB" draggable="false">◄</button><button type="button" data-stop-propagation class="flex-1 h-6 bg-[var(--bg-input)] border-2 border-black text-[#c85a0e] font-mono font-black text-[9px] flex items-center justify-center text-center cursor-default select-none focus:outline-none px-0 min-w-0" draggable="false">${(c.offset||0)>=0?'+':''}${c.offset||0}dB</button><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve up 1 dB" draggable="false">►</button></div><div class="flex items-center gap-1.5" draggable="false"><button data-cmd="PEQDB_Module.exportCurveByUid" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Export this curve as a text file" draggable="false">📥</button><button data-cmd="PEQDB_Module.findMatchesFromDock" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white text-[10px] flex items-center justify-center cursor-pointer" title="Find similar curves" draggable="false">🔍</button></div></div>`;
+item.innerHTML = `<div class="flex items-center justify-between w-full h-6 select-none" draggable="false"><span class="curve-role-chip px-2 py-0.5 type-micro font-black tracking-wider text-white uppercase bg-black/60 border border-white/10 flex-shrink-0" title="Drag to rearrange" draggable="false">${roleLabel}</span><div class="flex items-center gap-1.5 flex-shrink-0" draggable="false"><button data-cmd="PEQDB_Module.toggleVisible" data-arg-0="@from:uid" class="w-6 h-6 flex-shrink-0 bg-black/50 hover:bg-black/80 text-white type-xs flex items-center justify-center border border-white/10 cursor-pointer" title="Show or hide this curve" draggable="false">${c.visible?'👁️':'🙈'}</button><button data-cmd="PEQDB_Module.cycleColor" data-arg-0="@from:uid" class="curve-card-swatch w-6 h-6 flex-shrink-0 border-2 border-white shadow-md flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style="background-color:${c.color}" title="Change this curve's color" draggable="false">🎨</button><button data-cmd="PEQDB_Module.removeCurve" data-arg-0="@from:uid" class="w-6 h-6 flex-shrink-0 bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-black type-xs flex items-center justify-center cursor-pointer" title="Remove this curve" draggable="false">✕</button></div></div><div data-cmd="PEQDB_Module.renameCurve" data-arg-0="@from:uid" class="flex-1 flex items-center justify-center overflow-hidden cursor-pointer w-full px-1.5 py-0.5" draggable="false"><div class="w-full overflow-hidden whitespace-nowrap flex justify-center items-center pointer-events-none"><span id="marquee-${esc(c.uid)}" class="text-black font-black text-xs tracking-wide inline-block whitespace-nowrap">${esc(c.name)}</span></div></div><div class="flex justify-between items-center w-full h-6" draggable="false"><div class="flex items-center gap-1.5 h-6 decibel-stepper flex-shrink-0 select-none" style="width:110px !important;min-width:110px !important;max-width:110px !important;" draggable="false"><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="-1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black type-micro flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve down 1 dB" draggable="false">◄</button><button type="button" data-stop-propagation class="flex-1 h-6 bg-[var(--bg-input)] border-2 border-black text-[#c85a0e] font-mono font-black type-micro flex items-center justify-center text-center cursor-default select-none focus:outline-none px-0 min-w-0" draggable="false">${(c.offset||0)>=0?'+':''}${c.offset||0}dB</button><button type="button" data-cmd="PEQDB_Module.adjustCurveOffset" data-arg-0="@from:uid" data-arg-1="1" class="w-6 h-6 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black type-micro flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0" title="Move the curve up 1 dB" draggable="false">►</button></div><div class="flex items-center gap-1.5" draggable="false"><button data-cmd="PEQDB_Module.exportCurveByUid" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white type-micro flex items-center justify-center cursor-pointer" title="Export this curve as a text file" draggable="false">📥</button><button data-cmd="PEQDB_Module.findMatchesFromDock" data-arg-0="@from:uid" class="w-6 h-6 bg-black/50 hover:bg-black/80 border border-white/10 text-white type-micro flex items-center justify-center cursor-pointer" title="Find similar curves" draggable="false">🔍</button></div></div>`;
                 if (c.role==='base') { baseSlot.appendChild(item); baseCount++; }
                 else if (c.role==='target') { targetSlot.appendChild(item); targetCount++; }
                 else { referencePile.appendChild(item); refCount++; }
             });
-            if (baseCount===0) { baseSlot.innerHTML='<div class="text-center text-[10px] leading-normal text-zinc-600 px-3 select-none pointer-events-none">📥 Drag or click curve<br>to set as <span class="text-amber-500 font-bold">Base</span></div>'; }
-            if (targetCount===0) { targetSlot.innerHTML='<div class="text-center text-[10px] leading-normal text-zinc-600 px-3 select-none pointer-events-none">🎯 Drag or click curve<br>to set as <span class="text-blue-500 font-bold">Target</span></div>'; }
-            if (refCount===0) { referencePile.innerHTML='<div class="text-center text-[10px] leading-normal text-zinc-650 px-3 w-full select-none pointer-events-none">Empty Reference Pile<br><span class="text-[9px] opacity-80">(Compare overlays)</span></div>'; }
+            if (baseCount===0) { baseSlot.innerHTML='<div class="text-center type-micro leading-normal text-zinc-600 px-3 select-none pointer-events-none">📥 Drag or click curve<br>to set as <span class="text-amber-500 font-bold">Base</span></div>'; }
+            if (targetCount===0) { targetSlot.innerHTML='<div class="text-center type-micro leading-normal text-zinc-600 px-3 select-none pointer-events-none">🎯 Drag or click curve<br>to set as <span class="text-blue-500 font-bold">Target</span></div>'; }
+            if (refCount===0) { referencePile.innerHTML='<div class="text-center type-micro leading-normal text-zinc-650 px-3 w-full select-none pointer-events-none">Empty Reference Pile<br><span class="type-micro opacity-80">(Compare overlays)</span></div>'; }
             setTimeout(()=>{
                 this.STATE.activeCurves.forEach(c=>{
                     const el = document.getElementById(`marquee-${c.uid}`);
@@ -26037,8 +26044,8 @@ item.innerHTML = `<div class="flex items-center justify-between w-full h-6 selec
             const connectorEmoji = FindEngine.connectorEmojis[item.connector] || '🔌';
 
             const specIconsHtml = `
-                ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:9px;">$${esc(item.price_usd)}</span></span>` : ''}
-                ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:9px;">${esc(item.year)}</span></span>` : ''}
+                ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:var(--t-micro);">$${esc(item.price_usd)}</span></span>` : ''}
+                ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:var(--t-micro);">${esc(item.year)}</span></span>` : ''}
                 ${item.driver_type ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
                 ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${esc(item.connector)}">${connectorEmoji}</span>` : ''}
                 <span class="spec-icon-badge" data-tooltip="${esc(item.form_factor || 'In-Ear Monitor (IEM)')}">${formEmoji}</span>
@@ -26050,26 +26057,26 @@ item.innerHTML = `<div class="flex items-center justify-between w-full h-6 selec
             if (isMulti) {
                 fileRowHtml = `
                     <div class="flex items-center gap-1.5 mt-1">
-                        <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
+                        <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="-1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center type-micro font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">◀</button>
                         <div class="db-file-name flex-1 min-w-0 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
-                            <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
+                            <span class="db-file-marquee-text type-micro font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${activeFileIdx + 1}/${fileCount} · ${esc(sourceName)} · ${esc(fileNameNoExt)}</span>
                         </div>
-                        <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
+                        <button data-cmd="PEQDB_Module.cycleDbItemSource" data-arg-0="${escJs(item.id)}" data-arg-1="1" class="w-5 h-5 flex-shrink-0 flex items-center justify-center type-micro font-black border border-black" style="background:${rowAccentColor}; color:${isLoaded ? '#fff' : 'var(--text-secondary)'};">▶</button>
                     </div>
                 `;
             } else {
                 fileRowHtml = `
                     <div class="db-file-name mt-1 overflow-hidden border border-white/[0.06] px-1.5 py-0.5" style="background: var(--bg-input);">
-                        <span class="db-file-marquee-text text-[8.5px] font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
+                        <span class="db-file-marquee-text type-micro font-bold inline-block whitespace-nowrap" style="color:${isLoaded ? rowAccentColor : 'var(--text-main)'};">${esc(fileNameNoExt)}</span>
                     </div>
                 `;
             }
 
             const similarHeader = similarInfo ? `
                 <div class="flex items-center justify-between gap-2 mb-1.5 border-b border-white/[0.05] pb-1.5">
-                    <span class="text-[9px] font-mono text-[var(--text-secondary)]">#${similarInfo.rank}</span>
+                    <span class="type-micro font-mono text-[var(--text-secondary)]">#${similarInfo.rank}</span>
                     <span class="flex items-center gap-1.5">
-                        <span class="text-[11px] font-black text-[var(--accent-green)]" title="Probe similarity (linear MAE scale) — not the Find tab's exponential tuning-match %">${similarInfo.similarity.toFixed(1)}%</span>
+                        <span class="type-xs font-black text-[var(--accent-green)]" title="Probe similarity (linear MAE scale) — not the Find tab's exponential tuning-match %">${similarInfo.similarity.toFixed(1)}%</span>
                         ${similarInfo.badgeHtml || ''}
                     </span>
                 </div>
@@ -26115,7 +26122,7 @@ item.innerHTML = `<div class="flex items-center justify-between w-full h-6 selec
                 <div class="db-title-row overflow-hidden whitespace-nowrap">
                     <span class="db-title-text font-black text-stone-200 text-xs inline-block whitespace-nowrap">${esc(item.name)}</span>
                 </div>
-                <div class="text-[8.5px] text-zinc-500 font-bold uppercase tracking-wider mt-0.5">${esc(item.source || sourceName)}</div>
+                <div class="type-micro text-zinc-500 font-bold uppercase tracking-wider mt-0.5">${esc(item.source || sourceName)}</div>
                 <div class="flex flex-wrap items-center justify-center gap-1 mt-1">${specIconsHtml}</div>
                 ${tagsHtml ? `<div class="flex flex-wrap items-center justify-center gap-1 mt-1">${tagsHtml}</div>` : ''}
                 ${fileRowHtml}
@@ -26454,7 +26461,7 @@ const TestLab_AbxMethods = {
             const status = document.getElementById('abx-status-lbl');
             if (status) {
                 status.textContent = 'Playing Target X...';
-                status.className = "text-[9px] text-[var(--accent-amber)] font-mono animate-pulse";
+                status.className = "type-micro text-[var(--accent-amber)] font-mono animate-pulse";
             }
 
             await EQ_Module.ensureDSPGraph();
@@ -26557,7 +26564,7 @@ const TestLab_AbxMethods = {
             const status = document.getElementById('abx-status-lbl');
             if (status) {
                 status.textContent = `Completed! Score: ${percentage}%`;
-                status.className = "text-[9px] text-emerald-400 font-black uppercase tracking-wider";
+                status.className = "type-micro text-emerald-400 font-black uppercase tracking-wider";
             }
 
             this.setABXPanelState('done');
@@ -27660,7 +27667,7 @@ const TestLab_BurninMethods = {
 
         if (status === 'idle') {
             statusDisp.textContent = "Idle";
-            statusDisp.className = "text-[10px] font-black uppercase tracking-widest text-zinc-400";
+            statusDisp.className = "type-micro font-black uppercase tracking-widest text-zinc-400";
             statusEmoji.textContent = "💤";
             statusEmoji.className = "text-xs";
             if (hourglass) {
@@ -27669,7 +27676,7 @@ const TestLab_BurninMethods = {
             }
         } else if (status === 'burning') {
             statusDisp.textContent = "Burning-In";
-            statusDisp.className = "text-[10px] font-black uppercase tracking-widest text-emerald-400 animate-state-active";
+            statusDisp.className = "type-micro font-black uppercase tracking-widest text-emerald-400 animate-state-active";
             statusEmoji.textContent = "🔥";
             statusEmoji.className = "text-xs animate-state-active";
             if (hourglass) {
@@ -27678,7 +27685,7 @@ const TestLab_BurninMethods = {
             }
         } else if (status === 'resting') {
             statusDisp.textContent = "Resting";
-            statusDisp.className = "text-[10px] font-black uppercase tracking-widest text-amber-500 animate-state-active";
+            statusDisp.className = "type-micro font-black uppercase tracking-widest text-amber-500 animate-state-active";
             statusEmoji.textContent = "💤";
             statusEmoji.className = "text-xs animate-state-active";
             if (hourglass) {
@@ -28940,8 +28947,11 @@ loadSoundLibrary: async function() {
 
         activeRightTab: 'tone',
         rightTabModes: [
-            { id: 'tone', label: 'Tone Gen', emoji: '🔊' },
-            { id: 'ab', label: 'A/B Test', emoji: '🆚' },
+            // Labels and emoji mirror the #tl-right-tabs pills (Tone / A/B).
+            // The list used to say "Tone Gen" and "A/B Test" with older icons,
+            // so the module described a row the reader never sees.
+            { id: 'tone', label: 'Tone', emoji: '🎛️' },
+            { id: 'ab', label: 'A/B', emoji: '🔀' },
             { id: 'hearing', label: 'Hearing', emoji: '👂' }
         ],
         cycleRightTab: function(dir) {
@@ -29245,11 +29255,11 @@ toggleChannelSwap: function() {
             const lockBtn = document.getElementById('resonance-lock-btn');
             if (scanBtn) {
                 scanBtn.textContent = 'Scan';
-                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5";
+                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold type-micro py-1.5";
             }
             if (lockBtn) {
                 lockBtn.disabled = true;
-                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 opacity-50 cursor-not-allowed";
+                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold type-micro py-1.5 opacity-50 cursor-not-allowed";
             }
 
             if (this.hearingOsc) {
@@ -29426,11 +29436,11 @@ toggleChannelSwap: function() {
 
             if (scanBtn) {
                 scanBtn.textContent = 'Scan...';
-                scanBtn.className = "w-full bg-sky-500/20 border border-sky-500/50 text-sky-300 font-bold text-[9px] py-1.5 active-btn animate-pulse truncate";
+                scanBtn.className = "w-full bg-sky-500/20 border border-sky-500/50 text-sky-300 font-bold type-micro py-1.5 active-btn animate-pulse truncate";
             }
             if (lockBtn) {
                 lockBtn.disabled = false;
-                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/15 font-bold text-[9px] py-1.5";
+                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/15 font-bold type-micro py-1.5";
             }
 
             this.resonanceOsc = ctx.createOscillator();
@@ -29506,11 +29516,11 @@ toggleChannelSwap: function() {
 
             if (scanBtn) {
                 scanBtn.textContent = 'Scan';
-                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5";
+                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold type-micro py-1.5";
             }
             if (lockBtn) {
                 lockBtn.disabled = true;
-                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 opacity-50 cursor-not-allowed";
+                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold type-micro py-1.5 opacity-50 cursor-not-allowed";
             }
             if (readout) {
                 readout.textContent = `${PEQDB_Module.resonanceHz.toLocaleString()} Hz`;
@@ -29607,11 +29617,11 @@ toggleChannelSwap: function() {
 
             if (scanBtn) {
                 scanBtn.textContent = 'Scan';
-                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold text-[9px] py-1.5";
+                scanBtn.className = "w-full bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/15 font-bold type-micro py-1.5";
             }
             if (lockBtn) {
                 lockBtn.disabled = true;
-                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[9px] py-1.5 opacity-50 cursor-not-allowed";
+                lockBtn.className = "w-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold type-micro py-1.5 opacity-50 cursor-not-allowed";
             }
             if (readout) {
                 readout.textContent = '8,000 Hz';
@@ -30849,7 +30859,7 @@ const Find_UpgradeMethods = {
                                 <span class="emoji-font vibrant-emoji text-sm flex-shrink-0 leading-none">📱</span>
                                 <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(name)}</span>
                             </div>
-                            <button type="button" data-cmd="FindEngine.clearUpgradeBaseIem" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the base IEM">✕</button>
+                            <button type="button" data-cmd="FindEngine.clearUpgradeBaseIem" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white type-micro font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the base IEM">✕</button>
                         `;
                     }
 
@@ -30886,7 +30896,7 @@ const Find_UpgradeMethods = {
                         // hit the change button. `slot-empty` carries the tokenised
                         // dashed outline + --r-md radius that every other slot uses.
                         baseSlot.className = "slot-empty w-full h-9 flex items-center justify-center select-none mt-1.5";
-                        baseSlot.innerHTML = `<span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Select Base IEM</span>`;
+                        baseSlot.innerHTML = `<span class="type-micro font-black text-stone-400 uppercase tracking-wider">+ Select Base IEM</span>`;
                     }
                 },
 
@@ -31196,11 +31206,11 @@ const Find_UpgradeMethods = {
                                 </div>
 
                                 <div class="flex justify-between items-center text-xs select-none">
-                                    <span class="text-[9px] font-mono text-zinc-400 font-bold">Option ${curIdx + 1} of ${total}</span>
+                                    <span class="type-micro font-mono text-zinc-400 font-bold">Option ${curIdx + 1} of ${total}</span>
                                     ${total > 1 ? `
                                         <div class="flex items-center gap-1">
-                                            <button data-cmd="FindEngine.cycleUpgradeStep" data-arg-0="${stepNum}" data-arg-1="-1" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
-<button data-cmd="FindEngine.cycleUpgradeStep" data-arg-0="${stepNum}" data-arg-1="1" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
+                                            <button data-cmd="FindEngine.cycleUpgradeStep" data-arg-0="${stepNum}" data-arg-1="-1" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black type-micro flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
+<button data-cmd="FindEngine.cycleUpgradeStep" data-arg-0="${stepNum}" data-arg-1="1" class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black type-micro flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
                                         </div>
                                     ` : ''}
                                 </div>
@@ -31213,8 +31223,8 @@ const Find_UpgradeMethods = {
                                 </div>
 
                                 <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
-                                    <span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>
-                                    ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
+                                    <span class="type-micro font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>
+                                    ${year ? `<span class="type-micro font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
                                     ${driverType ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
                                     ${connector ? `<span class="spec-icon-badge" data-tooltip="${esc(connectorTooltip)}">${connectorEmoji}</span>` : ''}
                                     <span class="spec-icon-badge" data-tooltip="${esc(formTooltip)}">${formEmoji}</span>
@@ -31225,13 +31235,13 @@ const Find_UpgradeMethods = {
                                         <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
                                             <span class="emoji-font vibrant-emoji text-base leading-none">${ugGenreMatch.emoji}</span>
                                         </div>
-                                        <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${ugGenreMatch.name}</span>
+                                        <span class="match-genre-name type-micro font-black uppercase text-stone-200 inline-block whitespace-nowrap">${ugGenreMatch.name}</span>
                                     </div>
                                     <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Game Match: ${ugGameGenreMatch.name}">
                                         <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
                                             <span class="emoji-font vibrant-emoji text-base leading-none">${ugGameGenreMatch.emoji}</span>
                                         </div>
-                                        <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${ugGameGenreMatch.name}</span>
+                                        <span class="match-genre-name type-micro font-black uppercase text-stone-200 inline-block whitespace-nowrap">${ugGameGenreMatch.name}</span>
                                     </div>
                                 </div>
 
@@ -31241,19 +31251,19 @@ const Find_UpgradeMethods = {
 
                                 ${isMulti ? `
                                     <div class="flex items-center gap-1 w-full h-7 mt-1.5">
-                                        <button type="button" data-cmd="FindEngine.cycleCardSource" data-arg-0="${cardIdx}" data-arg-1="-1" class="w-6 h-7 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0">◀</button>
+                                        <button type="button" data-cmd="FindEngine.cycleCardSource" data-arg-0="${cardIdx}" data-arg-1="-1" class="w-6 h-7 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black type-micro flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0">◀</button>
                                         <div class="flex-1 bg-black/60 border-2 border-black px-1.5 h-7 flex items-center justify-start overflow-hidden text-left relative">
                                             <div id="src-stepper-container-${cardIdx}" class="w-full overflow-hidden text-left flex items-center justify-start">
-                                                <span id="label-src-stepper-${cardIdx}" class="text-[8.5px] font-bold text-left inline-block whitespace-nowrap">
+                                                <span id="label-src-stepper-${cardIdx}" class="type-micro font-bold text-left inline-block whitespace-nowrap">
                                                     <span class="text-stone-300 font-bold">1/${fileCount}</span> <span class="text-[var(--accent-blue)] font-black">${initialSourceName}</span> <span class="text-stone-200 font-bold">(${initialFileName})</span>
                                                 </span>
                                             </div>
                                         </div>
-                                        <button type="button" data-cmd="FindEngine.cycleCardSource" data-arg-0="${cardIdx}" data-arg-1="1" class="w-6 h-7 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-[10px] flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0">▶</button>
+                                        <button type="button" data-cmd="FindEngine.cycleCardSource" data-arg-0="${cardIdx}" data-arg-1="1" class="w-6 h-7 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black type-micro flex items-center justify-center cursor-pointer select-none focus:outline-none flex-shrink-0">▶</button>
                                     </div>
                                 ` : ''}
 
-                                <div class="flex items-center justify-between w-full mt-2.5 px-1 text-[8.5px] font-mono select-none whitespace-nowrap">
+                                <div class="flex items-center justify-between w-full mt-2.5 px-1 type-micro font-mono select-none whitespace-nowrap">
                                     ${driveHtml}
                                     ${eqHtml}
                                 </div>
@@ -31265,7 +31275,7 @@ const Find_UpgradeMethods = {
 
                             <div class="flex items-center gap-1.5 mt-3 pt-2 border-t-2 border-black ${hasGraph ? '' : 'hidden'}">
                                 <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${cardIdx}" data-arg-1="-1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${cardIdx}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
+                                <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${cardIdx}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 type-micro border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
                                     <span id="label-role-stepper-${cardIdx}" class="flex items-center justify-center gap-1 truncate">${currentRoleOpt.label}</span>
                                 </button>
                                 <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${cardIdx}" data-arg-1="1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
@@ -31425,15 +31435,15 @@ const Find_UpgradeMethods = {
 
                                 if (acousticTest.passed && matchedTag) {
                                     score += 35;
-                                    badgeHtml = `<span class="text-[8.5px] font-black text-emerald-400 bg-emerald-950/40 border border-emerald-800/80 px-1.5 py-0.5">✅ Confirmed ${goal.toUpperCase()}</span>`;
+                                    badgeHtml = `<span class="type-micro font-black text-emerald-400 bg-emerald-950/40 border border-emerald-800/80 px-1.5 py-0.5">✅ Confirmed ${goal.toUpperCase()}</span>`;
                                 } else if (acousticTest.passed && !matchedTag) {
                                     score += 20;
-                                    badgeHtml = `<span class="text-[8.5px] font-black text-teal-400 bg-teal-950/40 border border-teal-800/80 px-1.5 py-0.5">🔬 Measured ${goal.toUpperCase()}</span>`;
+                                    badgeHtml = `<span class="type-micro font-black text-teal-400 bg-teal-950/40 border border-teal-800/80 px-1.5 py-0.5">🔬 Measured ${goal.toUpperCase()}</span>`;
                                 } else if (!acousticTest.passed && matchedTag) {
                                     score -= 25;
-                                    badgeHtml = `<span class="text-[8.5px] font-black text-rose-400 bg-rose-950/40 border border-rose-800/80 px-1.5 py-0.5">⚠️ Tag Conflict</span>`;
+                                    badgeHtml = `<span class="type-micro font-black text-rose-400 bg-rose-950/40 border border-rose-800/80 px-1.5 py-0.5">⚠️ Tag Conflict</span>`;
                                 } else {
-                                    badgeHtml = `<span class="text-[8.5px] font-bold text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5">Standard Candidate</span>`;
+                                    badgeHtml = `<span class="type-micro font-bold text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5">Standard Candidate</span>`;
                                 }
 
                                 if (goal === 'tech') {
@@ -31844,7 +31854,7 @@ const Find_EndgameMethods = {
                                     <div class="flex justify-between items-center select-none pb-1 border-b border-white/[0.06]">
                                         <div class="flex items-center gap-1.5 min-w-0 pr-1 truncate">
                                             <span class="vibrant-emoji flex-shrink-0 text-sm leading-none">${headerEmoji}</span>
-                                            <span class="text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${isValueStrip ? 'text-amber-300' : 'text-sky-400'} truncate">${esc(headerTitle)}</span>
+                                            <span class="type-micro font-black uppercase tracking-wider whitespace-nowrap ${isValueStrip ? 'text-amber-300' : 'text-sky-400'} truncate">${esc(headerTitle)}</span>
                                         </div>
                                         <div class="flex items-center gap-1.5 flex-shrink-0">
                                             ${badgeHtml || ''}
@@ -31853,7 +31863,7 @@ const Find_EndgameMethods = {
                                     </div>
 
                                     <div class="flex justify-between items-center text-xs select-none">
-                                        <span class="text-[9px] font-mono text-zinc-400 font-bold uppercase tracking-wider">Option ${curOption} of ${totalOptions}</span>
+                                        <span class="type-micro font-mono text-zinc-400 font-bold uppercase tracking-wider">Option ${curOption} of ${totalOptions}</span>
     ${totalOptions > 1 ? (() => {
     // The stepper used to pick the whole call inside the attribute:
     //   onclick="FindEngine.${isValueStrip ? 'cycleEndgameValue(-1)' : `cycleEndgamePick('${catId}', -1)`}"
@@ -31865,8 +31875,8 @@ const Find_EndgameMethods = {
     const nextArgs = isValueStrip ? ' data-arg-0="1"' : ` data-arg-0="${esc(catId)}" data-arg-1="1"`;
     return `
     <div class="flex items-center gap-1">
-    <button data-cmd="${prevCmd}"${prevArgs} class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
-    <button data-cmd="${nextCmd}"${nextArgs} class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black text-[10px] flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
+    <button data-cmd="${prevCmd}"${prevArgs} class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black type-micro flex items-center justify-center cursor-pointer select-none" title="Previous option">◄</button>
+    <button data-cmd="${nextCmd}"${nextArgs} class="w-5 h-5 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] hover:text-white border-2 border-black text-[var(--text-main)] font-black type-micro flex items-center justify-center cursor-pointer select-none" title="Next option">►</button>
     </div>
     `; })() : ''}
                                     </div>
@@ -31876,13 +31886,13 @@ const Find_EndgameMethods = {
                                             <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
                                                 <span class="emoji-font vibrant-emoji text-base leading-none">${genreMatch.emoji}</span>
                                             </div>
-                                            <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${genreMatch.name}</span>
+                                            <span class="match-genre-name type-micro font-black uppercase text-stone-200 inline-block whitespace-nowrap">${genreMatch.name}</span>
                                         </div>
                                         <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Game Match: ${gameGenreMatch.name}">
                                             <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
                                                 <span class="emoji-font vibrant-emoji text-base leading-none">${gameGenreMatch.emoji}</span>
                                             </div>
-                                            <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${gameGenreMatch.name}</span>
+                                            <span class="match-genre-name type-micro font-black uppercase text-stone-200 inline-block whitespace-nowrap">${gameGenreMatch.name}</span>
                                         </div>
                                     </div>
 
@@ -31895,8 +31905,8 @@ const Find_EndgameMethods = {
                                         </div>
 
                                         <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
-                                            ${price !== null && price !== undefined ? `<span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>` : ''}
-                                            ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
+                                            ${price !== null && price !== undefined ? `<span class="type-micro font-black text-amber-400 whitespace-nowrap">💰 $${price}</span>` : ''}
+                                            ${year ? `<span class="type-micro font-black text-stone-300 whitespace-nowrap">📅 ${year}</span>` : ''}
                         ${driverType ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
                         ${connector ? `<span class="spec-icon-badge" data-tooltip="${esc(connectorTooltip)}">${connectorEmoji}</span>` : ''}
                         <span class="spec-icon-badge" data-tooltip="${esc(formTooltip)}">${formEmoji}</span>
@@ -31906,7 +31916,7 @@ const Find_EndgameMethods = {
                                             <canvas id="${sparkId}" class="absolute inset-0 w-full h-full block opacity-85"></canvas>
                                         </div>
 
-                                        <div class="flex items-center justify-between w-full mt-2.5 px-1 text-[8.5px] font-mono select-none">
+                                        <div class="flex items-center justify-between w-full mt-2.5 px-1 type-micro font-mono select-none">
                                             <div class="flex-shrink-0">${driveHtml}</div>
                                             <div class="flex items-center justify-end overflow-hidden ml-1">
                                                 ${trustHtml || ''}
@@ -31921,7 +31931,7 @@ const Find_EndgameMethods = {
 
                                 <div class="flex items-center gap-1.5 mt-3 pt-2 border-t-2 border-black ${hasGraph ? '' : 'hidden'}">
                                     <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${cardIdx}" data-arg-1="-1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                    <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${cardIdx}" data-arg-1="${escJs(curveIdToLoad)}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none">
+                                    <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${cardIdx}" data-arg-1="${escJs(curveIdToLoad)}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 type-micro border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none">
                                         <span id="label-role-stepper-${cardIdx}" class="flex items-center justify-center gap-1 truncate">${currentRoleOpt.label}</span>
                                     </button>
                                     <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${cardIdx}" data-arg-1="1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
@@ -31937,7 +31947,7 @@ const Find_EndgameMethods = {
                         const v = vpool[vi];
                         const dsItem = dataset.find(i => i.id === v.id) || { id: v.id, name: v.name, data: v.data };
                         const badgeHtml = '';
-                        const trustHtml = `<span class="text-[9px] font-bold text-emerald-400 whitespace-nowrap truncate" title="Clone of ${esc(v.matchName)}">💥 ${esc(v.matchName)}</span>`;
+                        const trustHtml = `<span class="type-micro font-bold text-emerald-400 whitespace-nowrap truncate" title="Clone of ${esc(v.matchName)}">💥 ${esc(v.matchName)}</span>`;
 
                         cardsHtml += buildCardHtml('eg_val', 'Value', '💎', v.similarity.toFixed(1), 'text-amber-300', vi + 1, vpool.length, dsItem, '_value', true, v.matchName, '', badgeHtml, trustHtml);
                         sparkJobs.push({ cardIdx: 'eg_val', item: dsItem });
@@ -31954,11 +31964,11 @@ const Find_EndgameMethods = {
                         const dsItem = dataset.find(i => i.id === p.id) || { id: p.id, name: p.name, data: p.data };
 
                         const badgeHtml = p.isChampion
-                            ? '<span class="text-[9.5px] font-black text-amber-300 whitespace-nowrap">👑 Champion</span>'
-                            : (p.isGiantKiller ? '<span class="text-[9.5px] font-black text-emerald-400 whitespace-nowrap">💥 Gem</span>' : '');
+                            ? '<span class="type-micro font-black text-amber-300 whitespace-nowrap">👑 Champion</span>'
+                            : (p.isGiantKiller ? '<span class="type-micro font-black text-emerald-400 whitespace-nowrap">💥 Gem</span>' : '');
                         const trustHtml = p.tagMatch
-                            ? (p.curveScore >= 40 ? '<span class="text-[9px] font-bold text-emerald-400 whitespace-nowrap">✅ Confirmed</span>' : '<span class="text-[9px] font-bold text-rose-400 whitespace-nowrap">⚠️ Tag Conflict</span>')
-                            : '<span class="text-[9px] font-bold text-sky-400 whitespace-nowrap">🔬 Measured</span>';
+                            ? (p.curveScore >= 40 ? '<span class="type-micro font-bold text-emerald-400 whitespace-nowrap">✅ Confirmed</span>' : '<span class="type-micro font-bold text-rose-400 whitespace-nowrap">⚠️ Tag Conflict</span>')
+                            : '<span class="type-micro font-bold text-sky-400 whitespace-nowrap">🔬 Measured</span>';
 
                         const headerEmoji = cat.emoji || (p.isChampion ? '👑' : '🎧');
                         const cardKey = `eg_${cat.id}`;
@@ -32090,7 +32100,7 @@ const Find_EndgameMethods = {
                                 <span class="emoji-font vibrant-emoji text-sm flex-shrink-0 leading-none">👑</span>
                                 <span class="text-xs font-black text-[var(--text-main)] truncate">${esc(name)} ($${this.selectedGkFlagshipPrice})</span>
                             </div>
-                            <button type="button" data-cmd="FindEngine.clearGkFlagship" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the flagship target">✕</button>
+                            <button type="button" data-cmd="FindEngine.clearGkFlagship" class="w-5 h-5 bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white type-micro font-black flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 border border-black" title="Change the flagship target">✕</button>
                         `;
                     }
                 },
@@ -32102,7 +32112,7 @@ const Find_EndgameMethods = {
                     const slot = document.getElementById('find-gk-flagship-slot');
                     if (slot) {
                         slot.className = "w-full h-9 border-2 border-dashed border-black bg-black/10 flex items-center justify-center select-none";
-                        slot.innerHTML = `<span class="text-[9px] font-black text-stone-400 uppercase tracking-wider">+ Select Flagship Target</span>`;
+                        slot.innerHTML = `<span class="type-micro font-black text-stone-400 uppercase tracking-wider">+ Select Flagship Target</span>`;
                     }
                 },
 
@@ -32317,7 +32327,7 @@ const Find_TasteMethods = {
                         html += `
                             <div class="peqdb-row-item flex items-center justify-between p-1.5 cursor-pointer hover:bg-[var(--bg-card)] mb-1 transition-all select-none" data-cmd="FindEngine.addTasteFavorite" data-arg-0="${escJs(item.id)}">
                                 <span class="text-xs text-stone-200 font-bold truncate flex-1 pr-2">${esc(item.name)}</span>
-                                ${isAdded ? '<span class="text-[9px] text-rose-400 font-black flex-shrink-0 ml-1">✓ Added</span>' : '<span class="text-[9px] text-[var(--accent-blue)] font-black flex-shrink-0 ml-1">+ Add</span>'}
+                                ${isAdded ? '<span class="type-micro text-rose-400 font-black flex-shrink-0 ml-1">✓ Added</span>' : '<span class="type-micro text-[var(--accent-blue)] font-black flex-shrink-0 ml-1">+ Add</span>'}
                             </div>
                         `;
                     }
@@ -32451,7 +32461,7 @@ const Find_TasteMethods = {
                     else traits.push({ emoji: "🧈", label: "Smooth Air" });
 
                     textEl.innerHTML = traits.map(t => `
-                        <span class="spec-icon-badge" style="font-size: 20px !important; width: 26px !important; height: 26px !important;" data-tooltip="${t.label}">${t.emoji}</span>
+                        <span class="spec-icon-badge" style="font-size: var(--t-xl) !important; width: 26px !important; height: 26px !important;" data-tooltip="${t.label}">${t.emoji}</span>
                     `).join('');
                 },
 
@@ -32485,7 +32495,7 @@ const Find_TasteMethods = {
                             // square corners. Now the shared .slot-empty well.
                             const div = document.createElement('div');
                             div.className = 'slot-empty w-full h-9 flex items-center justify-center select-none';
-                            div.innerHTML = `<span class="text-[9px] font-semibold uppercase tracking-wider">+ Favorite ${i + 1}</span>`;
+                            div.innerHTML = `<span class="type-micro font-semibold uppercase tracking-wider">+ Favorite ${i + 1}</span>`;
                             container.appendChild(div);
                         }
                     }
@@ -34589,7 +34599,7 @@ const Find_TasteMethods = {
                         if (bar) bar.classList.remove('hidden');
                         if (txt) {
                             txt.textContent = '⚠️ ' + ((err && err.message) ? err.message : String(err));
-                            txt.className = 'text-[9.5px] font-black uppercase tracking-wider text-rose-400';
+                            txt.className = 'type-micro font-black uppercase tracking-wider text-rose-400';
                         }
                     } catch (_) {}
                 },
@@ -34983,7 +34993,7 @@ const Find_TasteMethods = {
                 rightTabModes: [
                     { id: 'taste', label: 'Taste', emoji: '❤️' },
                     { id: 'upgrade', label: 'Upgrade', emoji: '🚀' },
-                    { id: 'giantkiller', label: 'Gem', emoji: '💎' },
+                    { id: 'giantkiller', label: 'Gems', emoji: '💎' },
                     { id: 'endgame', label: 'Endgame', emoji: '👑' }
                 ],
                 cycleRightTab: function(dir) {
@@ -35154,7 +35164,7 @@ const Find_TasteMethods = {
                     if (countBar) countBar.classList.remove('hidden');
                     if (countText) {
                         countText.textContent = `${matches.length} matches`;
-                        countText.className = 'text-[9.5px] font-black uppercase tracking-wider text-emerald-400';
+                        countText.className = 'type-micro font-black uppercase tracking-wider text-emerald-400';
                     }
 
                     const isBlind = false; // (the Find blind-mode checkbox was removed)
@@ -35265,20 +35275,20 @@ const Find_TasteMethods = {
                         let rankEmoji = "🏆";
                         let rankText = `RANK #${idx}`;
                         let rankColorClass = "text-zinc-500";
-                        let emojiStyle = "font-size: 18px; line-height: 1;";
+                        let emojiStyle = "font-size: var(--t-lg); line-height: 1;";
 
                         if (idx === 1) {
                             cardStyle = `background: linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, rgba(120, 53, 4, 0.03) 100%), var(--bg-card) !important; border: 2px solid var(--border-color) !important; box-shadow: 6px 6px 0px 0px var(--border-color) !important;`;
                             rankEmoji = "👑"; rankText = "1ST"; rankColorClass = "text-amber-400";
-                            emojiStyle = "font-size: 32px; line-height: 1; filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.5));";
+                            emojiStyle = "font-size: var(--t-2xl); line-height: 1; filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.5));";
                         } else if (idx === 2) {
                             cardStyle = `background: linear-gradient(135deg, rgba(148, 163, 184, 0.08) 0%, rgba(30, 41, 59, 0.02) 100%), var(--bg-card) !important; border: 2px solid var(--border-color) !important; box-shadow: 5px 5px 0px 0px var(--border-color) !important;`;
                             rankEmoji = "🥈"; rankText = "2ND"; rankColorClass = "text-slate-300";
-                            emojiStyle = "font-size: 28px; line-height: 1; filter: drop-shadow(0 0 4px rgba(148, 163, 184, 0.4));";
+                            emojiStyle = "font-size: var(--t-2xl); line-height: 1; filter: drop-shadow(0 0 4px rgba(148, 163, 184, 0.4));";
                         } else if (idx === 3) {
                             cardStyle = `background: linear-gradient(135deg, rgba(217, 119, 6, 0.06) 0%, rgba(120, 53, 4, 0.01) 100%), var(--bg-card) !important; border: 2px solid var(--border-color) !important; box-shadow: 4px 4px 0px 0px var(--border-color) !important;`;
                             rankEmoji = "🥉"; rankText = "3RD"; rankColorClass = "text-amber-600";
-                            emojiStyle = "font-size: 28px; line-height: 1; filter: drop-shadow(0 0 4px rgba(217, 119, 6, 0.3));";
+                            emojiStyle = "font-size: var(--t-2xl); line-height: 1; filter: drop-shadow(0 0 4px rgba(217, 119, 6, 0.3));";
                         } else {
                             cardStyle = `background: var(--bg-card) !important; border: 2px solid var(--border-color) !important; box-shadow: 4px 4px 0px 0px var(--border-color) !important;`;
                         }
@@ -35366,19 +35376,19 @@ const Find_TasteMethods = {
                                     <div class="flex justify-between items-center select-none pb-1">
                                         <div class="flex items-center gap-1.5 min-w-0 pr-1">
                                             <span style="${emojiStyle}" class="vibrant-emoji flex-shrink-0">${rankEmoji}</span>
-                                            <span class="text-[9.5px] font-black uppercase tracking-wider ${rankColorClass}">${rankText}</span>
+                                            <span class="type-micro font-black uppercase tracking-wider ${rankColorClass}">${rankText}</span>
                                         </div>
                                         <span class="text-xs font-black ${badgeColorClass}">${badgeText}</span>
                                     </div>
                                     <div class="space-y-1">
                                         <h4 id="blind-title-${idx}" class="text-xs font-bold select-none" style="filter: blur(5px);">Reveal Required</h4>
                                         <div class="flex flex-wrap gap-1 mt-1.5">
-                                            <span class="text-[8.5px] font-bold text-zinc-500">🔐 Profile Locked</span>
+                                            <span class="type-micro font-bold text-zinc-500">🔐 Profile Locked</span>
                                         </div>
                                     </div>
                                 </div>
                                 <div class="flex gap-2 mt-3 pt-2.5 border-t-2 border-black">
-                                    <button data-cmd="FindEngine.revealIEM" data-arg-0="@self" data-arg-1="${escJs(finalName)}" data-arg-2="blind-title-${idx}" class="flex-1 py-1.5 btn-clear text-[9px] font-black cursor-pointer">🔓 Reveal IEM</button>
+                                    <button data-cmd="FindEngine.revealIEM" data-arg-0="@self" data-arg-1="${escJs(finalName)}" data-arg-2="blind-title-${idx}" class="flex-1 py-1.5 btn-clear type-micro font-black cursor-pointer">🔓 Reveal IEM</button>
                                 </div>
                             `;
                         } else {
@@ -35387,7 +35397,7 @@ const Find_TasteMethods = {
                                     <div class="flex justify-between items-center select-none pb-1">
                                         <div class="flex items-center gap-1.5 min-w-0 pr-1">
                                             <span style="${emojiStyle}" class="vibrant-emoji flex-shrink-0">${rankEmoji}</span>
-                                            <span class="text-[9.5px] font-black uppercase tracking-wider whitespace-nowrap ${rankColorClass}">${rankText}</span>
+                                            <span class="type-micro font-black uppercase tracking-wider whitespace-nowrap ${rankColorClass}">${rankText}</span>
                                         </div>
                                         <span class="text-lg font-black ${badgeColorClass} flex-shrink-0">${badgeText}</span>
                                     </div>
@@ -35397,13 +35407,13 @@ const Find_TasteMethods = {
                                             <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
                                                 <span class="emoji-font vibrant-emoji text-base leading-none">${genreMatch.emoji}</span>
                                             </div>
-                                            <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${genreMatch.name}</span>
+                                            <span class="match-genre-name type-micro font-black uppercase text-stone-200 inline-block whitespace-nowrap">${genreMatch.name}</span>
                                         </div>
                                         <div class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden" title="Game Match: ${gameGenreMatch.name}">
                                             <div class="w-7 h-7 bg-[var(--bg-input)] border-2 border-black flex items-center justify-center flex-shrink-0 shadow-[1px_1px_0px_0px_#000]">
                                                 <span class="emoji-font vibrant-emoji text-base leading-none">${gameGenreMatch.emoji}</span>
                                             </div>
-                                            <span class="match-genre-name text-[9px] font-black uppercase text-stone-200 inline-block whitespace-nowrap">${gameGenreMatch.name}</span>
+                                            <span class="match-genre-name type-micro font-black uppercase text-stone-200 inline-block whitespace-nowrap">${gameGenreMatch.name}</span>
                                         </div>
                                     </div>
 
@@ -35416,8 +35426,8 @@ const Find_TasteMethods = {
                                         </div>
 
                                         <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
-                                            ${price !== null && price !== undefined ? `<span class="text-[10px] font-black text-amber-400 whitespace-nowrap">💰 $${esc(price)}</span>` : ''}
-                                            ${year ? `<span class="text-[10px] font-black text-stone-300 whitespace-nowrap">📅 ${esc(year)}</span>` : ''}
+                                            ${price !== null && price !== undefined ? `<span class="type-micro font-black text-amber-400 whitespace-nowrap">💰 $${esc(price)}</span>` : ''}
+                                            ${year ? `<span class="type-micro font-black text-stone-300 whitespace-nowrap">📅 ${esc(year)}</span>` : ''}
                                             ${driverType ? `<span class="spec-icon-badge" data-tooltip="${escDriverTip}">${driverEmoji}</span>` : ''}
                                             ${connector ? `<span class="spec-icon-badge" data-tooltip="${escConnectorTip}">${connectorEmoji}</span>` : ''}
                                             <span class="spec-icon-badge" data-tooltip="${escFormTip}">${formEmoji}</span>
@@ -35427,7 +35437,7 @@ const Find_TasteMethods = {
                                             <canvas id="spark-${idx}" class="absolute inset-0 w-full h-full block opacity-85"></canvas>
                                         </div>
 
-                                        <div class="flex items-center justify-between w-full mt-2.5 px-1 text-[8.5px] font-mono select-none whitespace-nowrap">
+                                        <div class="flex items-center justify-between w-full mt-2.5 px-1 type-micro font-mono select-none whitespace-nowrap">
                                             ${driveHtml}
                                             ${eqHtml}
                                         </div>
@@ -35440,7 +35450,7 @@ const Find_TasteMethods = {
 
                                 <div class="flex items-center gap-1.5 mt-3 pt-2 border-t-2 border-black ${hasGraph ? '' : 'hidden'}">
                                     <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${idx}" data-arg-1="-1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">◀</button>
-                                    <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${idx}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 text-[9.5px] border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
+                                    <button data-cmd="FindEngine.loadCardToGraph" data-arg-0="${idx}" class="flex-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-bold h-8 type-micro border-2 border-black px-2 cursor-pointer flex items-center justify-center truncate shadow-none focus:outline-none" >
                                         <span id="label-role-stepper-${idx}" class="flex items-center justify-center gap-1 truncate">${currentRoleOpt.label}</span>
                                     </button>
                                     <button type="button" data-cmd="FindEngine.cycleCardRole" data-arg-0="${idx}" data-arg-1="1" class="w-8 h-8 bg-[var(--bg-input)] hover:bg-[var(--accent-blue)] border-2 border-black text-white font-black text-xs flex items-center justify-center cursor-pointer select-none focus:outline-none">▶</button>
@@ -35518,7 +35528,7 @@ const Find_TasteMethods = {
 
                         const sigs = PEQDB_Module.analyzeCurveSignature(iem.data);
                         const tagsHtml = sigs.map(t => {
-                            return `<span class="text-[8px] font-black px-1.5 py-0.5 bg-white/[0.04] border border-white/[0.05] text-zinc-400 whitespace-nowrap">${t}</span>`;
+                            return `<span class="type-micro font-black px-1.5 py-0.5 bg-white/[0.04] border border-white/[0.05] text-zinc-400 whitespace-nowrap">${t}</span>`;
                         }).join('');
 
                         const cardBody = parent.previousElementSibling;
@@ -35528,8 +35538,8 @@ const Find_TasteMethods = {
                         }
 
                         parent.innerHTML = `
-                            <button data-cmd="FindEngine.loadToGraph" data-arg-0="${escJs(iem.id)}" data-arg-1="base" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-stone-200 font-black text-[9px] cursor-pointer">📈 Base</button>
-                            <button data-cmd="FindEngine.loadToGraph" data-arg-0="${escJs(iem.id)}" data-arg-1="reference" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-750 text-stone-200 font-black text-[9px] cursor-pointer">🆚 Reference</button>
+                            <button data-cmd="FindEngine.loadToGraph" data-arg-0="${escJs(iem.id)}" data-arg-1="base" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-stone-200 font-black type-micro cursor-pointer">📈 Base</button>
+                            <button data-cmd="FindEngine.loadToGraph" data-arg-0="${escJs(iem.id)}" data-arg-1="reference" class="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-750 text-stone-200 font-black type-micro cursor-pointer">🆚 Reference</button>
                         `;
                     }
                     showToast("IEM identity unlocked!", "🔓");
@@ -38722,7 +38732,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     } catch (e) {
       console.error('[DataTab] load failed', e);
       T.loading = false; T.loadError = String((e && e.message) || e);
-      $('dt-editor').innerHTML = '<div class="dt-empty"><span class="dt-big">⚠️</span>Could not load the database.<br><span class="dt-mono" style="font-size:10px">' + E(T.loadError) + '</span><br><br><button class="dt-btn" data-dt="reload-db">Try again</button></div>';
+      $('dt-editor').innerHTML = '<div class="dt-empty"><span class="dt-big">⚠️</span>Could not load the database.<br><span class="dt-mono" style="font-size:var(--t-micro)">' + E(T.loadError) + '</span><br><br><button class="dt-btn" data-dt="reload-db">Try again</button></div>';
     }
   };
   function onSessionChange(kind) {
@@ -39091,7 +39101,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     const e = T.S.byUid(T.selUid); if (!e) return;
     T.draft = cloneDraft(e); T.draftBase = cloneDraft(e); T.draftDirty = false; renderEditor();
   }
-  async function newEntry() {
+  async  function newEntry() {
     if (T.draftDirty && !T.isNew) { if (draftErrors().length === 0) { if (!(await commitDraft(true))) return; } }
     T.selUid = null; T.isNew = true; T.draft = blankDraft(); T.draftBase = cloneDraft(T.draft); T.draftDirty = true;
     T.curveRows = null; T.sugg = null; renderEditor(); scheduleTree();
@@ -39125,6 +39135,14 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
   }
   const DRV_ICON = { DD: 'dd', BA: 'ba', Planar: 'planar', EST: 'est', MEMS: 'mems', PZT: 'pzt', BC: 'bc' };
   const TIER_RANGE = { 'Budget': '$0–99', 'Mid-Tier': '$100–499', 'Premium': '$500–1,499', 'Flagship': '$1,500+' };
+  // The Tags column shows one group at a time. Thirty-one pills at once needed
+  // more height than the editor column has, so the column grew its own scrollbar
+  // (and, worse, the flex item shrank below its content and drew the pills over
+  // the status line). A five-tab carousel keeps the group one click away and the
+  // column ~230px tall at any window size. `label` is deliberately a prefix of
+  // the canonical group name rather than a new vocabulary; `group` is the key
+  // into DC.TAG_GROUPS. The ids are what the carousel audit walks.
+
   function headerHtml(d) {
     return '<div class="dt-ed-head"><div class="dt-title" id="dt-e-title">' + (d ? '' : 'No entry selected') + '</div>' + (d ? '<span class="dt-chip" id="dt-e-status"></span>' : '') +
       '<button class="dt-btn is-sm" data-dt="new" title="Add a new entry">➕ New</button>' +
@@ -39146,14 +39164,16 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
         '<h4 class="dt-h">Specs</h4>' +
         '<div class="dt-g4">' + inp('year', 'Year', { num: 1 }) + inp('price_usd', 'Price $', { num: 1 }) + inp('impedance', 'Ω', { num: 1 }) + inp('sensitivity', 'dB', { num: 1 }) + '</div>' +
         '<h4 class="dt-h">Hardware</h4>' +
-        '<div><label class="dt-lbl">Form factor</label><div id="dt-ff"></div></div>' +
-        '<div><label class="dt-lbl">Connector</label><div id="dt-cn"></div></div>' +
+        // Form factor and connector are the same control (a stepper showing a
+        // short value), so they share one row. Stacked, the form column was 56px
+        // taller than the editor at 1366x768 and grew its own scrollbar.
+        '<div class="dt-g2"><div><label class="dt-lbl">Form factor</label><div id="dt-ff"></div></div><div><label class="dt-lbl">Connector</label><div id="dt-cn"></div></div></div>' +
         '<div><label class="dt-lbl">Drivers per side</label><div class="dt-tiles">' + tiles + '</div></div>' +
         '<div class="dt-g2"><div><label class="dt-lbl" for="dt-e-driver_config">Config (e.g. 1DD+2BA)</label><input id="dt-e-driver_config" class="dt-in input-bg-fix dt-mono" data-f="e:driver_config" value="' + E(d.driver_config) + '" autocomplete="off" spellcheck="false"></div><div><label class="dt-lbl">Type (auto)</label><div id="dt-dtype" class="dt-in input-bg-fix" style="display:flex;align-items:center;gap:6px"></div></div></div>' +
       '</div><div class="dt-col">' +
         '<h4 class="dt-h">Tags <span id="dt-tagcount" class="dt-help" style="display:inline"></span></h4>' +
         '<div id="dt-tags" class="dt-col dt-tgwrap"></div>' +
-        '<div id="dt-msgs" class="dt-msgs" style="margin-top:auto"></div>' +
+        '<div id="dt-msgs" class="dt-msgs"></div>' +
       '</div></div>' +
       '<div class="dt-row dt-foot"><button class="dt-btn is-primary dt-grow" data-dt="apply" id="dt-apply">✅ Apply changes</button><button class="dt-btn" data-dt="revert" id="dt-revert">↺ Revert</button></div>';
   }
@@ -39196,8 +39216,36 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     T.S.entries.forEach(e => { if (e.brand && !seen.has(e.brand)) { seen.add(e.brand); h += '<option value="' + E(e.brand) + '">'; } });
     return h;
   }
-  function tagChip(t, sel, clash, auto) {
-    return '<button class="dt-tag' + (sel.has(t) ? ' is-on' : '') + (clash.has(t) ? ' is-clash' : '') + (auto ? ' is-auto' : '') + '" data-dt="tag" data-a="' + t + '"' + (auto ? ' disabled title="Set automatically from the price"' : '') + '><span class="dt-em">' + (DC.TAG_EMOJI[t] || '') + '</span>' + t + '</button>';
+  function tagChip(t, sel, clash) {
+    return '<button class="dt-tag' + (sel.has(t) ? ' is-on' : '') + (clash.has(t) ? ' is-clash' : '') + '" data-dt="tag" data-a="' + t + '">' +
+      '<span class="dt-em">' + (DC.TAG_EMOJI[t] || '') + '</span>' + t + '</button>';
+  }
+  // The whole tag vocabulary, grouped, in one sheet: no group tabs, no hidden
+  // panel. Five groups of text-only pills at 22px fit in ~300-340px beside the
+  // form at every desktop width, so nothing has to be switched or scrolled to
+  // see the other groups. The price tier is derived, not chosen, so it renders
+  // as one read-only chip with its range rather than four disabled buttons.
+  function renderTags() {
+    const d = T.draft, box = $('dt-tags'); if (!d || !box) return;
+    const sel = new Set(d.tags), clash = new Set();
+    DC.tagConflicts(sel).forEach(p => p.forEach(t => clash.add(t)));
+    const suggest = (T.sugg && T.sugg.suggestions || []).filter(s => {
+      if (sel.has(s.tag) || DC.PRICE_TIER_TAGS.indexOf(s.tag) >= 0) return false;
+      const withIt = new Set(sel); withIt.add(s.tag);          // never offer a tag that would clash with what is already ticked
+      return DC.tagConflicts(withIt).length <= DC.tagConflicts(sel).length;
+    });
+    const tier = DC.priceTierFor(DC.priceTierBasis(d.price_usd));
+    box.innerHTML = Object.keys(DC.TAG_GROUPS).map(g => {
+      const head = '<div class="dt-tgh">' + DC.TAG_GROUP_EMOJI[g] + ' ' + E(g);
+      if (g === DC.PRICE_GROUP) {
+        // Derived, not chosen: one heading line, no second row of buttons.
+        return '<div class="dt-tg">' + head + ' <span class="dt-tgnote">' + tier + ' · ' + TIER_RANGE[tier] + '</span></div></div>';
+      }
+      const tags = DC.TAG_GROUPS[g].slice().sort((a, b) => (a < b ? -1 : 1));
+      return '<div class="dt-tg">' + head + '</div><div class="dt-tagrow">' + tags.map(t => tagChip(t, sel, clash)).join('') + '</div></div>';
+    }).join('') +
+      (suggest.length ? '<div class="dt-tg"><div class="dt-tgh">🧪 From the measurement <span class="dt-tgnote">' + E(DCV.summarizeMetrics(T.sugg.metrics)) + ' · click to add</span></div><div class="dt-tagrow">' + suggest.map(s => '<button class="dt-tag is-sugg" data-dt="tag" data-a="' + s.tag + '" title="' + E(s.reason) + '"><span class="dt-em">' + (DC.TAG_EMOJI[s.tag] || '') + '</span>+ ' + s.tag + '</button>').join('') + '</div></div>' : '');
+    $('dt-tagcount').textContent = '· ' + d.tags.length + '/' + DC.MAX_TAGS;
   }
   function refreshDerived() {
     const d = T.draft; if (!d || !$('dt-e-id')) return;
@@ -39215,22 +39263,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
     DC.DRIVER_TECH_ORDER.forEach(t => { const n = $('dt-drv-' + t), tile = $('dt-tile-' + t); if (n) n.textContent = counts[t] || 0; if (tile) tile.classList.toggle('is-on', !!counts[t]); });
     const dc = $('dt-e-driver_config'); if (dc && document.activeElement !== dc) dc.value = d.driver_config;
     $('dt-dtype').innerHTML = d.driver_type ? (DC.DRIVER_TYPE_ICON[d.driver_type] ? '<img src="' + ICON(DC.DRIVER_TYPE_ICON[d.driver_type]) + '" alt="" style="width:20px;height:20px;object-fit:contain">' : '') + '<b>' + E(d.driver_type) + '</b>' : '<span style="opacity:.6">—</span>';
-    // tags: the Database Tool's five groups, emoji on every tag, price tier shown as automatic
-    const sel = new Set(d.tags), clash = new Set();
-    DC.tagConflicts(sel).forEach(p => p.forEach(t => clash.add(t)));
-    const suggest = (T.sugg && T.sugg.suggestions || []).filter(s => {
-      if (sel.has(s.tag) || DC.PRICE_TIER_TAGS.indexOf(s.tag) >= 0) return false;
-      const withIt = new Set(sel); withIt.add(s.tag);          // never offer a tag that would clash with what is already ticked
-      return DC.tagConflicts(withIt).length <= DC.tagConflicts(sel).length;
-    });
-    const tier = DC.priceTierFor(DC.priceTierBasis(d.price_usd));
-    $('dt-tags').innerHTML = Object.keys(DC.TAG_GROUPS).map(g => {
-      const isPrice = g === DC.PRICE_GROUP;
-      const tags = DC.TAG_GROUPS[g].slice().sort((a, b) => (isPrice ? DC.PRICE_TIER_TAGS.indexOf(a) - DC.PRICE_TIER_TAGS.indexOf(b) : (a < b ? -1 : 1)));
-      return '<div class="dt-tg"><div class="dt-tgh">' + DC.TAG_GROUP_EMOJI[g] + ' ' + E(g) + (isPrice ? ' <span class="dt-tgnote">Auto: ' + tier + ' (' + TIER_RANGE[tier] + ')</span>' : '') + '</div><div class="dt-tagrow">' + tags.map(t => tagChip(t, sel, clash, isPrice)).join('') + '</div></div>';
-    }).join('') +
-      (suggest.length ? '<div class="dt-tg"><div class="dt-tgh">🧪 From the measurement <span class="dt-tgnote">' + E(DCV.summarizeMetrics(T.sugg.metrics)) + ' · click to add</span></div><div class="dt-tagrow">' + suggest.map(s => '<button class="dt-tag is-sugg" data-dt="tag" data-a="' + s.tag + '" title="' + E(s.reason) + '"><span class="dt-em">' + (DC.TAG_EMOJI[s.tag] || '') + '</span>+ ' + s.tag + '</button>').join('') + '</div></div>' : '');
-    $('dt-tagcount').textContent = '· ' + d.tags.length + '/' + DC.MAX_TAGS;
+    renderTags();
     // linked measurement files: first one is the default curve EQ loads. Drag to reorder.
     const cur = Math.min(T.curveFileIdx, Math.max(0, d.files.length - 1));
     const filesBox = $('dt-files');
@@ -39244,7 +39277,9 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
         '<button class="dt-btn is-sm is-ico dt-fb" data-dt="file-dl" data-a="' + i + '" title="Download this raw curve file">⬇</button>' +
         '<button class="dt-btn is-sm is-ico dt-fb" data-dt="unlink" data-a="' + i + '" title="Unlink (file stays on disk)">✕</button></div>';
     }).join('') : '<div class="dt-box dt-help" style="padding:8px">No files linked.</div>';
-    $('dt-msgs').innerHTML = errs.length ? errs.map(m => '<div class="dt-msg"><span>⚠</span><span>' + E(m) + '</span></div>').join('') : '<div class="dt-msg is-ok"><span>✓</span><span>All good.</span></div>';
+    // Errors only: the header chip already says "✓ valid", and the green line sat
+    // at the bottom of the tags column where a short column left it stranded.
+    $('dt-msgs').innerHTML = errs.length ? errs.map(m => '<div class="dt-msg"><span>⚠</span><span>' + E(m) + '</span></div>').join('') : '';
     updateToolbar();
   }
   function updateToolbar() {
@@ -39522,7 +39557,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       '<div class="dt-row" style="flex-wrap:wrap;gap:4px">' + sevChip('all', 'All', live.length, '') + sevChip('error', 'Errors', sum.error, 'is-err') + sevChip('warning', 'Warn', sum.warning, 'is-warn') + sevChip('info', 'Info', sum.info, 'is-info') + '</div>' +
       '<div class="dt-row"><select class="dt-sel input-bg-fix" data-f="audit-cat" style="height:26px"><option value="all">All categories</option>' + cats.map(c => '<option' + (c === T.auditCat ? ' selected' : '') + '>' + E(c) + '</option>').join('') + '</select>' +
       '<button class="dt-btn is-sm' + (T.showIgnored ? ' is-on' : '') + '" data-dt="audit-ignored" title="' + (T.showIgnored ? 'Back to findings' : 'Show ignored findings') + '">🙈 ' + ignoredN + '</button></div>' +
-      '<div class="dt-row dt-selbar"><label class="dt-row" style="gap:5px;cursor:pointer;font-size:11px;font-weight:800"><input type="checkbox" data-dt="audit-selall"' + (allSel ? ' checked' : '') + (vis.length ? '' : ' disabled') + '> All ' + vis.length + '</label><span class="dt-grow"></span>' +
+      '<div class="dt-row dt-selbar"><label class="dt-row" style="gap:5px;cursor:pointer;font-size:var(--t-xs);font-weight:800"><input type="checkbox" data-dt="audit-selall"' + (allSel ? ' checked' : '') + (vis.length ? '' : ' disabled') + '> All ' + vis.length + '</label><span class="dt-grow"></span>' +
       '<button class="dt-btn is-sm" data-dt="audit-ign-sel"' + (selVis.length ? '' : ' disabled') + '>' + (T.showIgnored ? '↩ Restore ' : '🙈 Ignore ') + selVis.length + '</button>' +
       (!T.showIgnored ? '<button class="dt-btn is-sm" data-dt="audit-fix-sel"' + (selFix ? '' : ' disabled') + '>🔧 ' + selFix + '</button>' : '') +
       (selDel && !T.showIgnored ? '<button class="dt-btn is-sm is-danger" data-dt="audit-del-sel" title="Delete the selected unlinked files">🗑 ' + selDel + '</button>' : '') + '</div>' +
@@ -39674,7 +39709,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       else if (p.action === 'delete') detail = '<div class="dt-fld"><span class="dt-v">Removes <span class="dt-mono">' + E(p.old.id) + '</span>.</span></div>';
       const selectable = p.action === 'new' || p.action === 'changed' || p.action === 'delete';
       return '<div class="dt-prop' + (p.action === 'same' ? ' is-dim' : '') + '"><div class="dt-top">' + (selectable ? '<input type="checkbox" data-dt="ai-inc" data-a="' + i + '"' + (A.include.has(i) ? ' checked' : '') + ' aria-label="Include this entry">' : '<span style="width:14px"></span>') +
-        '<span class="dt-chip ' + badge[0] + '">' + badge[1] + '</span><span class="dt-t" style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;font-weight:700" title="' + E(label) + '">' + E(label) + '</span>' +
+        '<span class="dt-chip ' + badge[0] + '">' + badge[1] + '</span><span class="dt-t" style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--t-xs);font-weight:700" title="' + E(label) + '">' + E(label) + '</span>' +
         ((p.action === 'new' || p.action === 'changed') ? '<span class="dt-help">' + sel.size + '/' + fields.length + '</span><button class="dt-btn is-sm is-ico" data-dt="ai-open" data-a="' + i + '" style="width:22px;height:20px" title="Show / hide fields">' + (open ? '▾' : '▸') + '</button>' : '') + '</div>' + detail + '</div>';
     }).join('');
     const nSel = A.include.size;
@@ -40137,7 +40172,7 @@ const OPT_OUT = 'button:not(.no-tactile):not(.stepper-arrow):not(.stepper-label)
       ? (st.workingCopy ? '🛡️ Built-in files are protected.' : '🛡️ Your copy is made on first save.')
       : '⚠️ Dev mode: saves change the shipped files.';
     const storage = '<div class="dt-box" style="padding:8px"><div class="dt-kv"><span>Source</span><b>' + E(T.source) + '</b></div><div class="dt-kv"><span>Saves to</span><b>' + E(st.mode === 'memory' ? 'Downloads' : st.label) + '</b></div><div class="dt-kv"><span>Entries</span><b>' + T.S.entries.length + '</b></div>' +
-      (st.mode === 'electron' && st.rootPath ? '<div class="dt-help dt-mono" style="word-break:break-all;margin-top:4px;font-size:10px">' + E(st.rootPath) + '</div>' : '') +
+      (st.mode === 'electron' && st.rootPath ? '<div class="dt-help dt-mono" style="word-break:break-all;margin-top:4px;font-size:var(--t-micro)">' + E(st.rootPath) + '</div>' : '') +
       (wcNote ? '<div class="dt-help" style="margin-top:5px">' + wcNote + '</div>' : '') + '</div>';
     const folderBtns = st.mode === 'electron' ? '<button class="dt-btn" data-dt="open-folder">📂 Open ' + (st.packaged ? 'my copy' : 'project') + ' folder</button>' :
       (st.fsApi ? '<button class="dt-btn" data-dt="pick-folder">📂 ' + (st.mode === 'folder' ? 'Change folder…' : 'Connect folder…') + '</button>' + (st.savedHandle && st.mode !== 'folder' ? '<button class="dt-btn" data-dt="reconnect-folder">↻ Reconnect ' + E(st.savedHandle.name) + '</button>' : '') : '<p class="dt-help">Folder saving needs Chrome/Edge or the desktop app.</p>');
