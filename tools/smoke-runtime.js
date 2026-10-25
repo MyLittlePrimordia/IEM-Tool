@@ -6,6 +6,7 @@
 //
 //   npx electron tools/smoke-runtime.js
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('smoke-runtime');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

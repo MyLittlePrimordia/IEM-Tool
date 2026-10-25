@@ -7,6 +7,7 @@
 //
 //   npx electron tools/slider-audit.js <outJson>
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('slider-audit');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

@@ -34,6 +34,17 @@ jobs:
       - name: Parse every script
         run: npm run check:js
 
+      - name: IPC bridge and main.js handlers name the same channels
+        # Both sides are just strings, so a rename on one side is invisible at
+        # build and launch time - it shows up as a button that does nothing.
+        run: npm run check:ipc
+
+      - name: Renderer bridge calls are exposed and guarded
+        # Same blind spot one layer up: `window.appBridge.foo()` is an untyped
+        # property, so a renamed member throws inside a click handler, and one
+        # that assumes the bridge exists throws in the browser-only harness.
+        run: npm run check:bridge
+
       - name: No orphaned / dangling script references
         run: npm run check:reach
 
@@ -325,9 +336,14 @@ jobs:
         with:
           tag: latest
           name: Latest Build
-          # Plain YAML scalar, so no ": " anywhere in it - a colon-space inside
-          # an unquoted value is a mapping delimiter and fails to parse the file.
-          body: Automatically rebuilt on every push to main. Exactly one file per operating system - IEM-Tool-Setup.exe (Windows installer), IEM-Tool.dmg (macOS, runs on both Intel and Apple Silicon) and IEM-Tool.appimage (Linux; run chmod +x first).
+          # A block scalar is used here so the hidden iem-build marker can sit on
+          # its own line. The app reads that commit hash and compares it with
+          # the build-info.json compiled into the installed app; no version bump
+          # is needed for an update to be detected.
+          body: |
+            Automatically rebuilt on every push to main. Exactly one file per operating system - IEM-Tool-Setup.exe (Windows installer), IEM-Tool.dmg (macOS, runs on both Intel and Apple Silicon) and IEM-Tool.appimage (Linux; run chmod +x first).
+
+            <!-- iem-build: ${{ github.sha }} -->
           allowUpdates: true
           replacesArtifacts: true
           makeLatest: true

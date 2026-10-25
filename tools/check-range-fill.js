@@ -16,6 +16,7 @@
 // It also drags a representative slider per pane and re-checks, so the delegated
 // input listener is exercised rather than assumed.
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('check-range-fill');
 const http = require('http');
 const fs = require('fs');
 const os = require('os');

@@ -4,6 +4,7 @@
 //
 //   npx electron tools/verify-file-picker-a11y.js
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('file-picker-a11y');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

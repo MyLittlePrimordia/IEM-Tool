@@ -15,6 +15,7 @@
 // This asserts the invariant on every three-part stepper in every pane: arrows
 // carry no border, the label carries equal left and right hairlines.
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('check-stepper-dividers');
 const http = require('http');
 const fs = require('fs');
 const os = require('os');

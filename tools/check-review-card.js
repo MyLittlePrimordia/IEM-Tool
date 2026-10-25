@@ -14,6 +14,7 @@
 //   4. no large region is pure #000000 - that was the old border colour and it
 //      read as a hole punched through the card
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('check-review-card');
 const http = require('http');
 const fs = require('fs');
 const os = require('os');

@@ -1,3 +1,4 @@
+// Stand-alone probe: run by hand. Not part of npm run verify:ui - see tools/run-ui-verify.mjs.
 // Detect visible seams in the per-theme backdrops.
 //
 // A tiled background is seamless when the pixels either side of a tile boundary
@@ -26,6 +27,7 @@
 //
 // Run: electron tools/verify-theme-seams.js [--only=id,id]
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('theme-seams');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const APP_ROOT = path.join(__dirname, '..');
 const MIME = { '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.png':'image/png','.svg':'image/svg+xml','.ttf':'font/ttf','.woff2':'font/woff2','.gz':'application/gzip','.mp3':'audio/mpeg' };

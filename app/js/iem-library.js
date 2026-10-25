@@ -5,6 +5,10 @@ const IEM_LibraryMethods = {
             return await DBCache.getAllReviews();
         },
 
+        // "Delete every saved review" was folded into Settings > Library > Reset
+        // (click_1011_App_factoryReset), which clears the reviews together with
+        // the presets, favourites and database edits the old button kept.
+
         saveToLibrary: async function() {
         const brand = elValue('brand').trim(); const model = elValue('model').trim();
         if(!brand || !model) { showToast("Enter a Brand and Model name before saving.", "⚠️"); return; }
@@ -47,6 +51,10 @@ const IEM_LibraryMethods = {
 
         const success = await DBCache.saveReview(profile);
         if (success) {
+            // The draft has been promoted to a real saved review; offering it
+            // again next time would be stale.
+            this.deleteReviewDraft(id);
+            await this.markReviewClean();
             showToast(`Saved ${brand} ${model} to Library inventory.`, "💾");
             await this.renderLibrary();
         } else {
@@ -273,30 +281,24 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
 
         closeCompare: function() { document.getElementById('library-table').classList.remove('hidden'); document.getElementById('compare-view').classList.add('hidden'); document.getElementById('compare-view').classList.remove('flex'); },
 
-        saveConfig: async function() {
-            try {
-                const brand = (document.getElementById('brand')?.value || '').trim();
-                const model = (document.getElementById('model')?.value || '').trim() || "Workstation";
-                const baseName = brand ? `${brand}_${model}` : model;
-
-                const sliderValues = {};
-                this.sliderNodes.forEach(n => {
-                    if (n.element && n.element.id) sliderValues[n.element.id] = n.element.value;
-                });
-
-                const currentWorkspace = {
-                    brand: document.getElementById('brand')?.value || '',
-                    model: document.getElementById('model')?.value || '',
-                    price: document.getElementById('price')?.value || '',
-                    refVolume: document.getElementById('listening-volume')?.value || 'moderate',
-                    impedance: document.getElementById('impedance')?.value || '5',
-                    sensitivity: document.getElementById('sensitivity')?.value || '80',
-                    notes: document.getElementById('review-notes')?.value || '',
-                // Workspace photo: blob: URLs die with the session and Blobs
-                // stringify to {} — serialize as a bounded dataURL instead.
-                // (Image is already <=400px from the upload pipeline; this is
-                // the same 0.75-quality JPEG the upload path produces.)
-                image: await this._imageToDataURL(this.currentImage, this.currentImageBlob),
+        // Capture the editable review workspace. Shared by the full backup and
+        // the per-entry autosave drafts, so the two can never drift apart.
+        // includeImage=false keeps drafts small (a 400px JPEG per draft would
+        // blow through localStorage's quota after a handful of entries).
+        _captureWorkspaceState: async function(includeImage) {
+            const sliderValues = {};
+            this.sliderNodes.forEach(n => {
+                if (n.element && n.element.id) sliderValues[n.element.id] = n.element.value;
+            });
+            return {
+                brand: document.getElementById('brand')?.value || '',
+                model: document.getElementById('model')?.value || '',
+                price: document.getElementById('price')?.value || '',
+                refVolume: document.getElementById('listening-volume')?.value || 'moderate',
+                impedance: document.getElementById('impedance')?.value || '5',
+                sensitivity: document.getElementById('sensitivity')?.value || '80',
+                notes: document.getElementById('review-notes')?.value || '',
+                image: includeImage === false ? null : await this._imageToDataURL(this.currentImage, this.currentImageBlob),
                 selectedTags: Array.from(this.selectedTags || []),
                 selectedGenres: Array.from(this.selectedGenres || []),
                 selectedBass: Array.from(this.selectedBass || []),
@@ -312,6 +314,90 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
                 toneData: Tone_Module.getState(),
                 eqData: EQ_Module.getRealValues()
             };
+        },
+
+        // ---- Review drafts (A-004 / U-010) --------------------------------
+        // Applying a second database entry used to overwrite the open review
+        // with no warning, and the single pre-apply snapshot was replaced on
+        // the next apply. Drafts are keyed by database id, capped at 12, and
+        // restored behind an explicit prompt so a draft never silently wins
+        // over a fresher measurement load.
+        REVIEW_DRAFT_KEY: 'iem_review_drafts_v1',
+        REVIEW_DRAFT_MAX: 12,
+
+        _readDrafts: function() {
+            try {
+                const raw = localStorage.getItem(this.REVIEW_DRAFT_KEY);
+                const parsed = raw ? JSON.parse(raw) : {};
+                return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+            } catch (e) { return {}; }
+        },
+
+        _writeDrafts: function(drafts) {
+            try {
+                const list = Object.entries(drafts).sort((a, b) => (b[1].savedAt || 0) - (a[1].savedAt || 0));
+                const kept = {};
+                list.slice(0, this.REVIEW_DRAFT_MAX).forEach(([id, d]) => { kept[id] = d; });
+                localStorage.setItem(this.REVIEW_DRAFT_KEY, JSON.stringify(kept));
+            } catch (e) {
+                console.warn('[Review] draft save failed (storage full?):', e);
+                showToast('Could not autosave this draft — browser storage is full.', '⚠️');
+            }
+        },
+
+        getReviewDraft: function(id) {
+            if (!id) return null;
+            const d = this._readDrafts()[id];
+            return d && d.workspace ? d : null;
+        },
+
+        saveReviewDraft: async function(id) {
+            if (!id) return false;
+            try {
+                const workspace = await this._captureWorkspaceState(false);
+                const drafts = this._readDrafts();
+                drafts[id] = {
+                    id,
+                    name: `${workspace.brand || ''} ${workspace.model || ''}`.trim() || id,
+                    savedAt: Date.now(),
+                    workspace
+                };
+                this._writeDrafts(drafts);
+                return true;
+            } catch (e) {
+                console.warn('[Review] capture draft failed:', e);
+                return false;
+            }
+        },
+
+        deleteReviewDraft: function(id) {
+            if (!id) return;
+            const drafts = this._readDrafts();
+            if (drafts[id]) { delete drafts[id]; this._writeDrafts(drafts); }
+        },
+
+        // Snapshot comparison; the baseline is written after every successful
+        // database load / draft restore / workspace clear.
+        isReviewDirty: async function() {
+            if (!this._reviewBaseline) return false;
+            try {
+                const now = await this._captureWorkspaceState(false);
+                return JSON.stringify(now) !== this._reviewBaseline;
+            } catch (e) { return false; }
+        },
+
+        markReviewClean: async function() {
+            try { this._reviewBaseline = JSON.stringify(await this._captureWorkspaceState(false)); }
+            catch (e) { this._reviewBaseline = null; }
+        },
+
+        saveConfig: async function() {
+            try {
+                const brand = (document.getElementById('brand')?.value || '').trim();
+                const model = (document.getElementById('model')?.value || '').trim() || "Workstation";
+                const baseName = brand ? `${brand}_${model}` : model;
+
+                const currentWorkspace = await this._captureWorkspaceState(true);
 
             // Library records hold photo Blobs (IndexedDB-native) — they must
             // be converted to dataURLs BEFORE JSON.stringify, which would

@@ -13,11 +13,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('appBridge', {
-  // True when the custom caption bar is in use. The renderer uses this to skip
-  // drag-region attributes if it is ever loaded outside Electron (e.g. the
-  // browser-based visual regression harness in tools/).
-  hasCustomChrome: true,
-
   windowMinimize: () => ipcRenderer.send('win:minimize'),
   windowToggleMaximize: () => ipcRenderer.send('win:toggle-maximize'),
   windowClose: () => ipcRenderer.send('win:close'),
@@ -56,11 +51,29 @@ contextBridge.exposeInMainWorld('appBridge', {
   // call maps to one fixed IPC channel validated in main.js (data-relative
   // "data/<folder>/<name>.txt" only; writes land in the IEM-Data folder).
   dataInfo: () => ipcRenderer.invoke('data:info'),
+
+  // Update center. Fixed, argument-less commands against the project's own
+  // GitHub repository; the renderer cannot name a URL or a file path.
+  appVersion: () => ipcRenderer.invoke('app:get-version'),
+  appBuildInfo: () => ipcRenderer.invoke('app:get-build-info'),
+  checkAppUpdate: () => ipcRenderer.invoke('app:check-update'),
+  openReleasePage: () => ipcRenderer.invoke('app:open-release-page'),
+  // Measurement-source credits. The main process allowlists the scheme and
+  // hosts, so this stays a "open a credited source" command rather than a
+  // general-purpose URL opener.
+  openCreditUrl: (url) => ipcRenderer.invoke('app:open-credit-url', String(url)),
+  checkDatabaseUpdate: () => ipcRenderer.invoke('db:check-update'),
+  downloadDatabaseUpdate: () => ipcRenderer.invoke('db:download-update'),
   dataReadDatabase: () => ipcRenderer.invoke('data:read-database'),
   dataListFiles: () => ipcRenderer.invoke('data:list-files'),
   dataReadFile: (rel) => ipcRenderer.invoke('data:read-file', String(rel)),
   dataEnsureWorkingCopy: () => ipcRenderer.invoke('data:ensure-working-copy'),
   dataResetWorkingCopy: () => ipcRenderer.invoke('data:reset-working-copy'),
+
+  // Settings > Library > Reset. One-way and argument-less: main.js erases the
+  // stored settings, reviews and database edits, then relaunches the app, so
+  // there is nothing for the renderer to pass in or to undo afterwards.
+  factoryReset: () => ipcRenderer.invoke('app:factory-reset'),
   dataDeleteFile: (rel) => ipcRenderer.invoke('data:delete-file', String(rel)),
   dataWriteDatabase: (payload) => ipcRenderer.invoke('data:write-database', { text: payload && payload.text, json: !(payload && payload.json === false), gz: !(payload && payload.gz === false) }),
   dataWriteFile: (payload) => ipcRenderer.invoke('data:write-file', { rel: payload && payload.rel, text: payload && payload.text, overwrite: !!(payload && payload.overwrite) }),

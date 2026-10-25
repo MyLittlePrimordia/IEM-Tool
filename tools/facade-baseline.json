@@ -368,7 +368,6 @@
   "initABTest": "function",
   "clearComparisonTracks": "function",
   "ensureABSources": "function",
-  "_abxSetArmGainsUnity": "function",
   "setABXControlsEnabled": "function",
   "toggleABPlay": "function",
   "pauseABPlayback": "function",
@@ -463,7 +462,8 @@
   "heightModeActive": null,
   "toggleFullscreen": "function",
   "toggleBassLeakTest": "function",
-  "stopBassLeakTest": "function"
+  "stopBassLeakTest": "function",
+  "_abxSetArmGains": "function"
  },
  "IEM_Module": {
   "radarChart": null,

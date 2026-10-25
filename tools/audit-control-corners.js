@@ -30,6 +30,7 @@
 //
 // Exit 0 = pass, 1 = violation, 2 = could not run.
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('control-corners');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

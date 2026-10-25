@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const strict = process.argv.includes('--strict');
@@ -65,7 +66,15 @@ const src = [
   'app/js/eq-media-transport.js',
   'app/js/eq-graph-input.js',
   'app/js/eq-visualizer.js',
-  'app/js/db-cache.js','app/js/curve-indexer.js','app/js/peqdb-alignment.js','app/js/peqdb-similar.js','app/js/peqdb-smart-rf.js','app/js/peqdb-module.js','app/js/testlab-abx.js','app/js/testlab-hearing.js','app/js/testlab-burnin.js','app/js/testlab-spatial.js','app/js/testlab-module.js','app/js/find-genre.js','app/js/find-upgrade.js','app/js/find-endgame.js','app/js/find-taste.js','app/js/find-engine.js',
+  'app/js/db-cache.js','app/js/source-index.js','app/js/curve-indexer.js',  'app/js/peqdb-alignment.js','app/js/peqdb-similar.js','app/js/peqdb-smart-rf.js',
+  // Static target curves (~107 KB, no behaviour) load immediately before the
+  // module that consumes them. Extracted from peqdb-module.js so a target-data
+  // edit no longer touches the 2k-line module.
+  'app/js/eq-targets-data.js','app/js/peqdb-module.js','app/js/testlab-abx.js','app/js/testlab-hearing.js','app/js/testlab-burnin.js','app/js/testlab-spatial.js','app/js/testlab-module.js','app/js/find-genre.js','app/js/find-upgrade.js','app/js/find-endgame.js','app/js/find-taste.js','app/js/find-engine.js',
+  // My Sound (personal targets + trainer + coach) and the Find extras build on
+  // the modules above and must be present before handlers.js binds their
+  // data-action entry points.
+  'app/js/personal-targets.js','app/js/eq-coach.js','app/js/find-extras.js',
   // Database tab. Pure-logic files first (no DOM, Node-testable), then the
   // storage adapter, then the UI module that drives them. DataTab is only
   // touched at runtime (App.init / App.switchTab), so these just need to be
@@ -91,6 +100,28 @@ writeFileSync(join(root, 'app', 'js', 'app.bundle.js'), raw);
 // across reloads instead of re-fetching it on every page load.
 const version = createHash('sha256').update(raw).digest('hex').slice(0, 12);
 writeFileSync(join(root, 'app', 'js', 'bundle-version.js'), `window.BUNDLE_VERSION = ${JSON.stringify(version)};\n`);
+
+// Build identity for Settings > Updates. The app compares this commit with the
+// commit stamped into the rolling release, so a new push is detected even when
+// package.json's version has not been bumped. GitHub Actions supplies
+// GITHUB_SHA; a local build falls back to the checkout's HEAD. The file is
+// generated (gitignored) and picked up by electron-builder's app/js/**/* glob.
+let commit = String(process.env.GITHUB_SHA || '').trim();
+if (!commit) {
+  try { commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); }
+  catch (_) { commit = ''; }
+}
+const buildInfo = {
+  schema: 1,
+  version: JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version || '',
+  branch: String(process.env.GITHUB_REF_NAME || 'main'),
+  commit,
+  shortCommit: commit.slice(0, 7),
+  bundle: version,
+  builtAt: new Date().toISOString()
+};
+writeFileSync(join(root, 'app', 'js', 'build-info.json'), JSON.stringify(buildInfo, null, 2) + '\n');
+console.log('build-info.json    :', buildInfo.shortCommit || '(no git commit)');
 
 // Stamp the same hash into index.html's bundle-version.js <script src> so the
 // version file itself is cache-busted on real changes. Without this the tiny

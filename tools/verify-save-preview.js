@@ -10,6 +10,7 @@
 //   4. confirming writes once, and the preview then reports no changes
 //   5. a deletion is listed and the confirm button carries the danger style
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('save-preview');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

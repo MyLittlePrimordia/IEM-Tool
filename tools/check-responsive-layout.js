@@ -1,4 +1,5 @@
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('check-responsive-layout');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const APP_ROOT = path.join(__dirname, '..');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.woff2': 'font/woff2' };

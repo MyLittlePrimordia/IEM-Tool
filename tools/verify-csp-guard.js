@@ -1,3 +1,4 @@
+// Stand-alone probe: run by hand. Not part of npm run verify:ui - see tools/run-ui-verify.mjs.
 // Proves the CSP guard fails when 'unsafe-inline' is reintroduced, when an
 // inline <script> is added back, and when an attribute-form event handler is
 // reintroduced in either index.html or a JS template string. A security check

@@ -668,56 +668,58 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             return true;
         },
 
-        // Toggle gapless playback from the Accessibility panel button.
-        toggleGapless: function() {
-            const on = !this.gaplessEnabled();
-            localStorage.setItem('settings_gapless', on ? '1' : '0');
-            this._applyGaplessButton();
-            if (on) {
-                // Re-sync the standby element with the current playlist position.
-                if (this.playlist && this.playlist.length > 0 && this.playlist[this.playlistIndex]) {
-                    this._preloadedIndex = null;
-                    this._preloadNextTrack();
-                }
-                showToast("Gapless Playback: ON", "🔗");
-            } else {
-                // Crossfade still needs the standby machinery — only tear it
-                // down when BOTH features are off.
-                if (!this.crossfadeEnabled()) this._teardownStandby();
-                showToast("Gapless Playback: Off", "🔗");
-            }
+        // The three states the player actually plays. `_overlapSecs` already
+        // picks exactly one: the crossfade when it is on, else the 0.18s gapless
+        // seam, else nothing. Gapless and crossfade are therefore NOT independent
+        // settings - they were two switches and a slider describing one 3-way
+        // choice - and Settings now shows them as that choice.
+        trackTransitionMode: function() {
+            if (this.crossfadeEnabled()) return 'crossfade';
+            if (this.gaplessEnabled()) return 'gapless';
+            return 'off';
         },
 
-_applyGaplessButton: function() {
-    const btn = document.getElementById("a11y-gapless-btn");
-    if (!btn) return;
-    // R3: the button no longer rewrites its own textContent. It used to set
-    // "🔗 Gapless: On" / "🔗 Gapless: Off" wholesale, which is incompatible with
-    // a real switch - any markup inside the button would be destroyed on the
-    // first state change. The switch track, knob and colour are now driven
-    // purely by the `is-on` class, and the visible wording lives in the row
-    // label beside it. aria-checked carries the state to assistive tech.
-    const on = this.gaplessEnabled();
-    btn.classList.toggle('is-on', on);
-    btn.setAttribute('aria-checked', on ? 'true' : 'false');
-    },
+        // Settings > Track transitions. Writes the same two keys the switches
+        // did, so a profile saved before this control existed restores to the
+        // same mode it was playing (crossfade beats gapless, as before).
+        setTrackTransition: function(mode) {
+            const next = (mode === 'off' || mode === 'gapless' || mode === 'crossfade')
+                ? mode
+                : this.trackTransitionMode();
+            localStorage.setItem('settings_crossfade', next === 'crossfade' ? '1' : '0');
+            localStorage.setItem('settings_gapless', next === 'off' ? '0' : '1');
+            this._applyTrackTransition();
+            if (next === 'off') {
+                this._teardownStandby();
+            } else if (this.playlist && this.playlist.length > 0 && this.playlist[this.playlistIndex]) {
+                // Both remaining modes need the standby element: re-sync it.
+                this._preloadedIndex = null;
+                this._preloadNextTrack();
+            }
+            showToast(next === 'off' ? 'Track transitions: Off'
+                : next === 'gapless' ? 'Track transitions: Gapless'
+                : 'Track transitions: Crossfade', '🔀');
+        },
 
-        // Toggle crossfade playback (Settings -> Accessibility panel button).
-        // Takes over from the gapless seam with a longer, user-adjustable
-        // overlap between tracks. Duration via setCrossfadeSeconds.
-        toggleCrossfade: function() {
-            const on = !this.crossfadeEnabled();
-            localStorage.setItem('settings_crossfade', on ? '1' : '0');
-            this._applyCrossfadeButton();
-            if (on) {
-                if (this.playlist && this.playlist.length > 0 && this.playlist[this.playlistIndex]) {
-                    this._preloadedIndex = null;
-                    this._preloadNextTrack();
-                }
-                showToast("Crossfade: ON", "🎚️");
-            } else {
-                if (!this.gaplessEnabled()) this._teardownStandby();
-                showToast("Crossfade: Off", "🎚️");
+        // Paint the 3-way control and the crossfade length from storage. Runs on
+        // boot (iem-module restores settings) and after every change.
+        _applyTrackTransition: function() {
+            const mode = this.trackTransitionMode();
+            const group = document.getElementById('settings-track-mode');
+            if (group) {
+                group.querySelectorAll('[data-arg-0]').forEach(function(btn) {
+                    const on = btn.getAttribute('data-arg-0') === mode;
+                    btn.classList.toggle('is-active', on);
+                    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+                });
+            }
+            const wrap = document.getElementById('crossfade-length');
+            if (wrap) wrap.hidden = mode !== 'crossfade';
+            const slider = document.getElementById('a11y-crossfade-slider');
+            if (slider) {
+                slider.disabled = mode !== 'crossfade';
+                slider.value = this.crossfadeSeconds();
+                this.setCrossfadeSeconds(slider.value);
             }
         },
 
@@ -726,24 +728,6 @@ _applyGaplessButton: function() {
             localStorage.setItem('settings_crossfade_secs', String(secs));
             const display = document.getElementById("a11y-crossfade-display");
             if (display) display.textContent = (secs % 1 === 0) ? secs + "s" : secs.toFixed(1) + "s";
-        },
-
-        _applyCrossfadeButton: function() {
-            const btn = document.getElementById("a11y-crossfade-btn");
-            if (!btn) return;
-            const on = this.crossfadeEnabled();
-            // R3: state only. This used to rewrite textContent wholesale, which
-            // destroys any markup inside the button - the reason a real switch
-            // could not be built here. See _applyGaplessButton.
-            btn.classList.toggle('is-on', on);
-            btn.setAttribute('aria-checked', on ? 'true' : 'false');
-            const slider = document.getElementById("a11y-crossfade-slider");
-            if (slider) {
-                slider.disabled = !on;
-                slider.classList.toggle('opacity-40', !on);
-                slider.value = this.crossfadeSeconds();
-                this.setCrossfadeSeconds(slider.value);
-            }
         },
 
         // Stop the dual-element machinery: clear the standby element, drop its

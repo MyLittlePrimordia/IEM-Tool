@@ -4073,6 +4073,20 @@ button[onclick="PEQDB_Module.generateLeastSquaresAutoEQ()"]:hover {
             animation: mascot-deaf 0.15s linear infinite !important;
             transform-origin: bottom center;
         }
+        /* Mute (🤫) asks for quiet, so it shakes its head: a small side-to-side
+           tilt, much slower than `deaf`, which is a panic shudder. It needs its
+           own block because the animation map pointed at this class and nothing
+           defined it - a duplicate `mute` key further down the map quietly
+           overrode it with hear-no-evil, so the shush played a panic instead. */
+        @keyframes mascot-mute {
+            0%, 100% { transform: rotate(0deg) scale(0.97); }
+            30% { transform: rotate(-4deg) scale(1); }
+            70% { transform: rotate(4deg) scale(1); }
+        }
+        .anim-mascot-mute {
+            animation: mascot-mute 1.5s ease-in-out infinite !important;
+            transform-origin: center center;
+        }
 
         @keyframes mascot-genius {
             0%, 100% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(var(--accent-blue-rgb), 0)); }
@@ -5904,31 +5918,58 @@ input[type="range"]::-moz-range-thumb {
 /* ==========================================================================
    R3 — SETTINGS
    ==========================================================================
-   Gamer Tool's settings pattern, which suits a preferences list better than the
-   3-column card layout the rest of the app uses: a centred single column,
-   section headers, and rows that read as
-   `icon + label + hint ......... control`.
+   Section headers and rows that read `icon + label + hint ......... control`.
 
-   Two problems this solves beyond aesthetics:
-     - the ~290px of empty bordered card below the last section (the card was
-       `h-full`, its content ended at ~62%) is gone, because there is no card
-     - the crossfade slider used to sit INSIDE its 4-column grid cell, so its
-       label, button and slider were crammed into a 190px track. Each control
-       now gets a full-width row.
+   THREE cards, one column: Aesthetics, Accessibility, System. Twelve rows.
+   The page is 760px wide, not the full 1120px the rest of the app uses: a
+   settings list is a label/control pair, and stretching that pair across a
+   1500px window leaves a metre of nothing between the two halves.
+
+   The row count is what keeps this scroll-free, and the merges are real
+   merges of ONE decision that used to be spread over several rows:
+
+     * Audio output   = channel + device (one question, two boxes)
+     * Track transitions = gapless/crossfade/fade length. The player already
+       treated these as one decision: `_overlapSecs()` returns the crossfade, else
+       the 0.18s gapless seam, else 0. Two switches and a slider were showing
+       three states as if they were three independent settings.
+
+   IEM Tool and Measurement database deliberately stayed ONE ROW EACH. Merging
+   them needed floating captions and a two-line hint, which broke the
+   one-row-one-decision pattern every other setting follows.
+
+   History: the pane started as a ~1000px scrolling column, then became a 2x2
+   grid of columns (no scrollbar, but four boxes and two reading columns), then
+   one column with every row paired two-up (55px of white between a switch and
+   its label at 1120px). This is the dense single list all three were reaching
+   for.
    ========================================================================== */
 
 .settings-scroll {
-    /* The pane's single vertical scroller (SCROLL-001 #15, unchanged role). */
-    scrollbar-gutter: stable;
+    /* auto, not hidden. At every desktop size the three cards fit (587px of
+       content in a 702px pane at 1536x822), so no scrollbar is painted and the
+       pane still reads as a single no-scroll column. `auto` only matters when
+       the content genuinely does not fit - a smaller window, or a larger text
+       size - and there the alternative is not "no scroll", it is the last card
+       being clipped with no way to reach its buttons. */
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
 }
 .settings-page {
     width: 100%;
-    max-width: 680px;
-    margin: 0 auto;
-    /* 20px top / 28px bottom rather than 24/48: at a 900px-tall window the
-       tighter rhythm is the difference between the Library row clearing the
-       fold and being sliced through the middle by it. */
-    padding: var(--s-3) var(--s-5) var(--s-4);
+    max-width: 760px;
+    /* Vertical auto margins in this flex column centre the list in the pane
+       when it fits, which balances the space above and below instead of leaving
+       a dead strip under System. When it does not fit, auto margins resolve to
+       zero, so nothing is pushed out of reach and the pane scrolls normally. */
+    margin: auto;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+    padding: var(--s-2) var(--s-4);
 }
 
 /* .settings-head / .settings-title / .settings-sub were removed with the
@@ -5938,15 +5979,14 @@ input[type="range"]::-moz-range-thumb {
    scrollbar appeared on an otherwise-fitting pane. Nothing references the
    three classes any more; the pane is named by aria-label instead. */
 
-.settings-group { margin-bottom: var(--s-4); }
-.settings-group:last-child { margin-bottom: 0; }
+.settings-group { margin-bottom: 0; }
 .settings-group-title {
     font-size: var(--t-micro);
     font-weight: 600;
     letter-spacing: var(--ls-micro);
     text-transform: uppercase;
     color: var(--text-lo);
-    margin: 0 0 var(--s-2);
+    margin: 0 0 6px;
     padding-left: var(--s-1);
 }
 
@@ -5958,10 +5998,13 @@ input[type="range"]::-moz-range-thumb {
 }
 .settings-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--s-4);
-    min-height: 48px;
-    padding: var(--s-2) var(--s-4);
+    gap: var(--s-2) var(--s-3);
+    min-height: 40px;
+    /* 3px vertical: a two-line label+hint is 34px, so the row settles at 40px -
+       eleven of them fit a 1280x720 window without a scrollbar. */
+    padding: 3px var(--s-4);
     border-bottom: 1px solid var(--line-subtle);
 }
 .settings-row:last-child { border-bottom: none; }
@@ -5987,8 +6030,14 @@ input[type="range"]::-moz-range-thumb {
     color: var(--text-hi);
 }
 .settings-row-hint {
-    font-size: var(--t-xs);
-    line-height: 1.35;
+    /* --text-lo, one step smaller than the label. The hint was never accent-
+       coloured, but --text-lo is a blue-leaning grey (5.3:1 on the row) and at
+       11px next to a white 13px label it read as a second accent. Dropping it to
+       the 10px floor puts the hierarchy in size as well as tone, so the label
+       and the control carry the row and the description recedes. Do not dim the
+       colour further: 5.3:1 is the accessibility floor this token exists for. */
+    font-size: var(--t-micro);
+    line-height: 1.3;
     color: var(--text-lo);
 }
 /* Keeps a hint to a single row (ellipsis) when buttons crowd the row. */
@@ -5996,6 +6045,78 @@ input[type="range"]::-moz-range-thumb {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* Two controls in one row (Audio output: channel + device). The cluster owns
+   the gap so the two boxes read as one control group, not two stray buttons. */
+.settings-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    flex-shrink: 0;
+}
+.settings-controls .settings-control { min-width: 0; }
+/* The channel value is a short word (Mono/Stereo/Summed), so its box does not
+   need the 168px value-button width - the device name needs that room. */
+.settings-control.settings-control-xs { min-width: 92px; }
+
+/* --- Track transitions 3-way control -------------------------------------
+   Off / Gapless / Crossfade. Replaces two switches and a slider that were
+   showing three mutually exclusive states as three separate settings. Sized
+   as a compact pill row so it fits on the row line beside its label.
+
+   These selectors are scoped by the control's id on purpose. The R0 generic
+   rule `button:not(.no-tactile)` scores (0,1,1) with !important and repainted
+   every one of these buttons as a raised box - the first build of this control
+   looked like three unrelated buttons, and its selected state was 8% accent on
+   black, i.e. invisible. (1,1,0) / (1,2,0) win outright, and the selected pill
+   now uses the same raised fill + accent ring the switches use, at a contrast
+   that survives a screenshot. */
+#settings-track-mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    flex-shrink: 0;
+    background: var(--bg-inset) !important;
+    border: 1px solid var(--line) !important;
+    border-radius: var(--r-sm) !important;
+    box-shadow: none !important;
+}
+#settings-track-mode .settings-seg-btn {
+    height: 24px;
+    padding: 0 var(--s-2) !important;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    border-radius: 4px !important;
+    box-shadow: none !important;
+    color: var(--text-mid) !important;
+    font-size: var(--t-xs) !important;
+    font-weight: 600 !important;
+    white-space: nowrap;
+    cursor: pointer;
+    transform: none !important;
+    transition: background var(--d-1) var(--e-out),
+                color var(--d-1) var(--e-out),
+                border-color var(--d-1) var(--e-out) !important;
+}
+#settings-track-mode .settings-seg-btn:hover {
+    background: var(--bg-raised) !important;
+    color: var(--text-hi) !important;
+    filter: none !important;
+    transform: none !important;
+}
+#settings-track-mode .settings-seg-btn.is-active,
+#settings-track-mode .settings-seg-btn.is-active:hover {
+    background: var(--bg-raised) !important;
+    border-color: var(--accent) !important;
+    color: var(--text-hi) !important;
+    box-shadow: inset 0 0 0 1px var(--accent) !important;
+    font-weight: 700 !important;
+}
+#settings-track-mode .settings-seg-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
 }
 
 /* Value buttons (Theme / Font / Audio channel). Fixed min-width so the three
@@ -6029,6 +6150,37 @@ input[type="range"]::-moz-range-thumb {
     transform: none !important;
     filter: none !important;
 }
+/* Output device: one click-to-cycle box, exactly like Theme / Font / Audio
+   channel. It used to be a ◀ value ▶ stepper, which needed its own track and
+   made one row of the pane behave unlike all the others.
+
+   `.settings-control` is min-width only, so a long Windows endpoint name ("3 -
+   AG276QZD2 (2- AMD High Definition Audio Device)") would stretch the box and
+   squeeze the row. The cap plus the label span keep it a fixed-width target
+   that ellipsises instead. */
+#audio-output-btn {
+    max-width: 220px;
+}
+/* text-overflow does not reach text sitting inside a flex button, so the label
+   span does the clipping. min-width:0 is what lets it shrink below its text. */
+#audio-output-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* No devices to switch to. The button ships enabled-looking in the markup (a
+   browser without the bridge still renders the row), so the disabled state is
+   set from the real device count. :hover still matches a disabled button, hence
+   the silenced hover - otherwise a dead target paints the full accent border. */
+#audio-output-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+#audio-output-btn:disabled:hover {
+    background: var(--bg-raised) !important;
+    border-color: var(--line) !important;
+}
 
 .settings-slider {
     display: flex;
@@ -6037,6 +6189,12 @@ input[type="range"]::-moz-range-thumb {
     flex-shrink: 0;
     width: 220px;
 }
+/* Track transitions: the crossfade length only exists while Crossfade is the
+   chosen mode, so it is `hidden` otherwise instead of sitting there disabled
+   next to a mode that does not use it. `hidden` loses to the flex display
+   above, hence the explicit rule. */
+.settings-slider.settings-slider-inline { width: 168px; }
+.settings-slider[hidden] { display: none !important; }
 .settings-slider input[type="range"] { flex: 1 1 auto; min-width: 0; }
 .settings-value {
     font-size: var(--t-xs);
@@ -6050,12 +6208,18 @@ input[type="range"]::-moz-range-thumb {
 
 .settings-actions {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: var(--s-2);
     flex-shrink: 0;
+    margin-left: auto;
 }
 .settings-btn {
     height: var(--control-h);
-    padding: 0 var(--s-4);
+    /* 12px, not 16px: two-up rows give each button group half a card, and the
+       three-button rows (Offline database, Library) have to fit beside a label
+       without wrapping to a second line. */
+    padding: 0 var(--s-3);
     background: var(--bg-raised) !important;
     border: 1px solid var(--line) !important;
     border-radius: var(--r-sm) !important;
@@ -6080,6 +6244,40 @@ input[type="range"]::-moz-range-thumb {
     border-color: var(--danger) !important;
     background: var(--bg-surface) !important;
 }
+
+/* --- Quieter resting borders -----------------------------------------------
+   This card is the densest collection of bordered controls in the app: twelve
+   rows, up to three buttons each. At the app's default `--line` (#212126) that
+   reads as a grid of lit-up boxes, all apparently hovering at once.
+
+   The two kinds of control are quietened differently, because they are not the
+   same thing: a value box (Theme / Font / Audio output) is a FIELD, so it keeps
+   a hairline at `--line-subtle` (#16161A) - without it there is no edge telling
+   you the word "System" is a control rather than a label. An action button just
+   acts, so it carries no border at rest at all and reveals one on hover, the way
+   a toolbar button does; the `--bg-raised` fill is enough to place it on the row.
+
+   Scoped to .settings-row rather than changing the global control language, and
+   written with hover rules at the same specificity so the order is explicit. */
+.settings-row .settings-control { border-color: var(--line-subtle) !important; }
+.settings-row .settings-btn { border-color: transparent !important; }
+.settings-row .settings-control:hover { border-color: var(--accent) !important; }
+/* Fill AND edge on hover. Dropping the edge at rest makes the fill the only
+   thing placing the button on the row, so the stock hover (which swaps the fill
+   DOWN to the row colour) would read as the button sinking away and leaving an
+   empty outline. It rises one step instead, which is what an edge arriving is
+   meant to say. */
+.settings-row .settings-btn:hover {
+    border-color: var(--line-strong) !important;
+    background: var(--bg-hover) !important;
+}
+/* The exception: a button that is alone in its row. Every other action button
+   shares its line with a label that already says what the row is about, so the
+   button can be quiet and still be found. Credits sits at the end of a row with
+   nothing else on it, and borderless it read as a trailing word rather than a
+   link to the source list - it takes the field hairline the value boxes use. */
+.settings-row .settings-btn.settings-btn-outline { border-color: var(--line-subtle) !important; }
+.settings-row .settings-btn.settings-btn-outline:hover { border-color: var(--line-strong) !important; }
 
 /* --- R3.1 Switch ----------------------------------------------------------
    Replaces the text buttons that used to read "🔗 Gapless: On" / "Off". The
@@ -6147,14 +6345,27 @@ input[type="range"]::-moz-range-thumb {
 }
 .switch:active .switch-knob { transform: scale(0.92); }
 .switch.is-on:active .switch-knob { transform: translateX(20px) scale(0.92); }
+/* Off, in Settings: the track was --bg-raised (#121215) on a --bg-surface row
+   (#0A0A0B), eight steps of 255 apart, so the control read as a bare knob
+   floating at the end of the row. The off track now uses the card's divider
+   colour (#212126) - the same neutral step the row hairlines use - so the pill
+   is visible at rest. On keeps the theme accent fill. */
+.settings-row .switch:not(.is-on) .switch-track { background: var(--line) !important; }
 
-/* Narrow: stack the control under the label so nothing is squeezed. */
+/* Narrow: the page drops to 680px and the control clusters may wrap under the
+   label. Nothing is re-ordered - the list is already one column. */
+@media (max-width: 1279px) {
+    .settings-page { max-width: 680px; }
+}
+/* Very narrow: stack the control under the label so nothing is squeezed. */
 @media (max-width: 620px) {
     .settings-row { flex-wrap: wrap; gap: var(--s-2) var(--s-3); }
     .settings-row-text { flex-basis: calc(100% - 40px); }
     .settings-control,
     .settings-slider,
-    .settings-actions { margin-left: 40px; width: auto; }
+    .settings-actions,
+    .settings-controls,
+    .settings-seg { margin-left: 40px; width: auto; }
     .settings-slider { flex: 1 1 auto; }
     .settings-page { padding: var(--s-4) var(--s-3) var(--s-10); }
 }
@@ -6167,15 +6378,38 @@ input[type="range"]::-moz-range-thumb {
    underneath it with no way to scroll clear.
 
    This is padding on the scroll region's CONTENT, not a new scroller and not a
-   height change - the SCROLL-001 scroller (.settings-scroll) is untouched.
-   128px = the 110px bar plus an 18px breathing gap.
+   height change.
+
+   It used to be 128px (the 110px bar plus an 18px gap), on the assumption that
+   the pane ran to the bottom of the window. It no longer does: the layout sizes
+   the pane ABOVE the footer, so the real overlap is the few pixels the footer's
+   rounded top edge reaches up - measured at 6px on a 1229x691 window. Padding for
+   the whole bar on top of that reserved space made 128px of phantom content, and
+   that was the "slight scroll": a page that fit the pane perfectly still had
+   100-odd pixels of scroll under it. Clearance is now just the overlap plus a
+   hair, and a short pane compacts the rows instead (see the height query below).
    ========================================================================== */
 @media (max-width: 1279px) {
-    .settings-page { padding-bottom: 128px; }
+    .settings-page { padding-bottom: 12px; }
 }
 @media (max-width: 767px) {
     /* The footer grows to ~120px and stacks to three rows in this band. */
-    .settings-page { padding-bottom: 148px; }
+    .settings-page { padding-bottom: 20px; }
+}
+/* ==========================================================================
+   SHORT PANES — the twelfth row instead of a scrollbar
+   ==========================================================================
+   At 1229x691 (the default window on a 1366x768 laptop) the pane is ~539px and
+   the full-height page is 587px, so twelve 40px rows do not fit no matter what
+   the footer does. A 34px row is still a two-line label+hint with air around it
+   - the pair is 32px - so the pane compacts rather than growing a scrollbar for
+   48px. Above 780px of height nothing changes, which keeps the roomy step on a
+   desktop monitor.
+   ========================================================================== */
+@media (max-height: 780px) {
+    .settings-row { min-height: 34px; padding-top: 1px; padding-bottom: 1px; }
+    .settings-page { gap: var(--s-2); padding-top: 4px; padding-bottom: 4px; }
+    .settings-group-title { margin-bottom: 4px; }
 }
 /* ==========================================================================
    R4 — VISUALIZER
@@ -9163,6 +9397,58 @@ button.dt-chip:hover { border-color: var(--accent); color: var(--text-hi); }
    column. */
 #dt-tags { flex: 0 0 auto; gap: 6px; }
 #dt-tags .dt-tg { gap: 2px; }
+/* Breathing room between the categories, but only where the column can afford
+   it. The sheet above is tuned to fit without a scrollbar (303-423px in a
+   483-615px column), and every pixel of that budget is real: at 1280x720 it
+   already overflows by 12px. On a tall window there are 260-odd pixels spare,
+   so the groups separate properly instead of reading as one wall of pills:
+   6px becomes 12px between groups, 2px becomes 5px under each heading, and the
+   pill rows get 4px instead of 2px.
+
+   Deliberately keyed on height, not width: the tag column's height comes from
+   the window, so a short window is the case that has to stay compact. */
+@media (min-height: 820px) {
+    #dt-tags { gap: 12px; }
+    #dt-tags .dt-tg { gap: 5px; }
+    #dt-tags .dt-tagrow { row-gap: 4px; }
+}
+/* Short panes: the tag sheet has to fit a ~331px column at the 1229x691 laptop
+   window, and six groups of 22px pills measured 438px there - 107px over, which
+   is the scrollbar this rule removes. Pairing the groups two-up was tried and
+   made it WORSE (524px): each group gets ~145px, so every pill wraps and the
+   saving from two columns is eaten by the extra rows. Compacting the sheet is
+   what works: an 18px pill still holds the 10px label with 4px of padding, and
+   1-2px seams between pills and groups recover the rest. */
+@media (max-height: 780px) {
+    #dt-tags { gap: 4px; }
+    #dt-tags .dt-tg { gap: 1px; }
+    #dt-tags .dt-tagrow { column-gap: 2px; row-gap: 1px; }
+    #dt-tags .dt-tag { height: 18px; padding: 0 6px; }
+
+    /* One scroller for the editor card, not two nested ones.
+
+       Even compacted, the six tag groups need ~423px in a ~331px column at
+       1229x691, and no amount of shaving makes 30 pills fit 300px without
+       dropping a group or shrinking the label under its 10px floor. So the
+       column stops scrolling on its own: both columns size to their content and
+       the CARD scrolls instead. One scrollbar, and it moves the fields and the
+       tags together - scrolling the fields used to leave the tags parked
+       halfway down their own little window, which read as a bug.
+
+       The height query is the right key here: the columns are short because the
+       window is short, not because it is narrow. */
+    .dt-ed {
+        grid-template-rows: none;
+        align-content: start;
+        overflow-y: auto;
+        overflow-x: hidden;
+        scrollbar-width: thin;
+    }
+    .dt-ed > .dt-col { overflow: visible; }
+    /* The APPLY CHANGES bar is a sibling of the grid, not part of it, so the grid
+       is what scrolls. Scrolling #dt-editor instead carried the primary action
+       off the bottom of the card - the one control that has to stay in reach. */
+}
 #dt-tags .dt-tgh { font-size: var(--t-micro); letter-spacing: .03em; }
 #dt-tags .dt-tagrow { column-gap: 3px; row-gap: 2px; }
 #dt-tags .dt-tag { height: var(--control-h-xs); padding: 0 8px; font-size: var(--t-micro); gap: 4px; }
@@ -9567,4 +9853,712 @@ button.dt-item {
         transition-duration: 0.001ms !important;
         scroll-behavior: auto !important;
     }
+}
+
+/* ==========================================================================
+   MY SOUND (personal targets / trainer / coach)
+   ========================================================================== */
+.my-sound-tab {
+    height: 32px;
+    padding: 0 12px;
+    background: var(--bg-input);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    color: var(--text-mid);
+    font-size: var(--t-xs);
+    font-weight: 700;
+    cursor: pointer;
+    transition: background .15s, color .15s, border-color .15s;
+}
+.my-sound-tab:hover { color: var(--text-hi); border-color: var(--text-lo); }
+.my-sound-tab.is-on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+}
+
+.pt-opt {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 7px;
+    margin-bottom: 4px;
+    background: var(--bg-input);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    color: var(--text-hi);
+    font-size: var(--t-xs);
+    font-weight: 600;
+    cursor: pointer;
+}
+.pt-opt em {
+    font-style: normal;
+    font-size: var(--t-micro);
+    font-weight: 600;
+    color: var(--text-lo);
+    white-space: nowrap;
+}
+.pt-opt.is-disabled { opacity: .5; cursor: not-allowed; }
+.pt-opt input { accent-color: var(--accent); }
+
+.pt-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 9px;
+    background: var(--bg-input);
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+    color: var(--text-mid);
+    font-size: var(--t-micro);
+    font-weight: 700;
+    line-height: 1.2;
+}
+.pt-chip.is-on {
+    background: color-mix(in srgb, var(--accent) 18%, var(--bg-input));
+    border-color: var(--accent);
+    color: var(--text-hi);
+}
+button.pt-chip:hover { border-color: var(--text-lo); color: var(--text-hi); }
+
+.pt-preview-box {
+    background: #050507;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    overflow: hidden;
+    min-height: 150px;
+}
+.pt-preview-box canvas { width: 100%; height: 150px; display: block; }
+
+.pt-ab-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 6px;
+}
+.pt-ab-btn {
+    height: 52px;
+    background: var(--bg-input);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    color: var(--text-mid);
+    font-size: var(--t-lg);
+    font-weight: 800;
+    cursor: pointer;
+    transition: background .12s, color .12s, border-color .12s;
+}
+.pt-ab-btn:hover { color: var(--text-hi); border-color: var(--text-lo); }
+.pt-ab-btn.is-on {
+    background: color-mix(in srgb, var(--accent) 22%, var(--bg-input));
+    border-color: var(--accent);
+    color: var(--text-hi);
+}
+
+@media (max-width: 760px) {
+    #my-sound-body .grid { grid-template-columns: minmax(0, 1fr) !important; }
+}
+
+/* Per-curve attribution in Find > Measurements (A-008 follow-up).
+   The source name is the link: dotted underline at rest, solid + accent on
+   hover/focus, so the table still reads as data rather than a wall of buttons. */
+.source-credit-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 0;
+    background: none;
+    border: 0;
+    border-bottom: 1px dotted var(--line-strong);
+    color: var(--text-hi);
+    font: inherit;
+    line-height: 1.35;
+    text-align: left;
+    cursor: pointer;
+}
+.source-credit-link:hover,
+.source-credit-link:focus-visible {
+    color: var(--accent-blue);
+    border-bottom-color: currentColor;
+}
+
+/* Find > Measurements source filter. Chips are rebuilt on every draw, so the
+   checked state has to read from the closure and be announced with aria-pressed;
+   the fixed-width tick keeps labels from shifting when toggled. */
+.src-source-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin: 0 0 8px;
+}
+.src-source-bar-label {
+    margin-right: 2px;
+    color: var(--text-lo);
+    font-size: var(--t-micro);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.src-source-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 22px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--bg-input);
+    color: var(--text-mid);
+    font-family: inherit;
+    font-size: var(--t-micro);
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.src-source-chip::before {
+    content: '✓';
+    width: 7px;
+    opacity: 0;
+}
+.src-source-chip.is-on {
+    background: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-input));
+    border-color: var(--accent-blue);
+    color: var(--text-hi);
+}
+.src-source-chip.is-on::before { opacity: 1; }
+.src-source-chip:hover { border-color: var(--line-strong); color: var(--text-hi); }
+.src-source-chip:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 1px; }
+
+/* A source chip is a split pill: the reviewer name toggles it in the
+   multi-select, and the attached "only" action isolates that one source.
+   The wrapper owns the border and state so the two buttons read as one chip. */
+.src-source-unit {
+    display: inline-flex;
+    align-items: stretch;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--bg-input);
+}
+.src-source-unit:hover { border-color: var(--line-strong); }
+.src-source-unit.is-on {
+    border-color: var(--accent-blue);
+    background: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-input));
+}
+.src-source-unit:focus-within {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 1px;
+}
+.src-source-unit .src-source-chip {
+    height: 22px;
+    padding: 0 2px 0 8px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+.src-source-unit .src-source-chip:hover,
+.src-source-unit .src-source-chip.is-on {
+    border-color: transparent;
+    background: transparent;
+}
+.src-source-unit .src-source-chip:focus-visible,
+.src-source-unit .src-source-solo:focus-visible {
+    outline: none;
+}
+.src-source-solo {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 6px;
+    border: 0;
+    border-left: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-lo);
+    font-family: inherit;
+    font-size: var(--t-micro);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    cursor: pointer;
+}
+.src-source-solo:hover {
+    background: var(--bg-raised);
+    color: var(--text-hi);
+}
+.src-source-unit.is-on .src-source-solo {
+    border-left-color: color-mix(in srgb, var(--accent-blue) 38%, var(--line));
+    color: var(--text-mid);
+}
+.src-source-compare {
+    border-color: color-mix(in srgb, var(--accent-blue) 45%, var(--line)) !important;
+    background: color-mix(in srgb, var(--accent-blue) 8%, var(--bg-input)) !important;
+    color: var(--text-hi) !important;
+}
+.src-source-compare:hover {
+    border-color: var(--accent-blue) !important;
+    background: color-mix(in srgb, var(--accent-blue) 16%, var(--bg-input)) !important;
+}
+.src-source-compare::before { content: none; }
+
+/* Direct pair picker: a draft selection that sits under the chips. The source
+   chips stay untouched until Compare is pressed, so opening this never changes
+   the remembered source filter as a side effect. */
+.src-pair-picker {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px;
+    margin: -2px 0 8px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--bg-input);
+}
+.src-pair-field {
+    display: flex;
+    flex: 1 1 150px;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+.src-pair-field > span {
+    color: var(--text-lo);
+    font-size: var(--t-micro);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.src-pair-field select {
+    width: 100%;
+    min-width: 0;
+    height: 28px;
+    padding-left: 8px;
+    font-size: var(--t-xs);
+    font-weight: 600;
+}
+.src-pair-field select:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 1px;
+}
+.src-pair-vs {
+    align-self: flex-end;
+    padding-bottom: 7px;
+    color: var(--text-lo);
+    font-size: var(--t-micro);
+    font-weight: 700;
+    text-transform: uppercase;
+}
+.src-pair-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.src-pair-actions .src-source-chip {
+    height: 28px;
+    padding: 0 10px;
+}
+.src-pair-actions .src-source-chip::before { content: none; }
+.src-pair-actions button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+.src-pair-hint {
+    display: none;
+    flex-basis: 100%;
+    color: var(--accent-amber);
+    font-size: var(--t-micro);
+}
+.src-pair-hint.is-on { display: block; }
+
+.src-source-count {
+    padding: 0 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--text-lo);
+    font-weight: 600;
+}
+.src-source-all::before { content: none; }
+
+/* Two non-interactive states sit after the chips: a saved subset ("remembered")
+   and a saved subset with no match in this product. Both are quieter than the
+   chips so they never read as another toggle. */
+.src-source-note {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 7px;
+    border: 1px dashed var(--line);
+    border-radius: 999px;
+    color: var(--text-lo);
+    font-size: var(--t-micro);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+.src-source-note.is-miss {
+    border-style: solid;
+    border-color: color-mix(in srgb, var(--accent-amber) 45%, var(--line));
+    color: var(--accent-amber);
+}
+
+/* Find > Measurements: two-reviewer comparison. Each card owns one selected
+   publisher; both plots share the same dB scale so shapes are directly
+   comparable. The grid stacks before the plots become too narrow to read. */
+.src-compare-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+.src-compare-card {
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: rgba(255, 255, 255, 0.015);
+}
+.src-compare-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+}
+.src-compare-id {
+    display: flex;
+    gap: 7px;
+    min-width: 0;
+}
+.src-compare-letter {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--text-lo);
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 1;
+}
+.src-compare-title { min-width: 0; }
+.src-compare-name {
+    overflow: hidden;
+    color: var(--text-hi);
+    font-size: var(--t-xs);
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.src-compare-name .source-credit-link {
+    display: inline;
+    font-size: inherit;
+    font-weight: inherit;
+}
+.src-compare-sub {
+    margin-top: 1px;
+    color: var(--text-lo);
+    font-size: var(--t-micro);
+}
+.src-compare-score {
+    flex: none;
+    color: var(--text-hi);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1;
+    text-align: right;
+}
+.src-compare-unit {
+    margin-left: 1px;
+    color: var(--text-lo);
+    font-size: 10px;
+}
+.src-compare-nil { color: var(--text-lo); }
+.src-compare-score small {
+    display: block;
+    margin-top: 3px;
+    color: var(--text-lo);
+    font-family: inherit;
+    font-size: var(--t-micro);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.src-compare-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 10px;
+    margin: 5px 0 6px;
+    color: var(--text-mid);
+    font-size: var(--t-micro);
+}
+.src-compare-facts strong {
+    color: var(--text-hi);
+    font-weight: 600;
+}
+.src-compare-plot {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: #08080a;
+}
+.src-compare-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 8px;
+    margin-top: 5px;
+    color: var(--text-lo);
+    font-size: var(--t-micro);
+}
+.src-compare-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+.src-compare-legend i {
+    display: inline-block;
+    flex: none;
+    width: 12px;
+    height: 2px;
+    background: currentColor;
+}
+.src-compare-legend i.is-other {
+    height: 0;
+    border-top: 1px dashed rgba(255, 255, 255, 0.32);
+    background: none;
+}
+.src-compare-legend i.is-target {
+    height: 0;
+    border-top: 1px dashed #3b82f6;
+    background: none;
+}
+.src-compare-files {
+    margin-top: 6px;
+    border-top: 1px solid var(--line);
+}
+.src-compare-file {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.src-compare-file:last-child { border-bottom: 0; }
+.src-compare-file span {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-mid);
+    font-size: var(--t-micro);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.src-compare-file em {
+    color: var(--accent-amber);
+    font-style: normal;
+}
+.src-compare-file strong {
+    flex: none;
+    color: var(--text-hi);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: var(--t-micro);
+    font-weight: 600;
+    white-space: nowrap;
+}
+.src-compare-empty {
+    padding: 8px 0;
+    color: var(--text-mid);
+    font-size: var(--t-xs);
+}
+
+/* A − B sits below the pair. Amber is A above B, violet is B above A, and the
+   dashed zero line is the reference both tints are measured from. */
+.src-delta-card {
+    margin-top: 8px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: rgba(255, 255, 255, 0.015);
+}
+.src-delta-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px 12px;
+    margin-bottom: 6px;
+}
+.src-delta-title {
+    color: var(--text-hi);
+    font-size: var(--t-xs);
+    font-weight: 700;
+}
+.src-delta-plot {
+    position: relative;
+}
+.src-delta-plot canvas {
+    cursor: crosshair;
+}
+.src-delta-readout {
+    position: absolute;
+    top: 4px;
+    left: 0;
+    z-index: 1;
+    padding: 2px 6px;
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+    color: var(--text-hi);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: var(--t-micro);
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateX(-50%);
+    transition: opacity var(--d-1) var(--e-out);
+}
+.src-delta-readout.is-on {
+    opacity: 1;
+}
+.src-delta-summary {
+    flex: 1 1 100%;
+    color: var(--text-mid);
+    font-size: var(--t-micro);
+    line-height: 1.35;
+}
+.src-delta-reset {
+    flex: none;
+    padding: 2px 7px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--bg-input);
+    color: var(--text-mid);
+    font: inherit;
+    font-size: var(--t-micro);
+    font-weight: 700;
+    line-height: 1.4;
+    cursor: pointer;
+}
+.src-delta-reset:hover {
+    border-color: var(--line-strong);
+    color: var(--text-hi);
+}
+.src-delta-reset:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 1px;
+}
+.src-delta-bands {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 7px;
+}
+.src-delta-band {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    padding: 5px 7px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.02);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    appearance: none;
+    transition: background var(--d-1) var(--e-out), border-color var(--d-1) var(--e-out);
+}
+.src-delta-band:hover {
+    border-color: var(--line-strong);
+    background: rgba(255, 255, 255, 0.045);
+}
+.src-delta-band:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 1px;
+}
+.src-delta-band.is-active {
+    border-color: var(--accent-blue);
+    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+}
+.src-delta-band.is-active .src-delta-band-name {
+    color: var(--text-hi);
+}
+.src-delta-band-name {
+    display: block;
+    color: var(--text-lo);
+    font-size: var(--t-micro);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.src-delta-band-value {
+    display: block;
+    margin-top: 1px;
+    overflow: hidden;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: var(--t-xs);
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.src-delta-band-value.is-a { color: var(--accent-amber); }
+.src-delta-band-value.is-b { color: #a78bfa; }
+.src-delta-band-value.is-zero { color: var(--text-mid); }
+.src-delta-band-range {
+    display: block;
+    margin-top: 1px;
+    color: var(--text-lo);
+    font-size: var(--t-micro);
+}
+.src-delta-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 10px;
+    margin-top: 5px;
+    color: var(--text-lo);
+    font-size: var(--t-micro);
+}
+.src-delta-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.src-delta-legend i {
+    display: inline-block;
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+}
+.src-delta-legend i.is-a { background: rgba(245, 158, 11, 0.55); }
+.src-delta-legend i.is-b { background: rgba(167, 139, 250, 0.55); }
+.src-delta-legend i.is-zero {
+    width: 12px;
+    height: 0;
+    border-top: 1px dashed rgba(255, 255, 255, 0.45);
+    border-radius: 0;
+}
+.src-delta-legend .src-delta-legend-hint {
+    margin-left: auto;
+    color: var(--text-lo);
+    opacity: 0.85;
+}
+@media (max-width: 700px) {
+    .src-compare-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+    .src-delta-bands { grid-template-columns: 1fr; }
+}
+
+.src-source-empty {
+    padding: 22px 14px;
+    border: 1px dashed var(--line);
+    border-radius: var(--r-sm);
+    color: var(--text-mid);
+    font-size: var(--t-xs);
+    text-align: center;
 }

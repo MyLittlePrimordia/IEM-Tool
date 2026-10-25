@@ -2,6 +2,7 @@
 // have not compromised OLED black. Also re-checks the earlier items so one run
 // covers this batch.
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('check-theme-grids');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const APP_ROOT = path.join(__dirname, '..');
 const OUT = path.join(__dirname, 'shots-grid');

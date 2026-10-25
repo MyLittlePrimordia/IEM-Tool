@@ -6,6 +6,7 @@
 //
 //   npx electron tools/verify-facades.js
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('facades');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

@@ -192,9 +192,6 @@ const App_Theme = {
         this.setGlobalFont(keys[nextIdx]);
     },
 
-    currentFontScale: 1.0,
-    currentReadingScale: 1.0,
-
     updateCombinedFontScale: function() {
         const raw = this.currentFontScale * this.currentReadingScale;
         const combined = Math.max(0.7, Math.min(1.3, raw));

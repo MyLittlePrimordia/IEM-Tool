@@ -249,7 +249,7 @@ onDbSearchInput: function(value) {
             }
         },
 
-        clearIemDbSelection: function() {
+        clearIemDbSelection: async function() {
             this._iemDbActiveId = null;
             const searchInput = document.getElementById('iem-db-search-input');
             if (searchInput) this.renderIemDbSearch(searchInput.value);
@@ -281,6 +281,7 @@ onDbSearchInput: function(value) {
             this.createTags('bass-tags', this.bassTags, this.selectedBass);
             this.renderReviewSelectedTags();
             this.updateAll();
+            await this.markReviewClean();
             showToast("Selection cleared — review restored.", "↩️");
         },
 
@@ -288,6 +289,39 @@ onDbSearchInput: function(value) {
             const db = this.getIemDatabase();
             const item = db.find(x => x.id === itemId);
             if (!item) { showToast("Database entry not found.", "⚠️"); return; }
+
+            // A-004: never silently throw away edits to the open review. If the
+            // current workspace differs from the last loaded baseline, autosave
+            // it under its own database id first. It stays reachable from the
+            // draft prompt the next time that id is opened.
+            const outgoingId = this._iemDbActiveId;
+            if (outgoingId && await this.isReviewDirty()) {
+                const saved = await this.saveReviewDraft(outgoingId);
+                if (saved) showToast('Unsaved changes were autosaved as a draft.', '💾');
+            }
+
+            // A draft for the incoming entry is usually newer than the measured
+            // data the user just asked to load, so it must be an explicit
+            // choice rather than a silent overwrite in either direction.
+            const incomingDraft = this.getReviewDraft(item.id);
+            if (incomingDraft && incomingDraft.workspace) {
+                const when = incomingDraft.savedAt ? new Date(incomingDraft.savedAt).toLocaleString() : 'earlier';
+                const restore = await UIKit.confirm({
+                    title: 'Draft found for this IEM',
+                    message: `You have an unsaved draft for ${item.brand} ${item.model} from ${when}. Restore it, or load the database values (the draft is kept).`,
+                    confirmLabel: 'Restore draft',
+                    cancelLabel: 'Use database'
+                });
+                if (restore) {
+                    this._iemDbActiveId = item.id;
+                    this.loadProfileData(incomingDraft.workspace);
+                    await this.markReviewClean();
+                    const searchInput = document.getElementById('iem-db-search-input');
+                    if (searchInput) this.renderIemDbSearch(searchInput.value);
+                    showToast(`Restored your draft for ${item.brand} ${item.model}.`, '↩️');
+                    return;
+                }
+            }
 
             this._iemPreApplySnapshot = {
                 brand: document.getElementById('brand') ? document.getElementById('brand').value : '',
@@ -376,7 +410,11 @@ onDbSearchInput: function(value) {
             this.derivedTagsForReview(item, signatureTags);
 
             this.updateAll();
+            await this.markReviewClean();
             showToast(`Loaded ${item.brand} ${item.model} from database.`, "✓");
+            // The new entry's draft (if any) has now been superseded by the
+            // values we just loaded, so do not offer it again on this visit.
+            this.deleteReviewDraft(item.id);
         },
 
         // Derive objective tone-character slider values from a measured FR curve.

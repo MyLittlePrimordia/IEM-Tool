@@ -9,6 +9,7 @@
 //
 //   npx electron tools/audit-dom.js
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('audit-dom');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

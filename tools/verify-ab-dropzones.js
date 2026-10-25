@@ -1,8 +1,10 @@
+// Stand-alone probe: run by hand. Not part of npm run verify:ui - see tools/run-ui-verify.mjs.
 // Verify the TestLab A/B source drop zones and their file-picker labels match
 // the app's drop-target treatment (.slot-drop) instead of the old hard-black
 // pixel-art borders.
 // Run: electron tools/verify-ab-dropzones.js
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('ab-dropzones');
 const http = require('http'); const fs = require('fs'); const path = require('path'); const os = require('os');
 const APP_ROOT = path.join(__dirname, '..');
 const MIME = { '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.png':'image/png','.svg':'image/svg+xml','.ttf':'font/ttf','.woff2':'font/woff2','.gz':'application/gzip','.mp3':'audio/mpeg','.csv':'text/csv','.txt':'text/plain' };

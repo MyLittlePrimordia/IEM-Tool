@@ -2,6 +2,7 @@
 //
 //   npx electron tools/verify-eq-history.js
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('eq-history');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

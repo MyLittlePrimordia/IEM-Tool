@@ -168,6 +168,42 @@ const handlers = {
             showToast("Settings reset. Reloading…", "🛟");
             setTimeout(function() { location.reload(); }, 300);
         },
+        // Settings > Library > Reset. Replaces the old pair of destructive
+        // buttons ("Clear workspace" / "Delete reviews"), which between them
+        // still left custom presets, favourites, hearing calibration and any
+        // Database-tab edits behind - so "reset" never actually reset the app.
+        // This one erases everything the app persists and restarts it into the
+        // first-run state, which is what the row now promises.
+        //
+        // The wipe itself is in main.js (`app:factory-reset`), not here: the
+        // settings, presets and favourites are localStorage, reviews and the
+        // curve cache are IndexedDB, and the user's database edits are files in
+        // IEM-Data. Only the main process can clear all three without fighting
+        // the open IndexedDB connections this page is holding.
+        "click_1011_App_factoryReset": async function(event, element) {
+            const bridge = window.appBridge;
+            if (!bridge || typeof bridge.factoryReset !== 'function') {
+                showToast("Reset only works in the desktop app.", "⚠️");
+                return;
+            }
+            const ok = await UIKit.confirm({
+                title: "Reset IEM Tool to factory defaults?",
+                message: "Everything the app has stored is erased:\n\n• Saved reviews and their photos\n• Custom EQ presets, Find favourites, hearing calibration and every setting\n• Database entries and measurement files you added\n\nThe app closes and starts again like a fresh install. A backup file you exported is not touched. This cannot be undone.",
+                confirmLabel: "Reset everything",
+                danger: true
+            });
+            if (!ok) return;
+            showToast("Resetting IEM Tool…", "🧹");
+            // The window is replaced by the relaunch, so a resolved call usually
+            // shows nothing. Only a failure comes back to a live page, and it
+            // must be reported rather than looking like a silent no-op.
+            try {
+                const r = await bridge.factoryReset();
+                if (!r || !r.ok) throw new Error((r && r.error) || 'reset failed');
+            } catch (e) {
+                showToast("Reset failed: " + ((e && e.message) || e), "⚠️");
+            }
+        },
         "click_196_IEM_saveConfig": function(event, element) { IEM.saveConfig() },
         "click_197_EQ_applyGenreTargetAutoEQ__music": function(event, element) { EQ.applyGenreTargetAutoEQ('music') },
         "click_198_App_switchTab__iem": function(event, element) { App.switchTab('iem') },
@@ -186,7 +222,6 @@ const handlers = {
         "click_212_Accessibility_toggleBlueLightFilter": function(event, element) { Accessibility.toggleBlueLightFilter() },
         "click_213_IEM_toggleSensUnit": function(event, element) { IEM.toggleSensUnit() },
         "click_214_document_getElementById__image_upload___click": function(event, element) { document.getElementById('image-upload').click() },
-        "click_215_EQ_toggleGapless": function(event, element) { EQ.toggleGapless() },
         "click_216_IEM_cycleLeftTab__1": function(event, element) { IEM.cycleLeftTab(-1) },
         "click_217_IEM_compareSelected": function(event, element) { IEM.compareSelected() },
         "click_218_EQ_toggleShuffle": function(event, element) { EQ.toggleShuffle() },
@@ -290,7 +325,16 @@ const handlers = {
         "click_46_EQ_applyGenreTargetAutoEQ__game": function(event, element) { EQ.applyGenreTargetAutoEQ('game') },
         "click_47_EQ_cycleConsoleTab__1": function(event, element) { EQ.cycleConsoleTab(-1) },
         "click_48_TestLab_abxCycleTrials_1": function(event, element) { TestLab.abxCycleTrials(1) },
-        "click_49_IEM_resetAll": function(event, element) { IEM.resetAll() },
+        "click_1002_TestLab_toggleAbxLevelMatch": function(event, element) { TestLab.toggleAbxLevelMatch() },
+        "click_1004_App_checkAppUpdate": function(event, element) { App.checkAppUpdate() },
+        "click_1005_App_openReleasePage": function(event, element) { App.openReleasePage() },
+        "click_1006_App_checkDatabaseUpdate": function(event, element) { App.checkDatabaseUpdate() },
+        "click_1007_App_downloadDatabaseUpdate": function(event, element) { App.downloadDatabaseUpdate() },
+        "click_1008_App_cycleAudioOutput": function(event, element) { App.cycleAudioOutput() },
+        "click_1101_PEQDB_Module_openMySound": function(event, element) { PersonalTargets.open('targets') },
+        "click_1102_FindEngine_openValueMap": function(event, element) { FindEngine.openValueMap() },
+        "click_1103_FindEngine_openSpecCompare": function(event, element) { FindEngine.openSpecCompare() },
+        "click_1104_App_openSourceCredits": function(event, element) { App.openSourceCredits() },
         "click_4_EQ_cycleTapeMod__1": function(event, element) { EQ.cycleTapeMod(-1) },
         "click_50_toggleAudioMode": function(event, element) { toggleAudioMode() },
         "click_53_PEQDB_Module_cycleAlignHz": function(event, element) { PEQDB_Module.cycleAlignHz() },
@@ -311,7 +355,6 @@ const handlers = {
         "click_72_EQ_cycleSealQuality": function(event, element) { EQ.cycleSealQuality() },
         "click_73_FindEngine_resetFindResults": function(event, element) { FindEngine.resetFindResults() },
         "click_74_TestLab_cycleSpatialSource": function(event, element) { TestLab.cycleSpatialSource() },
-        "click_75_EQ_toggleCrossfade": function(event, element) { EQ.toggleCrossfade() },
         "click_76_FindEngine_cycleGoalIndex__1": function(event, element) { FindEngine.cycleGoalIndex(-1) },
         "click_77_EQ_toggleGenreTargetPicker__music": function(event, element) { EQ.toggleGenreTargetPicker('music') },
         "click_78_IEM_cycleExportFontDirection__1": function(event, element) { IEM.cycleExportFontDirection(-1) },

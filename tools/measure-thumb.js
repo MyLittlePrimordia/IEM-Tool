@@ -3,6 +3,7 @@
 // whether the declared `width` is the content box (painted = width + 2*border)
 // or already the border box, which changes what ERG-006 actually requires.
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('measure-thumb');
 const fs = require('fs');
 const path = require('path');
 

@@ -4,6 +4,7 @@
 //
 //   npx electron tools/verify-adapter-impedance.js
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('adapter-impedance');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

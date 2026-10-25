@@ -1,7 +1,9 @@
+// Stand-alone probe: run by hand. Not part of npm run verify:ui - see tools/run-ui-verify.mjs.
 // Verify the loaded-curve slot cards: role chip, eye/remove buttons and the
 // colour swatch must be rounded, and the swatch must match its neighbours' size.
 // Run: electron tools/verify-curve-cards.js
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('curve-cards');
 const http = require('http'); const fs = require('fs'); const path = require('path'); const os = require('os');
 const APP_ROOT = path.join(__dirname, '..');
 const MIME = { '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.png':'image/png','.svg':'image/svg+xml','.ttf':'font/ttf','.woff2':'font/woff2','.gz':'application/gzip','.mp3':'audio/mpeg','.csv':'text/csv','.txt':'text/plain' };

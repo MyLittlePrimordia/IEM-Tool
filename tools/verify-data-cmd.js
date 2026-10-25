@@ -5,6 +5,7 @@
 //
 //   npx electron tools/verify-data-cmd.js
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('data-cmd');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

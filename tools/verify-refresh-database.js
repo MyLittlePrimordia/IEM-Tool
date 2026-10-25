@@ -9,6 +9,7 @@
 //   - Confirm clears the persisted curve cache, drops the "already indexed"
 //     flag, reloads the window, and leaves unrelated settings untouched
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('refresh-database');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

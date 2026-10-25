@@ -5,6 +5,7 @@
 //
 //   npx electron tools/verify-tone-sweep.js
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('tone-sweep');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

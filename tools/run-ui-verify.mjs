@@ -7,9 +7,14 @@
 //
 // Linux CI has no display by default; run it under xvfb:
 //   xvfb-run -a npm run verify:ui
+//
+// A verify-* script that is not in SUITES is a probe you run by hand, and says
+// so on its first line. scripts/check-ui-suites.mjs (part of `npm run check`)
+// fails when a verify-* script is neither registered here nor declared a probe,
+// so a suite written for a fix cannot be forgotten and never run.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { join, dirname, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -31,7 +36,12 @@ const SUITES = [
   { file: 'tools/verify-eq-history.js', what: 'EQ undo/redo, remembered EQ, Settings > Fix settings' },
   { file: 'tools/verify-database-load.js', what: 'catalogue loads once, bad file survives, Refresh picks up a new entry' },
   { file: 'tools/verify-refresh-database.js', what: 'Settings > Refresh database: one-row hint, cache clear, reload' },
+  { file: 'tools/verify-output-device.js', what: 'Settings > Output device: shortened labels + full tooltip, one click cycles every endpoint and wraps, disabled and inert with no devices' },
+  { file: 'tools/verify-settings-cycle.js', what: 'Settings cycle boxes: Audio channel / Theme / Font advance one step in declared order, keep their emoji label, wrap, and are restored on reload' },
+  { file: 'tools/verify-settings-layout.js', what: 'Settings layout: three cards / twelve rows in one 760px column, merged rows complete, quiet hint and border tokens, visible switch track, no overlap or clipped hints, no inner scroll at 1536, 1280 and the 1229x691 laptop window (100% and 125% text), Track transitions writes the old gapless/crossfade keys and survives reload, narrow viewport scrolls to the last card' },
+  { file: 'tools/verify-factory-reset.js', what: 'Settings > Library > Reset: Backup/Restore/Reset row, cancel is a no-op, confirm wipes settings + reviews + IEM-Data and restarts (real main.js)' },
   { file: 'tools/verify-save-preview.js', what: 'Data tab save preview: listed changes, cancel writes nothing, stale-file warning' },
+  { file: 'tools/verify-no-bridge.js', what: 'no-preload window (screenshot harness / browser): app boots, nothing throws, bridge-dependent controls show their desktop-only fallback' },
   { file: 'tools/verify-tab-panels.js', what: 'tab carousels (Data, IEM, TestLab, Find, EQ acoustics/faders + console): each shows exactly one panel, and the one showing is the selected tab\'s' },
   { file: 'tools/audit-control-corners.js', what: 'control corners: one radius per family across all seven panes, --r-square for the square shapes' }
 ];
@@ -90,14 +100,33 @@ if (extraFlags.length) console.log('Chromium flags: ' + extraFlags.join(' '));
 // set --font-scale-modifier to 0.99, which visibly changed the layout (footer
 // bar overlapping the 3-column panes) with nothing in the code having changed.
 //
-// Chromium honours --user-data-dir for the whole profile, so pointing every
-// suite at a throwaway directory stops a verification run from ever touching the
-// real one. Set IEM_VERIFY_USER_DATA to override the location.
-const verifyProfile = process.env.IEM_VERIFY_USER_DATA
-  || join(tmpdir(), 'iem-tool-verify-profile');
-mkdirSync(verifyProfile, { recursive: true });
-const isolationFlags = ['--user-data-dir=' + verifyProfile];
-console.log('User profile: ' + verifyProfile + '  (the real one is NOT touched)');
+// Chromium honours --user-data-dir for the whole profile, so a throwaway
+// directory keeps a verification run away from the real one. Each suite gets
+// its OWN directory rather than one shared by the run: smoke-runtime clicks
+// every control in the app, and the state it leaves used to be read back by the
+// suites that ran after it. The suites themselves call
+// tools/lib/verify-profile.js, which honours the same path through
+// IEM_VERIFY_USER_DATA; the --user-data-dir flag stays as a second line of
+// defence so a suite that has not adopted the helper still cannot reach the
+// real profile. Set IEM_VERIFY_USER_DATA to pin the location.
+const verifyRoot = process.env.IEM_VERIFY_USER_DATA
+  || join(tmpdir(), 'iem-tool-verify-' + process.pid);
+mkdirSync(verifyRoot, { recursive: true });
+const profileFor = (file) => join(verifyRoot, basename(file, '.js'));
+console.log('User profiles: ' + verifyRoot + '/<suite>  (the real one is NOT touched)');
+
+// A suite cannot delete its own profile (Chromium holds its LevelDB files until
+// the process exits), so a previous run's directory is swept here once it is an
+// hour old. The age bound keeps a concurrently running verify:ui untouched.
+const STALE_AFTER = 60 * 60 * 1000;
+for (const name of readdirSync(tmpdir())) {
+  if (!/^(iem-tool-verify-|iem-verify-)/.test(name)) continue;
+  const dir = join(tmpdir(), name);
+  try {
+    if (Date.now() - statSync(dir).mtimeMs < STALE_AFTER) continue;
+    rmSync(dir, { recursive: true, force: true, maxRetries: 0 });
+  } catch (e) { /* in use or already gone */ }
+}
 
 let failed = 0;
 for (const suite of SUITES) {
@@ -107,7 +136,14 @@ for (const suite of SUITES) {
     continue;
   }
   console.log(`\n=== ${suite.what}  (${suite.file})`);
-  const res = spawnSync(bin, [...isolationFlags, ...extraFlags, suite.file], { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  const profile = profileFor(suite.file);
+  mkdirSync(profile, { recursive: true });
+  const res = spawnSync(bin, ['--user-data-dir=' + profile, ...extraFlags, suite.file], {
+    cwd: root,
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+    env: { ...process.env, IEM_VERIFY_USER_DATA: profile }
+  });
   const out = `${res.stdout || ''}${res.stderr || ''}`;
   for (const line of out.split(/\r?\n/)) {
     if (/PASS|FAIL|^\[|SMOKE|CHECK|ERR |Error|error:/i.test(line)) console.log('  ' + line.trim());
@@ -124,6 +160,12 @@ for (const suite of SUITES) {
       out.split(/\r?\n/).slice(-25).forEach(l => console.error('    ' + l));
     }
   }
+}
+// All suites are done, so their files are closed and the run's profiles can go.
+// Best effort: a file still held by a lingering renderer is left for the
+// stale sweep above. A directory the caller pinned is never removed.
+if (!process.env.IEM_VERIFY_USER_DATA) {
+  try { rmSync(verifyRoot, { recursive: true, force: true, maxRetries: 3 }); } catch (e) {}
 }
 
 console.log('');

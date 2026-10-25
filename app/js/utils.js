@@ -361,6 +361,79 @@ const CurveUtils = {
     },
 
 
+    // Parse a measured FR text file (Squiglink / REW / CSV-ish exports).
+    //
+    // Single source of truth: PEQDB_Module.parseRawCurveText delegates here,
+    // and scripts/build-catalogue-index.mjs calls this directly through the
+    // Node export at the bottom of the file. Keeping one parser means the
+    // precomputed catalogue signatures and the live app curves can never
+    // disagree about a file's points.
+    parseCurveText: function(rawText) {
+        if (typeof rawText !== 'string') return [];
+        if (rawText.length > 2000000) rawText = rawText.slice(0, 2000000);
+
+        const lines = rawText.split(/\r\n|\r|\n/);
+        const data = [];
+        let commaIsDecimal = false;
+        for (let i = 0; i < Math.min(100, lines.length); i++) {
+            const line = lines[i].trim();
+            if (line.startsWith('#') || line === '') continue;
+            // Comma-as-decimal when the line contains BOTH a comma and a
+            // second separator (including a plain space).
+            if (line.includes(',') && (line.includes('\t') || line.includes(';') || line.includes(' '))) {
+                commaIsDecimal = true;
+                break;
+            }
+        }
+        lines.forEach(line => {
+            let cleanLine = line.trim();
+            if (cleanLine.startsWith('#') || cleanLine.startsWith('*') || cleanLine.startsWith('//') || cleanLine === '') return;
+
+            // Grouped-digit repair ("1,000" -> "1000") before the branch split.
+            const firstTok = cleanLine.split(/[\t;\s]+/)[0] || '';
+            if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(firstTok)) {
+                cleanLine = cleanLine.replace(/(\d),(\d{3})/g, '$1$2');
+            }
+
+            let parts = [];
+            if (commaIsDecimal) {
+                cleanLine = cleanLine.replace(/,/g, '.');
+                parts = cleanLine.split(/[\t;\s]+/);
+            } else {
+                parts = cleanLine.split(/[\s,;\t]+/);
+            }
+            parts = parts.filter(p => p.length > 0);
+            if (parts.length >= 2) {
+                const f = parseFloat(parts[0]);
+                const a = parseFloat(parts[1]);
+                if (Number.isFinite(f) && Number.isFinite(a) && f >= 1 && f <= 24000) {
+                    data.push([f, a]);
+                }
+            }
+        });
+        data.sort((a, b) => a[0] - b[0]);
+
+        if (data.length > 10000) {
+            const step = Math.ceil(data.length / 10000);
+            const down = [];
+            for (let i = 0; i < data.length; i += step) down.push(data[i]);
+            if (down[down.length - 1] !== data[data.length - 1]) down.push(data[data.length - 1]);
+            data.length = 0;
+            for (let i = 0; i < down.length; i++) data.push(down[i]);
+        }
+
+        const deduped = [];
+        for (let i = 0; i < data.length; i++) {
+            const prev = deduped[deduped.length - 1];
+            if (prev && Math.abs(Math.log10(data[i][0]) - Math.log10(prev[0])) < 1e-4) {
+                prev[1] = (prev[1] + data[i][1]) / 2;
+            } else {
+                deduped.push(data[i]);
+            }
+        }
+        return deduped;
+    },
+
     // Exported for reuse by app-core.js computeSimilarityScores
     // to maintain single source of truth shared with find-worker.js
     computeSimilarityScores: function(targetInterp, dataset, probes, weights, midMask, threshold) {
@@ -395,3 +468,7 @@ const CurveUtils = {
         return matches;
     },
 };
+
+// Node-only export for the catalogue index builder and the test harness.
+// Guarded so the browser bundle is unaffected.
+if (typeof module !== 'undefined' && module.exports) module.exports = CurveUtils;

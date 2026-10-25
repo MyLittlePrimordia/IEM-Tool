@@ -15,6 +15,7 @@
 //
 // It reports per theme so a regression names the theme it broke in.
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('check-theme-sweep');
 const http = require('http');
 const fs = require('fs');
 const os = require('os');

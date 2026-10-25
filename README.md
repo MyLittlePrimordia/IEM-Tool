@@ -71,7 +71,7 @@ Switch between 9 colour themes anytime from settings. Each theme features its ow
 
 Get newly measured IEMs without reinstalling the app:
 1. Download the latest data bundle from the **[📦 Database Repo](https://github.com/MyLittlePrimordia/Database/archive/refs/heads/main.zip)**.
-2. In IEM Tool, go to **Settings → Data → Offline database → Open folder**.
+2. In IEM Tool, go to **Settings → System → Offline database → Open folder**.
 3. Extract the download and drop `database.json` and the `data/` folder into that folder.
 4. Restart **IEM Tool**.
 

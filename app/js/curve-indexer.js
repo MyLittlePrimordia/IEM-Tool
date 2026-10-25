@@ -31,7 +31,14 @@ const CurveIndexer = {
                 } catch (err) {
                     console.error("[CurveIndexer] DB open failed — continuing without persistent cache:", err);
                 }
-                await this._loadCatalog();
+                // The optional source-aware index (catalogue-index.json) loads
+                // alongside the catalogue. It is intentionally optional: a user
+                // who edits database.json without rebuilding still gets the old
+                // single-curve behaviour instead of a boot failure.
+                const indexReady = (typeof SourceIndex !== 'undefined' && SourceIndex.load)
+                    ? SourceIndex.load().catch(() => null)
+                    : Promise.resolve(null);
+                await Promise.all([this._loadCatalog(), indexReady]);
                 return this.catalog;
             })();
             // Do not memoise a rejected load: allow a later retry.
@@ -230,7 +237,7 @@ const CurveIndexer = {
         const cachedRecords = await this._dbGetAll();
         const cacheByPath = new Map(cachedRecords.map(r => [r.path, r]));
 
-        return this.catalog.map(entry => {
+        const summary = this.catalog.map(entry => {
             const brand = entry.brand || '';
             const model = entry.model || '';
             const variant = entry.variant || '';
@@ -288,9 +295,21 @@ const CurveIndexer = {
                 data: cachedData,
                 cachedInterp: cachedInterp,
                 sourcesCache: {},
-                searchKey: searchKey
+                searchKey: searchKey,
+                // Filled by SourceIndex.attachToDataset() when the precomputed
+                // index is present. Falls back to the primary file's data when
+                // it is not, so every consumer has a defined shape.
+                consensus: null,
+                consensusSpread: 0,
+                sourceCount: fileList.length || 1
             };
         }).sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
+
+        const dataset = summary;
+        if (typeof SourceIndex !== 'undefined' && SourceIndex.attachToDataset) {
+            SourceIndex.attachToDataset(dataset);
+        }
+        return dataset;
     },
 
     // Truthful progress for the indexing bar.

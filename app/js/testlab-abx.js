@@ -64,6 +64,95 @@ const TestLab_AbxMethods = {
 
         abPlaying: false,
 
+        // A-007: ABX used to force both arms to unity, so a 2 dB louder file
+        // revealed itself and "Highly Significant" could just mean "louder".
+        // Level matching is on by default; the offsets are measured from the
+        // decoded files and only ever attenuate (never boost into clipping).
+        abxLevelMatch: true,
+        abRmsA: null,
+        abRmsB: null,
+        _abxGainA: 1,
+        _abxGainB: 1,
+        _abxLevelsPromise: null,
+
+        toggleAbxLevelMatch: function() {
+            if (this.abxIsActive) {
+                showToast('Finish or stop the current test before changing level matching.', '⚠️');
+                return;
+            }
+            this.abxLevelMatch = !this.abxLevelMatch;
+            const btn = document.getElementById('abx-level-toggle');
+            if (btn) {
+                btn.textContent = this.abxLevelMatch ? '⚖️ Level match: ON' : '⚖️ Level match: OFF';
+                btn.classList.toggle('is-on', this.abxLevelMatch);
+            }
+            this.updateAbxLevelInfo();
+            showToast(this.abxLevelMatch
+                ? 'Level matching is on — the louder track is attenuated before each trial.'
+                : 'Level matching is off — a louder track can bias the result.', this.abxLevelMatch ? '⚖️' : '⚠️');
+        },
+
+        updateAbxLevelInfo: function() {
+            const el = document.getElementById('abx-level-info');
+            if (!el) return;
+            if (!this.abxLevelMatch) { el.textContent = 'Unmatched — loudness is a tell'; el.style.color = 'var(--accent-amber)'; return; }
+            if (!Number.isFinite(this.abRmsA) || !Number.isFinite(this.abRmsB)) {
+                el.textContent = 'Load both tracks to measure levels';
+                el.style.color = 'var(--text-secondary)';
+                return;
+            }
+            const dA = 20 * Math.log10(this._abxGainA || 1);
+            const dB = 20 * Math.log10(this._abxGainB || 1);
+            el.textContent = `Matched · A ${dA.toFixed(1)} dB · B ${dB.toFixed(1)} dB`;
+            el.style.color = 'var(--accent-green)';
+        },
+
+        measureAbxLevels: async function() {
+            if (!this.abxLevelMatch) return;
+            if (this._abxLevelsPromise) return this._abxLevelsPromise;
+            const audioA = document.getElementById('ab-audio-a');
+            const audioB = document.getElementById('ab-audio-b');
+            if (!audioA || !audioB || !audioA.src || !audioB.src) return;
+            this._abxLevelsPromise = (async () => {
+                const ctx = SharedAudio.init();
+                const rmsOf = async (src) => {
+                    const buf = await (await fetch(src)).arrayBuffer();
+                    const decoded = await ctx.decodeAudioData(buf.slice(0));
+                    const chans = decoded.numberOfChannels;
+                    const data = [];
+                    for (let c = 0; c < chans; c++) data.push(decoded.getChannelData(c));
+                    const block = Math.max(256, Math.floor(decoded.sampleRate * 0.05));
+                    let sumPower = 0, blocks = 0;
+                    for (let start = 0; start + block <= decoded.length; start += block) {
+                        let p = 0;
+                        for (let c = 0; c < chans; c++) {
+                            const ch = data[c];
+                            for (let i = start; i < start + block; i++) p += ch[i] * ch[i];
+                        }
+                        p /= block * chans;
+                        if (p > 1e-7) { sumPower += p; blocks++; }
+                    }
+                    return blocks ? 10 * Math.log10(sumPower / blocks) : null;
+                };
+                const [a, b] = await Promise.all([rmsOf(audioA.src), rmsOf(audioB.src)]);
+                this.abRmsA = a; this.abRmsB = b;
+                if (Number.isFinite(a) && Number.isFinite(b)) {
+                    const target = Math.min(a, b);
+                    this._abxGainA = Math.max(0.25, Math.min(1, Math.pow(10, (target - a) / 20)));
+                    this._abxGainB = Math.max(0.25, Math.min(1, Math.pow(10, (target - b) / 20)));
+                } else {
+                    this._abxGainA = 1; this._abxGainB = 1;
+                }
+                this.updateAbxLevelInfo();
+            })().catch(err => {
+                console.warn('[ABX] level measurement failed:', err);
+                this.abRmsA = null; this.abRmsB = null;
+                this._abxGainA = 1; this._abxGainB = 1;
+                this.updateAbxLevelInfo();
+            }).finally(() => { this._abxLevelsPromise = null; });
+            return this._abxLevelsPromise;
+        },
+
         abBlindMode: false,
 
         abTrackAPhysical: 'A',
@@ -197,6 +286,12 @@ const TestLab_AbxMethods = {
 
             this.setABXControlsEnabled(false);
 
+            // Measure + apply level offsets before the first trial. Failure is
+            // non-fatal (both arms fall back to unity); the readout says so.
+            const levelStatus = document.getElementById('abx-status-lbl');
+            if (levelStatus && this.abxLevelMatch) levelStatus.textContent = 'Matching playback levels...';
+            await this.measureAbxLevels();
+
             this.abxNextTrial();
         },
 
@@ -237,7 +332,7 @@ const TestLab_AbxMethods = {
             // every trial, on top of the .volume toggle below — verified in
             // a sandbox trace: a stale gainNodeB=0 makes every "B" target
             // trial completely silent while the UI still scores it.
-            this._abxSetArmGainsUnity();
+            this._abxSetArmGains();
 
             const audioA = document.getElementById('ab-audio-a');
             const audioB = document.getElementById('ab-audio-b');
@@ -422,6 +517,10 @@ const TestLab_AbxMethods = {
                         }
                         audioA.src = URL.createObjectURL(file);
                         audioA.load();
+                        this._abxLevelsPromise = null;
+                        this.abRmsA = null;
+                        this._abxGainA = 1;
+                        this.updateAbxLevelInfo();
                         const label = document.getElementById('ab-file-name-a');
                         if (label) label.textContent = file.name;
                         this.updateABMarquee();
@@ -437,6 +536,10 @@ const TestLab_AbxMethods = {
                         }
                         audioB.src = URL.createObjectURL(file);
                         audioB.load();
+                        this._abxLevelsPromise = null;
+                        this.abRmsB = null;
+                        this._abxGainB = 1;
+                        this.updateAbxLevelInfo();
                         const label = document.getElementById('ab-file-name-b');
                         if (label) label.textContent = file.name;
                         this.updateABMarquee();
@@ -445,6 +548,9 @@ const TestLab_AbxMethods = {
             }
 
             this.updateABMarquee();
+            this.updateAbxLevelInfo();
+            const levelBtn = document.getElementById('abx-level-toggle');
+            if (levelBtn) levelBtn.textContent = this.abxLevelMatch ? '⚖️ Level match: ON' : '⚖️ Level match: OFF';
 
             // Wire the START/STOP button's initial state. The static
             // data-action="click_101_TestLab_abxStart" was removed from
@@ -531,14 +637,16 @@ const TestLab_AbxMethods = {
             }
         },
 
-        // Forces both ABX playback arms to unity gain so the only thing
-        // distinguishing "A" from "B" during a trial is the .volume toggle
-        // in abxNextTrial() -- see the call site there for why this exists.
-        _abxSetArmGainsUnity: function() {
+        // Applies the measured level offsets to both ABX playback arms. With
+        // level matching off this is the old unity behaviour; the .volume
+        // toggle in abxNextTrial() still selects which arm is audible.
+        _abxSetArmGains: function() {
             if (!SharedAudio.ctx) return;
             const now = SharedAudio.ctx.currentTime;
-            if (this.gainNodeA) this.gainNodeA.gain.setTargetAtTime(1.0, now, 0.005);
-            if (this.gainNodeB) this.gainNodeB.gain.setTargetAtTime(1.0, now, 0.005);
+            const gA = this.abxLevelMatch ? (this._abxGainA || 1) : 1;
+            const gB = this.abxLevelMatch ? (this._abxGainB || 1) : 1;
+            if (this.gainNodeA) this.gainNodeA.gain.setTargetAtTime(gA, now, 0.005);
+            if (this.gainNodeB) this.gainNodeB.gain.setTargetAtTime(gB, now, 0.005);
         },
 
 setABXControlsEnabled: function(enabled) {

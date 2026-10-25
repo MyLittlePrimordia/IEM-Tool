@@ -18,7 +18,17 @@ const SharedAudio = {
         this.ctx = new AudioContextClass({ latencyHint: 'playback' });
         
         this.masterGain = this.ctx.createGain();
-        
+
+        // Mono is a persisted accessibility choice (Settings > Audio channel).
+        // The graph is built lazily, long after the saved mode is restored, so
+        // the channel count has to be applied here as well as at click time -
+        // otherwise the row could read "Mono" while the context it feeds was
+        // created stereo.
+        if (window.isMonoMode) {
+            this.masterGain.channelCount = 1;
+            this.masterGain.channelCountMode = 'explicit';
+        }
+
         // Check for native StereoPannerNode support with a safe fallback for older iOS WebKit
         if (typeof this.ctx.createStereoPanner === 'function') {
             this.masterPanner = this.ctx.createStereoPanner();
@@ -143,7 +153,42 @@ const SharedAudio = {
         this.analyser.connect(this.splitter);
         this.splitter.connect(this.analyserL, 0);
         this.splitter.connect(this.analyserR, 1);
+
+        // Restore the saved output device. This is deliberately fire-and-forget:
+        // a device that was unplugged since last launch must not abort boot, and
+        // setSinkId is not implemented in every Chromium build.
+        try {
+            const savedDevice = localStorage.getItem('settings_audio_output');
+            if (savedDevice && typeof this.ctx.setSinkId === 'function') {
+                this.ctx.setSinkId(savedDevice).catch(err => {
+                    console.warn('[Audio] saved output device unavailable:', err && err.message);
+                });
+            }
+        } catch (e) {}
         
         return this.ctx;
+    },
+
+    // U-006: choose the physical output (built-in speakers, USB DAC, amp).
+    // All playback in the app reaches ctx.destination, so one sink switch moves
+    // the playlist, EQ preview, TestLab tones and A/B arms together.
+    async setOutputDevice(deviceId) {
+        const ctx = this.init();
+        if (!ctx || typeof ctx.setSinkId !== 'function') {
+            return { ok: false, error: 'This build of Chromium cannot switch audio outputs.' };
+        }
+        try {
+            await ctx.setSinkId(deviceId || '');
+            try { localStorage.setItem('settings_audio_output', deviceId || ''); } catch (e) {}
+            return { ok: true, deviceId: deviceId || '' };
+        } catch (err) {
+            return { ok: false, error: (err && err.message) || String(err) };
+        }
+    },
+
+    async listOutputDevices() {
+        if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function') return [];
+        const all = await navigator.mediaDevices.enumerateDevices();
+        return all.filter(d => d.kind === 'audiooutput');
     }
 };

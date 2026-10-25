@@ -8,6 +8,7 @@
 // does and asserts the invariant: for EVERY range input, --range-fill equals
 // the knob's real position.
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('slider-fill');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

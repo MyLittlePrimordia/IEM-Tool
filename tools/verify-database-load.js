@@ -8,6 +8,7 @@
 //  3. Replace the served database with one that has an extra entry, press
 //     Refresh, and confirm the NEW catalogue is what the app now uses.
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('database-load');
 const http = require('http');
 const fs = require('fs');
 const zlib = require('zlib');

@@ -1,3 +1,4 @@
+// Stand-alone probe: run by hand. Not part of npm run verify:ui - see tools/run-ui-verify.mjs.
 // Unit tests for the pure helpers behind the u2netp photo matte: letterbox
 // resampling, the strength curve, and the magic-wand region grow. Also checks
 // the operation-log undo contract, which is the reason fills are stored as
@@ -5,6 +6,7 @@
 //
 // Run: electron tools/verify-photo-matte.js
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('photo-matte');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const APP_ROOT = path.join(__dirname, '..');
 const MIME = { '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.png':'image/png','.svg':'image/svg+xml','.ttf':'font/ttf','.woff2':'font/woff2','.gz':'application/gzip','.mp3':'audio/mpeg','.wasm':'application/wasm','.onnx':'application/octet-stream' };

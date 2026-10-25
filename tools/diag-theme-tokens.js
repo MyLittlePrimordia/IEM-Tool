@@ -4,6 +4,7 @@
 //
 // Run: electron tools/diag-theme-tokens.js
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('diag-theme-tokens');
 const http = require('http'); const fs = require('fs');
 const path = require('path');
 const APP_ROOT = path.join(__dirname, '..');

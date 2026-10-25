@@ -11,6 +11,8 @@
                 iemDatabase: [],
                 filterTags: new Set(),
                 selectedPicks: [],
+                SOURCE_FILTER_KEY: 'find_source_filter_v1',
+                COMPARE_PAIR_KEY: 'find_compare_pair_v1',
                 // Canonical tag registry lives in data-core.js (shared with the
                 // Database/Review tabs). Getters, not snapshots: DataCore is
                 // concatenated AFTER this file, so the value is only read at
@@ -1184,7 +1186,10 @@
                                     similarity: matchPct,
                                     fileScores: fileScores,
                                     interp: iem.interp,
-                                    isTuningMatch: true
+                                    isTuningMatch: true,
+                                    sourceCount: dsItem ? (dsItem.sourceCount || (dsItem.files ? dsItem.files.length : 1)) : 1,
+                                    consensusSpread: dsItem ? (dsItem.consensusSpread || 0) : 0,
+                                    hasConsensus: !!(dsItem && dsItem.consensus)
                                 });
                             });
 
@@ -1445,7 +1450,8 @@
                         // worker's buildCanonicalProfiles guard (find-worker.js)
                         // so the local fallback path can't rank junk entries at
                         // the top when the Worker is unavailable.
-                        if (!item.data || item.data.length < 2) return;
+                        const curveData = item.consensus || item.data;
+                        if (!curveData || curveData.length < 2) return;
 
                         // Coerce: a non-string name (number/object from custom
                         // imports) previously threw on .toLowerCase().
@@ -1473,20 +1479,23 @@
                     for (const [name, items] of Object.entries(groups)) {
                         if (items.length === 1) {
                             const item = items[0];
-                            const normalized = CurveUtils.normalizeTo75dB(item.data, 500, 75);
+                            const normalized = CurveUtils.normalizeTo75dB(item.consensus || item.data, 500, 75);
                             const interp = CurveUtils.cubicSplineInterpolate(normalized, freqs);
                             canonicalList.push({
                                 name: name,
                                 id: item.id,
                                 interp: Array.from(interp),
-                                sourceData: item.data
+                                sourceData: item.data,
+                                sourceCount: item.sourceCount || 1,
+                                consensusSpread: item.consensusSpread || 0,
+                                hasConsensus: !!item.consensus
                             });
                             continue;
                         }
 
                         const subgroups = [];
                         for (const item of items) {
-                            const normalized = CurveUtils.normalizeTo75dB(item.data, 500, 75);
+                            const normalized = CurveUtils.normalizeTo75dB(item.consensus || item.data, 500, 75);
                             const interp = CurveUtils.cubicSplineInterpolate(normalized, freqs);
 
                             let placed = false;
@@ -1536,7 +1545,10 @@
                                 name: displayName,
                                 id: sub.items[0].item.id,
                                 interp: Array.from(averagedInterp),
-                                sourceData: sub.items[0].item.data
+                                sourceData: sub.items[0].item.data,
+                                sourceCount: sub.items[0].item.sourceCount || 1,
+                                consensusSpread: sub.items[0].item.consensusSpread || 0,
+                                hasConsensus: !!sub.items[0].item.consensus
                             });
                         });
                     }
@@ -1642,7 +1654,11 @@
                         list.push({
                             id: item && item.id,
                             name: item && item.name,
-                            data: (item && item.data) || null,
+                            // Prefer the precomputed stock-measurement median
+                            // (SourceIndex / catalogue-index.json). Falling back
+                            // to the primary file keeps every path working when
+                            // the index is absent.
+                            data: (item && (item.consensus || item.data)) || null,
                             price: (isFinite(p) && p > 0) ? p : null,
                             brand: db.brand || (item && item.brand) || '',
                             tags: Array.isArray(db.tags) ? db.tags : (Array.isArray(item && item.tags) ? item.tags : [])
@@ -1724,9 +1740,15 @@
                             const itemById = new Map();
                             items.forEach(i => { if (i && i.id != null) itemById.set(i.id, i); });
                             list.forEach(m => {
-                                if (m.data) return;
                                 const it = itemById.get(m.id);
-                                if (it) m.data = it.data || null;
+                                if (!it) return;
+                                if (!m.data) m.data = it.data || null;
+                                // Source metadata travels with the match so the
+                                // card can show "6 sources · ±1.2 dB" without a
+                                // second dataset lookup per render.
+                                m.sourceCount = it.sourceCount || (Array.isArray(it.files) ? it.files.length : 1);
+                                m.consensusSpread = it.consensusSpread || 0;
+                                m.hasConsensus = !!it.consensus;
                             });
                             list.sort((a, b) => b.similarity - a.similarity);
                             done(list);
@@ -1793,7 +1815,10 @@
                                 data: iem.sourceData,
                                 similarity: matchPct,
                                 interp: iem.interp,
-                                isTuningMatch: true
+                                isTuningMatch: true,
+                                sourceCount: iem.sourceCount || 1,
+                                consensusSpread: iem.consensusSpread || 0,
+                                hasConsensus: !!iem.hasConsensus
                             });
                         });
                         matches.sort((a, b) => b.similarity - a.similarity);
@@ -2753,6 +2778,15 @@
                         const rawFiles = (dbEntry && Array.isArray(dbEntry.files)) ? dbEntry.files : (item.files || []);
                         const fileCount = rawFiles.length;
                         const isMulti = fileCount > 1;
+                        const sourceCount = item.sourceCount || (dbEntry && dbEntry.sourceCount) || fileCount || 1;
+                        const consensusSpread = Number(item.consensusSpread || (dbEntry && dbEntry.consensusSpread) || 0);
+                        const hasConsensus = !!(item.hasConsensus || (dbEntry && dbEntry.consensus));
+                        const primarySource = (typeof SourceIndex !== 'undefined' && rawFiles[0])
+                            ? SourceIndex.parsePath(rawFiles[0]).source
+                            : '';
+                        const primarySourceLabel = primarySource
+                            ? SourceIndex.sourceLabel(primarySource)
+                            : '';
 
                         let cardStyle = "";
                         let rankEmoji = "🏆";
@@ -2908,6 +2942,11 @@
                                             </div>
                                         </div>
 
+                                        ${item.isTuningMatch ? `<button type="button" data-cmd="FindEngine.openSourceExplorer" data-arg-0="${escJs(curveIdToLoad)}" class="w-full flex items-center justify-between gap-2 mt-1 px-1.5 py-1 border border-[var(--line)] bg-[var(--bg-input)] hover:border-[var(--accent-blue)] cursor-pointer text-left" title="See every measurement behind this score, and where they disagree">
+                                            <span class="type-micro font-black uppercase tracking-wider ${hasConsensus ? 'text-emerald-400' : 'text-zinc-400'} truncate">${hasConsensus ? '🧬 Consensus' : '📏 Single'} · ${sourceCount} source${sourceCount === 1 ? '' : 's'}</span>
+                                            <span class="type-micro font-mono text-zinc-400 whitespace-nowrap">${consensusSpread > 0 ? '±' + consensusSpread.toFixed(1) + ' dB' : (primarySourceLabel ? esc(primarySourceLabel) : 'View')} ›</span>
+                                        </button>` : ''}
+
                                         <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
                                             ${price !== null && price !== undefined ? `<span class="type-micro font-black text-amber-400 whitespace-nowrap">💰 $${esc(price)}</span>` : ''}
                                             ${year ? `<span class="type-micro font-black text-stone-300 whitespace-nowrap">📅 ${esc(year)}</span>` : ''}
@@ -3034,6 +3073,887 @@
 
 
 
+
+                // A-008 follow-up: open the publisher behind one curve. The
+                // source folder is the only authorship information a measurement
+                // file carries, so it is resolved through the same attribution
+                // table as Settings > Measurement sources.
+                openSourceCredit: function(source) {
+                    const credit = (typeof SourceIndex !== 'undefined' && SourceIndex.creditFor)
+                        ? SourceIndex.creditFor(source)
+                        : null;
+                    if (!credit || !credit.url) {
+                        showToast('No published link is known for this measurement source.', '⚠️');
+                        return;
+                    }
+                    if (typeof App === 'undefined' || typeof App.openCreditUrl !== 'function') {
+                        showToast('Source links are unavailable in this build.', '⚠️');
+                        return;
+                    }
+                    App.openCreditUrl(credit.url);
+                },
+
+                // A-008 follow-up: the source filter is a preference, not a
+                // per-product setting. Store the reviewers the user keeps on
+                // so opening another product applies the same selection. Only
+                // a strict subset is stored; showing every source clears the
+                // key, and sources missing from the current product are kept
+                // so narrowing one product does not forget other reviewers.
+                readSourceFilter: function () {
+                    const saved = new Set();
+                    try {
+                        if (typeof SafeStorage === 'undefined') return saved;
+                        const raw = SafeStorage.getItem(this.SOURCE_FILTER_KEY);
+                        if (!raw) return saved;
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(src => {
+                                const key = String(src || '').trim();
+                                if (key) saved.add(key);
+                            });
+                        }
+                    } catch (e) {
+                        console.warn('[Find] Ignoring unreadable source filter.', e);
+                    }
+                    return saved;
+                },
+
+                saveSourceFilter: function (selectedSources, availableSources) {
+                    try {
+                        if (typeof SafeStorage === 'undefined') return;
+                        const available = new Set(availableSources);
+                        const allOn = Array.from(available).every(src => selectedSources.has(src));
+                        // Everything on (or nothing selected) is "no saved
+                        // restriction". Persisting such a set would hide sources
+                        // that only exist in other products.
+                        if (!selectedSources.size || allOn) {
+                            SafeStorage.removeItem(this.SOURCE_FILTER_KEY);
+                            return;
+                        }
+                        const next = new Set();
+                        this.readSourceFilter().forEach(src => {
+                            if (!available.has(src)) next.add(src);
+                        });
+                        selectedSources.forEach(src => next.add(src));
+                        SafeStorage.setItem(this.SOURCE_FILTER_KEY, JSON.stringify(Array.from(next).sort()));
+                    } catch (e) {
+                        console.warn('[Find] Could not save the source filter.', e);
+                    }
+                },
+
+                // The last pair is a view preference: reopening the picker
+                // restores it whenever both reviewers measured that product.
+                readComparePair: function () {
+                    try {
+                        if (typeof SafeStorage === 'undefined') return null;
+                        const raw = SafeStorage.getItem(this.COMPARE_PAIR_KEY);
+                        if (!raw) return null;
+                        const parsed = JSON.parse(raw);
+                        if (!Array.isArray(parsed) || parsed.length !== 2) return null;
+                        const pair = parsed.map(src => String(src || '').trim());
+                        if (!pair[0] || !pair[1] || pair[0] === pair[1]) return null;
+                        return pair;
+                    } catch (e) {
+                        console.warn('[Find] Ignoring unreadable compare pair.', e);
+                        return null;
+                    }
+                },
+
+                saveComparePair: function (pair) {
+                    try {
+                        if (typeof SafeStorage === 'undefined') return;
+                        if (!Array.isArray(pair) || pair.length !== 2) return;
+                        const clean = pair.map(src => String(src || '').trim());
+                        if (!clean[0] || !clean[1] || clean[0] === clean[1]) return;
+                        SafeStorage.setItem(this.COMPARE_PAIR_KEY, JSON.stringify(clean));
+                    } catch (e) {
+                        console.warn('[Find] Could not save the compare pair.', e);
+                    }
+                },
+
+                // N-001: every measurement behind a score, in one place.
+                // Shows the stock-measurement consensus, the individual source
+                // curves, per-source match scores and where the corpus disagrees.
+                openSourceExplorer: async function(itemId) {
+                    const dsItem = (PEQDB_Module.STATE.dataset || []).find(d => d.id === itemId);
+                    if (!dsItem) { showToast('That product is not in the loaded catalogue.', '⚠️'); return; }
+                    if (typeof SourceIndex === 'undefined' || typeof UIKit === 'undefined') return;
+
+                    showToast(`Reading ${dsItem.files ? dsItem.files.length : 1} measurement file(s)...`, '🧬');
+                    const curves = await SourceIndex.loadSourceCurves(dsItem);
+                    if (!curves.length) { showToast('No readable measurement files for this product.', '⚠️'); return; }
+
+                    const targetCurve = this.generateTargetCurve();
+                    const freqs = CurveUtils.generateLogGrid(100);
+                    const targetInterp = CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]);
+                    const scored = curves.map(c => ({
+                        ...c,
+                        score: this._scoreInterp(c.interp, targetInterp, freqs, true)
+                    }));
+                    const stock = scored.filter(c => !c.isMod);
+                    const toggle = { stockOnly: stock.length >= 2 };
+                    // Every distinct publisher in this product's files. The bar
+                    // starts from the remembered selection (or everything when
+                    // none is saved); the chips only narrow what the graph and
+                    // table draw, never the underlying data or the credit table.
+                    const sources = Array.from(new Set(scored.map(c => c.source))).filter(Boolean);
+                    // A saved reviewer selection is an include-list. If none of
+                    // the remembered sources measured this product, show every
+                    // source rather than opening an empty explorer.
+                    const savedFilter = this.readSourceFilter();
+                    const preferred = sources.filter(src => savedFilter.has(src));
+                    const selectedSources = new Set(preferred.length ? preferred : sources);
+                    let savedMiss = savedFilter.size > 0 && !preferred.length;
+                    // Compare is a view mode, not a saved preference: it starts
+                    // from exactly two selected reviewers and is cleared by any
+                    // chip change, solo, or Show all.
+                    let comparePair = null;
+                    // The pair picker is a draft: opening it must not alter the
+                    // source chips until the user confirms the two reviewers.
+                    let pairPickerOpen = false;
+                    let pairDraftA = '';
+                    let pairDraftB = '';
+                    // Which difference band the user is inspecting. Null is the
+                    // full 20 Hz–20 kHz view; the band name survives redraws
+                    // (stock-only, for example) without holding a stale object.
+                    let deltaZoom = null;
+
+                    UIKit.read({
+                        title: `🧬 Measurements · ${dsItem.name}`,
+                        subtitle: 'The card score is the median of the stock measurements — not a single file. This view follows your source filter.',
+                        render: (body) => {
+                            // Shared plotter for the combined graph and the two
+                            // half-width comparison plots. Keeping the axes in
+                            // one place means side-by-side panels stay on the
+                            // same 55-95 dB scale and cannot drift apart.
+                            const paintSourceGraph = (canvas, opts = {}) => {
+                                if (!canvas) return;
+                                const ctx = canvas.getContext('2d');
+                                const compact = !!opts.compact;
+                                const curves = Array.isArray(opts.curves) ? opts.curves : [];
+                                const W = canvas.width, H = canvas.height;
+                                const padL = compact ? 32 : 38, padR = compact ? 8 : 10;
+                                const padT = compact ? 8 : 10, padB = compact ? 19 : 22;
+                                const xOf = f => padL + (Math.log10(f / 20) / Math.log10(20000 / 20)) * (W - padL - padR);
+                                const yOf = db => padT + (1 - (db - 55) / 40) * (H - padT - padB);
+                                ctx.fillStyle = '#08080a'; ctx.fillRect(0, 0, W, H);
+                                ctx.font = compact ? '9px ui-monospace,monospace' : '10px ui-monospace,monospace';
+                                ctx.strokeStyle = 'rgba(255,255,255,0.09)'; ctx.fillStyle = 'rgba(255,255,255,0.38)';
+                                [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000].forEach(f => {
+                                    const x = xOf(f);
+                                    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke();
+                                    ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : String(f), x + 2, H - (compact ? 5 : 7));
+                                });
+                                [60, 70, 80, 90].forEach(db => {
+                                    const y = yOf(db);
+                                    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+                                    ctx.fillText(db + ' dB', 2, y + 3);
+                                });
+                                const stroke = (interp, color, width, dash) => {
+                                    if (!interp) return;
+                                    ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash || []);
+                                    ctx.beginPath();
+                                    for (let i = 0; i < freqs.length; i++) {
+                                        const x = xOf(freqs[i]), y = yOf(interp[i]);
+                                        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                                    }
+                                    ctx.stroke(); ctx.restore();
+                                };
+                                if (opts.reference) stroke(opts.reference, 'rgba(255,255,255,0.32)', 1.1, [2, 3]);
+                                const palette = ['#f59e0b','#38bdf8','#34d399','#fb7185','#a78bfa','#f472b6','#facc15','#22d3ee'];
+                                curves.forEach((c, i) => {
+                                    const color = opts.color || palette[i % palette.length];
+                                    stroke(c.interp, color + (c.isMod ? '77' : 'aa'), c.isMod ? 1 : 1.4, c.isMod ? [3, 3] : []);
+                                });
+                                if (opts.consensus) stroke(opts.consensus, '#f2f3f5', 2.6);
+                                stroke(targetInterp, '#3b82f6', compact ? 1.6 : 2, [6, 4]);
+                                if (opts.legend) {
+                                    ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = '11px ui-monospace,monospace';
+                                    ctx.fillText(opts.legend, padL + 6, padT + 12);
+                                }
+                            };
+
+                            // A − B across the same log frequency grid. The y axis
+                            // is symmetric around 0 dB and auto-fits the observed
+                            // gap, so a 1 dB disagreement is not flattened by a
+                            // curve that happens to swing 12 dB.
+                            const paintDeltaGraph = (canvas, delta, highlight, zoom, hover) => {
+                                if (!canvas || !delta || !delta.length) return;
+                                const ctx = canvas.getContext('2d');
+                                const W = canvas.width, H = canvas.height;
+                                const padL = 42, padR = 10, padT = 9, padB = 20;
+                                // Zoom re-maps the x axis to the band and fits the
+                                // y axis to the band's own values, so a small
+                                // disagreement is not flattened by an unrelated
+                                // 12 dB spike elsewhere in the curve.
+                                const zoomBand = zoom && Number.isFinite(zoom.min) && Number.isFinite(zoom.max)
+                                    ? zoom : null;
+                                const domainMin = zoomBand ? Math.max(20, zoomBand.min) : 20;
+                                const domainMax = zoomBand ? Math.min(20000, zoomBand.max) : 20000;
+                                const logSpan = Math.log10(domainMax / domainMin);
+                                let peak = 0.5;
+                                for (let i = 0; i < delta.length; i++) {
+                                    if (freqs[i] >= domainMin && freqs[i] <= domainMax) {
+                                        peak = Math.max(peak, Math.abs(delta[i]));
+                                    }
+                                }
+                                const step = peak <= 1 ? 0.5 : peak <= 2 ? 1 : peak <= 5 ? 2 : peak <= 10 ? 5 : 10;
+                                const maxAbs = Math.ceil(peak / step) * step;
+                                const xOf = f => padL + (logSpan > 0 ? Math.log10(f / domainMin) / logSpan : 0) * (W - padL - padR);
+                                const yOf = db => padT + (1 - (db + maxAbs) / (2 * maxAbs)) * (H - padT - padB);
+                                const zeroY = yOf(0);
+                                // The band wash belongs to the full view. While
+                                // zoomed, the whole plot already is that band.
+                                const band = !zoomBand && highlight && Number.isFinite(highlight.min) && Number.isFinite(highlight.max)
+                                    ? highlight : null;
+                                const bandX0 = band ? xOf(Math.max(20, band.min)) : 0;
+                                const bandX1 = band ? xOf(Math.min(20000, band.max)) : 0;
+                                // Zoomed axes label their exact band edges as
+                                // well as the usual decades, so 250 Hz and 2 kHz
+                                // do not become unmarked edges of the plot.
+                                const tickFreqs = Array.from(new Set([
+                                    ...[20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+                                        .filter(f => f >= domainMin && f <= domainMax),
+                                    ...(zoomBand ? [domainMin, domainMax] : [])
+                                ])).sort((a, b) => a - b);
+
+                                ctx.fillStyle = '#08080a'; ctx.fillRect(0, 0, W, H);
+                                // The named band is a quiet backdrop behind the
+                                // grid and tinted fills, so it never changes the
+                                // meaning of the curve itself.
+                                if (band) {
+                                    ctx.fillStyle = 'rgba(255,255,255,0.045)';
+                                    ctx.fillRect(bandX0, padT, bandX1 - bandX0, H - padT - padB);
+                                }
+                                ctx.font = '10px ui-monospace,monospace';
+                                ctx.strokeStyle = 'rgba(255,255,255,0.09)';
+                                ctx.fillStyle = 'rgba(255,255,255,0.38)';
+                                tickFreqs.forEach((f, i) => {
+                                    const x = xOf(f);
+                                    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke();
+                                    // Keep the edge labels inside the plot when the
+                                    // axis is zoomed to a band boundary.
+                                    const left = i === 0 && f <= domainMin;
+                                    const right = i === tickFreqs.length - 1 && f >= domainMax;
+                                    ctx.textAlign = left ? 'left' : right ? 'right' : 'center';
+                                    ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : String(f), x + (left ? 2 : right ? -2 : 0), H - 5);
+                                });
+                                ctx.textAlign = 'left';
+                                const ticks = Math.round(maxAbs / step);
+                                for (let t = -ticks; t <= ticks; t++) {
+                                    const db = t * step;
+                                    const y = yOf(db);
+                                    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+                                    const label = (db > 0 ? '+' : '') + db.toFixed(step < 1 ? 1 : 0) + ' dB';
+                                    ctx.fillText(label, 2, y + 3);
+                                }
+
+                                // Tint the two halves so the sign reads without
+                                // tracing every curve back to the zero line.
+                                const fillSide = (top, bottom, color) => {
+                                    ctx.save();
+                                    ctx.beginPath();
+                                    ctx.rect(padL, Math.min(top, bottom), W - padL - padR, Math.abs(bottom - top));
+                                    ctx.clip();
+                                    ctx.beginPath();
+                                    ctx.moveTo(xOf(freqs[0]), zeroY);
+                                    for (let i = 0; i < freqs.length; i++) ctx.lineTo(xOf(freqs[i]), yOf(delta[i]));
+                                    ctx.lineTo(xOf(freqs[freqs.length - 1]), zeroY);
+                                    ctx.closePath();
+                                    ctx.fillStyle = color; ctx.fill(); ctx.restore();
+                                };
+                                fillSide(padT, zeroY, 'rgba(245,158,11,0.16)');
+                                fillSide(zeroY, H - padB, 'rgba(167,139,250,0.16)');
+
+                                ctx.save();
+                                ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+                                ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+                                ctx.beginPath(); ctx.moveTo(padL, zeroY); ctx.lineTo(W - padR, zeroY); ctx.stroke();
+                                ctx.restore();
+
+                                ctx.save();
+                                ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 2;
+                                ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+                                ctx.beginPath();
+                                for (let i = 0; i < freqs.length; i++) {
+                                    const x = xOf(freqs[i]), y = yOf(delta[i]);
+                                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                                }
+                                ctx.stroke(); ctx.restore();
+
+                                if (band) {
+                                    ctx.save();
+                                    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+                                    ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+                                    [bandX0, bandX1].forEach(x => {
+                                        ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke();
+                                    });
+                                    ctx.fillStyle = 'rgba(255,255,255,0.58)';
+                                    ctx.font = '9px ui-monospace,monospace';
+                                    ctx.textAlign = 'center';
+                                    ctx.fillText(band.name.toUpperCase(), (bandX0 + bandX1) / 2, padT + 10);
+                                    ctx.restore();
+                                } else if (zoomBand) {
+                                    ctx.save();
+                                    ctx.fillStyle = 'rgba(255,255,255,0.58)';
+                                    ctx.font = '9px ui-monospace,monospace';
+                                    ctx.textAlign = 'center';
+                                    ctx.fillText(`${zoomBand.name.toUpperCase()} · ${zoomBand.range.toUpperCase()}`, W / 2, padT + 10);
+                                    ctx.restore();
+                                }
+
+                                // Hover crosshair: a thin vertical rule and a dot
+                                // on the curve at the pointer's frequency. The
+                                // readout above the plot carries the exact gap.
+                                if (hover && Number.isFinite(hover.freq) && Number.isFinite(hover.value)) {
+                                    const hx = Math.max(padL, Math.min(W - padR, xOf(hover.freq)));
+                                    const hy = yOf(hover.value);
+                                    ctx.save();
+                                    ctx.strokeStyle = 'rgba(255,255,255,0.42)';
+                                    ctx.lineWidth = 1;
+                                    ctx.setLineDash([3, 3]);
+                                    ctx.beginPath(); ctx.moveTo(hx, padT); ctx.lineTo(hx, H - padB); ctx.stroke();
+                                    ctx.setLineDash([]);
+                                    ctx.fillStyle = '#f2f3f5';
+                                    ctx.strokeStyle = '#08080a';
+                                    ctx.lineWidth = 2;
+                                    ctx.beginPath(); ctx.arc(hx, Math.max(padT + 2, Math.min(H - padB - 2, hy)), 3.5, 0, Math.PI * 2);
+                                    ctx.fill(); ctx.stroke();
+                                    ctx.restore();
+                                }
+                            };
+
+                            const draw = () => {
+                                const candidates = toggle.stockOnly && stock.length ? stock : scored;
+                                const rows = candidates.filter(c => selectedSources.has(c.source));
+                                const consensus = SourceIndex.consensusOf(rows);
+                                const consensusScore = consensus.interp
+                                    ? this._scoreInterp(consensus.interp, targetInterp, freqs, true)
+                                    : 0;
+                                const agreement = consensus.spread < 0.75 ? ['High', 'text-emerald-400']
+                                    : consensus.spread < 1.6 ? ['Fair', 'text-amber-400']
+                                    : ['Low', 'text-rose-400'];
+
+                                // Counts follow the stock-only switch but not the
+                                // source filter itself: switching another source
+                                // off must not rewrite every other chip's count.
+                                const sourceCounts = new Map();
+                                candidates.forEach(c => sourceCounts.set(c.source, (sourceCounts.get(c.source) || 0) + 1));
+                                const narrowed = selectedSources.size > 0 && selectedSources.size < sources.length;
+                                const missNote = savedMiss && selectedSources.size === sources.length;
+                                const compareMode = !!(comparePair && comparePair.length === 2
+                                    && selectedSources.size === 2
+                                    && comparePair.every(src => selectedSources.has(src)));
+                                // Leaving compare drops the band zoom; otherwise it
+                                // would silently reappear on the next pair.
+                                if (!compareMode) deltaZoom = null;
+                                const comparePanels = compareMode ? comparePair.map((src, idx) => {
+                                    const panelRows = rows.filter(c => c.source === src);
+                                    const panelConsensus = SourceIndex.consensusOf(panelRows);
+                                    const hasData = !!(panelRows.length && panelConsensus.interp);
+                                    const score = hasData
+                                        ? this._scoreInterp(panelConsensus.interp, targetInterp, freqs, true)
+                                        : 0;
+                                    let avgDelta = 0;
+                                    if (hasData && consensus.interp) {
+                                        let total = 0;
+                                        for (let i = 0; i < freqs.length; i++) {
+                                            total += Math.abs(panelConsensus.interp[i] - consensus.interp[i]);
+                                        }
+                                        avgDelta = total / freqs.length;
+                                    }
+                                    return {
+                                        src,
+                                        color: idx === 0 ? '#f59e0b' : '#a78bfa',
+                                        label: SourceIndex.sourceLabel(src),
+                                        rows: panelRows,
+                                        hasData,
+                                        score,
+                                        avgDelta,
+                                        spread: panelConsensus.spread,
+                                        consensus: panelConsensus
+                                    };
+                                }) : [];
+                                let deltaStats = null;
+                                if (compareMode && comparePanels.length === 2
+                                    && comparePanels[0].hasData && comparePanels[1].hasData) {
+                                    const a = comparePanels[0].consensus.interp;
+                                    const b = comparePanels[1].consensus.interp;
+                                    // freqs is a Float32Array, so map() would return
+                                    // a typed array and the plotter's array check
+                                    // would skip painting it.
+                                    const values = Array.from(freqs, (_f, i) => a[i] - b[i]);
+                                    let maxIdx = 0;
+                                    for (let i = 1; i < values.length; i++) {
+                                        if (Math.abs(values[i]) > Math.abs(values[maxIdx])) maxIdx = i;
+                                    }
+                                    deltaStats = {
+                                        values,
+                                        mean: values.reduce((sum, v) => sum + v, 0) / values.length,
+                                        max: values[maxIdx],
+                                        maxFreq: freqs[maxIdx]
+                                    };
+                                }
+                                const fmtHz = f => f >= 1000
+                                    ? `${(f / 1000).toFixed(f >= 10000 ? 0 : 1).replace(/\.0$/, '')} kHz`
+                                    : `${Math.round(f)} Hz`;
+                                // Bass / midrange / treble means. The grid is
+                                // logarithmically spaced, so a plain mean is
+                                // already log-weighted rather than dominated by
+                                // the 10-20 kHz octave.
+                                const deltaBands = deltaStats ? [
+                                    { name: 'Bass', range: '20–250 Hz', min: 20, max: 250 },
+                                    { name: 'Midrange', range: '250 Hz–2 kHz', min: 250, max: 2000 },
+                                    { name: 'Treble', range: '2–20 kHz', min: 2000, max: 20001 }
+                                ].map(band => {
+                                    let sum = 0, count = 0;
+                                    for (let i = 0; i < freqs.length; i++) {
+                                        if (freqs[i] >= band.min && freqs[i] < band.max) {
+                                            sum += deltaStats.values[i];
+                                            count++;
+                                        }
+                                    }
+                                    return { ...band, mean: count ? sum / count : 0 };
+                                }) : [];
+                                const zoomBand = deltaZoom ? (deltaBands.find(band => band.name === deltaZoom) || null) : null;
+                                const bandHtml = deltaBands.map(band => {
+                                    const zero = Math.abs(band.mean) < 0.05;
+                                    const tone = zero ? 'is-zero' : band.mean > 0 ? 'is-a' : 'is-b';
+                                    const value = zero ? 'match'
+                                        : `${band.mean > 0 ? 'A' : 'B'} ${Math.abs(band.mean).toFixed(1)} dB`;
+                                    const spoken = zero ? 'A and B match'
+                                        : band.mean > 0
+                                            ? `A is ${Math.abs(band.mean).toFixed(1)} dB above B`
+                                            : `B is ${Math.abs(band.mean).toFixed(1)} dB above A`;
+                                    const active = !!zoomBand && zoomBand.name === band.name;
+                                    return `<button type="button" class="src-delta-band no-tactile${active ? ' is-active' : ''}" data-delta-band="${band.name}" aria-pressed="${active}" aria-label="${band.name} ${band.range}: ${spoken}. ${active ? 'Showing this band; activate again for the full range' : 'Activate to zoom the difference chart to this band'}">
+                                        <span class="src-delta-band-name">${band.name}</span>
+                                        <strong class="src-delta-band-value ${tone}">${value}</strong>
+                                        <span class="src-delta-band-range">${band.range}</span>
+                                    </button>`;
+                                }).join('');
+                                const zoomStats = zoomBand && deltaStats ? (() => {
+                                    let best = -1;
+                                    for (let i = 0; i < freqs.length; i++) {
+                                        if (freqs[i] < zoomBand.min || freqs[i] > zoomBand.max) continue;
+                                        if (best < 0 || Math.abs(deltaStats.values[i]) > Math.abs(deltaStats.values[best])) best = i;
+                                    }
+                                    return best >= 0 ? { max: deltaStats.values[best], maxFreq: freqs[best] } : null;
+                                })() : null;
+                                const shownMean = deltaStats ? (zoomBand ? zoomBand.mean : deltaStats.mean) : 0;
+                                const deltaMeanAbs = Math.abs(shownMean);
+                                const deltaAverage = !deltaStats ? ''
+                                    : deltaMeanAbs < 0.05 ? 'A and B match on average'
+                                    : shownMean > 0 ? `A sits ${deltaMeanAbs.toFixed(1)} dB above B on average`
+                                    : `B sits ${deltaMeanAbs.toFixed(1)} dB above A on average`;
+                                const worstBand = deltaBands.reduce((worst, band) =>
+                                    !worst || Math.abs(band.mean) > Math.abs(worst.mean) ? band : worst, null);
+                                const worstAbs = worstBand ? Math.abs(worstBand.mean) : 0;
+                                const worstClause = !worstBand ? ''
+                                    : worstAbs < 0.05 ? 'all bands match on average'
+                                    : `${worstBand.name} differs most (avg ${worstAbs.toFixed(1)} dB)`;
+                                const highlightedBand = worstBand && worstAbs >= 0.05 ? worstBand : null;
+                                const gapStats = zoomStats || deltaStats;
+                                const deltaSummary = deltaStats && gapStats
+                                    ? `${zoomBand ? `${zoomBand.name} view · ` : ''}${deltaAverage} · largest gap ${Math.abs(gapStats.max).toFixed(1)} dB at ${fmtHz(gapStats.maxFreq)}${!zoomBand && worstClause ? ` · ${worstClause}` : ''}`
+                                    : '';
+                                const deltaHtml = compareMode ? (deltaStats ? `
+                                    <section class="src-delta-card" aria-label="Difference between Reviewer A and Reviewer B">
+                                        <div class="src-delta-head">
+                                            <div class="src-delta-title">Difference · A − B</div>
+                                            ${zoomBand ? `<button type="button" class="src-delta-reset no-tactile" data-delta-reset="1" title="Show the full 20 Hz–20 kHz range">↺ Full range</button>` : ''}
+                                            <div class="src-delta-summary" aria-live="polite">${deltaSummary}</div>
+                                        </div>
+                                        <div class="src-compare-plot src-delta-plot">
+                                            <canvas data-delta-canvas="1" width="820" height="168" style="display:block;width:100%;height:auto" role="img" aria-label="Difference between ${esc(comparePanels[0].label)} and ${esc(comparePanels[1].label)} in decibels across frequency${zoomBand ? `, zoomed to the ${zoomBand.name} band (${zoomBand.range})` : highlightedBand ? `, highlighted ${highlightedBand.name} band` : ''}"></canvas>
+                                            <div class="src-delta-readout" data-delta-readout="1" aria-hidden="true"></div>
+                                        </div>
+                                        <div class="src-delta-bands" role="group" aria-label="Difference by frequency band">
+                                            ${bandHtml}
+                                        </div>
+                                        <div class="src-delta-legend">
+                                            <span><i class="is-a"></i>A above B</span>
+                                            <span><i class="is-b"></i>B above A</span>
+                                            <span><i class="is-zero"></i>0 dB</span>
+                                            <span class="src-delta-legend-hint">Click a band to zoom · click again to reset</span>
+                                        </div>
+                                    </section>` : `
+                                    <section class="src-delta-card" aria-label="Difference unavailable">
+                                        <div class="src-delta-head"><div class="src-delta-title">Difference · A − B</div></div>
+                                        <div class="src-compare-empty">Both reviewers need measurements in view to draw a difference curve.</div>
+                                    </section>`) : '';
+                                const compareHtml = compareMode ? `
+                                    <div class="src-compare-grid" role="group" aria-label="Two-reviewer comparison">
+                                        ${comparePanels.map((panel, idx) => {
+                                            const other = comparePanels[1 - idx];
+                                            const credit = SourceIndex.creditFor(panel.src);
+                                            const name = credit
+                                                ? `<button type="button" class="source-credit-link no-tactile" data-cmd="FindEngine.openSourceCredit" data-arg-0="${esc(panel.src)}" title="Measured by ${esc(credit.label)} — open their measurement database" aria-label="Open ${esc(credit.label)} measurement database">${esc(panel.label)} <span aria-hidden="true">↗</span></button>`
+                                                : `<span>${esc(panel.label)}</span>`;
+                                            return `<section class="src-compare-card" aria-label="Reviewer ${idx + 1}: ${esc(panel.label)}">
+                                                <div class="src-compare-head">
+                                                    <div class="src-compare-id">
+                                                        <span class="src-compare-letter" aria-hidden="true">${idx === 0 ? 'A' : 'B'}</span>
+                                                        <div class="src-compare-title">
+                                                            <div class="src-compare-name">${name}</div>
+                                                            <div class="src-compare-sub">${panel.rows.length} measurement${panel.rows.length === 1 ? '' : 's'} in view</div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="src-compare-score">${panel.hasData ? `${panel.score.toFixed(1)}<span class="src-compare-unit">%</span>` : '<span class="src-compare-nil">—</span>'}<small>match</small></div>
+                                                </div>
+                                                ${panel.hasData ? `<div class="src-compare-facts">
+                                                    <span><strong>${panel.avgDelta.toFixed(2)} dB</strong> from pair median</span>
+                                                    <span><strong>±${panel.spread.toFixed(2)} dB</strong> spread</span>
+                                                </div>` : ''}
+                                                <div class="src-compare-plot"><canvas data-compare-canvas="${idx}" width="360" height="214" style="display:block;width:100%;height:auto" aria-label="Frequency response from ${esc(panel.label)}"></canvas></div>
+                                                <div class="src-compare-legend">
+                                                    <span><i style="background:${panel.color}"></i>${esc(panel.label)}</span>
+                                                    <span><i class="is-other"></i>${esc(other.label)}</span>
+                                                    <span><i class="is-target"></i>target</span>
+                                                </div>
+                                                <div class="src-compare-files">
+                                                    ${panel.rows.length ? panel.rows.map(c => `<div class="src-compare-file">
+                                                        <span title="${esc(c.path)}">${esc(c.file)}${c.conditionLabel ? ` · <em>${esc(c.conditionLabel)}</em>` : ''}</span>
+                                                        <strong>${c.score.toFixed(1)}%</strong>
+                                                    </div>`).join('') : '<div class="src-compare-empty">No measurements from this reviewer in the current view.</div>'}
+                                                </div>
+                                            </section>`;
+                                        }).join('')}
+                                    </div>
+                                    ${deltaHtml}` : '';
+                                const pairValid = !!(pairDraftA && pairDraftB && pairDraftA !== pairDraftB);
+                                const pairOption = (src, selected) => `<option value="${esc(src)}"${selected ? ' selected' : ''}>${esc(SourceIndex.sourceLabel(src))}</option>`;
+                                const pairPickerHtml = pairPickerOpen && !compareMode ? `
+                                    <div class="src-pair-picker" role="group" aria-label="Choose two reviewers to compare">
+                                        <label class="src-pair-field">
+                                            <span>Reviewer A</span>
+                                            <select data-pair-a="1">${sources.map(src => pairOption(src, src === pairDraftA)).join('')}</select>
+                                        </label>
+                                        <span class="src-pair-vs" aria-hidden="true">vs</span>
+                                        <label class="src-pair-field">
+                                            <span>Reviewer B</span>
+                                            <select data-pair-b="1">${sources.map(src => pairOption(src, src === pairDraftB)).join('')}</select>
+                                        </label>
+                                        <div class="src-pair-actions">
+                                            <button type="button" class="src-source-chip no-tactile" data-pair-cancel="1">Cancel</button>
+                                            <button type="button" class="src-source-chip no-tactile src-source-compare" data-pair-confirm="1"${pairValid ? '' : ' disabled'}>Compare</button>
+                                        </div>
+                                        <div class="src-pair-hint${pairValid ? '' : ' is-on'}" data-pair-hint="1" aria-live="polite">Choose two different reviewers.</div>
+                                    </div>` : '';
+                                const sourceBar = sources.length > 1 ? `
+                                    <div class="src-source-bar" role="group" aria-label="Filter by measurement source">
+                                        <span class="src-source-bar-label">Sources</span>
+                                        ${sources.map(src => {
+                                            const on = selectedSources.has(src);
+                                            const label = SourceIndex.sourceLabel(src);
+                                            // Split pill: the label toggles this reviewer in
+                                            // the multi-select, while "only" is the
+                                            // single-click isolate action. One wrapper
+                                            // keeps them reading as one chip.
+                                            return `<span class="src-source-unit${on ? ' is-on' : ''}">
+                                                <button type="button" class="src-source-chip no-tactile${on ? ' is-on' : ''}" data-source="${esc(src)}" aria-pressed="${on}" title="${on ? 'Hide' : 'Show'} measurements from ${esc(label)}">${esc(label)}<span class="src-source-count">${sourceCounts.get(src) || 0}</span></button>
+                                                <button type="button" class="src-source-solo no-tactile" data-source-solo="${esc(src)}" title="Show only measurements from ${esc(label)}" aria-label="Show only measurements from ${esc(label)}">only</button>
+                                            </span>`;
+                                        }).join('')}
+                                        ${compareMode ? `<button type="button" class="src-source-chip no-tactile src-source-compare" data-source-compare-exit="1" title="Return to the combined view">Exit compare</button>`
+                                            : `<button type="button" class="src-source-chip no-tactile src-source-compare" data-source-compare="1" title="Choose two reviewers to compare side by side — your last pair is restored when available">Compare pair…</button>`}
+                                        ${selectedSources.size < sources.length ? `<button type="button" class="src-source-chip no-tactile src-source-all" data-source-all="1" title="Show every source and clear the selection remembered for other products">Show all</button>` : ''}
+                                        ${narrowed ? `<span class="src-source-note" title="This source selection is remembered when you open other products. Show all clears it.">remembered</span>` : ''}
+                                        ${missNote ? `<span class="src-source-note is-miss" title="Your remembered sources have no measurements for this product, so every source is shown.">saved sources unavailable here</span>
+                                        <button type="button" class="src-source-chip no-tactile src-source-all" data-source-forget="1" title="Forget the source selection saved for other products">Clear saved filter</button>` : ''}
+                                    </div>` : '';
+
+                                body.innerHTML = `
+                                    <div class="flex flex-wrap items-center gap-x-5 gap-y-1 mb-2 type-xs" style="color:var(--text-mid)">
+                                        ${rows.length ? `
+                                            <span><strong style="color:var(--text-hi)">${consensusScore.toFixed(1)}%</strong> ${compareMode ? 'pair median match' : 'consensus match'}</span>
+                                            <span><strong style="color:var(--text-hi)">${rows.length}</strong> of ${scored.length} measurements</span>
+                                            <span>spread <strong style="color:var(--text-hi)">±${consensus.spread.toFixed(2)} dB</strong></span>
+                                            <span>agreement <strong class="${agreement[1]}">${agreement[0]}</strong></span>
+                                        ` : `
+                                            <span><strong style="color:var(--text-hi)">0</strong> of ${scored.length} measurements</span>
+                                            <span>Select at least one source to see the consensus.</span>
+                                        `}
+                                        ${stock.length >= 2 ? `<label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" id="src-stock-only" ${toggle.stockOnly ? 'checked' : ''}> stock only</label>` : ''}
+                                    </div>
+                                    ${sourceBar}
+                                    ${pairPickerHtml}
+                                    ${rows.length ? (compareMode ? compareHtml : `<div style="background:#08080a;border:1px solid var(--line);border-radius:6px;overflow:hidden">
+                                        <canvas id="src-explorer-canvas" width="820" height="300" style="display:block;width:100%;height:auto"></canvas>
+                                    </div>
+                                    <div style="max-height:210px;overflow:auto;margin-top:8px">
+                                        <table style="width:100%;border-collapse:collapse;font-size:var(--t-xs)">
+                                            <thead><tr style="color:var(--text-lo);text-align:left">
+                                                <th style="padding:3px 4px">Measured by</th><th style="padding:3px 4px">File / condition</th>
+                                                <th style="padding:3px 4px;text-align:right">Match</th><th style="padding:3px 4px;text-align:right">vs median</th>
+                                            </tr></thead>
+                                            <tbody>${rows.map((c, i) => {
+                                                const delta = c.score - consensusScore;
+                                                const outlier = Math.abs(delta) >= 8;
+                                                const credit = (typeof SourceIndex !== 'undefined' && SourceIndex.creditFor)
+                                                    ? SourceIndex.creditFor(c.source)
+                                                    : null;
+                                                const source = credit
+                                                    ? `<button type="button" class="source-credit-link no-tactile" data-cmd="FindEngine.openSourceCredit" data-arg-0="${esc(c.source)}" title="Measured by ${esc(credit.label)} — open their measurement database" aria-label="Open ${esc(credit.label)} measurement database">${esc(c.sourceLabel)} <span aria-hidden="true">↗</span></button>`
+                                                    : `<span>${esc(c.sourceLabel)}</span>`;
+                                                return `<tr style="border-top:1px solid var(--line)">
+                                                    <td style="padding:3px 4px;color:var(--text-hi);white-space:nowrap"><span style="display:inline-block;width:8px;height:8px;margin-right:5px;background:${['#f59e0b','#38bdf8','#34d399','#fb7185','#a78bfa','#f472b6','#facc15','#22d3ee'][i % 8]}"></span>${source}</td>
+                                                    <td style="padding:3px 4px;color:var(--text-mid)" title="${esc(c.path)}">${esc(c.file)}${c.conditionLabel ? ` · <span style="color:var(--accent-amber)">${esc(c.conditionLabel)}</span>` : ''}</td>
+                                                    <td style="padding:3px 4px;text-align:right;font-family:ui-monospace,monospace;color:var(--text-hi)">${c.score.toFixed(1)}%</td>
+                                                    <td style="padding:3px 4px;text-align:right;font-family:ui-monospace,monospace;color:${outlier ? 'var(--danger)' : 'var(--text-mid)'}">${delta >= 0 ? '+' : ''}${delta.toFixed(1)}${outlier ? ' ⚠️' : ''}</td>
+                                                </tr>`;
+                                            }).join('')}</tbody>
+                                        </table>
+                                    </div>`) : `<div class="src-source-empty">No measurements from the selected sources. Choose another source above.</div>`}`;
+
+                                // Band cards are push-buttons for the difference
+                                // chart. Clicking the active band returns to the
+                                // full range, and focus follows the re-render the
+                                // same way it does for the source chips.
+                                body.querySelectorAll('[data-delta-band]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        const band = btn.getAttribute('data-delta-band');
+                                        deltaZoom = deltaZoom === band ? null : band;
+                                        draw();
+                                        const next = body.querySelector(`[data-delta-band="${band}"]`);
+                                        if (next) next.focus();
+                                    };
+                                });
+                                body.querySelectorAll('[data-delta-reset]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        const previous = deltaZoom;
+                                        deltaZoom = null;
+                                        draw();
+                                        const next = body.querySelector(previous ? `[data-delta-band="${previous}"]` : '[data-delta-band]');
+                                        if (next) next.focus();
+                                    };
+                                });
+
+                                // Pair-picker controls are rebuilt with the bar.
+                                // Updating the selects must not redraw the world:
+                                // that would steal focus from the native dropdown.
+                                const pairA = body.querySelector('[data-pair-a]');
+                                const pairB = body.querySelector('[data-pair-b]');
+                                const syncPairPicker = () => {
+                                    const valid = !!(pairDraftA && pairDraftB && pairDraftA !== pairDraftB);
+                                    const confirm = body.querySelector('[data-pair-confirm]');
+                                    if (confirm) confirm.disabled = !valid;
+                                    const hint = body.querySelector('[data-pair-hint]');
+                                    if (hint) hint.classList.toggle('is-on', !valid);
+                                };
+                                if (pairA) pairA.onchange = () => { pairDraftA = pairA.value; syncPairPicker(); };
+                                if (pairB) pairB.onchange = () => { pairDraftB = pairB.value; syncPairPicker(); };
+                                body.querySelectorAll('[data-pair-cancel]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        pairPickerOpen = false;
+                                        draw();
+                                        const trigger = body.querySelector('[data-source-compare]');
+                                        if (trigger) trigger.focus();
+                                    };
+                                });
+                                body.querySelectorAll('[data-pair-confirm]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        if (!pairDraftA || !pairDraftB || pairDraftA === pairDraftB) return;
+                                        selectedSources.clear();
+                                        selectedSources.add(pairDraftA);
+                                        selectedSources.add(pairDraftB);
+                                        savedMiss = false;
+                                        pairPickerOpen = false;
+                                        // The picker labels A and B are also the
+                                        // left/right card order. Save that same
+                                        // pair as the last one compared.
+                                        comparePair = [pairDraftA, pairDraftB];
+                                        this.saveComparePair(comparePair);
+                                        this.saveSourceFilter(selectedSources, sources);
+                                        draw();
+                                        const exitBtn = body.querySelector('[data-source-compare-exit]');
+                                        if (exitBtn) exitBtn.focus();
+                                    };
+                                });
+
+                                // Source chips are rebuilt by every draw, so their
+                                // handlers are attached here rather than once.
+                                body.querySelectorAll('.src-source-chip[data-source]').forEach(chip => {
+                                    chip.onclick = () => {
+                                        const src = chip.getAttribute('data-source');
+                                        if (selectedSources.has(src)) selectedSources.delete(src);
+                                        else selectedSources.add(src);
+                                        savedMiss = false;
+                                        comparePair = null;
+                                        pairPickerOpen = false;
+                                        this.saveSourceFilter(selectedSources, sources);
+                                        draw();
+                                        // Keep keyboard focus on the toggle the user
+                                        // just pressed; draw() replaced the element.
+                                        const next = Array.from(body.querySelectorAll('.src-source-chip[data-source]'))
+                                            .find(el => el.getAttribute('data-source') === src);
+                                        if (next) next.focus();
+                                    };
+                                });
+                                body.querySelectorAll('[data-source-solo]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        const src = btn.getAttribute('data-source-solo');
+                                        selectedSources.clear();
+                                        selectedSources.add(src);
+                                        savedMiss = false;
+                                        comparePair = null;
+                                        pairPickerOpen = false;
+                                        this.saveSourceFilter(selectedSources, sources);
+                                        draw();
+                                        // Focus the source's toggle, not the
+                                        // action that disappeared from under
+                                        // the user's keyboard focus.
+                                        const next = Array.from(body.querySelectorAll('.src-source-chip[data-source]'))
+                                            .find(el => el.getAttribute('data-source') === src);
+                                        if (next) next.focus();
+                                    };
+                                });
+                                body.querySelectorAll('[data-source-forget]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        savedMiss = false;
+                                        comparePair = null;
+                                        pairPickerOpen = false;
+                                        this.saveSourceFilter(new Set(), sources);
+                                        draw();
+                                        const first = body.querySelector('.src-source-chip[data-source]');
+                                        if (first) first.focus();
+                                    };
+                                });
+                                body.querySelectorAll('[data-source-compare]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        if (pairPickerOpen) {
+                                            const current = body.querySelector('[data-pair-a]');
+                                            if (current) current.focus();
+                                            return;
+                                        }
+                                        pairPickerOpen = true;
+                                        // Restore the last compared pair when this
+                                        // product carries both reviewers. Opening
+                                        // the picker still does not touch the
+                                        // chips. Otherwise seed from the current
+                                        // selection, falling back to the first two.
+                                        const lastPair = this.readComparePair();
+                                        const restore = lastPair && lastPair.every(src => sources.includes(src))
+                                            ? lastPair : null;
+                                        const chosen = sources.filter(src => selectedSources.has(src));
+                                        pairDraftA = restore ? restore[0] : (chosen[0] || sources[0] || '');
+                                        pairDraftB = restore ? restore[1] : (chosen[1] || sources.find(src => src !== pairDraftA) || '');
+                                        draw();
+                                        const first = body.querySelector('[data-pair-a]');
+                                        if (first) first.focus();
+                                    };
+                                });
+                                body.querySelectorAll('[data-source-compare-exit]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        comparePair = null;
+                                        pairPickerOpen = false;
+                                        draw();
+                                        const compareBtn = body.querySelector('[data-source-compare]');
+                                        if (compareBtn) compareBtn.focus();
+                                    };
+                                });
+                                body.querySelectorAll('[data-source-all]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        sources.forEach(src => selectedSources.add(src));
+                                        savedMiss = false;
+                                        comparePair = null;
+                                        pairPickerOpen = false;
+                                        // Show all also resets the remembered
+                                        // filter, otherwise the chips the user
+                                        // just cleared would return on the next
+                                        // product.
+                                        this.saveSourceFilter(new Set(), sources);
+                                        draw();
+                                        const first = body.querySelector('.src-source-chip[data-source]');
+                                        if (first) first.focus();
+                                    };
+                                });
+
+                                const box = body.querySelector('#src-stock-only');
+                                if (box) box.onchange = () => { toggle.stockOnly = box.checked; draw(); };
+                                if (!rows.length) return;
+
+                                if (compareMode) {
+                                    comparePanels.forEach((panel, idx) => {
+                                        const other = comparePanels[1 - idx];
+                                        paintSourceGraph(body.querySelector(`[data-compare-canvas="${idx}"]`), {
+                                            curves: panel.rows,
+                                            reference: other && other.hasData ? other.consensus.interp : null,
+                                            color: panel.color,
+                                            compact: true
+                                        });
+                                    });
+                                    if (deltaStats) {
+                                        const canvas = body.querySelector('[data-delta-canvas]');
+                                        const readout = body.querySelector('[data-delta-readout]');
+                                        if (canvas && readout) {
+                                            const domainMin = zoomBand ? Math.max(20, zoomBand.min) : 20;
+                                            const domainMax = zoomBand ? Math.min(20000, zoomBand.max) : 20000;
+                                            const paint = hover => paintDeltaGraph(canvas, deltaStats.values, highlightedBand, zoomBand, hover);
+                                            paint(null);
+                                            const clearHover = () => {
+                                                readout.classList.remove('is-on');
+                                                readout.setAttribute('aria-hidden', 'true');
+                                                paint(null);
+                                            };
+                                            canvas.addEventListener('pointermove', (event) => {
+                                                const rect = canvas.getBoundingClientRect();
+                                                if (!rect.width) return;
+                                                const px = (event.clientX - rect.left) * (canvas.width / rect.width);
+                                                const padL = 42, padR = 10;
+                                                if (px < padL - 0.5 || px > canvas.width - padR + 0.5) { clearHover(); return; }
+                                                const t = (px - padL) / (canvas.width - padL - padR);
+                                                const freq = domainMin * Math.pow(domainMax / domainMin, Math.max(0, Math.min(1, t)));
+                                                let i = 0;
+                                                while (i < freqs.length - 1 && freqs[i + 1] < freq) i++;
+                                                const f0 = freqs[i], f1 = freqs[i + 1] === undefined ? f0 : freqs[i + 1];
+                                                let value = deltaStats.values[i];
+                                                if (f1 > f0) {
+                                                    const ratio = Math.max(0, Math.min(1, Math.log(freq / f0) / Math.log(f1 / f0)));
+                                                    value = deltaStats.values[i] + (deltaStats.values[i + 1] - deltaStats.values[i]) * ratio;
+                                                }
+                                                const near = Math.abs(value) < 0.05;
+                                                readout.textContent = `${fmtHz(freq)} · ${near ? 'match' : `${value > 0 ? 'A' : 'B'} ${Math.abs(value).toFixed(1)} dB`}`;
+                                                readout.title = near
+                                                    ? `A and B match at ${fmtHz(freq)}`
+                                                    : `${value > 0 ? 'A is' : 'B is'} ${Math.abs(value).toFixed(1)} dB above ${value > 0 ? 'B' : 'A'} at ${fmtHz(freq)}`;
+                                                readout.style.left = `${Math.max(readout.offsetWidth / 2 + 5, Math.min(rect.width - readout.offsetWidth / 2 - 5, event.clientX - rect.left))}px`;
+                                                readout.classList.add('is-on');
+                                                readout.setAttribute('aria-hidden', 'false');
+                                                paint({ freq, value });
+                                            });
+                                            canvas.addEventListener('pointerleave', clearHover);
+                                            canvas.addEventListener('pointercancel', clearHover);
+                                        }
+                                    }
+                                } else {
+                                    paintSourceGraph(body.querySelector('#src-explorer-canvas'), {
+                                        curves: rows,
+                                        consensus: consensus.interp,
+                                        legend: '— consensus   - - target   thin = individual source'
+                                    });
+                                }
+                            };
+                            draw();
+                        },
+                        actions: [{
+                            label: '📈 Overlay on EQ graph',
+                            onClick: () => {
+                                UIKit.closeReader();
+                                const checked = { id: dsItem.id, name: dsItem.name };
+                                const ds = PEQDB_Module.STATE.dataset.find(d => d.id === checked.id);
+                                if (!ds || !ds.data) return;
+                                PEQDB_Module.STATE.activeCurves = PEQDB_Module.STATE.activeCurves.filter(c => c.role !== 'reference');
+                                PEQDB_Module.STATE.activeCurves.push({
+                                    uid: checked.id + '-ref-' + Date.now(), id: checked.id, name: checked.name,
+                                    data: ds.data, color: PEQDB_Module.colorPalette[0], role: 'reference', visible: true, offset: 0
+                                });
+                                PEQDB_Module.updateAll();
+                                App.switchTab('eq');
+                            }
+                        }]
+                    });
+                },
 
                 compareSelected: function() {
                     const checked = document.querySelectorAll('.find-compare-cb:checked');

@@ -18,6 +18,7 @@
 // square is still a legitimate answer for a slider track or a canvas).
 // Exit code 1 = at least one off-scale radius; they are listed.
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('radius-snapshot');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

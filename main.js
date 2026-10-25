@@ -1,6 +1,10 @@
-const { app, BrowserWindow, screen, ipcMain, shell, Menu, dialog } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, shell, Menu, dialog, session } = require('electron');
 const path = require('path');
 const http = require('http');
+const https = require('https');
+const os = require('os');
+const crypto = require('crypto');
+const { execFile } = require('child_process');
 const fs = require('fs');
 const { captureThemeBackdrop } = require('./theme-backdrop.js');
 
@@ -293,6 +297,7 @@ function isFile(p) {
 // is back on the bundled database. Without the marker nothing changes: IEM-Data stays
 // the optional "drop a newer database.json here" override it always was.
 const WORKING_COPY_MARKER = '.iem-working-copy.json';
+const DB_VERSION_MARKER = 'db-version.json';
 function workingCopyActive() {
   const ext = getExternalDataDir();
   return !!(ext && isFile(path.join(ext, WORKING_COPY_MARKER)));
@@ -482,9 +487,19 @@ async function createWindow() {
     const origin = (details && details.requestingUrl) || '';
     callback(ALLOWED_PERMISSIONS.has(permission) && origin.startsWith(ownOrigin + '/'));
   });
-  ses.setPermissionCheckHandler((wc, permission, requestingOrigin) => (
-    ALLOWED_PERMISSIONS.has(permission) && requestingOrigin === ownOrigin
-  ));
+  ses.setPermissionCheckHandler((wc, permission, requestingOrigin) => {
+    const fromOwnOrigin = requestingOrigin === ownOrigin || requestingOrigin === ownOrigin + '/';
+    if (!fromOwnOrigin) return false;
+    // Chromium withholds audio device labels AND the real sink IDs behind a
+    // granted media permission, so Settings > Output device could only ever
+    // list anonymous "Output 1 / 2" entries whose empty IDs all resolved to the
+    // system default. Allowing the media CHECK exposes the names Windows shows
+    // ("Speakers (Realtek(R) Audio)") and the IDs setSinkId needs. It cannot
+    // open a microphone: every actual capture request still goes through the
+    // request handler above, which keeps denying 'media'.
+    if (permission === 'media' || permission === 'speaker-selection') return true;
+    return ALLOWED_PERMISSIONS.has(permission);
+  });
 
   mainWindow.loadURL(`http://127.0.0.1:${port}/index.html${app.isPackaged ? '?packaged=1' : ''}`);
 
@@ -647,6 +662,426 @@ const IEM_DATA_README = [
   'To go back to the built-in database, delete the files you added here.',
   ''
 ].join('\r\n');
+
+// ---------------------------------------------------------------------------
+// Update center (Settings > Updates).
+//
+// The renderer cannot call GitHub directly: index.html's CSP is
+// `connect-src 'self'`, deliberately. All network access lives here, against
+// fixed, hard-coded repository endpoints, so a compromised renderer cannot
+// turn this into a generic fetch proxy.
+// ---------------------------------------------------------------------------
+const REPO_APP = 'MyLittlePrimordia/IEM-Tool';
+const REPO_DATA = 'MyLittlePrimordia/Database';
+const RELEASE_PAGE = `https://github.com/${REPO_APP}/releases/latest`;
+const RELEASE_API = `https://api.github.com/repos/${REPO_APP}/releases/latest`;
+const APP_COMMIT_API = `https://api.github.com/repos/${REPO_APP}/commits/main`;
+const DATA_COMMIT_API = `https://api.github.com/repos/${REPO_DATA}/commits/main`;
+const DATA_TREE_API = `https://api.github.com/repos/${REPO_DATA}/git/trees`;
+// A hidden marker written by .github/workflows/build.yml into the rolling
+// release body. Comparing this commit with the one compiled into the app is
+// what makes updates work without manual version bumps.
+const BUILD_MARKER_RE = /<!--\s*iem-build:\s*([0-9a-f]{7,40})\s*-->/i;
+
+// ---------------------------------------------------------------------------
+// Measurement source links (Settings > Data > Measurement sources).
+//
+// The credits panel opens the original database for each source. Those URLs
+// come from a renderer-side data table, so they are validated here as well:
+// HTTPS only, no embedded credentials or explicit port, and only these
+// publishers (plus any *.squig.link database). This keeps the bridge from
+// becoming a generic "open any URL" primitive.
+// ---------------------------------------------------------------------------
+const CREDIT_URL_HOSTS = new Set([
+  'squig.link',
+  'hangout.audio',
+  'jaysaudio.github.io',
+  'headphones.com',
+  'www.headpie.net',
+  'www.hypethesonics.com',
+  'www.stereophile.com',
+  'www.reddit.com',
+  'www.rtings.com',
+  'www.head-fi.org'
+]);
+
+function isCreditUrlAllowed(raw) {
+  try {
+    const url = new URL(String(raw || ''));
+    if (url.protocol !== 'https:') return false;
+    if (url.username || url.password || url.port) return false;
+    const host = url.hostname.toLowerCase();
+    return CREDIT_URL_HOSTS.has(host) || host.endsWith('.squig.link');
+  } catch (e) {
+    return false;
+  }
+}
+
+function httpsJson(url) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, {
+      headers: { 'User-Agent': 'IEM-Tool-Updater', 'Accept': 'application/vnd.github+json' }
+    }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        return httpsJson(res.headers.location).then(resolve, reject);
+      }
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { body += chunk; if (body.length > 4 * 1024 * 1024) req.destroy(new Error('response too large')); });
+      res.on('end', () => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          return reject(new Error(`GitHub returned HTTP ${res.statusCode}`));
+        }
+        try { resolve(JSON.parse(body)); } catch (e) { reject(new Error('invalid JSON from GitHub')); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => req.destroy(new Error('update check timed out')));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Build identity + database fingerprints.
+//
+// Neither repository bumps a semantic version per push, so updates are decided
+// by content hashes instead:
+//   * the app compares the commit compiled into it with the commit in the
+//     rolling release;
+//   * the database compares Git's own tree/blob hashes for database.json and
+//     data/ against the Database repository's latest commit. Git's SHA-1
+//     object format is stable across checkouts, so this also survives Windows'
+//     CRLF working copy (text is normalised before hashing, as Git does).
+// ---------------------------------------------------------------------------
+let buildInfoCache = null;
+function packageVersion() {
+  try { return String(JSON.parse(fs.readFileSync(path.join(getAppRoot(), 'package.json'), 'utf8')).version || app.getVersion()); }
+  catch (_) { return app.getVersion(); }
+}
+function getBuildInfo() {
+  if (buildInfoCache) return buildInfoCache;
+  const fallback = {
+    version: packageVersion(), commit: '', shortCommit: '',
+    branch: '', bundle: '', builtAt: null
+  };
+  const candidates = [
+    path.join(getAppRoot(), 'app', 'js', 'build-info.json'),
+    path.join(__dirname, 'app', 'js', 'build-info.json')
+  ];
+  for (const file of candidates) {
+    try {
+      if (!isFile(file)) continue;
+      const info = JSON.parse(fs.readFileSync(file, 'utf8'));
+      buildInfoCache = {
+        version: String(info.version || packageVersion()),
+        commit: String(info.commit || ''),
+        shortCommit: String(info.shortCommit || info.commit || '').slice(0, 7),
+        branch: String(info.branch || ''),
+        bundle: String(info.bundle || ''),
+        builtAt: info.builtAt || null
+      };
+      return buildInfoCache;
+    } catch (_) { /* try the next path */ }
+  }
+  buildInfoCache = fallback;
+  return buildInfoCache;
+}
+
+function normalizedGitText(buf) {
+  return Buffer.from(buf.toString('utf8').replace(/\r\n/g, '\n'), 'utf8');
+}
+function gitBlobSha(buf) {
+  return crypto.createHash('sha1')
+    .update('blob ' + buf.length + '\0')
+    .update(buf)
+    .digest();
+}
+// Git orders tree entries by name, treating directories as if their name had a
+// trailing slash. A plain string sort is subtly different when a file and a
+// directory share a prefix, so reproduce base_name_compare here.
+function gitTreeCompare(a, b) {
+  const A = Buffer.from(a.name, 'utf8'), B = Buffer.from(b.name, 'utf8');
+  const n = Math.min(A.length, B.length);
+  const common = Buffer.compare(A.subarray(0, n), B.subarray(0, n));
+  if (common) return common;
+  if (A.length < B.length) return (a.dir ? 47 : 0) - B[n];   // 47 = '/'
+  if (A.length > B.length) return A[n] - (b.dir ? 47 : 0);
+  return (a.dir ? 47 : 0) - (b.dir ? 47 : 0);
+}
+async function gitTreeSha(dir) {
+  const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+  const children = [];
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) continue;
+    if (entry.isDirectory()) {
+      children.push({ name: entry.name, dir: true, sha: await gitTreeSha(path.join(dir, entry.name)) });
+    } else if (entry.isFile()) {
+      const file = path.join(dir, entry.name);
+      let buf = await fs.promises.readFile(file);
+      if (/\.txt$/i.test(entry.name)) buf = normalizedGitText(buf);
+      children.push({ name: entry.name, dir: false, sha: gitBlobSha(buf) });
+    }
+  }
+  children.sort(gitTreeCompare);
+  const parts = [];
+  for (const child of children) {
+    parts.push(Buffer.from(`${child.dir ? '40000' : '100644'} ${child.name}\0`, 'utf8'), child.sha);
+  }
+  const body = Buffer.concat(parts);
+  return crypto.createHash('sha1').update('tree ' + body.length + '\0').update(body).digest();
+}
+async function fingerprintDatabase(root) {
+  const dbFile = path.join(root, 'database.json');
+  const dataDir = path.join(root, 'data');
+  if (!isFile(dbFile)) throw new Error('No database.json in the active database folder.');
+  if (!fs.existsSync(dataDir) || !fs.statSync(dataDir).isDirectory()) throw new Error('No data/ folder in the active database folder.');
+  const dbBuf = normalizedGitText(await fs.promises.readFile(dbFile));
+  const dataTree = await gitTreeSha(dataDir);
+  return {
+    databaseJsonSha: gitBlobSha(dbBuf).toString('hex'),
+    dataTreeSha: dataTree.toString('hex')
+  };
+}
+function databaseRootForCheck() {
+  const ext = getExternalDataDir();
+  if (ext && (workingCopyActive() || isFile(path.join(ext, 'database.json')))) return ext;
+  return getDataRoot();
+}
+async function fetchDatabaseHead() {
+  const commit = await httpsJson(DATA_COMMIT_API);
+  const sha = String(commit.sha || '');
+  const treeSha = commit.commit && commit.commit.tree && commit.commit.tree.sha;
+  if (!sha || !treeSha) throw new Error('GitHub did not return a commit for the Database repository.');
+  const rootTree = await httpsJson(`${DATA_TREE_API}/${treeSha}`);
+  const entries = Array.isArray(rootTree.tree) ? rootTree.tree : [];
+  const data = entries.find(e => e.path === 'data' && e.type === 'tree');
+  const db = entries.find(e => e.path === 'database.json' && e.type === 'blob');
+  if (!data || !db) throw new Error('The Database repository does not contain database.json and data/.');
+  return {
+    sha,
+    shortSha: sha.slice(0, 7),
+    treeSha,
+    dataTreeSha: data.sha,
+    databaseJsonSha: db.sha,
+    message: (commit.commit && commit.commit.message) || '',
+    date: (commit.commit && commit.commit.committer && commit.commit.committer.date) || null
+  };
+}
+
+ipcMain.handle('app:get-version', () => packageVersion());
+ipcMain.handle('app:get-build-info', (event) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  return { ok: true, ...getBuildInfo() };
+});
+
+ipcMain.handle('app:check-update', async (event) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  try {
+    const local = getBuildInfo();
+    const rel = await httpsJson(RELEASE_API);
+    const body = String(rel.body || '');
+    const marker = body.match(BUILD_MARKER_RE);
+    let remoteCommit = marker ? marker[1] : '';
+    let source = 'release';
+    if (!remoteCommit) {
+      // Releases created before the build marker existed fall back to the head
+      // of main. The marker is preferred because it names a build that is
+      // actually published, not one that may still be compiling.
+      const head = await httpsJson(APP_COMMIT_API);
+      remoteCommit = String(head.sha || '');
+      source = 'main';
+    }
+    const remoteShort = remoteCommit.slice(0, 7);
+    const changed = !!(local.commit && remoteCommit && local.commit !== remoteCommit);
+    return {
+      ok: true,
+      current: local.version,
+      localCommit: local.commit,
+      localShort: local.shortCommit,
+      remoteCommit,
+      remoteShort,
+      bundle: local.bundle,
+      builtAt: local.builtAt,
+      source,
+      changed,
+      newer: changed,
+      dev: !local.commit,
+      latest: remoteShort || String(rel.tag_name || ''),
+      url: rel.html_url || RELEASE_PAGE,
+      notes: body.replace(BUILD_MARKER_RE, '').trim().slice(0, 4000),
+      publishedAt: rel.published_at || null,
+      releaseUpdatedAt: rel.updated_at || null
+    };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+ipcMain.handle('app:open-release-page', async (event) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  try { await shell.openExternal(RELEASE_PAGE); return { ok: true }; }
+  catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+ipcMain.handle('app:open-credit-url', async (event, rawUrl) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  if (!isCreditUrlAllowed(rawUrl)) return { ok: false, error: 'blocked' };
+  try { await shell.openExternal(String(rawUrl)); return { ok: true }; }
+  catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+ipcMain.handle('db:check-update', async (event) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  try {
+    const remote = await fetchDatabaseHead();
+    const local = await fingerprintDatabase(databaseRootForCheck());
+    return {
+      ok: true,
+      ...remote,
+      local,
+      changed: local.dataTreeSha !== remote.dataTreeSha
+        || local.databaseJsonSha !== remote.databaseJsonSha
+    };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+
+function downloadFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers: { 'User-Agent': 'IEM-Tool-Updater' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        return downloadFile(res.headers.location, dest).then(resolve, reject);
+      }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`Download returned HTTP ${res.statusCode}`)); }
+      const out = fs.createWriteStream(dest);
+      let bytes = 0;
+      res.on('data', (chunk) => { bytes += chunk.length; if (bytes > 300 * 1024 * 1024) req.destroy(new Error('database archive is unexpectedly large')); });
+      res.pipe(out);
+      out.on('finish', () => out.close(() => resolve(bytes)));
+      out.on('error', reject);
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(120000, () => req.destroy(new Error('database download timed out')));
+  });
+}
+
+function extractTarGz(archive, dest) {
+  return new Promise((resolve, reject) => {
+    // Run tar from the archive's folder and name the archive relatively. GNU tar
+    // (the one on PATH in a Git-for-Windows setup) reads a colon before a slash
+    // in the -f argument as an rsh host, so an absolute Windows path such as
+    // C:\Users\...\database.tar.gz failed with "Cannot connect to C: resolve
+    // failed" and every in-app database install aborted before it started.
+    // A relative filename is unambiguous for both GNU tar and bsdtar.
+    execFile('tar', ['-xzf', path.basename(archive), '-C', dest], {
+      cwd: path.dirname(archive), windowsHide: true, timeout: 180000
+    }, (err, stdout, stderr) => {
+      if (err) return reject(new Error('Could not extract the archive' + (stderr ? ': ' + String(stderr).slice(0, 300) : '')));
+      resolve();
+    });
+  });
+}
+
+// Installs an exact Database commit into IEM-Data transactionally: extract to a
+// staging folder, verify the Git tree/blob hashes against the commit, validate
+// the catalogue and data directory, move the old pair aside, then move the new
+// pair in. On any failure the previous pair is restored.
+ipcMain.handle('db:download-update', async (event) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  const ext = getExternalDataDir();
+  if (!ext) return { ok: false, error: 'Database updates are only available in the installed app. In development, update database.json and data/ in the project folder.' };
+  const stamp = Date.now();
+  const work = path.join(os.tmpdir(), `iem-db-update-${stamp}`);
+  const archive = path.join(work, 'database.tar.gz');
+  const extract = path.join(work, 'extract');
+  let movedOldData = false;
+  let movedOldJson = false;
+  try {
+    const head = await fetchDatabaseHead();
+    fs.mkdirSync(extract, { recursive: true });
+    // Download the commit that was checked, not main: a push landing between
+    // the check and the download must not install a tree we did not verify.
+    await downloadFile(`https://codeload.github.com/${REPO_DATA}/tar.gz/${head.sha}`, archive);
+    await extractTarGz(archive, extract);
+    const rootEntry = fs.readdirSync(extract, { withFileTypes: true }).find(e => e.isDirectory());
+    if (!rootEntry) throw new Error('The downloaded archive is empty.');
+    const srcRoot = path.join(extract, rootEntry.name);
+    const newDb = path.join(srcRoot, 'database.json');
+    const newData = path.join(srcRoot, 'data');
+    if (!isFile(newDb)) throw new Error('The downloaded archive has no database.json.');
+    if (!fs.existsSync(newData) || !fs.statSync(newData).isDirectory()) throw new Error('The downloaded archive has no data/ folder.');
+    let products = 0;
+    try {
+      const parsed = JSON.parse(fs.readFileSync(newDb, 'utf8'));
+      if (!Array.isArray(parsed) || !parsed.length) throw new Error('not a non-empty array');
+      products = parsed.length;
+    } catch (e) {
+      throw new Error('The downloaded database.json is invalid: ' + ((e && e.message) || e));
+    }
+    const downloaded = await fingerprintDatabase(srcRoot);
+    if (downloaded.dataTreeSha !== head.dataTreeSha || downloaded.databaseJsonSha !== head.databaseJsonSha) {
+      throw new Error('The downloaded archive does not match the requested commit; nothing was installed.');
+    }
+
+    fs.mkdirSync(ext, { recursive: true });
+    fs.mkdirSync(path.join(ext, 'backup'), { recursive: true });
+    const oldData = path.join(ext, 'data');
+    const oldJson = path.join(ext, 'database.json');
+    const bakData = path.join(ext, 'backup', `data-${stamp}`);
+    const bakJson = path.join(ext, 'backup', `database-${stamp}.json`);
+    if (fs.existsSync(oldData)) { fs.renameSync(oldData, bakData); movedOldData = true; }
+    if (isFile(oldJson)) { fs.renameSync(oldJson, bakJson); movedOldJson = true; }
+    try {
+      const dataDest = path.join(ext, 'data');
+      try { fs.renameSync(newData, dataDest); }
+      catch (crossDevice) { fs.cpSync(newData, dataDest, { recursive: true }); }
+      fs.copyFileSync(newDb, path.join(ext, 'database.json'));
+      const gz = zlib.gzipSync(fs.readFileSync(newDb), { level: 9 });
+      fs.writeFileSync(path.join(ext, 'database.json.gz'), gz);
+      atomicWrite(path.join(ext, WORKING_COPY_MARKER), JSON.stringify({
+        version: 1, createdAt: new Date().toISOString(), appVersion: app.getVersion(),
+        source: 'github', installedAt: new Date().toISOString(), products
+      }, null, 2));
+      atomicWrite(path.join(ext, DB_VERSION_MARKER), JSON.stringify({
+        schema: 1, commit: head.sha, shortCommit: head.shortSha,
+        tree: head.treeSha, dataTree: head.dataTreeSha,
+        databaseJson: head.databaseJsonSha,
+        installedAt: new Date().toISOString(), products
+      }, null, 2));
+    } catch (installErr) {
+      // Roll back: remove anything half-installed, restore the old pair.
+      try { fs.rmSync(path.join(ext, 'data'), { recursive: true, force: true }); } catch (_) {}
+      try { fs.rmSync(path.join(ext, 'database.json'), { force: true }); } catch (_) {}
+      try { fs.rmSync(path.join(ext, 'database.json.gz'), { force: true }); } catch (_) {}
+      if (movedOldData) { try { fs.renameSync(bakData, oldData); } catch (_) {} }
+      if (movedOldJson) { try { fs.renameSync(bakJson, oldJson); } catch (_) {} }
+      throw installErr;
+    }
+    // Old backups are pruned to the two most recent sets; the data folder is
+    // large enough that unbounded snapshots would fill the disk.
+    try {
+      const backups = fs.readdirSync(path.join(ext, 'backup'));
+      const dataBackups = backups.filter(n => n.startsWith('data-')).sort();
+      while (dataBackups.length > 2) {
+        const old = dataBackups.shift();
+        fs.rmSync(path.join(ext, 'backup', old), { recursive: true, force: true });
+      }
+      const jsonBackups = backups.filter(n => n.startsWith('database-')).sort();
+      while (jsonBackups.length > 4) {
+        const old = jsonBackups.shift();
+        fs.rmSync(path.join(ext, 'backup', old), { force: true });
+      }
+    } catch (_) {}
+    return { ok: true, products, shortSha: head.shortSha, commit: head.sha, backup: path.join(ext, 'backup') };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  } finally {
+    try { fs.rmSync(work, { recursive: true, force: true }); } catch (_) {}
+  }
+});
 
 ipcMain.handle('app:open-data-folder', async (event) => {
   if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
@@ -827,10 +1262,46 @@ ipcMain.handle('data:reset-working-copy', async (event) => {
   try {
     const ext = getExternalDataDir();
     if (!ext || path.basename(ext) !== 'IEM-Data') return { ok: false, error: 'Reset is only available in the installed app.' };
-    for (const n of ['database.json', 'database.json.gz', WORKING_COPY_MARKER]) { try { fs.rmSync(path.join(ext, n), { force: true }); } catch (_) {} }
+    for (const n of ['database.json', 'database.json.gz', WORKING_COPY_MARKER, DB_VERSION_MARKER]) { try { fs.rmSync(path.join(ext, n), { force: true }); } catch (_) {} }
     for (const n of ['data', 'backup']) { await fs.promises.rm(path.join(ext, n), { recursive: true, force: true }); }
     return { ok: true };
   } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+// Settings > Library > Reset: erase everything this app persists, then start again.
+// Three stores are involved and they live in different places:
+//   * localStorage - theme, settings, custom EQ presets, Find favourites, hearing
+//                    calibration, last alignment, Data-tab autosave
+//   * IndexedDB    - saved reviews (with photos), curve cache, working copy
+//   * IEM-Data     - database entries and measurement files the user added
+// The first two are Chromium storage, so they are cleared through the session: a
+// renderer-side deleteDatabase() races the IndexedDB connections its own modules
+// keep open, and a blocked delete quietly leaves the reviews in place. IEM-Data is
+// only removed when packaged - in dev that path is the project folder's own
+// database, which must never be touched.
+//
+// app.exit() is deliberate. A normal quit runs the close handshake, whose autosave
+// writes the Data tab's working file straight back into the folder just deleted;
+// exit skips it and relaunch starts a genuinely first-run app. The reply is sent
+// before the reboot so a failure is still reported on the still-live page.
+ipcMain.handle('app:factory-reset', async (event) => {
+  if (!dataSenderOk(event)) return { ok: false, error: 'denied' };
+  try {
+    const ext = getExternalDataDir();
+    if (ext && path.basename(ext) === 'IEM-Data') {
+      await fs.promises.rm(ext, { recursive: true, force: true });
+    }
+    // No `storages` filter on purpose. Passing one (even ['indexeddb']) left
+    // every saved review in place while reporting success - measured by seeding
+    // a review, resetting, reloading and reading it back. The unfiltered call
+    // clears localStorage and IndexedDB together, which is exactly the set the
+    // app owns: it sets no cookies and talks to no origin but its own.
+    await session.defaultSession.clearStorageData();
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+  setTimeout(() => { app.relaunch(); app.exit(0); }, 250);
+  return { ok: true };
 });
 
 // Every write needs the working copy to exist first (installed app). The renderer asks the

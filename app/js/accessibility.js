@@ -5,6 +5,23 @@
             if (localStorage.getItem('a11y_bluelight') === 'true') {
                 this.toggleBlueLightFilter();
             }
+            this.restoreAudioMode();
+        },
+        // Settings > Audio channel. toggleAudioMode owns the flag, the label and
+        // the graph, so the restore mirrors exactly what it does to the parts
+        // that already exist. The audio context is usually created later; that
+        // half is handled by SharedAudio.init.
+        restoreAudioMode: function() {
+            let saved = null;
+            try { saved = localStorage.getItem('settings_audio_mode'); } catch (e) {}
+            if (saved !== 'mono') return;
+            window.isMonoMode = true;
+            const btn = document.getElementById('a11y-audio-btn');
+            if (btn) btn.textContent = 'Mono';
+            if (typeof SharedAudio !== 'undefined' && SharedAudio.masterGain) {
+                SharedAudio.masterGain.channelCount = 1;
+                SharedAudio.masterGain.channelCountMode = 'explicit';
+            }
         },
                 toggleBlueLightFilter: function() {
             this.blueLightActive = !this.blueLightActive;

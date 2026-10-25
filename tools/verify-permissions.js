@@ -6,6 +6,7 @@
 //
 //   npx electron tools/verify-permissions.js
 const { app, BrowserWindow, shell } = require('electron');
+require('./lib/verify-profile').isolateProfile('permissions');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');

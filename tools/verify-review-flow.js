@@ -7,6 +7,7 @@
 // Used during the god-file split to run the SAME script against the original
 // and the refactored tree and compare the printed export metrics.
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('review-flow');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

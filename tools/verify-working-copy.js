@@ -1,3 +1,4 @@
+// Stand-alone probe: run by hand. Not part of npm run verify:ui - see tools/run-ui-verify.mjs.
 // Proves the "bundled files are protected" design against the REAL main.js, simulating an
 // INSTALLED app (app.isPackaged = true) so the Database tab uses the IEM-Data working copy.
 //
@@ -9,6 +10,7 @@
 //                   (hard links to the project's files are fine - the test hashes it before/after)
 //   IEM_TEST_BASE : empty dir; becomes the portable base, so IEM-Data lands in <base>/IEM-Data
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('working-copy');
 const fs = require('fs');
 const path = require('path');
 const EXPECTED_ENTRIES = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'database.json'), 'utf8')).length;  // follows database.json, never a hardcoded count

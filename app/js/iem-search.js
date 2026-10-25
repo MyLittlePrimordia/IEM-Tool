@@ -1,7 +1,6 @@
 const IemSearchIndex = {
     _index: null,
     _db: null,
-    _tokenizer: null,
     _initialized: false,
 
     init: function(db) {

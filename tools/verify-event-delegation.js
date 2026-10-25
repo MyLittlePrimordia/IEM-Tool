@@ -7,6 +7,7 @@
 //
 //   npx electron tools/verify-event-delegation.js
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('event-delegation');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

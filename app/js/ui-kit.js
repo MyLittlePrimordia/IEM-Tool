@@ -180,6 +180,10 @@ const UIKit = {
         if (card) { card.classList.toggle('max-w-md', rows.length > 0); card.classList.toggle('max-w-sm', rows.length === 0); }
         const okBtn = wrap.querySelector('#uikit-confirm-ok');
         okBtn.textContent = opts.confirmLabel || 'Confirm';
+        // A two-option choice is not always yes/no ("Restore draft" vs "Use
+        // database"). Callers can name the safe action explicitly.
+        const cancelBtn = wrap.querySelector('#uikit-confirm-cancel');
+        cancelBtn.textContent = opts.cancelLabel || 'Cancel';
         // Primary action carries the accent halo; a destructive one gets the
         // danger token. Both labels use --accent-ink: white on --danger is
         // 2.77:1, which fails AA at 13px, while the near-black ink on the same

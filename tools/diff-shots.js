@@ -5,6 +5,7 @@
 //
 // Exits 1 if any image differs, so it can gate a build.
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('diff-shots');
 const fs = require('fs');
 const path = require('path');
 

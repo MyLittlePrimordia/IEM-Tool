@@ -1,3 +1,4 @@
+// Stand-alone probe: run by hand. Not part of npm run verify:ui - see tools/run-ui-verify.mjs.
 // End-to-end test of the Database tab against the REAL main.js (IPC + preload).
 //
 //   xvfb-run -a npx electron --no-sandbox tools/verify-data-tab.js [rootDir]
@@ -12,6 +13,7 @@
 // overrides, which you almost certainly do not want). Root comes from the
 // environment because Electron leaves its own flags in process.argv.
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('data-tab');
 const fs = require('fs');
 const zlib = require('zlib');
 const path = require('path');

@@ -151,7 +151,6 @@ var Mascot = window.Mascot || {
                 sleeping: 'anim-mascot-sleeping',
                 fire: 'anim-mascot-fire',
                 hearnoevil: 'anim-mascot-hear-no-evil',
-                mute: 'anim-mascot-hear-no-evil',
                 sparkle: 'anim-mascot-sparkle',
                 grin: 'anim-mascot-sparkle',
                 ab_a: 'anim-mascot-ab-a',

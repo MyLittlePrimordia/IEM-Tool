@@ -870,7 +870,10 @@ existing module drives this unchanged. -->
                         <div id="find-results-container" class="flex-1 min-h-0 overflow-y-auto pr-1 relative">
                             <div id="find-results-count" class="hidden sticky top-0 z-10 mb-2 flex items-center justify-between px-1 pb-1 border-b-2 border-black bg-[var(--bg-card)]">
                                 <span id="find-results-count-text" class="type-micro font-black uppercase tracking-wider text-emerald-400">0 matches</span>
-                                <button data-action="click_73_FindEngine_resetFindResults" class="type-micro font-black uppercase tracking-wider text-rose-400 hover:text-rose-300 cursor-pointer">✕ Clear</button>
+                                <span class="flex items-center gap-3">
+                                    <button data-action="click_1102_FindEngine_openValueMap" class="type-micro font-black uppercase tracking-wider text-amber-300 hover:text-amber-200 cursor-pointer" title="Plot match score against price and highlight the value frontier">💎 Value map</button>
+                                    <button data-action="click_73_FindEngine_resetFindResults" class="type-micro font-black uppercase tracking-wider text-rose-400 hover:text-rose-300 cursor-pointer">✕ Clear</button>
+                                </span>
                             </div>
                             <div id="find-matches-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
                             <div id="find-empty-state" class="flex flex-col items-center justify-center text-center py-16 gap-2" style="color: var(--text-secondary) !important;">
@@ -1192,6 +1195,9 @@ existing module drives this unchanged. -->
                                 </div>
                                 <button id="target-edit-btn" data-action="click_131_PEQDB_Module_toggleTargetSculptor" class="w-9 h-9 aspect-square bg-[var(--bg-input)] border-[3px] border-black text-zinc-300 hover:border-[var(--border-color)] transition-all font-bold shadow-none cursor-pointer flex items-center justify-center flex-shrink-0 focus:outline-none" title="Open Target Sculptor">
                                     <span class="text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none">✏️</span>
+                                </button>
+                                <button id="my-sound-btn" data-action="click_1101_PEQDB_Module_openMySound" class="w-9 h-9 aspect-square bg-[var(--bg-input)] border-[3px] border-black text-zinc-300 hover:border-[var(--accent-blue)] transition-all font-bold shadow-none cursor-pointer flex items-center justify-center flex-shrink-0 focus:outline-none" title="My Sound: personal targets, trainer, fix-my-sound">
+                                    <span class="text-xl w-6 h-6 flex-shrink-0 inline-flex items-center justify-center leading-none">⭐</span>
                                 </button>
                             </div>
                             <input type="hidden" id="target-selector" data-action-change="change_167_PEQDB_Module_setTarget_this_value">
@@ -2202,6 +2208,11 @@ existing module drives this unchanged. -->
                                         <button id="abx-trials-next" data-action="click_48_TestLab_abxCycleTrials_1" class="stepper-arrow btn-clear text-stone-200 font-black text-xs h-8 w-8 flex items-center justify-center cursor-pointer flex-shrink-0">▶</button>
                                     </div>
 
+                                    <div class="flex items-center gap-1.5 w-full">
+                                        <button id="abx-level-toggle" data-action="click_1002_TestLab_toggleAbxLevelMatch" class="btn-clear flex-1 h-7 type-micro font-black text-stone-200 flex items-center justify-center gap-1.5 cursor-pointer" title="Attenuate the louder track so loudness cannot reveal which is which">⚖️ Level match: ON</button>
+                                    </div>
+                                    <div id="abx-level-info" class="type-micro font-mono text-zinc-500 text-center truncate min-h-[13px]" title="Measured RMS offset applied before each trial"></div>
+
                                     <!-- Centred on its own row, with mt-1.5 on top of the panel's gap-1.5 so it
                                          clears the stepper instead of crowding it. The status
                                          text sits BELOW in its own centred wrapper rather than
@@ -2412,29 +2423,40 @@ existing module drives this unchanged. -->
 </div>
 
 <!-- R3 — SETTINGS.
-     Rebuilt as a centred single-column list on the page background instead of a
-     full-height bordered card.
+     One 760px column, three cards, twelve rows: Aesthetics (3), Accessibility
+     (3), System (6). Narrow on purpose - the page used to run the full 1120px of
+     the workspace, which put a label and its switch ~1000px apart.
 
-     Why: the card was `h-full` inside a `max-w-3xl` wrapper, so on a 900px-tall
-     window its content ended ~62% of the way down and left ~290px of empty
-     bordered card below it - the single largest dead zone in the app. Removing
-     the card removes the void entirely, because empty space below the last row
-     now reads as page background rather than as an unfinished panel.
+     Two rows are merges of one decision that used to be spread across several
+     rows, which is what removed the scrollbar without shrinking the type:
 
-     Row pattern follows Gamer Tool's settings: icon + label (and an optional
-     one-line hint) on the left, control on the right, hairline dividers
-     between rows, generous 14px/18px padding.
+       Audio output        channel + device (one question, two boxes)
+       Track transitions   off / gapless / crossfade. The player's _overlapSecs()
+                           already returned exactly one of those - the two
+                           switches and the fade slider were three views of one
+                           3-way state, not three independent settings.
 
-     SCROLL-001: the pane still contains exactly ONE vertical scroller (the
-     `.settings-scroll` element below, formerly `index.html:2259`). No scroller
-     was added or removed - only re-parented inside the same pane. -->
+     IEM Tool and Measurement database stayed as two rows: merging them needed
+     floating captions and a two-line hint, which broke the one-row-one-decision
+     pattern the rest of the card follows.
+
+     Layout history: a single column of 15 rows ran ~1000px and always scrolled;
+     a 2x2 grid of columns removed the scroll but read as four boxes; pairing all
+     rows two-up kept one column but left a 55px gap between every label and its
+     control. This is the dense list all three were reaching for.
+
+     SCROLL-001: `.settings-scroll` is the pane's only scroller. It is
+     `overflow-y: auto` so a genuinely short window (or a large text size) gets a
+     scrollbar instead of a clipped card; when the content fits - every desktop
+     size - no scrollbar is painted. It is never a nested scroller: the rows and
+     cards inside it do not scroll. -->
 <!-- The pane used to open with a visible "Settings / Saved automatically"
      header. It was redundant (the tab button already names the pane) and it
      cost 25px of height plus a 20px margin - which was the entire 26px
      overflow that put a scrollbar on an otherwise-fitting pane at 1600x900.
      Removed 2026-10-05; the pane keeps its accessible name via aria-label. -->
 <div id="pane-settings" class="tab-pane hidden h-full flex flex-col overflow-hidden" aria-label="Settings">
-  <div class="settings-scroll flex-1 min-h-0 overflow-y-auto">
+  <div class="settings-scroll flex-1 min-h-0">
 
     <div class="settings-page">
 
@@ -2446,7 +2468,7 @@ existing module drives this unchanged. -->
             <span class="settings-row-icon emoji-font">🎨</span>
             <div class="settings-row-text">
               <span class="settings-row-label">Theme</span>
-              <span class="settings-row-hint">Accent, backdrop pattern and surfaces</span>
+              <span class="settings-row-hint is-one-line">Accent and backdrop</span>
             </div>
             <button id="theme-cycle-btn" data-action="click_209_App_cycleTheme" class="settings-control" title="Next theme"></button>
           </div>
@@ -2455,7 +2477,7 @@ existing module drives this unchanged. -->
             <span class="settings-row-icon emoji-font">🔤</span>
             <div class="settings-row-text">
               <span class="settings-row-label">Font</span>
-              <span class="settings-row-hint">Interface typeface</span>
+              <span class="settings-row-hint is-one-line">Interface typeface</span>
             </div>
             <button id="font-cycle-btn" data-action="click_43_App_cycleFont" class="settings-control" title="Next font"></button>
           </div>
@@ -2464,7 +2486,7 @@ existing module drives this unchanged. -->
             <span class="settings-row-icon emoji-font">🔍</span>
             <div class="settings-row-text">
               <span class="settings-row-label">Text size</span>
-              <span class="settings-row-hint">Scales every label</span>
+              <span class="settings-row-hint is-one-line">Scales every label</span>
             </div>
             <div class="settings-slider">
               <input type="range" id="reading-size-slider" min="0.85" max="1.25" step="0.05" value="1.00" data-action-input="input_84_App_setReadingSize_this_value">
@@ -2479,56 +2501,51 @@ existing module drives this unchanged. -->
         <h2 class="settings-group-title">Accessibility</h2>
         <div class="settings-rows">
 
+          <!-- One row, two controls. The channel and the device answer the same
+               question ("where does the sound go"), and each was spending a whole
+               row and a duplicate icon on one box. -->
           <div class="settings-row">
-            <span class="settings-row-icon emoji-font">🔊</span>
+            <span class="settings-row-icon emoji-font">🎧</span>
             <div class="settings-row-text">
-              <span class="settings-row-label">Audio channel</span>
-              <span class="settings-row-hint">Mono, stereo or summed</span>
+              <span class="settings-row-label">Audio output</span>
+              <span class="settings-row-hint is-one-line">Channel and device</span>
             </div>
-            <button id="a11y-audio-btn" data-action="click_50_toggleAudioMode" class="settings-control" title="Cycle output channel">Stereo</button>
+            <div class="settings-controls">
+              <button id="a11y-audio-btn" data-action="click_50_toggleAudioMode" class="settings-control settings-control-xs" title="Cycle output channel">Stereo</button>
+              <button type="button" id="audio-output-btn" class="settings-control" data-action="click_1008_App_cycleAudioOutput" aria-label="Output device: System default" title="System default — click to switch"><span id="audio-output-label">System default</span></button>
+            </div>
           </div>
 
           <div class="settings-row">
             <span class="settings-row-icon emoji-font">🌙</span>
             <div class="settings-row-text">
               <span class="settings-row-label">Blue light filter</span>
-              <span class="settings-row-hint">Warmer screen at night</span>
+              <span class="settings-row-hint is-one-line">Warmer screen at night</span>
             </div>
             <button id="a11y-bluelight-btn" data-action="click_212_Accessibility_toggleBlueLightFilter" class="switch" role="switch" aria-checked="false" title="Toggle blue light filter">
               <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
             </button>
           </div>
 
-          <div class="settings-row">
-            <span class="settings-row-icon emoji-font">🔗</span>
-            <div class="settings-row-text">
-              <span class="settings-row-label">Gapless</span>
-              <span class="settings-row-hint">No break between tracks</span>
-            </div>
-            <button id="a11y-gapless-btn" data-action="click_215_EQ_toggleGapless" class="switch" role="switch" aria-checked="false" title="Seamless track transitions">
-              <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
-            </button>
-          </div>
-
+          <!-- Gapless and crossfade were two switches plus a slider spread over
+               three rows, but the player already treats them as ONE decision:
+               crossfade (N seconds) wins, otherwise gapless (0.18s), otherwise
+               off. `_overlapSecs` never combines them. The 3-way control is
+               therefore the same two localStorage keys, shown as the three
+               states they actually produce - no combination is lost. -->
           <div class="settings-row">
             <span class="settings-row-icon emoji-font">🔀</span>
             <div class="settings-row-text">
-              <span class="settings-row-label">Crossfade</span>
-              <span class="settings-row-hint">Overlap on skip</span>
+              <span class="settings-row-label">Track transitions</span>
+              <span class="settings-row-hint is-one-line">Gap between tracks</span>
             </div>
-            <button id="a11y-crossfade-btn" data-action="click_75_EQ_toggleCrossfade" class="switch" role="switch" aria-checked="false" title="Crossfade between tracks">
-              <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
-            </button>
-          </div>
-
-          <div class="settings-row">
-            <span class="settings-row-icon emoji-font">⏱️</span>
-            <div class="settings-row-text">
-              <span class="settings-row-label">Fade length</span>
-              <span class="settings-row-hint">Crossfade overlap</span>
+            <div class="settings-seg" id="settings-track-mode" role="group" aria-label="Track transitions">
+              <button type="button" class="settings-seg-btn" data-cmd="EQ.setTrackTransition" data-arg-0="off" aria-pressed="false" title="Hard switch, no overlap">Off</button>
+              <button type="button" class="settings-seg-btn" data-cmd="EQ.setTrackTransition" data-arg-0="gapless" aria-pressed="false" title="Seamless 0.18s seam">Gapless</button>
+              <button type="button" class="settings-seg-btn" data-cmd="EQ.setTrackTransition" data-arg-0="crossfade" aria-pressed="false" title="Overlap tracks by a set number of seconds">Crossfade</button>
             </div>
-            <div class="settings-slider">
-              <input type="range" id="a11y-crossfade-slider" min="0.5" max="12" step="0.5" value="6" disabled data-action-input="input_31_EQ_setCrossfadeSeconds_this_value" title="Seconds">
+            <div class="settings-slider settings-slider-inline" id="crossfade-length" hidden>
+              <input type="range" id="a11y-crossfade-slider" min="0.5" max="12" step="0.5" value="6" disabled data-action-input="input_31_EQ_setCrossfadeSeconds_this_value" title="Crossfade seconds">
               <span id="a11y-crossfade-display" class="settings-value">6s</span>
             </div>
           </div>
@@ -2537,19 +2554,30 @@ existing module drives this unchanged. -->
       </section>
 
       <section class="settings-group">
-        <h2 class="settings-group-title">Data</h2>
+        <h2 class="settings-group-title">System</h2>
         <div class="settings-rows">
+
+          <div class="settings-row">
+            <span class="settings-row-icon emoji-font">📚</span>
+            <div class="settings-row-text">
+              <span class="settings-row-label">Measurement sources</span>
+              <span class="settings-row-hint is-one-line">Reviewers behind every curve</span>
+            </div>
+            <div class="settings-actions">
+              <button data-action="click_1104_App_openSourceCredits" class="settings-btn settings-btn-outline" title="Every source and their database">Credits</button>
+            </div>
+          </div>
 
           <div class="settings-row">
             <span class="settings-row-icon emoji-font">📂</span>
             <div class="settings-row-text">
               <span class="settings-row-label">Offline database</span>
-              <span class="settings-row-hint is-one-line">Edit in Data · Reset restores built-in</span>
+              <span class="settings-row-hint is-one-line">Edit in Data · Reset to built-in</span>
             </div>
             <div class="settings-actions">
-              <button data-action="click_900_App_openDataFolder" class="settings-btn" title="Open the folder that holds database.json and data">Open folder</button>
-              <button data-action="click_901_App_reloadDatabase" class="settings-btn" title="Reload the database after adding new files (the app window reloads; saved reviews, presets and settings are kept)">Refresh</button>
-              <button data-action="click_903_App_resetDatabase" id="btn-reset-database" class="settings-btn" style="display:none" title="Delete your copy and go back to the built-in database">Reset</button>
+              <button data-action="click_900_App_openDataFolder" class="settings-btn" title="Folder with database.json and data">Open folder</button>
+              <button data-action="click_901_App_reloadDatabase" class="settings-btn" title="Reload after adding files">Refresh</button>
+              <button data-action="click_903_App_resetDatabase" id="btn-reset-database" class="settings-btn" style="display:none" title="Back to the built-in database">Reset</button>
             </div>
           </div>
 
@@ -2557,10 +2585,10 @@ existing module drives this unchanged. -->
             <span class="settings-row-icon emoji-font">🛟</span>
             <div class="settings-row-text">
               <span class="settings-row-label">Settings repair</span>
-              <span class="settings-row-hint is-one-line">Reset app settings. Reviews and presets stay</span>
+              <span class="settings-row-hint is-one-line">Resets settings, keeps reviews</span>
             </div>
             <div class="settings-actions">
-              <button data-action="click_902_App_resetSettings" class="settings-btn" title="Reset theme, font, playback and remembered-EQ settings to defaults, then reload. Saved reviews, presets and hearing calibration are kept.">Fix settings</button>
+              <button data-action="click_902_App_resetSettings" class="settings-btn" title="Reset settings to defaults, keep reviews and presets">Fix settings</button>
             </div>
           </div>
 
@@ -2568,12 +2596,49 @@ existing module drives this unchanged. -->
             <span class="settings-row-icon emoji-font">💾</span>
             <div class="settings-row-text">
               <span class="settings-row-label">Library</span>
-              <span class="settings-row-hint">Export, import or clear your data</span>
+              <span class="settings-row-hint is-one-line">Backup, restore or factory reset</span>
             </div>
             <div class="settings-actions">
-              <button data-action="click_196_IEM_saveConfig" class="settings-btn" title="Save to file">Dump</button>
-              <button data-action="click_8_document_getElementById__import_input___click" class="settings-btn" title="Load from file">Import</button>
-              <button data-action="click_49_IEM_resetAll" class="settings-btn is-danger" title="Clear all saved data">Reset</button>
+              <button data-action="click_196_IEM_saveConfig" class="settings-btn" title="Save everything to a backup file">Backup</button>
+              <button data-action="click_8_document_getElementById__import_input___click" class="settings-btn" title="Load a backup file">Restore</button>
+              <button data-action="click_1011_App_factoryReset" class="settings-btn is-danger" title="Erase all app data and restart">Reset</button>
+            </div>
+          </div>
+
+          <!-- Two rows, not one merged "Updates" row. They are two separate
+               downloads with two separate status lines, and the one-row version
+               needed floating App/Database captions above the buttons plus a
+               two-line hint - which broke the one-row-one-decision pattern
+               every other setting follows. -->
+          <div class="settings-row">
+            <span class="settings-row-icon emoji-font">🔄</span>
+            <div class="settings-row-text">
+              <span class="settings-row-label">IEM Tool</span>
+              <span class="settings-row-hint is-one-line" id="app-version-hint">Version —</span>
+            </div>
+            <div class="settings-actions">
+              <button data-action="click_1004_App_checkAppUpdate" class="settings-btn" title="Compare with the latest release">Check</button>
+              <button data-action="click_1005_App_openReleasePage" class="settings-btn" title="Open the latest release">Release page</button>
+            </div>
+          </div>
+
+          <div class="settings-row">
+            <span class="settings-row-icon emoji-font">🧬</span>
+            <div class="settings-row-text">
+              <span class="settings-row-label">Measurement database</span>
+              <span class="settings-row-hint is-one-line" id="db-update-hint">Not checked yet</span>
+            </div>
+            <div class="settings-actions">
+              <button data-action="click_1006_App_checkDatabaseUpdate" class="settings-btn" title="Compare local hashes with the Database repo">Check</button>
+              <button data-action="click_1007_App_downloadDatabaseUpdate" class="settings-btn" title="Download, verify and install">Update</button>
+            </div>
+          </div>
+
+          <div id="update-status" class="settings-row" style="display:none">
+            <span class="settings-row-icon emoji-font">📡</span>
+            <div class="settings-row-text">
+              <span class="settings-row-label">Update status</span>
+              <span class="settings-row-hint is-one-line" id="update-status-text">—</span>
             </div>
           </div>
 
@@ -2790,6 +2855,7 @@ existing module drives this unchanged. -->
     <div id="find-floating-compare-bar" class="hidden fixed bottom-16 left-1/2 -translate-x-1/2 z-[250] bg-black/95 border-[3px] border-[var(--accent-blue)] px-4 py-2 shadow-2xl flex items-center gap-3 select-none" style="box-shadow: 4px 4px 0px 0px #000000;">
         <span id="find-compare-bar-text" class="text-xs font-black text-white">📊 2 IEMs Selected</span>
         <button data-action="click_111_FindEngine_compareSelected" class="px-3 py-1 bg-[var(--accent-blue)] hover:brightness-110 text-white font-black text-xs border-2 border-black cursor-pointer">Compare Now</button>
+        <button data-action="click_1103_FindEngine_openSpecCompare" class="px-3 py-1 bg-[var(--bg-input)] hover:bg-zinc-800 text-[var(--text-main)] font-black text-xs border-2 border-black cursor-pointer">📊 Specs</button>
     </div>
 
         <!-- Toasts announce their own results (save / export / failure). A live
@@ -3032,7 +3098,7 @@ existing module drives this unchanged. -->
 <!-- ONNX Runtime Web is loaded on demand by IEM_Module.loadPhotoMatteRuntime();
      see the note next to this tag. -->
 
-<script src="app/js/bundle-version.js?v=d1cbf6d7d5ed"></script>
+<script src="app/js/bundle-version.js?v=534521ad057e"></script>
         <!-- Bundle loader. External (app/js/boot-bundle.js) rather than inline so that
          script-src can drop 'unsafe-inline'. -->
         <script src="app/js/boot-bundle.js"></script>

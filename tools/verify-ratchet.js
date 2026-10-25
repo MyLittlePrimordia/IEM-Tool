@@ -1,3 +1,4 @@
+// Stand-alone probe: run by hand. Not part of npm run verify:ui - see tools/run-ui-verify.mjs.
 // Proves the runtime inline-handler ratchet actually fails when a new
 // onclick="..." markup string is added, then restores the file. A ratchet that
 // cannot fail is worse than no ratchet, so this is verified rather than assumed.

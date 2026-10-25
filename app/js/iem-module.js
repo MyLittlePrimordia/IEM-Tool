@@ -73,24 +73,8 @@ function getBandEnergy(dataArray, startBin, endBin) {
         const stack = document.getElementById('toast-stack');
         if (!stack) return;
 
-        // Cap the number of visible toasts — evict the oldest first.
-        while (stack.children.length >= 6) {
-            const first = stack.firstElementChild;
-            if (first) { clearTimeout(first.timeoutId); first.remove(); }
-        }
-
-        const item = document.createElement('div');
-        item.className = 'toast-item pointer-events-auto flex items-start gap-2.5 px-3 py-2.5 border-2 border-black bg-[var(--bg-card)] text-[var(--text-main)] shadow-[4px_4px_0_0_#000] text-xs font-bold select-none';
-        item.style.animation = 'toast-in .18s ease-out';
-
-        const action = opts.action;
-        let html = '<span class="toast-icon flex-shrink-0 leading-none">' + esc(icon || 'ℹ️') + '</span>';
-        html += '<div class="min-w-0 flex-1 leading-snug break-words">' + esc(String(message == null ? '' : message)) + '</div>';
-        if (action && action.label) {
-            html += '<button class="toast-act flex-shrink-0 px-2 py-1 border-2 border-black bg-[var(--accent-blue)] text-white type-micro font-black cursor-pointer hover:brightness-110">' + esc(action.label) + '</button>';
-        }
-        html += '<button class="toast-x flex-shrink-0 text-zinc-500 hover:text-red-400 type-micro leading-none cursor-pointer">✕</button>';
-        item.innerHTML = html;
+        const text = String(message == null ? '' : message);
+        const glyph = icon || 'ℹ️';
 
         const dismiss = (el, immediate) => {
             clearTimeout(el.timeoutId);
@@ -98,37 +82,92 @@ function getBandEnergy(dataArray, startBin, endBin) {
             el.style.transition = 'opacity .25s ease, transform .25s ease';
             el.style.opacity = '0';
             el.style.transform = 'translateY(-6px)';
-            setTimeout(() => { if (el.parentNode) el.remove(); }, 260);
+            // Kept on the element so a keyed update that lands mid-fade can
+            // cancel the removal; otherwise the new message would inherit the
+            // old toast's exit and vanish in 260ms.
+            el.removeTimer = setTimeout(() => { if (el.parentNode) el.remove(); }, 260);
         };
 
-        const actBtn = item.querySelector('.toast-act');
-        if (actBtn && action) {
-            actBtn.onclick = (ev) => {
-                ev.stopPropagation();
-                dismiss(item);
-                if (typeof action.onClick === 'function') {
-                    try { action.onClick(); } catch (e) { console.error('toast action', e); }
-                }
-            };
+        // A keyed toast REPLACES its own previous entry instead of stacking a
+        // second one. Stepping the Output device is one action repeated, not a
+        // series of independent messages: tapping ▶ four times used to leave
+        // four entries naming devices the user had already stepped past, and
+        // the stack grew to a third of the screen for a one-word change.
+        const key = opts.key ? String(opts.key) : '';
+        let item = null;
+        if (key) {
+            for (const el of stack.children) {
+                if (el.dataset && el.dataset.toastKey === key) { item = el; break; }
+            }
         }
-        const xBtn = item.querySelector('.toast-x');
-        if (xBtn) xBtn.onclick = (ev) => { ev.stopPropagation(); dismiss(item); };
 
-        item.addEventListener('click', (ev) => {
-            if (ev.target.closest && ev.target.closest('.toast-act, .toast-x')) return;
-            dismiss(item);
-        });
+        if (item) {
+            clearTimeout(item.timeoutId);
+            clearTimeout(item.removeTimer);
+            // Undo any exit animation already in flight, or the fresh message
+            // would fade with the old one.
+            item.style.transition = 'none';
+            item.style.opacity = '';
+            item.style.transform = '';
+            const iconEl = item.querySelector('.toast-icon');
+            const textEl = item.querySelector('.toast-msg');
+            if (iconEl) iconEl.textContent = glyph;
+            if (textEl) textEl.textContent = text;
+            // Replay the entry so the update still reads as a change.
+            item.style.animation = 'none';
+            void item.offsetWidth;
+            item.style.animation = 'toast-in .18s ease-out';
+        } else {
+            // Cap the number of visible toasts — evict the oldest first.
+            while (stack.children.length >= 6) {
+                const first = stack.firstElementChild;
+                if (first) { clearTimeout(first.timeoutId); first.remove(); }
+            }
 
-        stack.appendChild(item);
+            item = document.createElement('div');
+            item.className = 'toast-item pointer-events-auto flex items-start gap-2.5 px-3 py-2.5 border-2 border-black bg-[var(--bg-card)] text-[var(--text-main)] shadow-[4px_4px_0_0_#000] text-xs font-bold select-none';
+            item.style.animation = 'toast-in .18s ease-out';
+            if (key) item.dataset.toastKey = key;
+
+            const action = opts.action;
+            let html = '<span class="toast-icon flex-shrink-0 leading-none">' + esc(glyph) + '</span>';
+            html += '<div class="toast-msg min-w-0 flex-1 leading-snug break-words">' + esc(text) + '</div>';
+            if (action && action.label) {
+                html += '<button class="toast-act flex-shrink-0 px-2 py-1 border-2 border-black bg-[var(--accent-blue)] text-white type-micro font-black cursor-pointer hover:brightness-110">' + esc(action.label) + '</button>';
+            }
+            html += '<button class="toast-x flex-shrink-0 text-zinc-500 hover:text-red-400 type-micro leading-none cursor-pointer">✕</button>';
+            item.innerHTML = html;
+
+            const actBtn = item.querySelector('.toast-act');
+            if (actBtn && action) {
+                actBtn.onclick = (ev) => {
+                    ev.stopPropagation();
+                    dismiss(item);
+                    if (typeof action.onClick === 'function') {
+                        try { action.onClick(); } catch (e) { console.error('toast action', e); }
+                    }
+                };
+            }
+            const xBtn = item.querySelector('.toast-x');
+            if (xBtn) xBtn.onclick = (ev) => { ev.stopPropagation(); dismiss(item); };
+
+            item.addEventListener('click', (ev) => {
+                if (ev.target.closest && ev.target.closest('.toast-act, .toast-x')) return;
+                dismiss(item);
+            });
+
+            stack.appendChild(item);
+        }
+
         // Also mirror the text into the dedicated live region. The stack itself
         // is role=status, but entries can be evicted/removed quickly; the
         // announcer guarantees the message is announced exactly once.
         const announcer = document.getElementById('a11y-announcer');
         if (announcer) {
             announcer.textContent = '';
-            setTimeout(() => { announcer.textContent = String(message == null ? '' : message); }, 30);
+            setTimeout(() => { announcer.textContent = text; }, 30);
         }
-        const duration = action ? (opts.duration || 6000) : (opts.duration || 2600);
+        const duration = opts.action ? (opts.duration || 6000) : (opts.duration || 2600);
         item.timeoutId = setTimeout(() => dismiss(item), duration);
     }
 
@@ -140,6 +179,12 @@ function getBandEnergy(dataArray, startBin, endBin) {
         // redundant, and rewriting markup wholesale is exactly what previously
         // stopped this button from ever holding real structure.
         if (btn) btn.textContent = window.isMonoMode ? 'Mono' : 'Stereo';
+        // Persisted like the Accessibility row next to it (a11y_bluelight). It was
+        // session-only, so the box said Mono until the next launch and then
+        // silently went back to Stereo - the one thing a one-click toggle must
+        // not do. Accessibility.init restores it, and SharedAudio.init applies
+        // it to a graph that did not exist yet.
+        try { localStorage.setItem('settings_audio_mode', window.isMonoMode ? 'mono' : 'stereo'); } catch (e) {}
         if (SharedAudio.masterGain) {
             if (window.isMonoMode) {
                 SharedAudio.masterGain.channelCount = 1;
@@ -296,6 +341,401 @@ window.updateExpandedAutoHide = function() {
             return false;
         }
     },
+    // U-006: Settings > Output device. The list comes from the real
+    // enumerateDevices() call (labels and sink IDs are exposed in Electron) and
+    // the row is a cycle button like Theme / Font / Audio channel: one control,
+    // one line, no popup. -1 means "System default".
+    //
+    // It was a ◀ value ▶ stepper for one iteration; that was three targets in a
+    // pane the rest of which is click-to-cycle, so it read as a different kind of
+    // control. One button that steps forward matches its neighbours, and the
+    // device list is short enough that clicking round it is the normal gesture.
+    _audioOutputs: [],
+    _audioOutputIndex: -1,
+
+    initAudioOutputs: async function() {
+        const btn = document.getElementById('audio-output-btn');
+        if (!btn) return;
+        let saved = '';
+        try { saved = localStorage.getItem('settings_audio_output') || ''; } catch (e) {}
+        try {
+            const devices = await SharedAudio.listOutputDevices();
+            const seen = new Set();
+            const list = [];
+            devices.forEach((d) => {
+                // Windows lists each endpoint three times: a synthetic "Default"
+                // and "Communications" entry plus the physical device. Windows'
+                // own picker shows only the physical one, and "System default"
+                // already means "whatever Windows uses now", so the two aliases
+                // only add duplicates. Empty IDs mean the permission check never
+                // exposed names (non-Electron hosts): those could not switch
+                // anything, so they are skipped too.
+                if (!d.deviceId || d.deviceId === 'default' || d.deviceId === 'communications') return;
+                if (seen.has(d.deviceId)) return;
+                seen.add(d.deviceId);
+                list.push({ id: d.deviceId, label: d.label || `Output ${seen.size}` });
+            });
+            // Windows names read "3 - AG276QZD2 (2- AMD High Definition Audio
+            // Device)", and a USB DAC arrives with TWO trailing groups - its
+            // chipset and the endpoint id ("Wired IEMs (CX31993+MAX97220
+            // HiFiAudio) (06cb:1595)"). The adapter group can contain its own
+            // parentheses ("Speakers (Realtek(R) Audio)"), which a single
+            // [^()]* group cannot match at all, so the old one-group strip left
+            // the chipset on screen and only removed the id.
+            //
+            // Everything from the first " (" is dropped instead: the endpoint
+            // number, the adapter and the id are all noise on a one-line button.
+            // A name that is nothing but a group ("(Unknown)") keeps its label
+            // rather than becoming empty, and only when the short form is still
+            // unique - two "Speakers" entries would be indistinguishable and
+            // the click would move the sink to the wrong one, so a collision
+            // falls back to the full name. The tooltip always carries the full
+            // name either way (renderAudioOutput).
+            const shortCounts = new Map();
+            list.forEach((d) => {
+                d.short = String(d.label).replace(/^\d+\s*-\s*/, '').replace(/\s+\(.*$/, '').trim() || d.label;
+                shortCounts.set(d.short, (shortCounts.get(d.short) || 0) + 1);
+            });
+            list.forEach((d) => { if (shortCounts.get(d.short) > 1) d.short = d.label; });
+            this._audioOutputs = list;
+            this._audioOutputIndex = saved ? list.findIndex((d) => d.id === saved) : -1;
+            if (saved && this._audioOutputIndex < 0) {
+                // The saved device is gone; fall back to default rather than
+                // leaving a stale value that silently fails on next launch.
+                try { localStorage.removeItem('settings_audio_output'); } catch (e) {}
+            }
+            this.renderAudioOutput();
+        } catch (e) {
+            console.warn('[Audio] output device list unavailable:', e);
+            // A failed FIRST load leaves the arrows looking usable (markup ships
+            // them disabled, so this only matters if the list was emptied).
+            // A failure after a good load keeps the list it already has rather
+            // than relabelling a working sink as "System default".
+            if (!this._audioOutputs || !this._audioOutputs.length) this.renderAudioOutput();
+        }
+        if (!btn._iemBound) {
+            btn._iemBound = true;
+            // The button itself is the affordance now, so Enter / Space already
+            // cycle it. No arrow-key listener: on a single button those keys do
+            // nothing, and capturing them only hid them from the page.
+            if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+                // Plugging a DAC in must show up without a restart.
+                navigator.mediaDevices.addEventListener('devicechange', () => { this.initAudioOutputs(); });
+            }
+        }
+    },
+
+    renderAudioOutput: function() {
+        const btn = document.getElementById('audio-output-btn');
+        if (!btn) return;
+        const list = this._audioOutputs || [];
+        const i = typeof this._audioOutputIndex === 'number' ? this._audioOutputIndex : -1;
+        const cur = i >= 0 ? list[i] : null;
+        const label = cur ? cur.short : 'System default';
+        const full = cur ? cur.label : 'System default';
+        const span = document.getElementById('audio-output-label');
+        if (span) span.textContent = label; else btn.textContent = label;
+        // The button ellipsises a long name, so the tooltip carries the full one
+        // and says what a click does — the row has no separate label for that.
+        btn.title = `${full} — click to switch`;
+        btn.setAttribute('aria-label', `Output device: ${full}`);
+        // Nothing to switch to. A disabled button says so before the click; an
+        // enabled-looking one answered every press with "No output devices".
+        btn.disabled = list.length === 0;
+    },
+
+    // One click = the next entry in [System default, ...devices], wrapping back
+    // to System default after the last device.
+    cycleAudioOutput: async function() {
+        const list = this._audioOutputs || [];
+        // Unreachable while the button is disabled, but kept as a guard rather
+        // than throwing on an empty list.
+        if (!list.length) return;
+        const i = typeof this._audioOutputIndex === 'number' ? this._audioOutputIndex : -1;
+        const next = i + 1 >= list.length ? -1 : i + 1;
+        await this.setAudioOutput(next < 0 ? '' : list[next].id);
+    },
+
+    // U-008: app + measurement-database update center. All network work is in
+    // main.js behind fixed, argument-less IPC commands; this layer only renders
+    // state and asks before anything is installed.
+    _updateStatus: function(text, tone) {
+        const row = document.getElementById('update-status');
+        const el = document.getElementById('update-status-text');
+        if (!row || !el) return;
+        row.style.display = text ? 'flex' : 'none';
+        el.textContent = text || '';
+        el.style.color = tone === 'bad' ? 'var(--danger)' : tone === 'good' ? 'var(--accent-green)' : 'var(--text-secondary)';
+    },
+
+    initUpdateCenter: async function() {
+        // The old update centre stored the last remote database commit here and
+        // treated it as "installed". Content hashes now decide, so the stale key
+        // is removed rather than left to imply state that is no longer read.
+        try { localStorage.removeItem('settings_db_commit'); } catch (e) {}
+        const hint = document.getElementById('app-version-hint');
+        const bridge = window.appBridge;
+        if (!bridge || typeof bridge.checkAppUpdate !== 'function') {
+            if (hint) hint.textContent = 'Updates require the desktop app';
+            return;
+        }
+        try {
+            if (typeof bridge.appBuildInfo === 'function') {
+                const info = await bridge.appBuildInfo();
+                if (info && info.ok) {
+                    if (hint) hint.textContent = info.shortCommit
+                        ? `Version ${info.version} · build ${info.shortCommit}`
+                        : `Version ${info.version} · development build`;
+                    return;
+                }
+            }
+            const v = await bridge.appVersion();
+            if (hint) hint.textContent = `Version ${v}`;
+        } catch (e) {}
+    },
+
+    checkAppUpdate: async function() {
+        const bridge = window.appBridge;
+        if (!bridge || !bridge.checkAppUpdate) { showToast('Updates require the desktop app.', '⚠️'); return; }
+        this._updateStatus('Checking for app updates…');
+        const r = await bridge.checkAppUpdate();
+        if (!r || !r.ok) {
+            this._updateStatus('App update check failed: ' + ((r && r.error) || 'unknown error'), 'bad');
+            showToast('Could not check for updates.', '⚠️');
+            return;
+        }
+        if (r.dev) {
+            this._updateStatus(`Development build · version ${r.current}. Release comparison is skipped.`, 'good');
+            showToast('Development builds are not compared with released installers.', 'ℹ️');
+            return;
+        }
+        if (!r.changed) {
+            this._updateStatus(`Build ${r.localShort} is up to date.`, 'good');
+            showToast(`Build ${r.localShort} matches the latest release.`, '✅');
+            return;
+        }
+        const remote = r.remoteShort || r.latest;
+        const local = r.localShort || r.current;
+        this._updateStatus(`Update available: build ${remote} (you have ${local})`, 'good');
+        const go = await UIKit.confirm({
+            title: `Update available: build ${remote}`,
+            message: `You are running build ${local}. The release page opens in your browser so you can download the installer for your platform.${r.notes ? '\n\n' + r.notes.slice(0, 500) : ''}`,
+            confirmLabel: 'Open release page',
+            cancelLabel: 'Later'
+        });
+        if (go) bridge.openReleasePage();
+    },
+
+    openReleasePage: function() {
+        if (window.appBridge && window.appBridge.openReleasePage) window.appBridge.openReleasePage();
+        else showToast('This only works in the desktop app.', '⚠️');
+    },
+
+    // A-008. Every curve comes from a person or publication; this is where the
+    // app says who, and links to the original database instead of leaving the
+    // folder name ("SUPER REVIEW") as the only trace of authorship.
+    //
+    // The list is rendered with DOM nodes rather than one innerHTML string: the
+    // labels come from the measurement archive, and a quote or angle bracket in
+    // a future folder name should be shown literally, not parsed as markup.
+    openSourceCredits: function() {
+        if (typeof SourceIndex === 'undefined' || typeof SourceIndex.creditList !== 'function') {
+            showToast('Source credits are unavailable in this build.', '⚠️');
+            return;
+        }
+        const credits = SourceIndex.creditList();
+        if (!credits.length) {
+            showToast('No measurement sources are listed.', '⚠️');
+            return;
+        }
+        const self = this;
+
+        UIKit.read({
+            title: 'Measurement sources',
+            subtitle: credits.length + ' reviewers, communities and archives · every curve belongs to its author',
+            toolbar: function(bar) {
+                const input = document.createElement('input');
+                input.type = 'search';
+                input.placeholder = 'Filter by name…';
+                input.setAttribute('aria-label', 'Filter measurement sources');
+                input.style.cssText = 'flex:1 1 200px;min-width:0;height:30px;padding:0 10px;background:var(--bg-card);border:1px solid var(--line);border-radius:var(--r-xs);color:var(--text-hi);font:inherit;font-size:var(--t-xs);outline:none;';
+                bar.appendChild(input);
+                const count = document.createElement('span');
+                count.className = 'type-micro';
+                count.style.cssText = 'flex:none;color:var(--text-mid);font-variant-numeric:tabular-nums;';
+                count.textContent = credits.length + ' sources';
+                bar.appendChild(count);
+
+                // The body is built synchronously below, so the filter reads the
+                // finished rows on the first input event.
+                input.addEventListener('input', function() {
+                    const q = String(input.value || '').trim().toLowerCase();
+                    const rows = bar.parentElement.querySelectorAll('.source-credit-row');
+                    let shown = 0;
+                    rows.forEach(function(row) {
+                        const match = !q || (row.getAttribute('data-search') || '').indexOf(q) !== -1;
+                        row.style.display = match ? '' : 'none';
+                        if (match) shown++;
+                    });
+                    count.textContent = q ? shown + ' of ' + credits.length : credits.length + ' sources';
+                });
+            },
+            render: function(body) {
+                const intro = document.createElement('p');
+                intro.className = 'type-xs';
+                intro.style.cssText = 'margin:0 0 10px;color:var(--text-mid);line-height:1.55;';
+                intro.textContent = 'These people measured the curves. IEM Tool only normalises and re-plots them; the measurements remain the work of their authors. Sources are credited by the folder names stored in the measurement archive.';
+                body.appendChild(intro);
+
+                const list = document.createElement('div');
+                list.className = 'source-credit-list';
+                list.style.cssText = 'display:flex;flex-direction:column;';
+
+                credits.forEach(function(credit) {
+                    const row = document.createElement('div');
+                    row.className = 'source-credit-row';
+                    let host = '';
+                    try { host = new URL(credit.url).hostname.replace(/^www\./, ''); } catch (e) { host = credit.url; }
+                    row.setAttribute('data-search', [credit.label, host, credit.kind, credit.folders.join(' ')].join(' ').toLowerCase());
+                    row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:7px 2px;border-bottom:1px solid var(--line);';
+
+                    const text = document.createElement('div');
+                    text.style.cssText = 'flex:1 1 auto;min-width:0;';
+                    const name = document.createElement('div');
+                    name.className = 'type-sm';
+                    name.style.cssText = 'font-weight:600;color:var(--text-hi);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+                    name.textContent = credit.label;
+                    const meta = document.createElement('div');
+                    meta.className = 'type-micro';
+                    meta.style.cssText = 'margin-top:1px;color:var(--text-mid);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+                    meta.textContent = SourceIndex.kindLabel(credit.kind) + ' · ' + host;
+                    text.appendChild(name);
+                    text.appendChild(meta);
+
+                    const open = document.createElement('button');
+                    open.type = 'button';
+                    open.className = 'settings-btn';
+                    open.style.flex = 'none';
+                    open.textContent = 'Open ↗';
+                    open.title = 'Open ' + credit.label + ' in your browser';
+                    open.setAttribute('aria-label', 'Open ' + credit.label + ' in your browser');
+                    open.onclick = function() { self.openCreditUrl(credit.url); };
+
+                    row.appendChild(text);
+                    row.appendChild(open);
+                    list.appendChild(row);
+                });
+
+                body.appendChild(list);
+
+                const note = document.createElement('p');
+                note.className = 'type-micro';
+                note.style.cssText = 'margin:12px 0 0;color:var(--text-mid);line-height:1.5;';
+                note.textContent = 'Missing or miscredited source? Open an issue on the project’s GitHub repository and it will be corrected.';
+                body.appendChild(note);
+            }
+        });
+    },
+
+    // The URL comes from the local CREDITS table, but the main process still
+    // validates its scheme and host: a compromised renderer must not be able to
+    // turn this into an "open any URL" bridge. In a browser (the screenshot
+    // harness) there is no appBridge, so a normal window.open is the fallback.
+    openCreditUrl: function(url) {
+        const bridge = window.appBridge;
+        if (bridge && typeof bridge.openCreditUrl === 'function') {
+            bridge.openCreditUrl(url).then(function(r) {
+                if (!r || !r.ok) showToast('Could not open that source link.', '⚠️');
+            }).catch(function() {
+                showToast('Could not open that source link.', '⚠️');
+            });
+            return;
+        }
+        try {
+            const win = window.open(url, '_blank', 'noopener,noreferrer');
+            if (win) win.opener = null;
+        } catch (e) {
+            showToast('Could not open that source link.', '⚠️');
+        }
+    },
+
+    checkDatabaseUpdate: async function() {
+        const bridge = window.appBridge;
+        if (!bridge || !bridge.checkDatabaseUpdate) { showToast('Updates require the desktop app.', '⚠️'); return null; }
+        const hint = document.getElementById('db-update-hint');
+        this._updateStatus('Hashing the local database and comparing with GitHub…');
+        const r = await bridge.checkDatabaseUpdate();
+        if (!r || !r.ok) {
+            this._updateStatus('Database check failed: ' + ((r && r.error) || 'unknown error'), 'bad');
+            showToast('Could not check the database.', '⚠️');
+            return null;
+        }
+        if (r.changed) {
+            if (hint) hint.textContent = `New measurements · ${r.shortSha}`;
+            this._updateStatus(`Database update available: ${r.shortSha} — ${r.message}`.slice(0, 160), 'good');
+            showToast(`New database commit ${r.shortSha} is available.`, '🧬');
+        } else {
+            if (hint) hint.textContent = `Matches repository · ${r.shortSha}`;
+            this._updateStatus(`Database matches commit ${r.shortSha}.`, 'good');
+            showToast('Your measurement database is up to date.', '✅');
+        }
+        return r;
+    },
+
+    downloadDatabaseUpdate: async function() {
+        const bridge = window.appBridge;
+        if (!bridge || !bridge.downloadDatabaseUpdate) { showToast('Updates require the desktop app.', '⚠️'); return; }
+        const latest = await this.checkDatabaseUpdate();
+        if (!latest) return;
+        if (!latest.changed) {
+            showToast('The measurement database already matches GitHub.', '✅');
+            return;
+        }
+        const ok = await UIKit.confirm({
+            title: `Install database ${latest.shortSha}?`,
+            message: 'The current database and measurements are backed up inside IEM-Data/backup first, and the download is verified against the commit hash before it replaces anything. The app reloads when the install finishes. This can take a minute on a slow connection.',
+            confirmLabel: 'Download & install',
+            cancelLabel: 'Cancel'
+        });
+        if (!ok) return;
+        this._updateStatus('Downloading and installing the database… (this can take a minute)');
+        const r = await bridge.downloadDatabaseUpdate();
+        if (!r || !r.ok) {
+            this._updateStatus('Database install failed: ' + ((r && r.error) || 'unknown error'), 'bad');
+            showToast('Database update failed — your old database is still in place.', '⚠️', { duration: 7000 });
+            return;
+        }
+        this._updateStatus(`Installed ${r.products} products from ${r.shortSha || latest.shortSha}. Reload to use it.`, 'good');
+        const reload = await UIKit.confirm({
+            title: 'Database installed',
+            message: `${r.products} products from commit ${r.shortSha || latest.shortSha} are ready. Reload the app now to load the new measurements?`,
+            confirmLabel: 'Reload now',
+            cancelLabel: 'Later'
+        });
+        if (reload) {
+            try { await CurveIndexer.clearCurveCache(); } catch (e) {}
+            localStorage.removeItem('squig_db_indexed');
+            localStorage.removeItem('find_canonical_profiles');
+            location.reload();
+        }
+    },
+
+    setAudioOutput: async function(deviceId) {
+        const r = await SharedAudio.setOutputDevice(deviceId || '');
+        if (!r.ok) {
+            showToast('Could not switch output: ' + r.error, '⚠️');
+            return;
+        }
+        const list = this._audioOutputs || [];
+        const i = deviceId ? list.findIndex((d) => d.id === deviceId) : -1;
+        this._audioOutputIndex = i;
+        this.renderAudioOutput();
+        const cur = i >= 0 ? list[i] : null;
+        // Keyed so repeated steps update one entry rather than stacking a
+        // history of devices the user has already stepped past.
+        showToast(`Audio output: ${cur ? cur.short : 'System default'}`, '🎧', { key: 'audio-output' });
+    },
+
     mobileDrawerOpen: false,
     toggleMobileDrawer: function() {
         this.mobileDrawerOpen = !this.mobileDrawerOpen;
@@ -1713,18 +2153,14 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
                     UIKit.windowChrome();
                 }
 
-                // R3: Settings now renders Gapless / Crossfade / Blue light as
-                // real switches whose state is derived from localStorage rather
-                // than hard-coded in the markup. They used to carry a literal
-                // `is-on` class that was only corrected once the user toggled
-                // the control - so a user who had turned Gapless OFF saw it
-                // still lit up on every launch until they clicked it. Applying
-                // the state once at boot fixes that and makes localStorage the
-                // single source of truth.
+                // R3: Settings renders Track transitions and Blue light as real
+                // controls whose state is derived from localStorage rather than
+                // hard-coded in the markup. Applying the state once at boot makes
+                // localStorage the single source of truth, instead of the control
+                // staying lit until the user clicked it.
                 try {
                     if (window.EQ) {
-                        if (EQ._applyGaplessButton) EQ._applyGaplessButton();
-                        if (EQ._applyCrossfadeButton) EQ._applyCrossfadeButton();
+                        if (EQ._applyTrackTransition) EQ._applyTrackTransition();
                         // R4: same principle for the visualiser's effect
                         // button — derive the label from vizModeIndex on boot
                         // instead of leaving a hard-coded string in the markup.
@@ -1772,6 +2208,8 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
                 });
 
                 this.resetAllInputsOnLoad();
+                this.initAudioOutputs();
+                this.initUpdateCenter();
 
                 this.renderThemeToggles();
                 this.switchTab('find');
@@ -3226,6 +3664,7 @@ if(this.radarChart) {
                 'settings_theme_id', 'settings_export_theme_id', 'settings_font_id',
                 'settings_align_hz', 'settings_align_db',
                 'settings_reading_scale',
+                'settings_audio_mode',
                 'settings_gapless', 'settings_crossfade', 'settings_crossfade_secs',
                 'settings_merger_limiter',
                 'a11y_bluelight',
@@ -3281,6 +3720,8 @@ if(this.radarChart) {
             this.updateSensUnitUI();
 
             Tone_Module.reset(); EQ_Module.resetEQ(); TestLab_Module.stopAll(); PEQDB_Module.clearState(); this.updateAll();
+            this._iemDbActiveId = null;
+            await this.markReviewClean();
         },
 
 

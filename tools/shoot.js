@@ -9,6 +9,7 @@
 // external live-server: live-reload reloads the page between shots, which resets
 // the active tab and makes the whole capture sequence non-deterministic.
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('shoot');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

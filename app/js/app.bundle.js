@@ -362,6 +362,79 @@ const CurveUtils = {
     },
 
 
+    // Parse a measured FR text file (Squiglink / REW / CSV-ish exports).
+    //
+    // Single source of truth: PEQDB_Module.parseRawCurveText delegates here,
+    // and scripts/build-catalogue-index.mjs calls this directly through the
+    // Node export at the bottom of the file. Keeping one parser means the
+    // precomputed catalogue signatures and the live app curves can never
+    // disagree about a file's points.
+    parseCurveText: function(rawText) {
+        if (typeof rawText !== 'string') return [];
+        if (rawText.length > 2000000) rawText = rawText.slice(0, 2000000);
+
+        const lines = rawText.split(/\r\n|\r|\n/);
+        const data = [];
+        let commaIsDecimal = false;
+        for (let i = 0; i < Math.min(100, lines.length); i++) {
+            const line = lines[i].trim();
+            if (line.startsWith('#') || line === '') continue;
+            // Comma-as-decimal when the line contains BOTH a comma and a
+            // second separator (including a plain space).
+            if (line.includes(',') && (line.includes('\t') || line.includes(';') || line.includes(' '))) {
+                commaIsDecimal = true;
+                break;
+            }
+        }
+        lines.forEach(line => {
+            let cleanLine = line.trim();
+            if (cleanLine.startsWith('#') || cleanLine.startsWith('*') || cleanLine.startsWith('//') || cleanLine === '') return;
+
+            // Grouped-digit repair ("1,000" -> "1000") before the branch split.
+            const firstTok = cleanLine.split(/[\t;\s]+/)[0] || '';
+            if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(firstTok)) {
+                cleanLine = cleanLine.replace(/(\d),(\d{3})/g, '$1$2');
+            }
+
+            let parts = [];
+            if (commaIsDecimal) {
+                cleanLine = cleanLine.replace(/,/g, '.');
+                parts = cleanLine.split(/[\t;\s]+/);
+            } else {
+                parts = cleanLine.split(/[\s,;\t]+/);
+            }
+            parts = parts.filter(p => p.length > 0);
+            if (parts.length >= 2) {
+                const f = parseFloat(parts[0]);
+                const a = parseFloat(parts[1]);
+                if (Number.isFinite(f) && Number.isFinite(a) && f >= 1 && f <= 24000) {
+                    data.push([f, a]);
+                }
+            }
+        });
+        data.sort((a, b) => a[0] - b[0]);
+
+        if (data.length > 10000) {
+            const step = Math.ceil(data.length / 10000);
+            const down = [];
+            for (let i = 0; i < data.length; i += step) down.push(data[i]);
+            if (down[down.length - 1] !== data[data.length - 1]) down.push(data[data.length - 1]);
+            data.length = 0;
+            for (let i = 0; i < down.length; i++) data.push(down[i]);
+        }
+
+        const deduped = [];
+        for (let i = 0; i < data.length; i++) {
+            const prev = deduped[deduped.length - 1];
+            if (prev && Math.abs(Math.log10(data[i][0]) - Math.log10(prev[0])) < 1e-4) {
+                prev[1] = (prev[1] + data[i][1]) / 2;
+            } else {
+                deduped.push(data[i]);
+            }
+        }
+        return deduped;
+    },
+
     // Exported for reuse by app-core.js computeSimilarityScores
     // to maintain single source of truth shared with find-worker.js
     computeSimilarityScores: function(targetInterp, dataset, probes, weights, midMask, threshold) {
@@ -396,6 +469,10 @@ const CurveUtils = {
         return matches;
     },
 };
+
+// Node-only export for the catalogue index builder and the test harness.
+// Guarded so the browser bundle is unaffected.
+if (typeof module !== 'undefined' && module.exports) module.exports = CurveUtils;
 
 /* ===== app/js/name-utils.js ===== */
 /* Canonical IEM name normalisation — SINGLE SOURCE OF TRUTH.
@@ -1032,7 +1109,17 @@ const SharedAudio = {
         this.ctx = new AudioContextClass({ latencyHint: 'playback' });
         
         this.masterGain = this.ctx.createGain();
-        
+
+        // Mono is a persisted accessibility choice (Settings > Audio channel).
+        // The graph is built lazily, long after the saved mode is restored, so
+        // the channel count has to be applied here as well as at click time -
+        // otherwise the row could read "Mono" while the context it feeds was
+        // created stereo.
+        if (window.isMonoMode) {
+            this.masterGain.channelCount = 1;
+            this.masterGain.channelCountMode = 'explicit';
+        }
+
         // Check for native StereoPannerNode support with a safe fallback for older iOS WebKit
         if (typeof this.ctx.createStereoPanner === 'function') {
             this.masterPanner = this.ctx.createStereoPanner();
@@ -1157,8 +1244,43 @@ const SharedAudio = {
         this.analyser.connect(this.splitter);
         this.splitter.connect(this.analyserL, 0);
         this.splitter.connect(this.analyserR, 1);
+
+        // Restore the saved output device. This is deliberately fire-and-forget:
+        // a device that was unplugged since last launch must not abort boot, and
+        // setSinkId is not implemented in every Chromium build.
+        try {
+            const savedDevice = localStorage.getItem('settings_audio_output');
+            if (savedDevice && typeof this.ctx.setSinkId === 'function') {
+                this.ctx.setSinkId(savedDevice).catch(err => {
+                    console.warn('[Audio] saved output device unavailable:', err && err.message);
+                });
+            }
+        } catch (e) {}
         
         return this.ctx;
+    },
+
+    // U-006: choose the physical output (built-in speakers, USB DAC, amp).
+    // All playback in the app reaches ctx.destination, so one sink switch moves
+    // the playlist, EQ preview, TestLab tones and A/B arms together.
+    async setOutputDevice(deviceId) {
+        const ctx = this.init();
+        if (!ctx || typeof ctx.setSinkId !== 'function') {
+            return { ok: false, error: 'This build of Chromium cannot switch audio outputs.' };
+        }
+        try {
+            await ctx.setSinkId(deviceId || '');
+            try { localStorage.setItem('settings_audio_output', deviceId || ''); } catch (e) {}
+            return { ok: true, deviceId: deviceId || '' };
+        } catch (err) {
+            return { ok: false, error: (err && err.message) || String(err) };
+        }
+    },
+
+    async listOutputDevices() {
+        if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function') return [];
+        const all = await navigator.mediaDevices.enumerateDevices();
+        return all.filter(d => d.kind === 'audiooutput');
     }
 };
 /* ===== app/js/safe-storage.js ===== */
@@ -1396,6 +1518,23 @@ Object.defineProperty(window, 'localStorage', {
             // Restore filter state from local storage on application load
             if (localStorage.getItem('a11y_bluelight') === 'true') {
                 this.toggleBlueLightFilter();
+            }
+            this.restoreAudioMode();
+        },
+        // Settings > Audio channel. toggleAudioMode owns the flag, the label and
+        // the graph, so the restore mirrors exactly what it does to the parts
+        // that already exist. The audio context is usually created later; that
+        // half is handled by SharedAudio.init.
+        restoreAudioMode: function() {
+            let saved = null;
+            try { saved = localStorage.getItem('settings_audio_mode'); } catch (e) {}
+            if (saved !== 'mono') return;
+            window.isMonoMode = true;
+            const btn = document.getElementById('a11y-audio-btn');
+            if (btn) btn.textContent = 'Mono';
+            if (typeof SharedAudio !== 'undefined' && SharedAudio.masterGain) {
+                SharedAudio.masterGain.channelCount = 1;
+                SharedAudio.masterGain.channelCountMode = 'explicit';
             }
         },
                 toggleBlueLightFilter: function() {
@@ -1636,6 +1775,10 @@ const UIKit = {
         if (card) { card.classList.toggle('max-w-md', rows.length > 0); card.classList.toggle('max-w-sm', rows.length === 0); }
         const okBtn = wrap.querySelector('#uikit-confirm-ok');
         okBtn.textContent = opts.confirmLabel || 'Confirm';
+        // A two-option choice is not always yes/no ("Restore draft" vs "Use
+        // database"). Callers can name the safe action explicitly.
+        const cancelBtn = wrap.querySelector('#uikit-confirm-cancel');
+        cancelBtn.textContent = opts.cancelLabel || 'Cancel';
         // Primary action carries the accent halo; a destructive one gets the
         // danger token. Both labels use --accent-ink: white on --danger is
         // 2.77:1, which fails AA at 13px, while the near-black ink on the same
@@ -3472,56 +3615,58 @@ _retargetActiveArm: function(gain, tc = 0.05) {
             return true;
         },
 
-        // Toggle gapless playback from the Accessibility panel button.
-        toggleGapless: function() {
-            const on = !this.gaplessEnabled();
-            localStorage.setItem('settings_gapless', on ? '1' : '0');
-            this._applyGaplessButton();
-            if (on) {
-                // Re-sync the standby element with the current playlist position.
-                if (this.playlist && this.playlist.length > 0 && this.playlist[this.playlistIndex]) {
-                    this._preloadedIndex = null;
-                    this._preloadNextTrack();
-                }
-                showToast("Gapless Playback: ON", "🔗");
-            } else {
-                // Crossfade still needs the standby machinery — only tear it
-                // down when BOTH features are off.
-                if (!this.crossfadeEnabled()) this._teardownStandby();
-                showToast("Gapless Playback: Off", "🔗");
-            }
+        // The three states the player actually plays. `_overlapSecs` already
+        // picks exactly one: the crossfade when it is on, else the 0.18s gapless
+        // seam, else nothing. Gapless and crossfade are therefore NOT independent
+        // settings - they were two switches and a slider describing one 3-way
+        // choice - and Settings now shows them as that choice.
+        trackTransitionMode: function() {
+            if (this.crossfadeEnabled()) return 'crossfade';
+            if (this.gaplessEnabled()) return 'gapless';
+            return 'off';
         },
 
-_applyGaplessButton: function() {
-    const btn = document.getElementById("a11y-gapless-btn");
-    if (!btn) return;
-    // R3: the button no longer rewrites its own textContent. It used to set
-    // "🔗 Gapless: On" / "🔗 Gapless: Off" wholesale, which is incompatible with
-    // a real switch - any markup inside the button would be destroyed on the
-    // first state change. The switch track, knob and colour are now driven
-    // purely by the `is-on` class, and the visible wording lives in the row
-    // label beside it. aria-checked carries the state to assistive tech.
-    const on = this.gaplessEnabled();
-    btn.classList.toggle('is-on', on);
-    btn.setAttribute('aria-checked', on ? 'true' : 'false');
-    },
+        // Settings > Track transitions. Writes the same two keys the switches
+        // did, so a profile saved before this control existed restores to the
+        // same mode it was playing (crossfade beats gapless, as before).
+        setTrackTransition: function(mode) {
+            const next = (mode === 'off' || mode === 'gapless' || mode === 'crossfade')
+                ? mode
+                : this.trackTransitionMode();
+            localStorage.setItem('settings_crossfade', next === 'crossfade' ? '1' : '0');
+            localStorage.setItem('settings_gapless', next === 'off' ? '0' : '1');
+            this._applyTrackTransition();
+            if (next === 'off') {
+                this._teardownStandby();
+            } else if (this.playlist && this.playlist.length > 0 && this.playlist[this.playlistIndex]) {
+                // Both remaining modes need the standby element: re-sync it.
+                this._preloadedIndex = null;
+                this._preloadNextTrack();
+            }
+            showToast(next === 'off' ? 'Track transitions: Off'
+                : next === 'gapless' ? 'Track transitions: Gapless'
+                : 'Track transitions: Crossfade', '🔀');
+        },
 
-        // Toggle crossfade playback (Settings -> Accessibility panel button).
-        // Takes over from the gapless seam with a longer, user-adjustable
-        // overlap between tracks. Duration via setCrossfadeSeconds.
-        toggleCrossfade: function() {
-            const on = !this.crossfadeEnabled();
-            localStorage.setItem('settings_crossfade', on ? '1' : '0');
-            this._applyCrossfadeButton();
-            if (on) {
-                if (this.playlist && this.playlist.length > 0 && this.playlist[this.playlistIndex]) {
-                    this._preloadedIndex = null;
-                    this._preloadNextTrack();
-                }
-                showToast("Crossfade: ON", "🎚️");
-            } else {
-                if (!this.gaplessEnabled()) this._teardownStandby();
-                showToast("Crossfade: Off", "🎚️");
+        // Paint the 3-way control and the crossfade length from storage. Runs on
+        // boot (iem-module restores settings) and after every change.
+        _applyTrackTransition: function() {
+            const mode = this.trackTransitionMode();
+            const group = document.getElementById('settings-track-mode');
+            if (group) {
+                group.querySelectorAll('[data-arg-0]').forEach(function(btn) {
+                    const on = btn.getAttribute('data-arg-0') === mode;
+                    btn.classList.toggle('is-active', on);
+                    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+                });
+            }
+            const wrap = document.getElementById('crossfade-length');
+            if (wrap) wrap.hidden = mode !== 'crossfade';
+            const slider = document.getElementById('a11y-crossfade-slider');
+            if (slider) {
+                slider.disabled = mode !== 'crossfade';
+                slider.value = this.crossfadeSeconds();
+                this.setCrossfadeSeconds(slider.value);
             }
         },
 
@@ -3530,24 +3675,6 @@ _applyGaplessButton: function() {
             localStorage.setItem('settings_crossfade_secs', String(secs));
             const display = document.getElementById("a11y-crossfade-display");
             if (display) display.textContent = (secs % 1 === 0) ? secs + "s" : secs.toFixed(1) + "s";
-        },
-
-        _applyCrossfadeButton: function() {
-            const btn = document.getElementById("a11y-crossfade-btn");
-            if (!btn) return;
-            const on = this.crossfadeEnabled();
-            // R3: state only. This used to rewrite textContent wholesale, which
-            // destroys any markup inside the button - the reason a real switch
-            // could not be built here. See _applyGaplessButton.
-            btn.classList.toggle('is-on', on);
-            btn.setAttribute('aria-checked', on ? 'true' : 'false');
-            const slider = document.getElementById("a11y-crossfade-slider");
-            if (slider) {
-                slider.disabled = !on;
-                slider.classList.toggle('opacity-40', !on);
-                slider.value = this.crossfadeSeconds();
-                this.setCrossfadeSeconds(slider.value);
-            }
         },
 
         // Stop the dual-element machinery: clear the standby element, drop its
@@ -8786,7 +8913,6 @@ const EQ_MathUtilMethods = {
 const IemSearchIndex = {
     _index: null,
     _db: null,
-    _tokenizer: null,
     _initialized: false,
 
     init: function(db) {
@@ -9217,9 +9343,6 @@ const App_Theme = {
         const nextIdx = (curIdx + 1) % keys.length;
         this.setGlobalFont(keys[nextIdx]);
     },
-
-    currentFontScale: 1.0,
-    currentReadingScale: 1.0,
 
     updateCombinedFontScale: function() {
         const raw = this.currentFontScale * this.currentReadingScale;
@@ -10191,7 +10314,6 @@ var Mascot = window.Mascot || {
                 sleeping: 'anim-mascot-sleeping',
                 fire: 'anim-mascot-fire',
                 hearnoevil: 'anim-mascot-hear-no-evil',
-                mute: 'anim-mascot-hear-no-evil',
                 sparkle: 'anim-mascot-sparkle',
                 grin: 'anim-mascot-sparkle',
                 ab_a: 'anim-mascot-ab-a',
@@ -11559,6 +11681,10 @@ const IEM_LibraryMethods = {
             return await DBCache.getAllReviews();
         },
 
+        // "Delete every saved review" was folded into Settings > Library > Reset
+        // (click_1011_App_factoryReset), which clears the reviews together with
+        // the presets, favourites and database edits the old button kept.
+
         saveToLibrary: async function() {
         const brand = elValue('brand').trim(); const model = elValue('model').trim();
         if(!brand || !model) { showToast("Enter a Brand and Model name before saving.", "⚠️"); return; }
@@ -11601,6 +11727,10 @@ const IEM_LibraryMethods = {
 
         const success = await DBCache.saveReview(profile);
         if (success) {
+            // The draft has been promoted to a real saved review; offering it
+            // again next time would be stale.
+            this.deleteReviewDraft(id);
+            await this.markReviewClean();
             showToast(`Saved ${brand} ${model} to Library inventory.`, "💾");
             await this.renderLibrary();
         } else {
@@ -11827,30 +11957,24 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
 
         closeCompare: function() { document.getElementById('library-table').classList.remove('hidden'); document.getElementById('compare-view').classList.add('hidden'); document.getElementById('compare-view').classList.remove('flex'); },
 
-        saveConfig: async function() {
-            try {
-                const brand = (document.getElementById('brand')?.value || '').trim();
-                const model = (document.getElementById('model')?.value || '').trim() || "Workstation";
-                const baseName = brand ? `${brand}_${model}` : model;
-
-                const sliderValues = {};
-                this.sliderNodes.forEach(n => {
-                    if (n.element && n.element.id) sliderValues[n.element.id] = n.element.value;
-                });
-
-                const currentWorkspace = {
-                    brand: document.getElementById('brand')?.value || '',
-                    model: document.getElementById('model')?.value || '',
-                    price: document.getElementById('price')?.value || '',
-                    refVolume: document.getElementById('listening-volume')?.value || 'moderate',
-                    impedance: document.getElementById('impedance')?.value || '5',
-                    sensitivity: document.getElementById('sensitivity')?.value || '80',
-                    notes: document.getElementById('review-notes')?.value || '',
-                // Workspace photo: blob: URLs die with the session and Blobs
-                // stringify to {} — serialize as a bounded dataURL instead.
-                // (Image is already <=400px from the upload pipeline; this is
-                // the same 0.75-quality JPEG the upload path produces.)
-                image: await this._imageToDataURL(this.currentImage, this.currentImageBlob),
+        // Capture the editable review workspace. Shared by the full backup and
+        // the per-entry autosave drafts, so the two can never drift apart.
+        // includeImage=false keeps drafts small (a 400px JPEG per draft would
+        // blow through localStorage's quota after a handful of entries).
+        _captureWorkspaceState: async function(includeImage) {
+            const sliderValues = {};
+            this.sliderNodes.forEach(n => {
+                if (n.element && n.element.id) sliderValues[n.element.id] = n.element.value;
+            });
+            return {
+                brand: document.getElementById('brand')?.value || '',
+                model: document.getElementById('model')?.value || '',
+                price: document.getElementById('price')?.value || '',
+                refVolume: document.getElementById('listening-volume')?.value || 'moderate',
+                impedance: document.getElementById('impedance')?.value || '5',
+                sensitivity: document.getElementById('sensitivity')?.value || '80',
+                notes: document.getElementById('review-notes')?.value || '',
+                image: includeImage === false ? null : await this._imageToDataURL(this.currentImage, this.currentImageBlob),
                 selectedTags: Array.from(this.selectedTags || []),
                 selectedGenres: Array.from(this.selectedGenres || []),
                 selectedBass: Array.from(this.selectedBass || []),
@@ -11866,6 +11990,90 @@ else if (typeof EQ_Module !== 'undefined' && EQ_Module.applyPreset) EQ_Module.ap
                 toneData: Tone_Module.getState(),
                 eqData: EQ_Module.getRealValues()
             };
+        },
+
+        // ---- Review drafts (A-004 / U-010) --------------------------------
+        // Applying a second database entry used to overwrite the open review
+        // with no warning, and the single pre-apply snapshot was replaced on
+        // the next apply. Drafts are keyed by database id, capped at 12, and
+        // restored behind an explicit prompt so a draft never silently wins
+        // over a fresher measurement load.
+        REVIEW_DRAFT_KEY: 'iem_review_drafts_v1',
+        REVIEW_DRAFT_MAX: 12,
+
+        _readDrafts: function() {
+            try {
+                const raw = localStorage.getItem(this.REVIEW_DRAFT_KEY);
+                const parsed = raw ? JSON.parse(raw) : {};
+                return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+            } catch (e) { return {}; }
+        },
+
+        _writeDrafts: function(drafts) {
+            try {
+                const list = Object.entries(drafts).sort((a, b) => (b[1].savedAt || 0) - (a[1].savedAt || 0));
+                const kept = {};
+                list.slice(0, this.REVIEW_DRAFT_MAX).forEach(([id, d]) => { kept[id] = d; });
+                localStorage.setItem(this.REVIEW_DRAFT_KEY, JSON.stringify(kept));
+            } catch (e) {
+                console.warn('[Review] draft save failed (storage full?):', e);
+                showToast('Could not autosave this draft — browser storage is full.', '⚠️');
+            }
+        },
+
+        getReviewDraft: function(id) {
+            if (!id) return null;
+            const d = this._readDrafts()[id];
+            return d && d.workspace ? d : null;
+        },
+
+        saveReviewDraft: async function(id) {
+            if (!id) return false;
+            try {
+                const workspace = await this._captureWorkspaceState(false);
+                const drafts = this._readDrafts();
+                drafts[id] = {
+                    id,
+                    name: `${workspace.brand || ''} ${workspace.model || ''}`.trim() || id,
+                    savedAt: Date.now(),
+                    workspace
+                };
+                this._writeDrafts(drafts);
+                return true;
+            } catch (e) {
+                console.warn('[Review] capture draft failed:', e);
+                return false;
+            }
+        },
+
+        deleteReviewDraft: function(id) {
+            if (!id) return;
+            const drafts = this._readDrafts();
+            if (drafts[id]) { delete drafts[id]; this._writeDrafts(drafts); }
+        },
+
+        // Snapshot comparison; the baseline is written after every successful
+        // database load / draft restore / workspace clear.
+        isReviewDirty: async function() {
+            if (!this._reviewBaseline) return false;
+            try {
+                const now = await this._captureWorkspaceState(false);
+                return JSON.stringify(now) !== this._reviewBaseline;
+            } catch (e) { return false; }
+        },
+
+        markReviewClean: async function() {
+            try { this._reviewBaseline = JSON.stringify(await this._captureWorkspaceState(false)); }
+            catch (e) { this._reviewBaseline = null; }
+        },
+
+        saveConfig: async function() {
+            try {
+                const brand = (document.getElementById('brand')?.value || '').trim();
+                const model = (document.getElementById('model')?.value || '').trim() || "Workstation";
+                const baseName = brand ? `${brand}_${model}` : model;
+
+                const currentWorkspace = await this._captureWorkspaceState(true);
 
             // Library records hold photo Blobs (IndexedDB-native) — they must
             // be converted to dataURLs BEFORE JSON.stringify, which would
@@ -12830,7 +13038,7 @@ onDbSearchInput: function(value) {
             }
         },
 
-        clearIemDbSelection: function() {
+        clearIemDbSelection: async function() {
             this._iemDbActiveId = null;
             const searchInput = document.getElementById('iem-db-search-input');
             if (searchInput) this.renderIemDbSearch(searchInput.value);
@@ -12862,6 +13070,7 @@ onDbSearchInput: function(value) {
             this.createTags('bass-tags', this.bassTags, this.selectedBass);
             this.renderReviewSelectedTags();
             this.updateAll();
+            await this.markReviewClean();
             showToast("Selection cleared — review restored.", "↩️");
         },
 
@@ -12869,6 +13078,39 @@ onDbSearchInput: function(value) {
             const db = this.getIemDatabase();
             const item = db.find(x => x.id === itemId);
             if (!item) { showToast("Database entry not found.", "⚠️"); return; }
+
+            // A-004: never silently throw away edits to the open review. If the
+            // current workspace differs from the last loaded baseline, autosave
+            // it under its own database id first. It stays reachable from the
+            // draft prompt the next time that id is opened.
+            const outgoingId = this._iemDbActiveId;
+            if (outgoingId && await this.isReviewDirty()) {
+                const saved = await this.saveReviewDraft(outgoingId);
+                if (saved) showToast('Unsaved changes were autosaved as a draft.', '💾');
+            }
+
+            // A draft for the incoming entry is usually newer than the measured
+            // data the user just asked to load, so it must be an explicit
+            // choice rather than a silent overwrite in either direction.
+            const incomingDraft = this.getReviewDraft(item.id);
+            if (incomingDraft && incomingDraft.workspace) {
+                const when = incomingDraft.savedAt ? new Date(incomingDraft.savedAt).toLocaleString() : 'earlier';
+                const restore = await UIKit.confirm({
+                    title: 'Draft found for this IEM',
+                    message: `You have an unsaved draft for ${item.brand} ${item.model} from ${when}. Restore it, or load the database values (the draft is kept).`,
+                    confirmLabel: 'Restore draft',
+                    cancelLabel: 'Use database'
+                });
+                if (restore) {
+                    this._iemDbActiveId = item.id;
+                    this.loadProfileData(incomingDraft.workspace);
+                    await this.markReviewClean();
+                    const searchInput = document.getElementById('iem-db-search-input');
+                    if (searchInput) this.renderIemDbSearch(searchInput.value);
+                    showToast(`Restored your draft for ${item.brand} ${item.model}.`, '↩️');
+                    return;
+                }
+            }
 
             this._iemPreApplySnapshot = {
                 brand: document.getElementById('brand') ? document.getElementById('brand').value : '',
@@ -12957,7 +13199,11 @@ onDbSearchInput: function(value) {
             this.derivedTagsForReview(item, signatureTags);
 
             this.updateAll();
+            await this.markReviewClean();
             showToast(`Loaded ${item.brand} ${item.model} from database.`, "✓");
+            // The new entry's draft (if any) has now been superseded by the
+            // values we just loaded, so do not offer it again on this visit.
+            this.deleteReviewDraft(item.id);
         },
 
         // Derive objective tone-character slider values from a measured FR curve.
@@ -13154,24 +13400,8 @@ function getBandEnergy(dataArray, startBin, endBin) {
         const stack = document.getElementById('toast-stack');
         if (!stack) return;
 
-        // Cap the number of visible toasts — evict the oldest first.
-        while (stack.children.length >= 6) {
-            const first = stack.firstElementChild;
-            if (first) { clearTimeout(first.timeoutId); first.remove(); }
-        }
-
-        const item = document.createElement('div');
-        item.className = 'toast-item pointer-events-auto flex items-start gap-2.5 px-3 py-2.5 border-2 border-black bg-[var(--bg-card)] text-[var(--text-main)] shadow-[4px_4px_0_0_#000] text-xs font-bold select-none';
-        item.style.animation = 'toast-in .18s ease-out';
-
-        const action = opts.action;
-        let html = '<span class="toast-icon flex-shrink-0 leading-none">' + esc(icon || 'ℹ️') + '</span>';
-        html += '<div class="min-w-0 flex-1 leading-snug break-words">' + esc(String(message == null ? '' : message)) + '</div>';
-        if (action && action.label) {
-            html += '<button class="toast-act flex-shrink-0 px-2 py-1 border-2 border-black bg-[var(--accent-blue)] text-white type-micro font-black cursor-pointer hover:brightness-110">' + esc(action.label) + '</button>';
-        }
-        html += '<button class="toast-x flex-shrink-0 text-zinc-500 hover:text-red-400 type-micro leading-none cursor-pointer">✕</button>';
-        item.innerHTML = html;
+        const text = String(message == null ? '' : message);
+        const glyph = icon || 'ℹ️';
 
         const dismiss = (el, immediate) => {
             clearTimeout(el.timeoutId);
@@ -13179,37 +13409,92 @@ function getBandEnergy(dataArray, startBin, endBin) {
             el.style.transition = 'opacity .25s ease, transform .25s ease';
             el.style.opacity = '0';
             el.style.transform = 'translateY(-6px)';
-            setTimeout(() => { if (el.parentNode) el.remove(); }, 260);
+            // Kept on the element so a keyed update that lands mid-fade can
+            // cancel the removal; otherwise the new message would inherit the
+            // old toast's exit and vanish in 260ms.
+            el.removeTimer = setTimeout(() => { if (el.parentNode) el.remove(); }, 260);
         };
 
-        const actBtn = item.querySelector('.toast-act');
-        if (actBtn && action) {
-            actBtn.onclick = (ev) => {
-                ev.stopPropagation();
-                dismiss(item);
-                if (typeof action.onClick === 'function') {
-                    try { action.onClick(); } catch (e) { console.error('toast action', e); }
-                }
-            };
+        // A keyed toast REPLACES its own previous entry instead of stacking a
+        // second one. Stepping the Output device is one action repeated, not a
+        // series of independent messages: tapping ▶ four times used to leave
+        // four entries naming devices the user had already stepped past, and
+        // the stack grew to a third of the screen for a one-word change.
+        const key = opts.key ? String(opts.key) : '';
+        let item = null;
+        if (key) {
+            for (const el of stack.children) {
+                if (el.dataset && el.dataset.toastKey === key) { item = el; break; }
+            }
         }
-        const xBtn = item.querySelector('.toast-x');
-        if (xBtn) xBtn.onclick = (ev) => { ev.stopPropagation(); dismiss(item); };
 
-        item.addEventListener('click', (ev) => {
-            if (ev.target.closest && ev.target.closest('.toast-act, .toast-x')) return;
-            dismiss(item);
-        });
+        if (item) {
+            clearTimeout(item.timeoutId);
+            clearTimeout(item.removeTimer);
+            // Undo any exit animation already in flight, or the fresh message
+            // would fade with the old one.
+            item.style.transition = 'none';
+            item.style.opacity = '';
+            item.style.transform = '';
+            const iconEl = item.querySelector('.toast-icon');
+            const textEl = item.querySelector('.toast-msg');
+            if (iconEl) iconEl.textContent = glyph;
+            if (textEl) textEl.textContent = text;
+            // Replay the entry so the update still reads as a change.
+            item.style.animation = 'none';
+            void item.offsetWidth;
+            item.style.animation = 'toast-in .18s ease-out';
+        } else {
+            // Cap the number of visible toasts — evict the oldest first.
+            while (stack.children.length >= 6) {
+                const first = stack.firstElementChild;
+                if (first) { clearTimeout(first.timeoutId); first.remove(); }
+            }
 
-        stack.appendChild(item);
+            item = document.createElement('div');
+            item.className = 'toast-item pointer-events-auto flex items-start gap-2.5 px-3 py-2.5 border-2 border-black bg-[var(--bg-card)] text-[var(--text-main)] shadow-[4px_4px_0_0_#000] text-xs font-bold select-none';
+            item.style.animation = 'toast-in .18s ease-out';
+            if (key) item.dataset.toastKey = key;
+
+            const action = opts.action;
+            let html = '<span class="toast-icon flex-shrink-0 leading-none">' + esc(glyph) + '</span>';
+            html += '<div class="toast-msg min-w-0 flex-1 leading-snug break-words">' + esc(text) + '</div>';
+            if (action && action.label) {
+                html += '<button class="toast-act flex-shrink-0 px-2 py-1 border-2 border-black bg-[var(--accent-blue)] text-white type-micro font-black cursor-pointer hover:brightness-110">' + esc(action.label) + '</button>';
+            }
+            html += '<button class="toast-x flex-shrink-0 text-zinc-500 hover:text-red-400 type-micro leading-none cursor-pointer">✕</button>';
+            item.innerHTML = html;
+
+            const actBtn = item.querySelector('.toast-act');
+            if (actBtn && action) {
+                actBtn.onclick = (ev) => {
+                    ev.stopPropagation();
+                    dismiss(item);
+                    if (typeof action.onClick === 'function') {
+                        try { action.onClick(); } catch (e) { console.error('toast action', e); }
+                    }
+                };
+            }
+            const xBtn = item.querySelector('.toast-x');
+            if (xBtn) xBtn.onclick = (ev) => { ev.stopPropagation(); dismiss(item); };
+
+            item.addEventListener('click', (ev) => {
+                if (ev.target.closest && ev.target.closest('.toast-act, .toast-x')) return;
+                dismiss(item);
+            });
+
+            stack.appendChild(item);
+        }
+
         // Also mirror the text into the dedicated live region. The stack itself
         // is role=status, but entries can be evicted/removed quickly; the
         // announcer guarantees the message is announced exactly once.
         const announcer = document.getElementById('a11y-announcer');
         if (announcer) {
             announcer.textContent = '';
-            setTimeout(() => { announcer.textContent = String(message == null ? '' : message); }, 30);
+            setTimeout(() => { announcer.textContent = text; }, 30);
         }
-        const duration = action ? (opts.duration || 6000) : (opts.duration || 2600);
+        const duration = opts.action ? (opts.duration || 6000) : (opts.duration || 2600);
         item.timeoutId = setTimeout(() => dismiss(item), duration);
     }
 
@@ -13221,6 +13506,12 @@ function getBandEnergy(dataArray, startBin, endBin) {
         // redundant, and rewriting markup wholesale is exactly what previously
         // stopped this button from ever holding real structure.
         if (btn) btn.textContent = window.isMonoMode ? 'Mono' : 'Stereo';
+        // Persisted like the Accessibility row next to it (a11y_bluelight). It was
+        // session-only, so the box said Mono until the next launch and then
+        // silently went back to Stereo - the one thing a one-click toggle must
+        // not do. Accessibility.init restores it, and SharedAudio.init applies
+        // it to a graph that did not exist yet.
+        try { localStorage.setItem('settings_audio_mode', window.isMonoMode ? 'mono' : 'stereo'); } catch (e) {}
         if (SharedAudio.masterGain) {
             if (window.isMonoMode) {
                 SharedAudio.masterGain.channelCount = 1;
@@ -13377,6 +13668,401 @@ window.updateExpandedAutoHide = function() {
             return false;
         }
     },
+    // U-006: Settings > Output device. The list comes from the real
+    // enumerateDevices() call (labels and sink IDs are exposed in Electron) and
+    // the row is a cycle button like Theme / Font / Audio channel: one control,
+    // one line, no popup. -1 means "System default".
+    //
+    // It was a ◀ value ▶ stepper for one iteration; that was three targets in a
+    // pane the rest of which is click-to-cycle, so it read as a different kind of
+    // control. One button that steps forward matches its neighbours, and the
+    // device list is short enough that clicking round it is the normal gesture.
+    _audioOutputs: [],
+    _audioOutputIndex: -1,
+
+    initAudioOutputs: async function() {
+        const btn = document.getElementById('audio-output-btn');
+        if (!btn) return;
+        let saved = '';
+        try { saved = localStorage.getItem('settings_audio_output') || ''; } catch (e) {}
+        try {
+            const devices = await SharedAudio.listOutputDevices();
+            const seen = new Set();
+            const list = [];
+            devices.forEach((d) => {
+                // Windows lists each endpoint three times: a synthetic "Default"
+                // and "Communications" entry plus the physical device. Windows'
+                // own picker shows only the physical one, and "System default"
+                // already means "whatever Windows uses now", so the two aliases
+                // only add duplicates. Empty IDs mean the permission check never
+                // exposed names (non-Electron hosts): those could not switch
+                // anything, so they are skipped too.
+                if (!d.deviceId || d.deviceId === 'default' || d.deviceId === 'communications') return;
+                if (seen.has(d.deviceId)) return;
+                seen.add(d.deviceId);
+                list.push({ id: d.deviceId, label: d.label || `Output ${seen.size}` });
+            });
+            // Windows names read "3 - AG276QZD2 (2- AMD High Definition Audio
+            // Device)", and a USB DAC arrives with TWO trailing groups - its
+            // chipset and the endpoint id ("Wired IEMs (CX31993+MAX97220
+            // HiFiAudio) (06cb:1595)"). The adapter group can contain its own
+            // parentheses ("Speakers (Realtek(R) Audio)"), which a single
+            // [^()]* group cannot match at all, so the old one-group strip left
+            // the chipset on screen and only removed the id.
+            //
+            // Everything from the first " (" is dropped instead: the endpoint
+            // number, the adapter and the id are all noise on a one-line button.
+            // A name that is nothing but a group ("(Unknown)") keeps its label
+            // rather than becoming empty, and only when the short form is still
+            // unique - two "Speakers" entries would be indistinguishable and
+            // the click would move the sink to the wrong one, so a collision
+            // falls back to the full name. The tooltip always carries the full
+            // name either way (renderAudioOutput).
+            const shortCounts = new Map();
+            list.forEach((d) => {
+                d.short = String(d.label).replace(/^\d+\s*-\s*/, '').replace(/\s+\(.*$/, '').trim() || d.label;
+                shortCounts.set(d.short, (shortCounts.get(d.short) || 0) + 1);
+            });
+            list.forEach((d) => { if (shortCounts.get(d.short) > 1) d.short = d.label; });
+            this._audioOutputs = list;
+            this._audioOutputIndex = saved ? list.findIndex((d) => d.id === saved) : -1;
+            if (saved && this._audioOutputIndex < 0) {
+                // The saved device is gone; fall back to default rather than
+                // leaving a stale value that silently fails on next launch.
+                try { localStorage.removeItem('settings_audio_output'); } catch (e) {}
+            }
+            this.renderAudioOutput();
+        } catch (e) {
+            console.warn('[Audio] output device list unavailable:', e);
+            // A failed FIRST load leaves the arrows looking usable (markup ships
+            // them disabled, so this only matters if the list was emptied).
+            // A failure after a good load keeps the list it already has rather
+            // than relabelling a working sink as "System default".
+            if (!this._audioOutputs || !this._audioOutputs.length) this.renderAudioOutput();
+        }
+        if (!btn._iemBound) {
+            btn._iemBound = true;
+            // The button itself is the affordance now, so Enter / Space already
+            // cycle it. No arrow-key listener: on a single button those keys do
+            // nothing, and capturing them only hid them from the page.
+            if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+                // Plugging a DAC in must show up without a restart.
+                navigator.mediaDevices.addEventListener('devicechange', () => { this.initAudioOutputs(); });
+            }
+        }
+    },
+
+    renderAudioOutput: function() {
+        const btn = document.getElementById('audio-output-btn');
+        if (!btn) return;
+        const list = this._audioOutputs || [];
+        const i = typeof this._audioOutputIndex === 'number' ? this._audioOutputIndex : -1;
+        const cur = i >= 0 ? list[i] : null;
+        const label = cur ? cur.short : 'System default';
+        const full = cur ? cur.label : 'System default';
+        const span = document.getElementById('audio-output-label');
+        if (span) span.textContent = label; else btn.textContent = label;
+        // The button ellipsises a long name, so the tooltip carries the full one
+        // and says what a click does — the row has no separate label for that.
+        btn.title = `${full} — click to switch`;
+        btn.setAttribute('aria-label', `Output device: ${full}`);
+        // Nothing to switch to. A disabled button says so before the click; an
+        // enabled-looking one answered every press with "No output devices".
+        btn.disabled = list.length === 0;
+    },
+
+    // One click = the next entry in [System default, ...devices], wrapping back
+    // to System default after the last device.
+    cycleAudioOutput: async function() {
+        const list = this._audioOutputs || [];
+        // Unreachable while the button is disabled, but kept as a guard rather
+        // than throwing on an empty list.
+        if (!list.length) return;
+        const i = typeof this._audioOutputIndex === 'number' ? this._audioOutputIndex : -1;
+        const next = i + 1 >= list.length ? -1 : i + 1;
+        await this.setAudioOutput(next < 0 ? '' : list[next].id);
+    },
+
+    // U-008: app + measurement-database update center. All network work is in
+    // main.js behind fixed, argument-less IPC commands; this layer only renders
+    // state and asks before anything is installed.
+    _updateStatus: function(text, tone) {
+        const row = document.getElementById('update-status');
+        const el = document.getElementById('update-status-text');
+        if (!row || !el) return;
+        row.style.display = text ? 'flex' : 'none';
+        el.textContent = text || '';
+        el.style.color = tone === 'bad' ? 'var(--danger)' : tone === 'good' ? 'var(--accent-green)' : 'var(--text-secondary)';
+    },
+
+    initUpdateCenter: async function() {
+        // The old update centre stored the last remote database commit here and
+        // treated it as "installed". Content hashes now decide, so the stale key
+        // is removed rather than left to imply state that is no longer read.
+        try { localStorage.removeItem('settings_db_commit'); } catch (e) {}
+        const hint = document.getElementById('app-version-hint');
+        const bridge = window.appBridge;
+        if (!bridge || typeof bridge.checkAppUpdate !== 'function') {
+            if (hint) hint.textContent = 'Updates require the desktop app';
+            return;
+        }
+        try {
+            if (typeof bridge.appBuildInfo === 'function') {
+                const info = await bridge.appBuildInfo();
+                if (info && info.ok) {
+                    if (hint) hint.textContent = info.shortCommit
+                        ? `Version ${info.version} · build ${info.shortCommit}`
+                        : `Version ${info.version} · development build`;
+                    return;
+                }
+            }
+            const v = await bridge.appVersion();
+            if (hint) hint.textContent = `Version ${v}`;
+        } catch (e) {}
+    },
+
+    checkAppUpdate: async function() {
+        const bridge = window.appBridge;
+        if (!bridge || !bridge.checkAppUpdate) { showToast('Updates require the desktop app.', '⚠️'); return; }
+        this._updateStatus('Checking for app updates…');
+        const r = await bridge.checkAppUpdate();
+        if (!r || !r.ok) {
+            this._updateStatus('App update check failed: ' + ((r && r.error) || 'unknown error'), 'bad');
+            showToast('Could not check for updates.', '⚠️');
+            return;
+        }
+        if (r.dev) {
+            this._updateStatus(`Development build · version ${r.current}. Release comparison is skipped.`, 'good');
+            showToast('Development builds are not compared with released installers.', 'ℹ️');
+            return;
+        }
+        if (!r.changed) {
+            this._updateStatus(`Build ${r.localShort} is up to date.`, 'good');
+            showToast(`Build ${r.localShort} matches the latest release.`, '✅');
+            return;
+        }
+        const remote = r.remoteShort || r.latest;
+        const local = r.localShort || r.current;
+        this._updateStatus(`Update available: build ${remote} (you have ${local})`, 'good');
+        const go = await UIKit.confirm({
+            title: `Update available: build ${remote}`,
+            message: `You are running build ${local}. The release page opens in your browser so you can download the installer for your platform.${r.notes ? '\n\n' + r.notes.slice(0, 500) : ''}`,
+            confirmLabel: 'Open release page',
+            cancelLabel: 'Later'
+        });
+        if (go) bridge.openReleasePage();
+    },
+
+    openReleasePage: function() {
+        if (window.appBridge && window.appBridge.openReleasePage) window.appBridge.openReleasePage();
+        else showToast('This only works in the desktop app.', '⚠️');
+    },
+
+    // A-008. Every curve comes from a person or publication; this is where the
+    // app says who, and links to the original database instead of leaving the
+    // folder name ("SUPER REVIEW") as the only trace of authorship.
+    //
+    // The list is rendered with DOM nodes rather than one innerHTML string: the
+    // labels come from the measurement archive, and a quote or angle bracket in
+    // a future folder name should be shown literally, not parsed as markup.
+    openSourceCredits: function() {
+        if (typeof SourceIndex === 'undefined' || typeof SourceIndex.creditList !== 'function') {
+            showToast('Source credits are unavailable in this build.', '⚠️');
+            return;
+        }
+        const credits = SourceIndex.creditList();
+        if (!credits.length) {
+            showToast('No measurement sources are listed.', '⚠️');
+            return;
+        }
+        const self = this;
+
+        UIKit.read({
+            title: 'Measurement sources',
+            subtitle: credits.length + ' reviewers, communities and archives · every curve belongs to its author',
+            toolbar: function(bar) {
+                const input = document.createElement('input');
+                input.type = 'search';
+                input.placeholder = 'Filter by name…';
+                input.setAttribute('aria-label', 'Filter measurement sources');
+                input.style.cssText = 'flex:1 1 200px;min-width:0;height:30px;padding:0 10px;background:var(--bg-card);border:1px solid var(--line);border-radius:var(--r-xs);color:var(--text-hi);font:inherit;font-size:var(--t-xs);outline:none;';
+                bar.appendChild(input);
+                const count = document.createElement('span');
+                count.className = 'type-micro';
+                count.style.cssText = 'flex:none;color:var(--text-mid);font-variant-numeric:tabular-nums;';
+                count.textContent = credits.length + ' sources';
+                bar.appendChild(count);
+
+                // The body is built synchronously below, so the filter reads the
+                // finished rows on the first input event.
+                input.addEventListener('input', function() {
+                    const q = String(input.value || '').trim().toLowerCase();
+                    const rows = bar.parentElement.querySelectorAll('.source-credit-row');
+                    let shown = 0;
+                    rows.forEach(function(row) {
+                        const match = !q || (row.getAttribute('data-search') || '').indexOf(q) !== -1;
+                        row.style.display = match ? '' : 'none';
+                        if (match) shown++;
+                    });
+                    count.textContent = q ? shown + ' of ' + credits.length : credits.length + ' sources';
+                });
+            },
+            render: function(body) {
+                const intro = document.createElement('p');
+                intro.className = 'type-xs';
+                intro.style.cssText = 'margin:0 0 10px;color:var(--text-mid);line-height:1.55;';
+                intro.textContent = 'These people measured the curves. IEM Tool only normalises and re-plots them; the measurements remain the work of their authors. Sources are credited by the folder names stored in the measurement archive.';
+                body.appendChild(intro);
+
+                const list = document.createElement('div');
+                list.className = 'source-credit-list';
+                list.style.cssText = 'display:flex;flex-direction:column;';
+
+                credits.forEach(function(credit) {
+                    const row = document.createElement('div');
+                    row.className = 'source-credit-row';
+                    let host = '';
+                    try { host = new URL(credit.url).hostname.replace(/^www\./, ''); } catch (e) { host = credit.url; }
+                    row.setAttribute('data-search', [credit.label, host, credit.kind, credit.folders.join(' ')].join(' ').toLowerCase());
+                    row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:7px 2px;border-bottom:1px solid var(--line);';
+
+                    const text = document.createElement('div');
+                    text.style.cssText = 'flex:1 1 auto;min-width:0;';
+                    const name = document.createElement('div');
+                    name.className = 'type-sm';
+                    name.style.cssText = 'font-weight:600;color:var(--text-hi);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+                    name.textContent = credit.label;
+                    const meta = document.createElement('div');
+                    meta.className = 'type-micro';
+                    meta.style.cssText = 'margin-top:1px;color:var(--text-mid);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+                    meta.textContent = SourceIndex.kindLabel(credit.kind) + ' · ' + host;
+                    text.appendChild(name);
+                    text.appendChild(meta);
+
+                    const open = document.createElement('button');
+                    open.type = 'button';
+                    open.className = 'settings-btn';
+                    open.style.flex = 'none';
+                    open.textContent = 'Open ↗';
+                    open.title = 'Open ' + credit.label + ' in your browser';
+                    open.setAttribute('aria-label', 'Open ' + credit.label + ' in your browser');
+                    open.onclick = function() { self.openCreditUrl(credit.url); };
+
+                    row.appendChild(text);
+                    row.appendChild(open);
+                    list.appendChild(row);
+                });
+
+                body.appendChild(list);
+
+                const note = document.createElement('p');
+                note.className = 'type-micro';
+                note.style.cssText = 'margin:12px 0 0;color:var(--text-mid);line-height:1.5;';
+                note.textContent = 'Missing or miscredited source? Open an issue on the project’s GitHub repository and it will be corrected.';
+                body.appendChild(note);
+            }
+        });
+    },
+
+    // The URL comes from the local CREDITS table, but the main process still
+    // validates its scheme and host: a compromised renderer must not be able to
+    // turn this into an "open any URL" bridge. In a browser (the screenshot
+    // harness) there is no appBridge, so a normal window.open is the fallback.
+    openCreditUrl: function(url) {
+        const bridge = window.appBridge;
+        if (bridge && typeof bridge.openCreditUrl === 'function') {
+            bridge.openCreditUrl(url).then(function(r) {
+                if (!r || !r.ok) showToast('Could not open that source link.', '⚠️');
+            }).catch(function() {
+                showToast('Could not open that source link.', '⚠️');
+            });
+            return;
+        }
+        try {
+            const win = window.open(url, '_blank', 'noopener,noreferrer');
+            if (win) win.opener = null;
+        } catch (e) {
+            showToast('Could not open that source link.', '⚠️');
+        }
+    },
+
+    checkDatabaseUpdate: async function() {
+        const bridge = window.appBridge;
+        if (!bridge || !bridge.checkDatabaseUpdate) { showToast('Updates require the desktop app.', '⚠️'); return null; }
+        const hint = document.getElementById('db-update-hint');
+        this._updateStatus('Hashing the local database and comparing with GitHub…');
+        const r = await bridge.checkDatabaseUpdate();
+        if (!r || !r.ok) {
+            this._updateStatus('Database check failed: ' + ((r && r.error) || 'unknown error'), 'bad');
+            showToast('Could not check the database.', '⚠️');
+            return null;
+        }
+        if (r.changed) {
+            if (hint) hint.textContent = `New measurements · ${r.shortSha}`;
+            this._updateStatus(`Database update available: ${r.shortSha} — ${r.message}`.slice(0, 160), 'good');
+            showToast(`New database commit ${r.shortSha} is available.`, '🧬');
+        } else {
+            if (hint) hint.textContent = `Matches repository · ${r.shortSha}`;
+            this._updateStatus(`Database matches commit ${r.shortSha}.`, 'good');
+            showToast('Your measurement database is up to date.', '✅');
+        }
+        return r;
+    },
+
+    downloadDatabaseUpdate: async function() {
+        const bridge = window.appBridge;
+        if (!bridge || !bridge.downloadDatabaseUpdate) { showToast('Updates require the desktop app.', '⚠️'); return; }
+        const latest = await this.checkDatabaseUpdate();
+        if (!latest) return;
+        if (!latest.changed) {
+            showToast('The measurement database already matches GitHub.', '✅');
+            return;
+        }
+        const ok = await UIKit.confirm({
+            title: `Install database ${latest.shortSha}?`,
+            message: 'The current database and measurements are backed up inside IEM-Data/backup first, and the download is verified against the commit hash before it replaces anything. The app reloads when the install finishes. This can take a minute on a slow connection.',
+            confirmLabel: 'Download & install',
+            cancelLabel: 'Cancel'
+        });
+        if (!ok) return;
+        this._updateStatus('Downloading and installing the database… (this can take a minute)');
+        const r = await bridge.downloadDatabaseUpdate();
+        if (!r || !r.ok) {
+            this._updateStatus('Database install failed: ' + ((r && r.error) || 'unknown error'), 'bad');
+            showToast('Database update failed — your old database is still in place.', '⚠️', { duration: 7000 });
+            return;
+        }
+        this._updateStatus(`Installed ${r.products} products from ${r.shortSha || latest.shortSha}. Reload to use it.`, 'good');
+        const reload = await UIKit.confirm({
+            title: 'Database installed',
+            message: `${r.products} products from commit ${r.shortSha || latest.shortSha} are ready. Reload the app now to load the new measurements?`,
+            confirmLabel: 'Reload now',
+            cancelLabel: 'Later'
+        });
+        if (reload) {
+            try { await CurveIndexer.clearCurveCache(); } catch (e) {}
+            localStorage.removeItem('squig_db_indexed');
+            localStorage.removeItem('find_canonical_profiles');
+            location.reload();
+        }
+    },
+
+    setAudioOutput: async function(deviceId) {
+        const r = await SharedAudio.setOutputDevice(deviceId || '');
+        if (!r.ok) {
+            showToast('Could not switch output: ' + r.error, '⚠️');
+            return;
+        }
+        const list = this._audioOutputs || [];
+        const i = deviceId ? list.findIndex((d) => d.id === deviceId) : -1;
+        this._audioOutputIndex = i;
+        this.renderAudioOutput();
+        const cur = i >= 0 ? list[i] : null;
+        // Keyed so repeated steps update one entry rather than stacking a
+        // history of devices the user has already stepped past.
+        showToast(`Audio output: ${cur ? cur.short : 'System default'}`, '🎧', { key: 'audio-output' });
+    },
+
     mobileDrawerOpen: false,
     toggleMobileDrawer: function() {
         this.mobileDrawerOpen = !this.mobileDrawerOpen;
@@ -14794,18 +15480,14 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
                     UIKit.windowChrome();
                 }
 
-                // R3: Settings now renders Gapless / Crossfade / Blue light as
-                // real switches whose state is derived from localStorage rather
-                // than hard-coded in the markup. They used to carry a literal
-                // `is-on` class that was only corrected once the user toggled
-                // the control - so a user who had turned Gapless OFF saw it
-                // still lit up on every launch until they clicked it. Applying
-                // the state once at boot fixes that and makes localStorage the
-                // single source of truth.
+                // R3: Settings renders Track transitions and Blue light as real
+                // controls whose state is derived from localStorage rather than
+                // hard-coded in the markup. Applying the state once at boot makes
+                // localStorage the single source of truth, instead of the control
+                // staying lit until the user clicked it.
                 try {
                     if (window.EQ) {
-                        if (EQ._applyGaplessButton) EQ._applyGaplessButton();
-                        if (EQ._applyCrossfadeButton) EQ._applyCrossfadeButton();
+                        if (EQ._applyTrackTransition) EQ._applyTrackTransition();
                         // R4: same principle for the visualiser's effect
                         // button — derive the label from vizModeIndex on boot
                         // instead of leaving a hard-coded string in the markup.
@@ -14853,6 +15535,8 @@ const savedFont = localStorage.getItem('settings_font_id') || 'JetBrains Mono';
                 });
 
                 this.resetAllInputsOnLoad();
+                this.initAudioOutputs();
+                this.initUpdateCenter();
 
                 this.renderThemeToggles();
                 this.switchTab('find');
@@ -16307,6 +16991,7 @@ if(this.radarChart) {
                 'settings_theme_id', 'settings_export_theme_id', 'settings_font_id',
                 'settings_align_hz', 'settings_align_db',
                 'settings_reading_scale',
+                'settings_audio_mode',
                 'settings_gapless', 'settings_crossfade', 'settings_crossfade_secs',
                 'settings_merger_limiter',
                 'a11y_bluelight',
@@ -16362,6 +17047,8 @@ if(this.radarChart) {
             this.updateSensUnitUI();
 
             Tone_Module.reset(); EQ_Module.resetEQ(); TestLab_Module.stopAll(); PEQDB_Module.clearState(); this.updateAll();
+            this._iemDbActiveId = null;
+            await this.markReviewClean();
         },
 
 
@@ -22655,6 +23342,419 @@ const DBCache = {
             }
             };
 
+/* ===== app/js/source-index.js ===== */
+// Source-aware measurement helpers.
+//
+// The catalogue links every product to one or more measurement files, each
+// living in a folder named after the person/site that published it. Before
+// this module the app only ever loaded files[0] and showed a single score with
+// no indication that 2,000+ products have several, sometimes wildly different,
+// measurements. This provides:
+//
+//   * path -> { source, file, condition, isMod } parsing
+//   * a decoded consensus curve from catalogue-index.json (precomputed at
+//     build time, see scripts/build-catalogue-index.mjs)
+//   * on-demand loading of every source curve for the explorer
+//
+// The index file is optional: if it is missing (a user edited database.json
+// without rebuilding) every helper degrades to the old single-curve behaviour.
+const SourceIndex = {
+    VERSION: 1,
+    GRID_POINTS: 100,
+    data: null,
+    loadPromise: null,
+
+    // A-008: who measured what.
+    //
+    // Every folder under data/ is a different person, publication or archive.
+    // The catalogue only preserved the folder name, so the app could plot 2,000
+    // products without ever naming the people who measured them. This table is
+    // keyed by that exact folder name and was resolved against Squiglink's own
+    // public source registry (squigsites.json), with the ten off-platform and
+    // legacy collections linked to their publishers directly. All links are
+    // HTTPS and are also allowlisted in main.js before the OS opens them.
+    //
+    // `kind` is presentation only: "squig" means the source publishes a
+    // Squiglink database, "web" means their measurements live on their own site
+    // or archive. Keep this table in sync with data/ - test-source-credits.mjs
+    // fails when a folder has no attribution.
+    CREDITS: {
+        "ACHO REVIEWS": { label: "Acho Reviews", url: "https://achoreviews.squig.link/", kind: "squig" },
+        "ADEN": { label: "aden", url: "https://aden.squig.link/", kind: "squig" },
+        "ADRI-N": { label: "Adri-N", url: "https://adri-n.squig.link/", kind: "squig" },
+        "AFTERSOUND": { label: "Aftersound", url: "https://aftersound.squig.link/", kind: "squig" },
+        "ANIMAGUS": { label: "Animagus", url: "https://animagus.squig.link/", kind: "squig" },
+        "ATECHREVIEWS": { label: "ATechReviews", url: "https://atechreviews.squig.link/", kind: "squig" },
+        "AUDIOAI": { label: "audioAI", url: "https://arn.squig.link/", kind: "squig" },
+        "AUDIOAMIGO": { label: "Audio Amigo", url: "https://audioamigo.squig.link/", kind: "squig" },
+        "AURICULARES ARGENTINA": { label: "Auriculares Argentina", url: "https://auricularesargentina.squig.link/", kind: "squig" },
+        "AVISHAI": { label: "avishai", url: "https://squig.link/lab/avishai/", kind: "squig" },
+        "BAKKWATAN": { label: "Bakkwatan", url: "https://bakkwatan.squig.link/", kind: "squig" },
+        "BANZAI1122": { label: "banzai1122", url: "https://banzai1122.squig.link/", kind: "squig" },
+        "BASS AUDIO": { label: "Bass Audio", url: "https://bassaudio.squig.link/", kind: "squig" },
+        "BASSY ALEXANDER": { label: "bassy Alexander", url: "https://bassyalexander.squig.link/", kind: "squig" },
+        "BEDROCK REVIEWS": { label: "Bedrock Reviews", url: "https://bedrock.squig.link/", kind: "squig" },
+        "BLOOM AUDIO": { label: "Bloom Audio", url: "https://bloomaudio.squig.link/", kind: "squig" },
+        "BOIZOFF": { label: "boizoff", url: "https://boizoff.squig.link/", kind: "squig" },
+        "BREAMPIKE": { label: "breampike", url: "https://breampike.squig.link/", kind: "squig" },
+        "BUKANAUDIOPHILE": { label: "BukanAudiophile", url: "https://bukanaudiophile.squig.link/", kind: "squig" },
+        "CAMMYFI": { label: "CammyFi", url: "https://cammyfi.squig.link/", kind: "squig" },
+        "CAPRA AUDIO": { label: "Capra Audio", url: "https://capraaudio.squig.link/", kind: "squig" },
+        "CSI-ZONE": { label: "CSI-ZONE", url: "https://csi-zone.squig.link/", kind: "squig" },
+        "DCHPGALL": { label: "DCinside Headphone Gallery", url: "https://dchpgall.squig.link/", kind: "squig" },
+        "DCINSIDE": { label: "DCinside Headphone Gallery", url: "https://dchpgall.squig.link/", kind: "squig" },
+        "DEN-FI": { label: "Den-Fi (Kyle)", url: "https://ish.squig.link/", kind: "squig" },
+        "DHRME": { label: "DHRME", url: "https://dhrme.squig.link/", kind: "squig" },
+        "DIGAO REVIEWS": { label: "Digão Reviews", url: "https://digaoreviews.squig.link/", kind: "squig" },
+        "DUCBLOKE": { label: "DucBloke", url: "https://ducbloke.squig.link/", kind: "squig" },
+        "DUNG LE": { label: "Dung Le", url: "https://dl.squig.link/", kind: "squig" },
+        "EARPHONES ARCHIVE": { label: "Earphones Archive (IEMs)", url: "https://earphonesarchive.squig.link/", kind: "squig" },
+        "EKAUDIO": { label: "EKaudio", url: "https://ekaudio.squig.link/", kind: "squig" },
+        "ELISE AUDIO": { label: "Elise Audio", url: "https://eliseaudio.squig.link/", kind: "squig" },
+        "ELRICS": { label: "Elrics", url: "https://squig.link/lab/elrics/", kind: "squig" },
+        "ENEMYSPIDER": { label: "EnemySpider", url: "https://enemyspider.squig.link/", kind: "squig" },
+        "ENIGMAFOTOSREVIEWS": { label: "Enigma Fotos Reviews", url: "https://enigmafotosreviews.squig.link/", kind: "squig" },
+        "EPLV": { label: "EPLV", url: "https://eplv.squig.link/", kind: "squig" },
+        "FAHRYST": { label: "Fahryst", url: "https://fahryst.squig.link/", kind: "squig" },
+        "FAXEPREMIUM": { label: "faxepremium", url: "https://faxepremium.squig.link/", kind: "squig" },
+        "FERNANDA GUNSAN": { label: "Fernanda Gunsan", url: "https://squig.link/lab/fernandagunsan/", kind: "squig" },
+        "FILK": { label: "Filk", url: "https://filk.squig.link/", kind: "squig" },
+        "FLARE": { label: "Flare", url: "https://flare.squig.link/", kind: "squig" },
+        "FOX TOLD ME SO": { label: "Fox Told Me So (IEMs)", url: "https://foxtoldmeso.squig.link/", kind: "squig" },
+        "FREERYDER05": { label: "freeryder05", url: "https://freeryder05.squig.link/", kind: "squig" },
+        "GADGET GENERATIONS": { label: "Gadget Generations", url: "https://gadgetgenerations.squig.link/", kind: "squig" },
+        "GADGETRY TECH": { label: "Gadgetry Tech", url: "https://gadgetrytech.squig.link/", kind: "squig" },
+        "HADOE": { label: "Hadoe", url: "https://hadoe.squig.link/", kind: "squig" },
+        "HANA": { label: "Hana", url: "https://squig.link/lab/hana/", kind: "squig" },
+        "HANGOUT.AUDIO": { label: "Hangout.Audio", url: "https://hangout.audio/", kind: "squig" },
+        "HARPO": { label: "Harpo", url: "https://harpo.squig.link/", kind: "squig" },
+        "HARUTOHIROKI": { label: "HarutoHiroki", url: "https://squig.link/lab/harutohiroki/", kind: "squig" },
+        "HAWAII BAY BOY": { label: "Hawaii Bad Boy (HBB)", url: "https://hbb.squig.link/", kind: "squig" },
+        "HEADPHONE.COM LEGACY": { label: "Headphones.com (legacy)", url: "https://headphones.com/pages/measurements-and-frequency-response", kind: "web" },
+        "HEADPIE": { label: "Headpie", url: "https://www.headpie.net/", kind: "web" },
+        "HI END PORTABLE": { label: "Hi End Portable", url: "https://cqtek.squig.link/", kind: "squig" },
+        "HOBBY TALK": { label: "Hobby Talk", url: "https://hobbytalk.squig.link/", kind: "squig" },
+        "HORE": { label: "Hore", url: "https://hore.squig.link/", kind: "squig" },
+        "HU-FI": { label: "Hu-Fi", url: "https://hu-fi.squig.link/", kind: "squig" },
+        "HYPETHESONICS": { label: "Hypethesonics", url: "https://www.hypethesonics.com/", kind: "web" },
+        "IANFANN": { label: "ianfann", url: "https://ianfann.squig.link/", kind: "squig" },
+        "IEM OCEAN": { label: "IEM Ocean", url: "https://iemocean.squig.link/", kind: "squig" },
+        "IEM WORLD": { label: "IEM World", url: "https://iemworld.squig.link/", kind: "squig" },
+        "INNERFIDELITY": { label: "InnerFidelity (Tyll Hertsens archive)", url: "https://www.stereophile.com/content/innerfidelity-headphone-measurements", kind: "web" },
+        "ISAIAH SE": { label: "Isaiah SE", url: "https://isaiahse.squig.link/", kind: "squig" },
+        "JACSTONE": { label: "Jacstone", url: "https://jacstone.squig.link/", kind: "squig" },
+        "JAY'S AUDIO": { label: "Jay's Audio", url: "https://jaysaudio.github.io/", kind: "web" },
+        "JAYTISS": { label: "Jaytiss", url: "https://jaytiss.squig.link/", kind: "squig" },
+        "JOYCES REVIEW": { label: "Joyce's Review", url: "https://squig.link/lab/joycesreview/", kind: "squig" },
+        "KAZI": { label: "Kazi", url: "https://kazi.squig.link/", kind: "squig" },
+        "KOI": { label: "KOI", url: "https://squig.link/lab/koi/", kind: "squig" },
+        "KR0MKA": { label: "kr0mka", url: "https://kr0mka.squig.link/", kind: "squig" },
+        "KUPING SENSI": { label: "Kuping Sensi", url: "https://kuping-sensi.squig.link/", kind: "squig" },
+        "KUULOKENURKKA": { label: "Kuulokenurkka", url: "https://kuulokenurkka.squig.link/", kind: "squig" },
+        "LISTENER": { label: "listener", url: "https://listener.squig.link/", kind: "squig" },
+        "LOWN-FI": { label: "lown-fi", url: "https://lown-fi.squig.link/", kind: "squig" },
+        "MELATONIN": { label: "Melatonin", url: "https://melatonin.squig.link/", kind: "squig" },
+        "MUSICAFE": { label: "MusiCafé", url: "https://musicafe.squig.link/", kind: "squig" },
+        "NYMZ": { label: "nymz", url: "https://nymz.squig.link/", kind: "squig" },
+        "ORATORY1990": { label: "oratory1990", url: "https://www.reddit.com/user/oratory1990/", kind: "web" },
+        "PAUL WASABII": { label: "Paul Wasabi", url: "https://pw.squig.link/", kind: "squig" },
+        "PRACTIPHILE": { label: "Practiphile", url: "https://practiphile.squig.link/", kind: "squig" },
+        "PRECOGVISION": { label: "Precogvision", url: "https://precog.squig.link/", kind: "squig" },
+        "RECODE": { label: "Recode", url: "https://recode.squig.link/", kind: "squig" },
+        "REGAN CIPHER": { label: "Regan Cipher", url: "https://regancipher.squig.link/", kind: "squig" },
+        "RIKUDOUGOKU": { label: "RikudouGoku", url: "https://rg.squig.link/", kind: "squig" },
+        "RIZ": { label: "Riz", url: "https://riz.squig.link/", kind: "squig" },
+        "RTINGS": { label: "RTINGS.com", url: "https://www.rtings.com/headphones", kind: "web" },
+        "SCBOY": { label: "SCBoy", url: "https://scboy.squig.link/", kind: "squig" },
+        "SEAN WEE": { label: "Sean Wee", url: "https://seanwee.squig.link/", kind: "squig" },
+        "SIDE SALAD AUDIO": { label: "Side Salad Audio", url: "https://suporsalad.squig.link/", kind: "squig" },
+        "SILICAGEL": { label: "SilicaGel", url: "https://silicagel.squig.link/", kind: "squig" },
+        "SL0THE": { label: "sl0the", url: "https://sl0the.squig.link/", kind: "squig" },
+        "SOUNDCHECK39": { label: "Soundcheck39", url: "https://soundcheck39.squig.link/", kind: "squig" },
+        "SOUNDIGNITY": { label: "Soundignity", url: "https://soundignity.squig.link/", kind: "squig" },
+        "SQUIGLINK": { label: "Squiglink", url: "https://squig.link/", kind: "squig" },
+        "SUPER REVIEW": { label: "Super* Review", url: "https://squig.link/", kind: "squig" },
+        "TAKEITSLOW7": { label: "takeitslow7", url: "https://takeitslow7.squig.link/", kind: "squig" },
+        "TDL": { label: "TDL", url: "https://squig.link/lab/tdl/", kind: "squig" },
+        "TED'S SQUIG HOARD": { label: "Ted's Squig Hoard", url: "https://tedthepraimortis.squig.link/", kind: "squig" },
+        "TGX78": { label: "tgx78", url: "https://tgx78.squig.link/", kind: "squig" },
+        "THE AUDIO STORE": { label: "The Audio Store", url: "https://theaudiostore.squig.link/", kind: "squig" },
+        "THEMATTYB": { label: "themattyb", url: "https://www.head-fi.org/showcase/authors/themattyb.595255/reviews", kind: "web" },
+        "THEROLLO9": { label: "therollo9", url: "https://therollo9.squig.link/", kind: "squig" },
+        "TIMTUNED": { label: "TimTuned", url: "https://timmyv.squig.link/", kind: "squig" },
+        "TONEDEAFMONK": { label: "ToneDeafMonk", url: "https://tonedeafmonk.squig.link/", kind: "squig" },
+        "UNHEARD LAB": { label: "Unheard Lab", url: "https://sai.squig.link/", kind: "squig" },
+        "VORTEX REVIEWS": { label: "Vortex Reviews", url: "https://vortexreviews.squig.link/", kind: "squig" },
+        "VSG": { label: "VSG", url: "https://vsg.squig.link/", kind: "squig" },
+        "YOSHI ULTRA": { label: "yoshi ultra", url: "https://yoshiultra.squig.link/", kind: "squig" },
+    },
+
+    // Non-catalogue aliases (old saved paths, imported presets). Catalogue
+    // folders are labelled from CREDITS above, so adding a source to data/
+    // needs one credit entry rather than two.
+    LABELS: {
+        'AUDIOAMIGO': 'Audio Amigo',
+        'CRINACLE': 'Crinacle',
+        'CRINACLE_5128': 'Crinacle (5128)',
+        'SUPER_REVIEW': 'Super Review',
+        'SUPERREVIEW': 'Super Review',
+        'HBB': 'HBB',
+        'BADGUYGOODGUYAUDIO': 'Bad Guy Good Audio',
+        'GIZAUDIO': 'Gizaudio',
+        'JAYS_AUDIO': 'Jays Audio',
+        'FRESH_REVIEWS': 'Fresh Reviews',
+        'AKROS': 'Akros',
+        'DUCBLOKE': 'Ducbloke',
+        'SEE_AUDIO': 'SeeAudio',
+        'DIVINUS': 'Divinus',
+        'Z_REVIEWS': 'Z Reviews',
+        'SQUIGLINK': 'Squiglink'
+    },
+
+    _prettyName: function (raw) {
+        return String(raw || '')
+            .replace(/[_\-]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .split(' ')
+            .map(w => w ? w.charAt(0).toUpperCase() + w.slice(1) : w)
+            .join(' ');
+    },
+
+    sourceLabel: function (source) {
+        const key = String(source || '').trim();
+        if (!key) return 'Unknown source';
+        const credit = this.creditFor(key);
+        if (credit) return credit.label;
+        if (this.LABELS[key]) return this.LABELS[key];
+        const upper = key.toUpperCase();
+        if (this.LABELS[upper]) return this.LABELS[upper];
+        return this._prettyName(key);
+    },
+
+    // Credit row for a data/ folder name. Matching is exact first, then
+    // case-insensitive: catalogue paths use the folder spelling, while saved
+    // reviews can carry a differently-cased source from an older database.
+    creditFor: function (source) {
+        const key = String(source || '').trim();
+        if (!key) return null;
+        if (this.CREDITS[key]) return this.CREDITS[key];
+        const upper = key.toUpperCase();
+        return this.CREDITS[upper] || null;
+    },
+
+    // Unique publishers, not folders: DCINSIDE and DCHPGALL are two archive
+    // folders from the same Korean gallery and must not appear twice in the
+    // credits panel. `folders` keeps the link back to the raw paths.
+    creditList: function () {
+        const byUrl = new Map();
+        Object.keys(this.CREDITS).forEach((folder) => {
+            const credit = this.CREDITS[folder];
+            if (!credit || !credit.url) return;
+            const existing = byUrl.get(credit.url);
+            if (existing) {
+                if (existing.folders.indexOf(folder) === -1) existing.folders.push(folder);
+                return;
+            }
+            byUrl.set(credit.url, {
+                label: credit.label,
+                url: credit.url,
+                kind: credit.kind || 'web',
+                folders: [folder]
+            });
+        });
+        return Array.from(byUrl.values()).sort((a, b) => a.label.localeCompare(b.label));
+    },
+
+    kindLabel: function (kind) {
+        return kind === 'squig' ? 'Squiglink database' : 'Published archive';
+    },
+
+    // data/<SOURCE>/<FILE>.txt
+    parsePath: function (filePath) {
+        const raw = String(filePath || '').replace(/\\/g, '/');
+        const parts = raw.split('/').filter(Boolean);
+        const file = parts.length ? parts[parts.length - 1] : '';
+        const source = parts.length >= 2 ? parts[parts.length - 2] : '';
+        const fileName = file.replace(/\.[^.]+$/, '');
+        const lower = fileName.toLowerCase();
+        const condition = /(\d+\s*(?:ohm|Ω)|adapter|impedance|foam|mod\b|tape|vent|nozzle|filter|mesh|damper|tanya|switch|sample|tips?)/.test(lower)
+            ? fileName
+            : '';
+        const isMod = !!condition;
+        return { source, file: fileName, condition, isMod };
+    },
+
+    // Short condition tag for a badge: "200Ω", "nozzle mod", "foam tips".
+    conditionLabel: function (filePath) {
+        const p = this.parsePath(filePath);
+        if (!p.condition) return '';
+        const lower = p.file.toLowerCase();
+        const ohm = lower.match(/(\d+)\s*(?:ohm|Ω)/);
+        if (ohm) return `${ohm[1]}Ω`;
+        if (/foam/.test(lower)) return 'foam tips';
+        if (/nozzle/.test(lower)) return 'nozzle mod';
+        if (/filter/.test(lower)) return 'filter mod';
+        if (/tape|mesh|damper|tanya/.test(lower)) return 'mesh mod';
+        if (/adapter|impedance/.test(lower)) return 'adapter';
+        if (/vent/.test(lower)) return 'vent mod';
+        return 'variant';
+    },
+
+    load: function () {
+        if (this.loadPromise) return this.loadPromise;
+        this.loadPromise = (async () => {
+            const tryFetch = async (url) => {
+                try {
+                    const res = await fetch(url, { cache: 'no-store' });
+                    if (!res.ok) return null;
+                    if (url.endsWith('.gz')) {
+                        if (typeof DecompressionStream === 'undefined') return null;
+                        return await new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).json();
+                    }
+                    return await res.json();
+                } catch (e) {
+                    return null;
+                }
+            };
+            let parsed = await tryFetch('./catalogue-index.json');
+            if (!parsed) parsed = await tryFetch('./catalogue-index.json.gz');
+            if (!parsed || !parsed.entries || typeof parsed.entries !== 'object') {
+                console.warn('[SourceIndex] catalogue-index.json missing or invalid; using single-curve mode.');
+                this.data = null;
+                return null;
+            }
+            this.data = parsed;
+            return parsed;
+        })().catch(err => {
+            console.warn('[SourceIndex] index load failed:', err);
+            this.data = null;
+            return null;
+        });
+        return this.loadPromise;
+    },
+
+    entryFor: function (id) {
+        if (!this.data || !this.data.entries) return null;
+        return this.data.entries[id] || null;
+    },
+
+    _decodeBase64: function (b64) {
+        if (typeof atob !== 'function') return null;
+        try {
+            const bin = atob(b64);
+            const out = new Float32Array(bin.length);
+            for (let i = 0; i < bin.length; i++) {
+                let v = bin.charCodeAt(i);
+                if (v > 127) v -= 256;
+                out[i] = 75 + v / 4;
+            }
+            return out;
+        } catch (e) {
+            return null;
+        }
+    },
+
+    decodeConsensus: function (entry) {
+        if (!entry || !entry.q) return null;
+        if (entry._decoded) return entry._decoded;
+        const arr = this._decodeBase64(entry.q);
+        if (!arr) return null;
+        entry._decoded = arr;
+        return arr;
+    },
+
+    grid: function () {
+        return CurveUtils.generateLogGrid(this.GRID_POINTS);
+    },
+
+    // Attach precomputed metadata to the dataset items CurveIndexer builds.
+    attachToDataset: function (items) {
+        if (!Array.isArray(items)) return items;
+        if (!this.data) return items;
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (!item || item.id == null) continue;
+            const entry = this.entryFor(item.id);
+            if (!entry) continue;
+            item.consensus = this.decodeConsensus(entry);
+            item.consensusSpread = Number.isFinite(entry.s) ? entry.s : 0;
+            item.sourceCount = Number.isFinite(entry.n) ? entry.n : (Array.isArray(item.files) ? item.files.length : 1);
+            item.consensusMeasured = entry.m || 0;
+        }
+        return items;
+    },
+
+    // Load every file linked to one product and return normalized curves.
+    // Used only by the explorer / source picker, never by a full-catalogue scan.
+    loadSourceCurves: async function (item) {
+        if (!item || !Array.isArray(item.files) || item.files.length === 0) return [];
+        if (item._sourceCurvesPromise) return item._sourceCurvesPromise;
+        item._sourceCurvesPromise = (async () => {
+            const freqs = this.grid();
+            const out = [];
+            for (let i = 0; i < item.files.length; i++) {
+                const filePath = item.files[i];
+                const ok = await CurveIndexer.loadCurve(item, i);
+                if (!ok) continue;
+                const data = (item.sourcesCache && item.sourcesCache[filePath]) || (i === 0 ? item.data : null);
+                if (!data || data.length < 2) continue;
+                let norm;
+                try { norm = CurveUtils.normalizeTo75dB(data, 500, 75); } catch (e) { continue; }
+                const interp = CurveUtils.cubicSplineInterpolate(norm, freqs);
+                const meta = this.parsePath(filePath);
+                out.push({
+                    index: i,
+                    path: filePath,
+                    source: meta.source,
+                    sourceLabel: this.sourceLabel(meta.source),
+                    file: meta.file,
+                    condition: meta.condition,
+                    conditionLabel: this.conditionLabel(filePath),
+                    isMod: meta.isMod,
+                    interp: Array.from(interp)
+                });
+            }
+            return out;
+        })().finally(() => { item._sourceCurvesPromise = null; });
+        return item._sourceCurvesPromise;
+    },
+
+    median: function (values) {
+        if (!values.length) return 0;
+        const sorted = values.slice().sort((a, b) => a - b);
+        const mid = sorted.length >> 1;
+        return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    },
+
+    quantile: function (values, q) {
+        if (!values.length) return 0;
+        const sorted = values.slice().sort((a, b) => a - b);
+        const pos = (sorted.length - 1) * q;
+        const base = Math.floor(pos);
+        const rest = pos - base;
+        if (sorted[base + 1] !== undefined) return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
+        return sorted[base];
+    },
+
+    // Median curve across a set of source curves, plus the average p10-p90
+    // half-width (used as the "±x dB" uncertainty readout).
+    consensusOf: function (curves) {
+        if (!curves || !curves.length) return { interp: null, spread: 0, count: 0 };
+        const points = curves[0].interp.length;
+        const median = new Float32Array(points);
+        let spread = 0;
+        for (let i = 0; i < points; i++) {
+            const column = curves.map(c => c.interp[i]);
+            median[i] = this.median(column);
+            spread += (this.quantile(column, 0.9) - this.quantile(column, 0.1)) / 2;
+        }
+        return { interp: median, spread: spread / points, count: curves.length };
+    }
+};
+
+if (typeof window !== 'undefined') window.SourceIndex = SourceIndex;
+
 /* ===== app/js/curve-indexer.js ===== */
 // CurveIndexer: loads database.json(.gz), keeps the persisted curve cache in
 // IndexedDB (iem_curve_index), and warms curves in the background.
@@ -22689,7 +23789,14 @@ const CurveIndexer = {
                 } catch (err) {
                     console.error("[CurveIndexer] DB open failed — continuing without persistent cache:", err);
                 }
-                await this._loadCatalog();
+                // The optional source-aware index (catalogue-index.json) loads
+                // alongside the catalogue. It is intentionally optional: a user
+                // who edits database.json without rebuilding still gets the old
+                // single-curve behaviour instead of a boot failure.
+                const indexReady = (typeof SourceIndex !== 'undefined' && SourceIndex.load)
+                    ? SourceIndex.load().catch(() => null)
+                    : Promise.resolve(null);
+                await Promise.all([this._loadCatalog(), indexReady]);
                 return this.catalog;
             })();
             // Do not memoise a rejected load: allow a later retry.
@@ -22888,7 +23995,7 @@ const CurveIndexer = {
         const cachedRecords = await this._dbGetAll();
         const cacheByPath = new Map(cachedRecords.map(r => [r.path, r]));
 
-        return this.catalog.map(entry => {
+        const summary = this.catalog.map(entry => {
             const brand = entry.brand || '';
             const model = entry.model || '';
             const variant = entry.variant || '';
@@ -22946,9 +24053,21 @@ const CurveIndexer = {
                 data: cachedData,
                 cachedInterp: cachedInterp,
                 sourcesCache: {},
-                searchKey: searchKey
+                searchKey: searchKey,
+                // Filled by SourceIndex.attachToDataset() when the precomputed
+                // index is present. Falls back to the primary file's data when
+                // it is not, so every consumer has a defined shape.
+                consensus: null,
+                consensusSpread: 0,
+                sourceCount: fileList.length || 1
             };
         }).sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
+
+        const dataset = summary;
+        if (typeof SourceIndex !== 'undefined' && SourceIndex.attachToDataset) {
+            SourceIndex.attachToDataset(dataset);
+        }
+        return dataset;
     },
 
     // Truthful progress for the indexing bar.
@@ -23988,6 +25107,23 @@ const PEQDB_SmartRFMethods = {
         },
 };
 
+/* ===== app/js/eq-targets-data.js ===== */
+// Target frequency-response curves (Harman IE 2019, Diffuse Field, Moondrop
+// VDSF, PEQdb Diamond, JM-1, Basshead, V-Shape, Gaming). Extracted from
+// peqdb-module.js as a pure data module: ~107 KB of measurement points that
+// have no behaviour, and keeping them beside the target logic made the module
+// harder to navigate. No values changed in the move.
+const EQ_TARGETS_DATA = {
+            harman: { id: 'harman', name: 'Harman IE 2019', data: [[20.00, 82.617], [20.36, 82.629], [20.73, 82.641], [21.11, 82.653], [21.50, 82.665], [21.89, 82.676], [22.29, 82.686], [22.69, 82.695], [23.10, 82.703], [23.52, 82.709], [23.95, 82.714], [24.39, 82.718], [24.83, 82.721], [25.28, 82.722], [25.74, 82.724], [26.21, 82.724], [26.69, 82.724], [27.18, 82.724], [27.67, 82.723], [28.17, 82.722], [28.69, 82.720], [29.21, 82.718], [29.74, 82.716], [30.28, 82.713], [30.83, 82.708], [31.39, 82.703], [31.97, 82.696], [32.55, 82.687], [33.14, 82.676], [33.74, 82.664], [34.36, 82.648], [34.98, 82.631], [35.62, 82.610], [36.27, 82.587], [36.93, 82.562], [37.60, 82.534], [38.28, 82.503], [38.98, 82.470], [39.69, 82.434], [40.41, 82.395], [41.15, 82.353], [41.90, 82.307], [42.66, 82.258], [43.44, 82.205], [44.23, 82.148], [45.03, 82.087], [45.85, 82.023], [46.68, 81.954], [47.53, 81.883], [48.40, 81.808], [49.28, 81.732], [50.18, 81.653], [51.09, 81.574], [52.02, 81.493], [52.97, 81.411], [53.93, 81.329], [54.91, 81.247], [55.91, 81.163], [56.93, 81.079], [57.97, 80.993], [59.02, 80.904], [60.09, 80.812], [61.19, 80.717], [62.30, 80.620], [63.44, 80.520], [64.59, 80.419], [65.77, 80.317], [66.96, 80.214], [68.18, 80.110], [69.42, 80.005], [70.69, 79.900], [71.97, 79.794], [73.28, 79.689], [74.62, 79.584], [75.97, 79.480], [77.36, 79.377], [78.76, 79.276], [80.20, 79.174], [81.66, 79.072], [83.14, 78.969], [84.66, 78.865], [86.20, 78.759], [87.77, 78.651], [89.36, 78.540], [90.99, 78.428], [92.65, 78.314], [94.33, 78.199], [96.05, 78.084], [97.80, 77.969], [99.58, 77.855], [101.39, 77.742], [103.23, 77.630], [105.11, 77.518], [107.03, 77.406], [108.97, 77.294], [110.96, 77.181], [112.98, 77.068], [115.03, 76.954], [117.13, 76.840], [119.26, 76.726], [121.43, 76.613], [123.64, 76.501], [125.89, 76.390], [128.18, 76.280], [130.51, 76.171], [132.89, 76.065], [135.31, 75.961], [137.77, 75.861], [140.28, 75.764], [142.83, 75.670], [145.43, 75.578], [148.07, 75.489], [150.77, 75.401], [153.51, 75.313], [156.31, 75.224], [159.15, 75.136], [162.05, 75.046], [165.00, 74.957], [168.00, 74.867], [171.06, 74.776], [174.17, 74.686], [177.34, 74.596], [180.57, 74.507], [183.86, 74.419], [187.20, 74.332], [190.61, 74.248], [194.08, 74.167], [197.61, 74.090], [201.21, 74.016], [204.87, 73.947], [208.60, 73.881], [212.39, 73.819], [216.26, 73.761], [220.19, 73.706], [224.20, 73.654], [228.28, 73.605], [232.44, 73.561], [236.67, 73.520], [240.97, 73.483], [245.36, 73.450], [249.82, 73.420], [254.37, 73.395], [259.00, 73.372], [263.71, 73.352], [268.51, 73.336], [273.40, 73.322], [278.38, 73.310], [283.44, 73.301], [288.60, 73.294], [293.85, 73.290], [299.20, 73.287], [304.65, 73.285], [310.19, 73.286], [315.84, 73.288], [321.59, 73.291], [327.44, 73.295], [333.40, 73.301], [339.47, 73.307], [345.64, 73.315], [351.93, 73.323], [358.34, 73.333], [364.86, 73.343], [371.50, 73.353], [378.26, 73.364], [385.15, 73.375], [392.16, 73.386], [399.29, 73.398], [406.56, 73.410], [413.96, 73.422], [421.49, 73.436], [429.16, 73.449], [436.97, 73.464], [444.93, 73.480], [453.02, 73.496], [461.27, 73.513], [469.66, 73.531], [478.21, 73.550], [486.91, 73.569], [495.78, 73.589], [504.80, 73.609], [513.99, 73.629], [523.34, 73.650], [532.87, 73.671], [542.56, 73.693], [552.44, 73.714], [562.49, 73.736], [572.73, 73.759], [583.15, 73.782], [593.77, 73.807], [604.57, 73.834], [615.57, 73.862], [626.78, 73.891], [638.18, 73.921], [649.80, 73.951], [661.63, 73.983], [673.67, 74.015], [685.93, 74.048], [698.41, 74.083], [711.12, 74.118], [724.06, 74.155], [737.24, 74.192], [750.66, 74.229], [764.32, 74.267], [778.23, 74.304], [792.39, 74.342], [806.82, 74.381], [821.50, 74.421], [836.45, 74.463], [851.67, 74.506], [867.17, 74.551], [882.96, 74.599], [899.02, 74.649], [915.39, 74.702], [932.05, 74.758], [949.01, 74.816], [966.28, 74.878], [983.87, 74.941], [1001.77, 75.006], [1020.00, 75.074], [1038.57, 75.145], [1057.47, 75.219], [1076.71, 75.297], [1096.31, 75.381], [1116.26, 75.470], [1136.58, 75.565], [1157.26, 75.665], [1178.32, 75.770], [1199.77, 75.880], [1221.60, 75.995], [1243.84, 76.116], [1266.47, 76.242], [1289.52, 76.374], [1312.99, 76.510], [1336.89, 76.648], [1361.22, 76.789], [1385.99, 76.929], [1411.22, 77.070], [1436.90, 77.211], [1463.05, 77.354], [1489.68, 77.500], [1516.79, 77.651], [1544.40, 77.807], [1572.50, 77.971], [1601.12, 78.141], [1630.26, 78.319], [1659.93, 78.504], [1690.14, 78.697], [1720.90, 78.897], [1752.22, 79.104], [1784.11, 79.319], [1816.58, 79.540], [1849.64, 79.768], [1883.30, 80.001], [1917.58, 80.237], [1952.48, 80.473], [1988.01, 80.706], [2024.19, 80.936], [2061.03, 81.161], [2098.54, 81.382], [2136.73, 81.601], [2175.62, 81.818], [2215.22, 82.033], [2255.53, 82.244], [2296.58, 82.451], [2338.38, 82.650], [2380.94, 82.840], [2424.27, 83.018], [2468.39, 83.186], [2513.31, 83.343], [2559.05, 83.490], [2605.63, 83.627], [2653.05, 83.753], [2701.33, 83.869], [2750.50, 83.973], [2800.55, 84.064], [2851.52, 84.144], [2903.42, 84.211], [2956.26, 84.269], [3010.06, 84.317], [3064.85, 84.357], [3120.62, 84.386], [3177.42, 84.405], [3235.25, 84.413], [3294.13, 84.411], [3354.08, 84.399], [3415.12, 84.377], [3477.27, 84.345], [3540.56, 84.305], [3605.00, 84.257], [3670.60, 84.202], [3737.41, 84.143], [3805.43, 84.079], [3874.68, 84.011], [3945.20, 83.941], [4017.00, 83.866], [4090.11, 83.788], [4164.55, 83.706], [4240.34, 83.620], [4317.51, 83.531], [4396.09, 83.439], [4476.10, 83.344], [4557.56, 83.246], [4640.50, 83.147], [4724.96, 83.046], [4810.95, 82.945], [4898.51, 82.845], [4987.66, 82.746], [5078.43, 82.648], [5170.86, 82.552], [5264.97, 82.458], [5360.79, 82.363], [5458.35, 82.269], [5557.69, 82.176], [5658.84, 82.082], [5761.82, 81.986], [5866.69, 81.884], [5973.46, 81.775], [6082.17, 81.654], [6192.87, 81.523], [6305.57, 81.383], [6420.33, 81.236], [6537.18, 81.081], [6656.15, 80.917], [6777.29, 80.741], [6900.63, 80.551], [7026.22, 80.347], [7154.10, 80.129], [7284.30, 79.898], [7416.87, 79.658], [7551.85, 79.411], [7689.29, 79.157], [7829.23, 78.898], [7971.72, 78.630], [8116.80, 78.351], [8264.53, 78.059], [8414.94, 77.755], [8568.09, 77.436], [8724.02, 77.104], [8882.79, 76.758], [9044.46, 76.400], [9209.06, 76.031], [9376.66, 75.652], [9547.31, 75.266], [9721.07, 74.877], [9897.99, 74.489], [10078.13, 74.106], [10261.55, 73.727], [10448.30, 73.351], [10638.45, 72.976], [10832.07, 72.598], [11029.21, 72.218], [11229.94, 71.835], [11434.32, 71.452], [11642.41, 71.071], [11854.30, 70.697], [12070.04, 70.330], [12289.71, 69.970], [12513.38, 69.615], [12741.12, 69.264], [12973.00, 68.918], [13209.10, 68.576], [13449.50, 68.241], [13694.28, 67.913], [13943.51, 67.592], [14197.27, 67.274], [14455.66, 66.955], [14718.74, 66.628], [14986.62, 66.285], [15259.37, 65.919], [15537.08, 65.522], [15819.85, 65.090], [16107.76, 64.614], [16400.92, 64.090], [16699.41, 63.512], [17003.33, 62.873], [17312.78, 62.169], [17627.86, 61.398], [17948.68, 60.560], [18275.34, 59.661], [18607.94, 58.716], [18946.60, 57.746], [19291.42, 56.777], [19642.52, 55.829], [20000.00, 54.901]] },
+            diffuse_field: { id: 'diffuse_field', name: 'Diffuse Field', data: [[20.00, 71.057], [20.36, 71.057], [20.73, 71.057], [21.11, 71.057], [21.50, 71.057], [21.89, 71.057], [22.29, 71.057], [22.69, 71.057], [23.10, 71.057], [23.52, 71.057], [23.95, 71.057], [24.39, 71.057], [24.83, 71.057], [25.28, 71.057], [25.74, 71.057], [26.21, 71.057], [26.69, 71.057], [27.18, 71.057], [27.67, 71.057], [28.17, 71.057], [28.69, 71.057], [29.21, 71.057], [29.74, 71.057], [30.28, 71.057], [30.83, 71.057], [31.39, 71.057], [31.97, 71.057], [32.55, 71.057], [33.14, 71.057], [33.74, 71.057], [34.36, 71.057], [34.98, 71.057], [35.62, 71.057], [36.27, 71.057], [36.93, 71.057], [37.60, 71.057], [38.28, 71.057], [38.98, 71.057], [39.69, 71.057], [40.41, 71.057], [41.15, 71.057], [41.90, 71.057], [42.66, 71.057], [43.44, 71.057], [44.23, 71.057], [45.03, 71.057], [45.85, 71.057], [46.68, 71.057], [47.53, 71.057], [48.40, 71.057], [49.28, 71.057], [50.18, 71.057], [51.09, 71.057], [52.02, 71.057], [52.97, 71.057], [53.93, 71.057], [54.91, 71.057], [55.91, 71.057], [56.93, 71.057], [57.97, 71.057], [59.02, 71.057], [60.09, 71.057], [61.19, 71.057], [62.30, 71.057], [63.44, 71.057], [64.59, 71.057], [65.77, 71.057], [66.96, 71.057], [68.18, 71.057], [69.42, 71.057], [70.69, 71.057], [71.97, 71.057], [73.28, 71.057], [74.62, 71.057], [75.97, 71.057], [77.36, 71.057], [78.76, 71.057], [80.20, 71.057], [81.66, 71.057], [83.14, 71.057], [84.66, 71.056], [86.20, 71.056], [87.77, 71.056], [89.36, 71.055], [90.99, 71.055], [92.65, 71.054], [94.33, 71.054], [96.05, 71.054], [97.80, 71.055], [99.58, 71.057], [101.39, 71.060], [103.23, 71.065], [105.11, 71.071], [107.03, 71.080], [108.97, 71.090], [110.96, 71.101], [112.98, 71.112], [115.03, 71.123], [117.13, 71.133], [119.26, 71.141], [121.43, 71.148], [123.64, 71.154], [125.89, 71.160], [128.18, 71.166], [130.51, 71.173], [132.89, 71.181], [135.31, 71.191], [137.77, 71.203], [140.28, 71.215], [142.83, 71.228], [145.43, 71.240], [148.07, 71.253], [150.77, 71.266], [153.51, 71.280], [156.31, 71.296], [159.15, 71.312], [162.05, 71.330], [165.00, 71.348], [168.00, 71.367], [171.06, 71.387], [174.17, 71.407], [177.34, 71.428], [180.57, 71.448], [183.86, 71.468], [187.20, 71.488], [190.61, 71.508], [194.08, 71.528], [197.61, 71.548], [201.21, 71.567], [204.87, 71.586], [208.60, 71.606], [212.39, 71.626], [216.26, 71.645], [220.19, 71.664], [224.20, 71.683], [228.28, 71.703], [232.44, 71.723], [236.67, 71.744], [240.97, 71.764], [245.36, 71.785], [249.82, 71.807], [254.37, 71.830], [259.00, 71.853], [263.71, 71.876], [268.51, 71.899], [273.40, 71.923], [278.38, 71.946], [283.44, 71.968], [288.60, 71.990], [293.85, 72.010], [299.20, 72.030], [304.65, 72.048], [310.19, 72.064], [315.84, 72.080], [321.59, 72.095], [327.44, 72.109], [333.40, 72.122], [339.47, 72.134], [345.64, 72.146], [351.93, 72.157], [358.34, 72.169], [364.86, 72.183], [371.50, 72.199], [378.26, 72.218], [385.15, 72.241], [392.16, 72.268], [399.29, 72.300], [406.56, 72.339], [413.96, 72.384], [421.49, 72.435], [429.16, 72.492], [436.97, 72.553], [444.93, 72.618], [453.02, 72.683], [461.27, 72.749], [469.66, 72.814], [478.21, 72.878], [486.91, 72.941], [495.78, 73.001], [504.80, 73.059], [513.99, 73.114], [523.34, 73.168], [532.87, 73.220], [542.56, 73.272], [552.44, 73.324], [562.49, 73.376], [572.73, 73.429], [583.15, 73.482], [593.77, 73.536], [604.57, 73.591], [615.57, 73.645], [626.78, 73.700], [638.18, 73.755], [649.80, 73.811], [661.63, 73.867], [673.67, 73.924], [685.93, 73.981], [698.41, 74.038], [711.12, 74.094], [724.06, 74.150], [737.24, 74.204], [750.66, 74.257], [764.32, 74.308], [778.23, 74.357], [792.39, 74.403], [806.82, 74.445], [821.50, 74.485], [836.45, 74.523], [851.67, 74.560], [867.17, 74.596], [882.96, 74.634], [899.02, 74.673], [915.39, 74.716], [932.05, 74.763], [949.01, 74.814], [966.28, 74.872], [983.87, 74.936], [1001.77, 75.007], [1020.00, 75.087], [1038.57, 75.174], [1057.47, 75.225], [1076.71, 75.372], [1096.31, 75.481], [1116.26, 75.594], [1136.58, 75.713], [1157.26, 75.835], [1178.32, 75.961], [1199.77, 76.091], [1221.60, 76.225], [1243.84, 76.363], [1266.47, 76.504], [1289.52, 76.648], [1312.99, 76.794], [1336.89, 76.941], [1361.22, 77.091], [1385.99, 77.241], [1411.22, 77.395], [1436.90, 77.552], [1463.05, 77.713], [1489.68, 77.881], [1516.79, 78.057], [1544.40, 78.242], [1572.50, 78.439], [1601.12, 78.649], [1630.26, 78.872], [1659.93, 79.108], [1690.14, 79.356], [1720.90, 79.616], [1752.22, 79.885], [1784.11, 80.161], [1816.58, 80.444], [1849.64, 80.733], [1883.30, 81.024], [1917.58, 81.319], [1952.48, 81.617], [1988.01, 81.917], [2024.19, 82.220], [2061.03, 82.527], [2098.54, 82.839], [2136.73, 83.157], [2175.62, 83.481], [2215.22, 83.810], [2255.53, 84.141], [2296.58, 84.471], [2338.38, 84.793], [2380.94, 85.104], [2424.27, 85.397], [2468.39, 85.666], [2513.31, 85.909], [2559.05, 86.120], [2605.63, 86.297], [2653.05, 86.441], [2701.33, 86.551], [2750.50, 86.630], [2800.55, 86.682], [2851.52, 86.709], [2903.42, 86.712], [2956.26, 86.694], [3010.06, 86.655], [3064.85, 86.595], [3120.62, 86.514], [3177.42, 86.414], [3235.25, 86.293], [3294.13, 86.153], [3354.08, 85.997], [3415.12, 85.827], [3477.27, 85.647], [3540.56, 85.457], [3605.00, 85.261], [3670.60, 85.059], [3737.41, 84.853], [3805.43, 84.644], [3874.68, 84.433], [3945.20, 84.221], [4017.00, 84.007], [4090.11, 83.794], [4164.55, 83.581], [4240.34, 83.369], [4317.51, 83.159], [4396.09, 82.953], [4476.10, 82.753], [4557.56, 82.559], [4640.50, 82.375], [4724.96, 82.200], [4810.95, 82.036], [4898.51, 81.885], [4987.66, 81.745], [5078.43, 81.618], [5170.86, 81.502], [5264.97, 81.396], [5360.79, 81.297], [5458.35, 81.205], [5557.69, 81.118], [5658.84, 81.036], [5761.82, 80.960], [5866.69, 80.890], [5973.46, 80.825], [6082.17, 80.767], [6192.87, 80.717], [6305.57, 80.673], [6420.33, 80.635], [6537.18, 80.603], [6656.15, 80.575], [6777.29, 80.550], [6900.63, 80.529], [7026.22, 80.509], [7154.10, 80.488], [7284.30, 80.465], [7416.87, 80.435], [7551.85, 80.396], [7689.29, 80.344], [7829.23, 80.276], [7971.72, 80.189], [8116.80, 80.081], [8264.53, 79.952], [8414.94, 79.805], [8568.09, 79.642], [8724.02, 79.469], [8882.79, 79.287], [9044.46, 79.101], [9209.06, 78.914], [9376.66, 78.725], [9547.31, 78.534], [9721.07, 78.342], [9897.99, 78.147], [10078.13, 77.948], [10261.55, 77.744], [10448.30, 77.535], [10638.45, 77.320], [10832.07, 77.099], [11029.21, 76.873], [11229.94, 76.641], [11434.32, 76.406], [11642.41, 76.166], [11854.30, 75.923], [12070.04, 75.677], [12289.71, 75.429], [12513.38, 75.178], [12741.12, 74.926], [12973.00, 74.674], [13209.10, 74.424], [13449.50, 74.177], [13694.28, 73.932], [13943.51, 73.691], [14197.27, 73.451], [14455.66, 73.214], [14718.74, 72.977], [14986.62, 72.741], [15259.37, 72.506], [15537.08, 72.271], [15819.85, 72.036], [16107.76, 71.800], [16400.92, 71.565], [16699.41, 71.328], [17003.33, 71.091], [17312.78, 70.853], [17627.86, 70.613], [17948.68, 70.372], [18275.34, 70.129], [18607.94, 69.884], [18946.60, 69.638], [19291.42, 69.389], [19642.52, 69.140], [20000.00, 68.890]] },
+            vshape: { id: 'vshape', name: 'V-Shape', data: [[20.00, 81.540], [20.36, 81.567], [20.73, 81.594], [21.11, 81.622], [21.50, 81.649], [21.89, 81.675], [22.29, 81.702], [22.69, 81.729], [23.10, 81.755], [23.52, 81.780], [23.95, 81.806], [24.39, 81.831], [24.83, 81.855], [25.28, 81.879], [25.74, 81.903], [26.21, 81.925], [26.69, 81.948], [27.18, 81.970], [27.67, 81.990], [28.17, 82.010], [28.69, 82.030], [29.21, 82.048], [29.74, 82.065], [30.28, 82.082], [30.83, 82.098], [31.39, 82.112], [31.97, 82.126], [32.55, 82.138], [33.14, 82.150], [33.74, 82.160], [34.36, 82.169], [34.98, 82.177], [35.62, 82.183], [36.27, 82.188], [36.93, 82.192], [37.60, 82.194], [38.28, 82.194], [38.98, 82.193], [39.69, 82.190], [40.41, 82.186], [41.15, 82.179], [41.90, 82.170], [42.66, 82.160], [43.44, 82.147], [44.23, 82.133], [45.03, 82.116], [45.85, 82.096], [46.68, 82.075], [47.53, 82.051], [48.40, 82.026], [49.28, 81.999], [50.18, 81.971], [51.09, 81.942], [52.02, 81.913], [52.97, 81.884], [53.93, 81.855], [54.91, 81.827], [55.91, 81.800], [56.93, 81.773], [57.97, 81.749], [59.02, 81.726], [60.09, 81.706], [61.19, 81.687], [62.30, 81.670], [63.44, 81.653], [64.59, 81.636], [65.77, 81.619], [66.96, 81.601], [68.18, 81.582], [69.42, 81.561], [70.69, 81.538], [71.97, 81.513], [73.28, 81.484], [74.62, 81.453], [75.97, 81.420], [77.36, 81.385], [78.76, 81.347], [80.20, 81.308], [81.66, 81.268], [83.14, 81.226], [84.66, 81.183], [86.20, 81.140], [87.77, 81.095], [89.36, 81.051], [90.99, 81.005], [92.65, 80.960], [94.33, 80.914], [96.05, 80.868], [97.80, 80.822], [99.58, 80.777], [101.39, 80.731], [103.23, 80.685], [105.11, 80.638], [107.03, 80.589], [108.97, 80.539], [110.96, 80.488], [112.98, 80.435], [115.03, 80.380], [117.13, 80.324], [119.26, 80.268], [121.43, 80.210], [123.64, 80.152], [125.89, 80.094], [128.18, 80.036], [130.51, 79.977], [132.89, 79.918], [135.31, 79.858], [137.77, 79.797], [140.28, 79.734], [142.83, 79.671], [145.43, 79.608], [148.07, 79.544], [150.77, 79.480], [153.51, 79.416], [156.31, 79.351], [159.15, 79.288], [162.05, 79.224], [165.00, 79.161], [168.00, 79.098], [171.06, 79.035], [174.17, 78.971], [177.34, 78.907], [180.57, 78.841], [183.86, 78.775], [187.20, 78.707], [190.61, 78.639], [194.08, 78.569], [197.61, 78.498], [201.21, 78.426], [204.87, 78.353], [208.60, 78.279], [212.39, 78.204], [216.26, 78.129], [220.19, 78.055], [224.20, 77.982], [228.28, 77.909], [232.44, 77.837], [236.67, 77.765], [240.97, 77.693], [245.36, 77.620], [249.82, 77.548], [254.37, 77.474], [259.00, 77.401], [263.71, 77.327], [268.51, 77.253], [273.40, 77.179], [278.38, 77.107], [283.44, 77.034], [288.60, 76.962], [293.85, 76.890], [299.20, 76.819], [304.65, 76.748], [310.19, 76.678], [315.84, 76.609], [321.59, 76.540], [327.44, 76.473], [333.40, 76.408], [339.47, 76.343], [345.64, 76.280], [351.93, 76.218], [358.34, 76.156], [364.86, 76.095], [371.50, 76.034], [378.26, 75.973], [385.15, 75.912], [392.16, 75.853], [399.29, 75.796], [406.56, 75.740], [413.96, 75.685], [421.49, 75.633], [429.16, 75.582], [436.97, 75.531], [444.93, 75.482], [453.02, 75.432], [461.27, 75.384], [469.66, 75.336], [478.21, 75.289], [486.91, 75.245], [495.78, 75.201], [504.80, 75.159], [513.99, 75.118], [523.34, 75.079], [532.87, 75.040], [542.56, 75.004], [552.44, 74.969], [562.49, 74.935], [572.73, 74.902], [583.15, 74.869], [593.77, 74.836], [604.57, 74.804], [615.57, 74.774], [626.78, 74.744], [638.18, 74.716], [649.80, 74.689], [661.63, 74.663], [673.67, 74.638], [685.93, 74.613], [698.41, 74.589], [711.12, 74.566], [724.06, 74.544], [737.24, 74.523], [750.66, 74.506], [764.32, 74.492], [778.23, 74.483], [792.39, 74.478], [806.82, 74.479], [821.50, 74.489], [836.45, 74.507], [851.67, 74.530], [867.17, 74.556], [882.96, 74.587], [899.02, 74.622], [915.39, 74.664], [932.05, 74.714], [949.01, 74.773], [966.28, 74.841], [983.87, 74.919], [1001.77, 75.009], [1020.00, 75.110], [1038.57, 75.224], [1057.47, 75.351], [1076.71, 75.489], [1096.31, 75.637], [1116.26, 75.794], [1136.58, 75.958], [1157.26, 76.126], [1178.32, 76.297], [1199.77, 76.470], [1221.60, 76.641], [1243.84, 76.809], [1266.47, 76.976], [1289.52, 77.140], [1312.99, 77.302], [1336.89, 77.460], [1361.22, 77.615], [1385.99, 77.768], [1411.22, 77.919], [1436.90, 78.068], [1463.05, 78.218], [1489.68, 78.369], [1516.79, 78.523], [1544.40, 78.679], [1572.50, 78.839], [1601.12, 79.006], [1630.26, 79.180], [1659.93, 79.361], [1690.14, 79.548], [1720.90, 79.740], [1752.22, 79.938], [1784.11, 80.143], [1816.58, 80.355], [1849.64, 80.574], [1883.30, 80.798], [1917.58, 81.023], [1952.48, 81.246], [1988.01, 81.464], [2024.19, 81.672], [2061.03, 81.866], [2098.54, 82.041], [2136.73, 82.193], [2175.62, 82.319], [2215.22, 82.416], [2255.53, 82.482], [2296.58, 82.515], [2338.38, 82.516], [2380.94, 82.484], [2424.27, 82.421], [2468.39, 82.331], [2513.31, 82.219], [2559.05, 82.092], [2605.63, 81.958], [2653.05, 81.822], [2701.33, 81.687], [2750.50, 81.558], [2800.55, 81.440], [2851.52, 81.339], [2903.42, 81.262], [2956.26, 81.216], [3010.06, 81.204], [3064.85, 81.232], [3120.62, 81.296], [3177.42, 81.393], [3235.25, 81.514], [3294.13, 81.648], [3354.08, 81.782], [3415.12, 81.903], [3477.27, 81.998], [3540.56, 82.056], [3605.00, 82.068], [3670.60, 82.032], [3737.41, 81.949], [3805.43, 81.825], [3874.68, 81.670], [3945.20, 81.494], [4017.00, 81.306], [4090.11, 81.112], [4164.55, 80.919], [4240.34, 80.732], [4317.51, 80.624], [4396.09, 80.419], [4476.10, 80.315], [4557.56, 80.254], [4640.50, 80.228], [4724.96, 80.212], [4810.95, 80.173], [4898.51, 80.075], [4987.66, 79.894], [5078.43, 79.622], [5170.86, 79.276], [5264.97, 78.882], [5360.79, 78.478], [5458.35, 78.098], [5557.69, 77.772], [5658.84, 77.516], [5761.82, 77.331], [5866.69, 77.206], [5973.46, 77.121], [6082.17, 77.062], [6192.87, 77.022], [6305.57, 77.006], [6420.33, 77.025], [6537.18, 77.095], [6656.15, 77.236], [6777.29, 77.465], [6900.63, 77.795], [7026.22, 78.229], [7154.10, 78.758], [7284.30, 79.357], [7416.87, 79.981], [7551.85, 80.568], [7689.29, 81.044], [7829.23, 81.335], [7971.72, 81.383], [8116.80, 81.164], [8264.53, 80.693], [8414.94, 80.018], [8568.09, 79.212], [8724.02, 78.355], [8882.79, 77.520], [9044.46, 76.773], [9209.06, 76.159], [9376.66, 75.697], [9547.31, 75.381], [9721.07, 75.180], [9897.99, 75.052], [10078.13, 74.945], [10261.55, 74.808], [10448.30, 74.604], [10638.45, 74.313], [10832.07, 73.438], [11029.21, 72.988], [11229.94, 72.513], [11434.32, 72.025], [11642.41, 71.538], [11854.30, 71.065], [12070.04, 70.989], [12289.71, 70.581], [12513.38, 70.246], [12741.12, 70.004], [12973.00, 69.870], [13209.10, 69.853], [13449.50, 69.954], [13694.28, 70.161], [13943.51, 70.443], [14197.27, 71.175], [14455.66, 72.015], [14718.74, 71.750], [14986.62, 71.485], [15259.37, 71.204], [15537.08, 70.011], [15819.85, 69.455], [16107.76, 68.945], [16400.92, 68.539], [16699.41, 68.187], [17003.33, 67.777], [17312.78, 67.189], [17627.86, 66.340], [17948.68, 65.194], [18275.34, 63.757], [18607.94, 62.065], [18946.60, 60.165], [19291.42, 58.107], [19642.52, 55.958], [20000.00, 53.788]] },
+            gaming: { id: 'gaming', name: 'Gaming', data: [[20.00, 80.699], [20.36, 80.739], [20.73, 80.778], [21.11, 80.816], [21.50, 80.854], [21.89, 80.890], [22.29, 80.925], [22.69, 80.960], [23.10, 80.992], [23.52, 81.024], [23.95, 81.054], [24.39, 81.083], [24.83, 81.111], [25.28, 81.138], [25.74, 81.163], [26.21, 81.187], [26.69, 81.209], [27.18, 81.231], [27.67, 81.251], [28.17, 81.269], [28.69, 81.287], [29.21, 81.303], [29.74, 81.317], [30.28, 81.331], [30.83, 81.343], [31.39, 81.354], [31.97, 81.363], [32.55, 81.372], [33.14, 81.378], [33.74, 81.384], [34.36, 81.388], [34.98, 81.391], [35.62, 81.393], [36.27, 81.393], [36.93, 81.393], [37.60, 81.392], [38.28, 81.389], [38.98, 81.385], [39.69, 81.380], [40.41, 81.374], [41.15, 81.367], [41.90, 81.358], [42.66, 81.349], [43.44, 81.337], [44.23, 81.325], [45.03, 81.312], [45.85, 81.297], [46.68, 81.281], [47.53, 81.263], [48.40, 81.245], [49.28, 81.225], [50.18, 81.203], [51.09, 81.181], [52.02, 81.157], [52.97, 81.132], [53.93, 81.105], [54.91, 81.078], [55.91, 81.049], [56.93, 81.020], [57.97, 80.989], [59.02, 80.957], [60.09, 80.924], [61.19, 80.891], [62.30, 80.856], [63.44, 80.821], [64.59, 80.784], [65.77, 80.748], [66.96, 80.710], [68.18, 80.672], [69.42, 80.632], [70.69, 80.593], [71.97, 80.552], [73.28, 80.511], [74.62, 80.470], [75.97, 80.427], [77.36, 80.384], [78.76, 80.340], [80.20, 80.296], [81.66, 80.251], [83.14, 80.205], [84.66, 80.160], [86.20, 80.113], [87.77, 80.066], [89.36, 80.019], [90.99, 79.972], [92.65, 79.923], [94.33, 79.875], [96.05, 79.825], [97.80, 79.774], [99.58, 79.722], [101.39, 79.669], [103.23, 79.615], [105.11, 79.561], [107.03, 79.506], [108.97, 79.450], [110.96, 79.393], [112.98, 79.337], [115.03, 79.280], [117.13, 79.223], [119.26, 79.167], [121.43, 79.110], [123.64, 79.055], [125.89, 79.000], [128.18, 78.946], [130.51, 78.893], [132.89, 78.842], [135.31, 78.792], [137.77, 78.744], [140.28, 78.698], [142.83, 78.653], [145.43, 78.608], [148.07, 78.564], [150.77, 78.520], [153.51, 78.475], [156.31, 78.429], [159.15, 78.383], [162.05, 78.334], [165.00, 78.285], [168.00, 78.233], [171.06, 78.179], [174.17, 78.124], [177.34, 78.068], [180.57, 78.011], [183.86, 77.953], [187.20, 77.894], [190.61, 77.836], [194.08, 77.778], [197.61, 77.720], [201.21, 77.663], [204.87, 77.607], [208.60, 77.552], [212.39, 77.498], [216.26, 77.445], [220.19, 77.393], [224.20, 77.342], [228.28, 77.292], [232.44, 77.241], [236.67, 77.191], [240.97, 77.139], [245.36, 77.087], [249.82, 77.034], [254.37, 76.980], [259.00, 76.925], [263.71, 76.869], [268.51, 76.812], [273.40, 76.756], [278.38, 76.700], [283.44, 76.644], [288.60, 76.589], [293.85, 76.535], [299.20, 76.483], [304.65, 76.433], [310.19, 76.385], [315.84, 76.338], [321.59, 76.293], [327.44, 76.249], [333.40, 76.207], [339.47, 76.164], [345.64, 76.122], [351.93, 76.078], [358.34, 76.034], [364.86, 75.989], [371.50, 75.943], [378.26, 75.895], [385.15, 75.847], [392.16, 75.798], [399.29, 75.749], [406.56, 75.701], [413.96, 75.653], [421.49, 75.605], [429.16, 75.558], [436.97, 75.512], [444.93, 75.466], [453.02, 75.421], [461.27, 75.376], [469.66, 75.332], [478.21, 75.288], [486.91, 75.246], [495.78, 75.204], [504.80, 75.163], [513.99, 75.123], [523.34, 75.083], [532.87, 75.043], [542.56, 75.004], [552.44, 74.965], [562.49, 74.927], [572.73, 74.889], [583.15, 74.851], [593.77, 74.815], [604.57, 74.779], [615.57, 74.745], [626.78, 74.712], [638.18, 74.680], [649.80, 74.650], [661.63, 74.621], [673.67, 74.594], [685.93, 74.568], [698.41, 74.545], [711.12, 74.523], [724.06, 74.502], [737.24, 74.484], [750.66, 74.469], [764.32, 74.456], [778.23, 74.446], [792.39, 74.440], [806.82, 74.435], [821.50, 74.433], [836.45, 74.434], [851.67, 74.439], [867.17, 74.455], [882.96, 74.484], [899.02, 74.528], [915.39, 74.587], [932.05, 74.658], [949.01, 74.738], [966.28, 74.824], [983.87, 74.915], [1001.77, 75.009], [1020.00, 75.107], [1038.57, 75.209], [1057.47, 75.315], [1076.71, 75.429], [1096.31, 75.553], [1116.26, 75.691], [1136.58, 75.840], [1157.26, 76.001], [1178.32, 76.170], [1199.77, 76.341], [1221.60, 76.512], [1243.84, 76.677], [1266.47, 76.838], [1289.52, 76.991], [1312.99, 77.137], [1336.89, 77.275], [1361.22, 77.405], [1385.99, 77.527], [1411.22, 77.645], [1436.90, 77.758], [1463.05, 77.868], [1489.68, 77.978], [1516.79, 78.088], [1544.40, 78.199], [1572.50, 78.309], [1601.12, 78.420], [1630.26, 78.533], [1659.93, 78.649], [1690.14, 78.769], [1720.90, 78.892], [1752.22, 79.020], [1784.11, 79.154], [1816.58, 79.292], [1849.64, 79.436], [1883.30, 79.584], [1917.58, 79.736], [1952.48, 79.891], [1988.01, 80.050], [2024.19, 80.214], [2061.03, 80.381], [2098.54, 80.553], [2136.73, 80.728], [2175.62, 80.905], [2215.22, 81.084], [2255.53, 81.264], [2296.58, 81.441], [2338.38, 81.615], [2380.94, 81.783], [2424.27, 81.944], [2468.39, 82.099], [2513.31, 82.249], [2559.05, 82.395], [2605.63, 82.539], [2653.05, 82.682], [2701.33, 82.823], [2750.50, 82.959], [2800.55, 83.086], [2851.52, 83.199], [2903.42, 83.292], [2956.26, 83.364], [3010.06, 83.410], [3064.85, 83.433], [3120.62, 83.432], [3177.42, 83.410], [3235.25, 83.370], [3294.13, 83.311], [3354.08, 83.235], [3415.12, 83.143], [3477.27, 83.036], [3540.56, 82.917], [3605.00, 82.790], [3670.60, 82.658], [3737.41, 82.526], [3805.43, 82.395], [3874.68, 82.268], [3945.20, 82.143], [4017.00, 82.023], [4090.11, 81.906], [4164.55, 81.791], [4240.34, 81.679], [4317.51, 81.569], [4396.09, 81.461], [4476.10, 81.357], [4557.56, 81.256], [4640.50, 81.161], [4724.96, 81.070], [4810.95, 80.984], [4898.51, 80.900], [4987.66, 80.819], [5078.43, 80.739], [5170.86, 80.659], [5264.97, 80.579], [5360.79, 80.498], [5458.35, 80.418], [5557.69, 80.340], [5658.84, 80.264], [5761.82, 80.193], [5866.69, 80.127], [5973.46, 80.067], [6082.17, 80.012], [6192.87, 79.965], [6305.57, 79.928], [6420.33, 79.903], [6537.18, 79.898], [6656.15, 79.920], [6777.29, 79.975], [6900.63, 80.073], [7026.22, 80.218], [7154.10, 80.411], [7284.30, 80.646], [7416.87, 80.904], [7551.85, 81.157], [7689.29, 81.361], [7829.23, 81.467], [7971.72, 81.425], [8116.80, 81.194], [8264.53, 80.756], [8414.94, 80.117], [8568.09, 79.309], [8724.02, 78.376], [8882.79, 77.366], [9044.46, 76.323], [9209.06, 75.281], [9376.66, 74.269], [9547.31, 73.308], [9721.07, 72.419], [9897.99, 71.617], [10078.13, 70.918], [10261.55, 70.337], [10448.30, 69.889], [10638.45, 69.583], [10832.07, 69.415], [11029.21, 69.369], [11229.94, 69.421], [11434.32, 69.551], [11642.41, 69.748], [11854.30, 70.014], [12070.04, 70.353], [12289.71, 70.762], [12513.38, 71.224], [12741.12, 71.698], [12973.00, 72.125], [13209.10, 72.444], [13449.50, 72.610], [13694.28, 72.614], [13943.51, 72.484], [14197.27, 72.269], [14455.66, 72.015], [14718.74, 71.750], [14986.62, 71.485], [15259.37, 71.204], [15537.08, 70.874], [15819.85, 70.455], [16107.76, 69.904], [16400.92, 69.193], [16699.41, 68.321], [17003.33, 67.318], [17312.78, 66.229], [17627.86, 65.090], [17948.68, 63.910], [18275.34, 62.672], [18607.94, 61.352], [18946.60, 59.940], [19291.42, 58.453], [19642.52, 56.924], [20000.00, 55.392]] },
+            moondrop_vdsf: { id: 'moondrop_vdsf', name: 'Moondrop VDSF', data: [[20.00, 77.103], [20.36, 77.093], [20.73, 77.083], [21.11, 77.073], [21.50, 77.062], [21.89, 77.051], [22.29, 77.039], [22.69, 77.026], [23.10, 77.013], [23.52, 76.999], [23.95, 76.985], [24.39, 76.971], [24.83, 76.957], [25.28, 76.943], [25.74, 76.930], [26.21, 76.917], [26.69, 76.906], [27.18, 76.895], [27.67, 76.884], [28.17, 76.875], [28.69, 76.867], [29.21, 76.859], [29.74, 76.852], [30.28, 76.845], [30.83, 76.839], [31.39, 76.834], [31.97, 76.829], [32.55, 76.824], [33.14, 76.819], [33.74, 76.815], [34.36, 76.811], [34.98, 76.807], [35.62, 76.803], [36.27, 76.799], [36.93, 76.795], [37.60, 76.791], [38.28, 76.787], [38.98, 76.783], [39.69, 76.779], [40.41, 76.774], [41.15, 76.770], [41.90, 76.765], [42.66, 76.759], [43.44, 76.753], [44.23, 76.747], [45.03, 76.740], [45.85, 76.731], [46.68, 76.722], [47.53, 76.711], [48.40, 76.698], [49.28, 76.684], [50.18, 76.667], [51.09, 76.649], [52.02, 76.628], [52.97, 76.604], [53.93, 76.579], [54.91, 76.551], [55.91, 76.521], [56.93, 76.489], [57.97, 76.455], [59.02, 76.420], [60.09, 76.385], [61.19, 76.349], [62.30, 76.312], [63.44, 76.277], [64.59, 76.242], [65.77, 76.208], [66.96, 76.176], [68.18, 76.146], [69.42, 76.118], [70.69, 76.091], [71.97, 76.067], [73.28, 76.044], [74.62, 76.023], [75.97, 76.004], [77.36, 75.986], [78.76, 75.969], [80.20, 75.952], [81.66, 75.935], [83.14, 75.918], [84.66, 75.900], [86.20, 75.881], [87.77, 75.861], [89.36, 75.839], [90.99, 75.816], [92.65, 75.790], [94.33, 75.763], [96.05, 75.733], [97.80, 75.702], [99.58, 75.668], [101.39, 75.633], [103.23, 75.597], [105.11, 75.559], [107.03, 75.520], [108.97, 75.481], [110.96, 75.442], [112.98, 75.404], [115.03, 75.366], [117.13, 75.329], [119.26, 75.294], [121.43, 75.260], [123.64, 75.228], [125.89, 75.198], [128.18, 75.170], [130.51, 75.143], [132.89, 75.118], [135.31, 75.093], [137.77, 75.069], [140.28, 75.045], [142.83, 75.020], [145.43, 74.993], [148.07, 74.965], [150.77, 74.934], [153.51, 74.901], [156.31, 74.863], [159.15, 74.822], [162.05, 74.777], [165.00, 74.728], [168.00, 74.674], [171.06, 74.616], [174.17, 74.555], [177.34, 74.490], [180.57, 74.423], [183.86, 74.355], [187.20, 74.286], [190.61, 74.219], [194.08, 74.153], [197.61, 74.091], [201.21, 74.033], [204.87, 73.981], [208.60, 73.934], [212.39, 73.894], [216.26, 73.860], [220.19, 73.832], [224.20, 73.810], [228.28, 73.793], [232.44, 73.782], [236.67, 73.775], [240.97, 73.772], [245.36, 73.772], [249.82, 73.776], [254.37, 73.784], [259.00, 73.794], [263.71, 73.806], [268.51, 73.822], [273.40, 73.840], [278.38, 73.860], [283.44, 73.883], [288.60, 73.906], [293.85, 73.931], [299.20, 73.957], [304.65, 73.982], [310.19, 74.007], [315.84, 74.030], [321.59, 74.051], [327.44, 74.071], [333.40, 74.088], [339.47, 74.102], [345.64, 74.115], [351.93, 74.125], [358.34, 74.134], [364.86, 74.141], [371.50, 74.148], [378.26, 74.153], [385.15, 74.157], [392.16, 74.162], [399.29, 74.165], [406.56, 74.169], [413.96, 74.173], [421.49, 74.176], [429.16, 74.179], [436.97, 74.183], [444.93, 74.187], [453.02, 74.191], [461.27, 74.195], [469.66, 74.201], [478.21, 74.208], [486.91, 74.216], [495.78, 74.226], [504.80, 74.239], [513.99, 74.254], [523.34, 74.273], [532.87, 74.294], [542.56, 74.320], [552.44, 74.348], [562.49, 74.380], [572.73, 74.414], [583.15, 74.451], [593.77, 74.489], [604.57, 74.528], [615.57, 74.568], [626.78, 74.607], [638.18, 74.646], [649.80, 74.683], [661.63, 74.717], [673.67, 74.749], [685.93, 74.777], [698.41, 74.802], [711.12, 74.823], [724.06, 74.841], [737.24, 74.855], [750.66, 74.867], [764.32, 74.877], [778.23, 74.885], [792.39, 74.891], [806.82, 74.896], [821.50, 74.901], [836.45, 74.906], [851.67, 74.910], [867.17, 74.914], [882.96, 74.919], [899.02, 74.925], [915.39, 74.932], [932.05, 74.941], [949.01, 74.952], [966.28, 74.965], [983.87, 74.982], [1001.77, 75.002], [1020.00, 75.026], [1038.57, 75.055], [1057.47, 75.088], [1076.71, 75.126], [1096.31, 75.169], [1116.26, 75.218], [1136.58, 75.272], [1157.26, 75.332], [1178.32, 75.400], [1199.77, 75.475], [1221.60, 75.559], [1243.84, 75.652], [1266.47, 75.754], [1289.52, 75.866], [1312.99, 75.987], [1336.89, 76.116], [1361.22, 76.253], [1385.99, 76.396], [1411.22, 76.546], [1436.90, 76.700], [1463.05, 76.859], [1489.68, 77.021], [1516.79, 77.187], [1544.40, 77.357], [1572.50, 77.530], [1601.12, 77.707], [1630.26, 77.887], [1659.93, 78.071], [1690.14, 78.257], [1720.90, 78.446], [1752.22, 78.636], [1784.11, 78.829], [1816.58, 79.024], [1849.64, 79.220], [1883.30, 79.419], [1917.58, 79.620], [1952.48, 79.823], [1988.01, 80.029], [2024.19, 80.237], [2061.03, 80.447], [2098.54, 80.658], [2136.73, 80.869], [2175.62, 81.077], [2215.22, 81.282], [2255.53, 81.481], [2296.58, 81.673], [2338.38, 81.857], [2380.94, 82.030], [2424.27, 82.193], [2468.39, 82.344], [2513.31, 82.483], [2559.05, 82.609], [2605.63, 82.724], [2653.05, 82.826], [2701.33, 82.915], [2750.50, 82.993], [2800.55, 83.059], [2851.52, 83.112], [2903.42, 83.154], [2956.26, 83.182], [3010.06, 83.198], [3064.85, 83.198], [3120.62, 83.184], [3177.42, 83.153], [3235.25, 83.106], [3294.13, 83.041], [3354.08, 82.959], [3415.12, 82.861], [3477.27, 82.749], [3540.56, 82.623], [3605.00, 82.487], [3670.60, 82.343], [3737.41, 82.194], [3805.43, 82.041], [3874.68, 81.887], [3945.20, 81.732], [4017.00, 81.578], [4090.11, 81.422], [4164.55, 81.266], [4240.34, 81.107], [4317.51, 80.944], [4396.09, 80.776], [4476.10, 80.603], [4557.56, 80.423], [4640.50, 80.237], [4724.96, 80.044], [4810.95, 79.846], [4898.51, 79.644], [4987.66, 79.439], [5078.43, 79.232], [5170.86, 79.025], [5264.97, 78.819], [5360.79, 78.616], [5458.35, 78.416], [5557.69, 78.220], [5658.84, 78.029], [5761.82, 77.843], [5866.69, 77.660], [5973.46, 77.482], [6082.17, 77.306], [6192.87, 77.133], [6305.57, 76.961], [6420.33, 76.791], [6537.18, 76.620], [6656.15, 76.451], [6777.29, 76.282], [6900.63, 76.114], [7026.22, 75.951], [7154.10, 75.793], [7284.30, 75.644], [7416.87, 75.508], [7551.85, 75.388], [7689.29, 75.287], [7829.23, 75.208], [7971.72, 75.154], [8116.80, 75.124], [8264.53, 75.117], [8414.94, 75.131], [8568.09, 75.160], [8724.02, 75.198], [8882.79, 75.237], [9044.46, 75.268], [9209.06, 75.282], [9376.66, 75.270], [9547.31, 75.221], [9721.07, 75.129], [9897.99, 74.985], [10078.13, 74.787], [10261.55, 74.530], [10448.30, 74.217], [10638.45, 73.851], [10832.07, 73.438], [11029.21, 72.988], [11229.94, 72.513], [11434.32, 72.025], [11642.41, 71.538], [11854.30, 71.065], [12070.04, 70.618], [12289.71, 70.205], [12513.38, 69.833], [12741.12, 69.503], [12973.00, 69.214], [13209.10, 68.963], [13449.50, 68.744], [13694.28, 68.548], [13943.51, 68.369], [14197.27, 68.200], [14455.66, 68.034], [14718.74, 67.867], [14986.62, 67.694], [15259.37, 67.511], [15537.08, 67.312], [15819.85, 67.090], [16107.76, 66.834], [16400.92, 66.527], [16699.41, 66.147], [17003.33, 65.661], [17312.78, 65.026], [17627.86, 64.186], [17948.68, 63.076], [18275.34, 61.615], [18607.94, 59.722], [18946.60, 57.322], [19291.42, 54.366], [19642.52, 50.866], [20000.00, 46.930]] },
+            peqdb_diamond: { id: 'peqdb_diamond', name: 'PEQdb Diamond', data: [[20.00, 82.981], [20.36, 82.974], [20.73, 82.967], [21.11, 82.959], [21.50, 82.952], [21.89, 82.944], [22.29, 82.935], [22.69, 82.926], [23.10, 82.917], [23.52, 82.908], [23.95, 82.898], [24.39, 82.887], [24.83, 82.876], [25.28, 82.865], [25.74, 82.853], [26.21, 82.841], [26.69, 82.828], [27.18, 82.815], [27.67, 82.801], [28.17, 82.787], [28.69, 82.772], [29.21, 82.756], [29.74, 82.740], [30.28, 82.723], [30.83, 82.705], [31.39, 82.686], [31.97, 82.667], [32.55, 82.647], [33.14, 82.626], [33.74, 82.604], [34.36, 82.581], [34.98, 82.557], [35.62, 82.532], [36.27, 82.507], [36.93, 82.479], [37.60, 82.451], [38.28, 82.422], [38.98, 82.391], [39.69, 82.359], [40.41, 82.326], [41.15, 82.291], [41.90, 82.255], [42.66, 82.218], [43.44, 82.178], [44.23, 82.138], [45.03, 82.095], [45.85, 82.051], [46.68, 82.005], [47.53, 81.957], [48.40, 81.907], [49.28, 81.855], [50.18, 81.801], [51.09, 81.745], [52.02, 81.687], [52.97, 81.627], [53.93, 81.565], [54.91, 81.500], [55.91, 81.433], [56.93, 81.363], [57.97, 81.291], [59.02, 81.216], [60.09, 81.139], [61.19, 81.060], [62.30, 80.977], [63.44, 80.893], [64.59, 80.805], [65.77, 80.715], [66.96, 80.622], [68.18, 80.527], [69.42, 80.429], [70.69, 80.328], [71.97, 80.224], [73.28, 80.118], [74.62, 80.010], [75.97, 79.899], [77.36, 79.785], [78.76, 79.669], [80.20, 79.551], [81.66, 79.431], [83.14, 79.308], [84.66, 79.182], [86.20, 79.055], [87.77, 78.927], [89.36, 78.795], [90.99, 78.663], [92.65, 78.529], [94.33, 78.394], [96.05, 78.257], [97.80, 78.121], [99.58, 77.985], [101.39, 77.848], [103.23, 77.714], [105.11, 77.579], [107.03, 77.448], [108.97, 77.317], [110.96, 77.187], [112.98, 77.057], [115.03, 76.927], [117.13, 76.797], [119.26, 76.666], [121.43, 76.534], [123.64, 76.403], [125.89, 76.272], [128.18, 76.142], [130.51, 76.015], [132.89, 75.891], [135.31, 75.770], [137.77, 75.652], [140.28, 75.537], [142.83, 75.424], [145.43, 75.313], [148.07, 75.204], [150.77, 75.098], [153.51, 74.996], [156.31, 74.897], [159.15, 74.801], [162.05, 74.710], [165.00, 74.621], [168.00, 74.535], [171.06, 74.453], [174.17, 74.374], [177.34, 74.299], [180.57, 74.225], [183.86, 74.154], [187.20, 74.085], [190.61, 74.019], [194.08, 73.956], [197.61, 73.895], [201.21, 73.836], [204.87, 73.779], [208.60, 73.726], [212.39, 73.675], [216.26, 73.625], [220.19, 73.578], [224.20, 73.534], [228.28, 73.492], [232.44, 73.453], [236.67, 73.417], [240.97, 73.382], [245.36, 73.350], [249.82, 73.321], [254.37, 73.294], [259.00, 73.270], [263.71, 73.247], [268.51, 73.227], [273.40, 73.208], [278.38, 73.191], [283.44, 73.174], [288.60, 73.158], [293.85, 73.142], [299.20, 73.127], [304.65, 73.112], [310.19, 73.096], [315.84, 73.081], [321.59, 73.066], [327.44, 73.052], [333.40, 73.037], [339.47, 73.023], [345.64, 73.009], [351.93, 72.995], [358.34, 72.984], [364.86, 72.975], [371.50, 72.969], [378.26, 72.966], [385.15, 72.969], [392.16, 72.976], [399.29, 72.989], [406.56, 73.009], [413.96, 73.036], [421.49, 73.070], [429.16, 73.110], [436.97, 73.155], [444.93, 73.204], [453.02, 73.254], [461.27, 73.305], [469.66, 73.355], [478.21, 73.405], [486.91, 73.454], [495.78, 73.500], [504.80, 73.545], [513.99, 73.587], [523.34, 73.628], [532.87, 73.668], [542.56, 73.708], [552.44, 73.747], [562.49, 73.788], [572.73, 73.829], [583.15, 73.870], [593.77, 73.913], [604.57, 73.956], [615.57, 73.999], [626.78, 74.042], [638.18, 74.086], [649.80, 74.131], [661.63, 74.176], [673.67, 74.221], [685.93, 74.267], [698.41, 74.312], [711.12, 74.357], [724.06, 74.401], [737.24, 74.444], [750.66, 74.485], [764.32, 74.524], [778.23, 74.560], [792.39, 74.594], [806.82, 74.623], [821.50, 74.650], [836.45, 74.675], [851.67, 74.699], [867.17, 74.721], [882.96, 74.744], [899.02, 74.769], [915.39, 74.797], [932.05, 74.828], [949.01, 74.863], [966.28, 74.905], [983.87, 74.952], [1001.77, 75.005], [1020.00, 75.066], [1038.57, 75.135], [1057.47, 75.211], [1076.71, 75.292], [1096.31, 75.380], [1116.26, 75.471], [1136.58, 75.567], [1157.26, 75.665], [1178.32, 75.766], [1199.77, 75.869], [1221.60, 75.976], [1243.84, 76.086], [1266.47, 76.197], [1289.52, 76.309], [1312.99, 76.423], [1336.89, 76.536], [1361.22, 76.650], [1385.99, 76.762], [1411.22, 76.877], [1436.90, 76.992], [1463.05, 77.110], [1489.68, 77.233], [1516.79, 77.361], [1544.40, 77.496], [1572.50, 77.640], [1601.12, 77.795], [1630.26, 77.960], [1659.93, 78.136], [1690.14, 78.321], [1720.90, 78.514], [1752.22, 78.714], [1784.11, 78.918], [1816.58, 79.126], [1849.64, 79.336], [1883.30, 79.546], [1917.58, 79.756], [1952.48, 79.967], [1988.01, 80.178], [2024.19, 80.389], [2061.03, 80.603], [2098.54, 80.820], [2136.73, 81.042], [2175.62, 81.271], [2215.22, 81.506], [2255.53, 81.744], [2296.58, 81.985], [2338.38, 82.222], [2380.94, 82.454], [2424.27, 82.675], [2468.39, 82.881], [2513.31, 83.071], [2559.05, 83.241], [2605.63, 83.389], [2653.05, 83.519], [2701.33, 83.629], [2750.50, 83.724], [2800.55, 83.807], [2851.52, 83.880], [2903.42, 83.943], [2956.26, 84.000], [3010.06, 84.048], [3064.85, 84.087], [3120.62, 84.115], [3177.42, 84.133], [3235.25, 84.138], [3294.13, 84.129], [3354.08, 84.110], [3415.12, 84.079], [3477.27, 84.041], [3540.56, 83.995], [3605.00, 83.943], [3670.60, 83.885], [3737.41, 83.822], [3805.43, 83.756], [3874.68, 83.685], [3945.20, 83.612], [4017.00, 83.535], [4090.11, 83.456], [4164.55, 83.374], [4240.34, 83.292], [4317.51, 83.208], [4396.09, 83.125], [4476.10, 83.046], [4557.56, 82.970], [4640.50, 82.901], [4724.96, 82.838], [4810.95, 82.783], [4898.51, 82.738], [4987.66, 82.701], [5078.43, 82.674], [5170.86, 82.655], [5264.97, 82.643], [5360.79, 82.634], [5458.35, 82.630], [5557.69, 82.628], [5658.84, 82.627], [5761.82, 82.630], [5866.69, 82.636], [5973.46, 82.643], [6082.17, 82.655], [6192.87, 82.672], [6305.57, 82.692], [6420.33, 82.715], [6537.18, 82.741], [6656.15, 82.769], [6777.29, 82.797], [6900.63, 82.827], [7026.22, 82.855], [7154.10, 82.879], [7284.30, 82.900], [7416.87, 82.911], [7551.85, 82.911], [7689.29, 82.896], [7829.23, 82.863], [7971.72, 82.809], [8116.80, 82.732], [8264.53, 82.633], [8414.94, 82.514], [8568.09, 82.377], [8724.02, 82.229], [8882.79, 82.071], [9044.46, 81.907], [9209.06, 81.741], [9376.66, 81.572], [9547.31, 81.399], [9721.07, 81.225], [9897.99, 81.046], [10078.13, 80.863], [10261.55, 80.673], [10448.30, 80.478], [10638.45, 80.276], [10832.07, 80.067], [11029.21, 79.852], [11229.94, 79.631], [11434.32, 79.406], [11642.41, 79.176], [11854.30, 78.942], [12070.04, 78.704], [12289.71, 78.464], [12513.38, 78.221], [12741.12, 77.976], [12973.00, 77.731], [13209.10, 77.487], [13449.50, 77.246], [13694.28, 77.006], [13943.51, 76.771], [14197.27, 76.536], [14455.66, 76.303], [14718.74, 76.070], [14986.62, 75.839], [15259.37, 75.607], [15537.08, 75.376], [15819.85, 75.144], [16107.76, 74.912], [16400.92, 74.680], [16699.41, 74.445], [17003.33, 74.211], [17312.78, 73.975], [17627.86, 73.738], [17948.68, 73.499], [18275.34, 73.258], [18607.94, 73.015], [18946.60, 72.770], [19291.42, 72.523], [19642.52, 72.275], [20000.00, 72.027]] },
+            'jm-1': { id: 'jm-1', name: 'JM-1', data: [[20.00, 4.538], [20.30, 4.543], [20.60, 4.547], [20.90, 4.549], [21.20, 4.550], [21.40, 4.551], [21.80, 4.553], [22.00, 4.554], [22.40, 4.555], [22.70, 4.556], [23.00, 4.557], [23.30, 4.558], [23.60, 4.559], [24.00, 4.560], [24.30, 4.561], [24.70, 4.562], [25.00, 4.563], [25.40, 4.563], [25.80, 4.564], [26.20, 4.566], [26.50, 4.566], [26.90, 4.567], [27.20, 4.567], [27.60, 4.568], [28.00, 4.568], [28.50, 4.569], [29.00, 4.570], [29.50, 4.570], [30.00, 4.570], [30.40, 4.570], [30.70, 4.570], [31.10, 4.571], [31.50, 4.571], [32.00, 4.571], [32.50, 4.570], [33.00, 4.569], [33.50, 4.567], [34.00, 4.566], [34.50, 4.565], [35.00, 4.563], [35.50, 4.562], [36.00, 4.560], [36.50, 4.558], [37.00, 4.556], [37.50, 4.553], [38.20, 4.549], [38.70, 4.546], [39.50, 4.540], [40.00, 4.536], [40.60, 4.531], [41.20, 4.526], [41.80, 4.521], [42.50, 4.513], [43.10, 4.507], [43.70, 4.500], [44.40, 4.491], [45.00, 4.483], [45.50, 4.476], [46.20, 4.466], [46.80, 4.457], [47.50, 4.445], [48.20, 4.433], [48.70, 4.424], [49.40, 4.411], [50.00, 4.399], [50.80, 4.382], [51.50, 4.367], [52.20, 4.350], [53.00, 4.331], [53.80, 4.311], [54.50, 4.293], [55.20, 4.273], [56.00, 4.250], [57.00, 4.220], [58.00, 4.189], [59.00, 4.156], [60.00, 4.121], [60.80, 4.092], [61.50, 4.067], [62.20, 4.041], [63.00, 4.010], [64.00, 3.969], [65.00, 3.927], [66.00, 3.884], [67.00, 3.839], [68.00, 3.794], [69.00, 3.746], [70.00, 3.698], [71.00, 3.648], [72.00, 3.597], [73.00, 3.545], [74.00, 3.492], [75.00, 3.437], [76.20, 3.371], [77.50, 3.297], [78.80, 3.222], [80.00, 3.152], [81.20, 3.081], [82.50, 3.003], [83.80, 2.924], [85.00, 2.850], [86.20, 2.776], [87.50, 2.695], [88.50, 2.633], [90.00, 2.539], [91.20, 2.463], [92.50, 2.382], [93.80, 2.301], [95.00, 2.225], [96.20, 2.151], [97.50, 2.070], [98.80, 1.990], [100.00, 1.917], [101.50, 1.826], [103.00, 1.735], [104.40, 1.652], [106.00, 1.559], [107.50, 1.473], [109.00, 1.388], [110.60, 1.300], [112.00, 1.224], [113.80, 1.129], [115.00, 1.067], [117.20, 0.956], [118.00, 0.916], [120.60, 0.792], [122.00, 0.727], [124.10, 0.634], [125.00, 0.595], [126.50, 0.531], [128.00, 0.469], [131.50, 0.332], [132.00, 0.314], [134.00, 0.241], [136.00, 0.172], [138.00, 0.105], [140.00, 0.041], [143.00, -0.050], [145.00, -0.106], [147.50, -0.172], [150.00, -0.235], [152.50, -0.293], [155.00, -0.347], [157.50, -0.398], [160.00, -0.445], [162.50, -0.489], [165.00, -0.530], [167.50, -0.567], [170.00, -0.602], [172.50, -0.635], [175.00, -0.665], [177.50, -0.692], [180.00, -0.718], [182.50, -0.741], [185.00, -0.761], [187.50, -0.781], [190.00, -0.798], [192.50, -0.815], [195.00, -0.830], [197.50, -0.843], [200.00, -0.855], [203.00, -0.868], [206.00, -0.879], [209.00, -0.889], [212.00, -0.898], [214.00, -0.902], [218.00, -0.909], [220.00, -0.911], [224.00, -0.915], [227.00, -0.917], [230.00, -0.917], [233.00, -0.917], [236.00, -0.917], [240.00, -0.915], [243.00, -0.912], [247.00, -0.908], [250.00, -0.905], [254.00, -0.898], [258.00, -0.891], [262.00, -0.883], [265.00, -0.877], [269.00, -0.867], [272.00, -0.860], [276.00, -0.849], [280.00, -0.839], [285.00, -0.826], [290.00, -0.812], [295.00, -0.798], [300.00, -0.781], [304.00, -0.766], [307.00, -0.755], [311.00, -0.740], [315.00, -0.725], [320.00, -0.707], [325.00, -0.689], [330.00, -0.671], [335.00, -0.653], [340.00, -0.635], [345.00, -0.617], [350.00, -0.598], [355.00, -0.579], [360.00, -0.560], [365.00, -0.540], [370.00, -0.519], [375.00, -0.499], [382.00, -0.470], [387.00, -0.448], [395.00, -0.414], [400.00, -0.392], [406.00, -0.365], [412.00, -0.338], [418.00, -0.310], [425.00, -0.277], [431.00, -0.249], [437.00, -0.220], [444.00, -0.186], [450.00, -0.157], [455.00, -0.133], [462.00, -0.099], [468.00, -0.069], [475.00, -0.034], [482.00, 0.000], [487.00, 0.025], [494.00, 0.060], [500.00, 0.090], [508.00, 0.129], [515.00, 0.164], [522.00, 0.198], [530.00, 0.236], [538.00, 0.275], [545.00, 0.309], [552.00, 0.342], [560.00, 0.379], [570.00, 0.424], [580.00, 0.468], [590.00, 0.512], [600.00, 0.553], [608.00, 0.585], [615.00, 0.613], [622.00, 0.640], [630.00, 0.670], [640.00, 0.707], [650.00, 0.742], [660.00, 0.775], [670.00, 0.808], [680.00, 0.839], [690.00, 0.869], [700.00, 0.898], [710.00, 0.926], [720.00, 0.953], [730.00, 0.979], [740.00, 1.004], [750.00, 1.028], [762.00, 1.056], [775.00, 1.085], [788.00, 1.114], [800.00, 1.139], [812.00, 1.164], [825.00, 1.191], [838.00, 1.217], [850.00, 1.242], [862.00, 1.266], [875.00, 1.293], [885.00, 1.315], [900.00, 1.348], [912.00, 1.376], [925.00, 1.407], [938.00, 1.440], [950.00, 1.472], [962.00, 1.506], [975.00, 1.544], [988.00, 1.584], [1000.00, 1.623], [1015.00, 1.674], [1030.00, 1.728], [1044.00, 1.780], [1060.00, 1.841], [1075.00, 1.900], [1090.00, 1.961], [1106.00, 2.028], [1120.00, 2.087], [1138.00, 2.164], [1150.00, 2.216], [1172.00, 2.312], [1180.00, 2.347], [1206.00, 2.463], [1220.00, 2.525], [1241.00, 2.619], [1250.00, 2.659], [1265.00, 2.726], [1280.00, 2.794], [1315.00, 2.951], [1320.00, 2.973], [1340.00, 3.063], [1360.00, 3.152], [1380.00, 3.241], [1400.00, 3.330], [1430.00, 3.463], [1450.00, 3.553], [1475.00, 3.664], [1500.00, 3.776], [1525.00, 3.888], [1550.00, 4.001], [1575.00, 4.115], [1600.00, 4.230], [1625.00, 4.346], [1650.00, 4.463], [1675.00, 4.582], [1700.00, 4.702], [1725.00, 4.824], [1750.00, 4.948], [1775.00, 5.074], [1800.00, 5.203], [1825.00, 5.335], [1850.00, 5.470], [1875.00, 5.608], [1900.00, 5.750], [1925.00, 5.894], [1950.00, 6.041], [1975.00, 6.190], [2000.00, 6.342], [2030.00, 6.524], [2060.00, 6.707], [2090.00, 6.888], [2120.00, 7.067], [2140.00, 7.184], [2180.00, 7.412], [2200.00, 7.522], [2240.00, 7.733], [2270.00, 7.883], [2300.00, 8.025], [2330.00, 8.159], [2360.00, 8.284], [2400.00, 8.440], [2430.00, 8.548], [2470.00, 8.681], [2500.00, 8.774], [2540.00, 8.888], [2580.00, 8.995], [2620.00, 9.095], [2650.00, 9.166], [2690.00, 9.257], [2720.00, 9.323], [2760.00, 9.407], [2800.00, 9.488], [2850.00, 9.583], [2900.00, 9.671], [2950.00, 9.749], [3000.00, 9.815], [3040.00, 9.859], [3070.00, 9.885], [3110.00, 9.911], [3150.00, 9.926], [3200.00, 9.930], [3250.00, 9.918], [3300.00, 9.891], [3350.00, 9.848], [3400.00, 9.792], [3450.00, 9.724], [3500.00, 9.645], [3550.00, 9.556], [3600.00, 9.460], [3650.00, 9.357], [3700.00, 9.248], [3750.00, 9.134], [3820.00, 8.970], [3870.00, 8.850], [3950.00, 8.654], [4000.00, 8.531], [4060.00, 8.384], [4120.00, 8.238], [4180.00, 8.093], [4250.00, 7.927], [4310.00, 7.789], [4370.00, 7.653], [4440.00, 7.500], [4500.00, 7.373], [4550.00, 7.271], [4620.00, 7.134], [4680.00, 7.021], [4750.00, 6.895], [4820.00, 6.776], [4870.00, 6.695], [4940.00, 6.588], [5000.00, 6.501], [5080.00, 6.393], [5150.00, 6.305], [5220.00, 6.223], [5300.00, 6.136], [5380.00, 6.057], [5450.00, 5.993], [5520.00, 5.935], [5600.00, 5.874], [5700.00, 5.806], [5800.00, 5.747], [5900.00, 5.697], [6000.00, 5.655], [6080.00, 5.628], [6150.00, 5.608], [6220.00, 5.591], [6300.00, 5.576], [6400.00, 5.564], [6500.00, 5.556], [6600.00, 5.555], [6700.00, 5.559], [6800.00, 5.567], [6900.00, 5.577], [7000.00, 5.590], [7100.00, 5.603], [7200.00, 5.617], [7300.00, 5.628], [7400.00, 5.635], [7500.00, 5.637], [7620.00, 5.628], [7750.00, 5.599], [7880.00, 5.548], [8000.00, 5.477], [8120.00, 5.382], [8250.00, 5.254], [8380.00, 5.104], [8500.00, 4.951], [8620.00, 4.785], [8750.00, 4.598], [8850.00, 4.449], [9000.00, 4.221], [9120.00, 4.036], [9250.00, 3.836], [9380.00, 3.634], [9500.00, 3.448], [9620.00, 3.262], [9750.00, 3.061], [9880.00, 2.860], [10000.00, 2.676], [10150.00, 2.447], [10300.00, 2.220], [10440.00, 2.010], [10600.00, 1.773], [10750.00, 1.555], [10900.00, 1.341], [11060.00, 1.118], [11200.00, 0.928], [11380.00, 0.691], [11500.00, 0.539], [11720.00, 0.272], [11800.00, 0.180], [12060.00, -0.107], [12200.00, -0.251], [12410.00, -0.455], [12500.00, -0.537], [12650.00, -0.667], [12800.00, -0.790], [13150.00, -1.056], [13200.00, -1.092], [13400.00, -1.230], [13600.00, -1.361], [13800.00, -1.488], [14000.00, -1.611], [14300.00, -1.791], [14500.00, -1.911], [14750.00, -2.061], [15000.00, -2.214], [15250.00, -2.370], [15500.00, -2.530], [15750.00, -2.694], [16000.00, -2.864], [16250.00, -3.038], [16500.00, -3.218], [16750.00, -3.402], [17000.00, -3.589], [17250.00, -3.779], [17500.00, -3.971], [17750.00, -4.163], [18000.00, -4.354], [18250.00, -4.544], [18500.00, -4.732], [18750.00, -4.917], [19000.00, -5.111], [19250.00, -5.357], [19500.00, -5.771], [19750.00, -6.453], [20000.00, -7.158]] },
+            basshead: { id: 'basshead', name: 'Basshead', data: [[20.00, 86.177], [20.36, 86.214], [20.73, 86.250], [21.11, 86.286], [21.50, 86.320], [21.89, 86.354], [22.29, 86.386], [22.69, 86.417], [23.10, 86.447], [23.52, 86.476], [23.95, 86.503], [24.39, 86.529], [24.83, 86.553], [25.28, 86.576], [25.74, 86.598], [26.21, 86.618], [26.69, 86.636], [27.18, 86.653], [27.67, 86.669], [28.17, 86.683], [28.69, 86.695], [29.21, 86.706], [29.74, 86.715], [30.28, 86.723], [30.83, 86.729], [31.39, 86.733], [31.97, 86.736], [32.55, 86.736], [33.14, 86.736], [33.74, 86.733], [34.36, 86.729], [34.98, 86.723], [35.62, 86.716], [36.27, 86.708], [36.93, 86.698], [37.60, 86.687], [38.28, 86.674], [38.98, 86.660], [39.69, 86.645], [40.41, 86.629], [41.15, 86.612], [41.90, 86.594], [42.66, 86.575], [43.44, 86.554], [44.23, 86.533], [45.03, 86.511], [45.85, 86.488], [46.68, 86.464], [47.53, 86.439], [48.40, 86.413], [49.28, 86.385], [50.18, 86.357], [51.09, 86.327], [52.02, 86.296], [52.97, 86.263], [53.93, 86.229], [54.91, 86.193], [55.91, 86.155], [56.93, 86.115], [57.97, 86.074], [59.02, 86.030], [60.09, 85.984], [61.19, 85.936], [62.30, 85.887], [63.44, 85.836], [64.59, 85.782], [65.77, 85.728], [66.96, 85.672], [68.18, 85.614], [69.42, 85.556], [70.69, 85.496], [71.97, 85.435], [73.28, 85.373], [74.62, 85.310], [75.97, 85.246], [77.36, 85.181], [78.76, 85.114], [80.20, 85.047], [81.66, 84.978], [83.14, 84.908], [84.66, 84.836], [86.20, 84.764], [87.77, 84.690], [89.36, 84.615], [90.99, 84.539], [92.65, 84.461], [94.33, 84.382], [96.05, 84.301], [97.80, 84.219], [99.58, 84.135], [101.39, 84.049], [103.23, 83.962], [105.11, 83.874], [107.03, 83.785], [108.97, 83.696], [110.96, 83.606], [112.98, 83.517], [115.03, 83.427], [117.13, 83.336], [119.26, 83.244], [121.43, 83.150], [123.64, 83.053], [125.89, 82.954], [128.18, 82.852], [130.51, 82.748], [132.89, 82.643], [135.31, 82.537], [137.77, 82.429], [140.28, 82.321], [142.83, 82.212], [145.43, 82.103], [148.07, 81.991], [150.77, 81.878], [153.51, 81.764], [156.31, 81.648], [159.15, 81.530], [162.05, 81.410], [165.00, 81.287], [168.00, 81.162], [171.06, 81.033], [174.17, 80.902], [177.34, 80.768], [180.57, 80.632], [183.86, 80.494], [187.20, 80.354], [190.61, 80.213], [194.08, 80.072], [197.61, 79.931], [201.21, 79.791], [204.87, 79.652], [208.60, 79.513], [212.39, 79.376], [216.26, 79.239], [220.19, 79.103], [224.20, 78.968], [228.28, 78.834], [232.44, 78.700], [236.67, 78.567], [240.97, 78.434], [245.36, 78.300], [249.82, 78.166], [254.37, 78.032], [259.00, 77.897], [263.71, 77.762], [268.51, 77.627], [273.40, 77.493], [278.38, 77.360], [283.44, 77.228], [288.60, 77.097], [293.85, 76.968], [299.20, 76.841], [304.65, 76.717], [310.19, 76.595], [315.84, 76.477], [321.59, 76.361], [327.44, 76.248], [333.40, 76.136], [339.47, 76.026], [345.64, 75.918], [351.93, 75.810], [358.34, 75.704], [364.86, 75.598], [371.50, 75.494], [378.26, 75.392], [385.15, 75.291], [392.16, 75.193], [399.29, 75.097], [406.56, 75.005], [413.96, 74.916], [421.49, 74.829], [429.16, 74.744], [436.97, 74.662], [444.93, 74.582], [453.02, 74.506], [461.27, 74.433], [469.66, 74.364], [478.21, 74.300], [486.91, 74.241], [495.78, 74.187], [504.80, 74.137], [513.99, 74.091], [523.34, 74.048], [532.87, 74.008], [542.56, 73.971], [552.44, 73.937], [562.49, 73.906], [572.73, 73.877], [583.15, 73.851], [593.77, 73.828], [604.57, 73.810], [615.57, 73.796], [626.78, 73.786], [638.18, 73.780], [649.80, 73.779], [661.63, 73.782], [673.67, 73.789], [685.93, 73.799], [698.41, 73.814], [711.12, 73.831], [724.06, 73.853], [737.24, 73.878], [750.66, 73.906], [764.32, 73.936], [778.23, 73.969], [792.39, 74.006], [806.82, 74.045], [821.50, 74.090], [836.45, 74.140], [851.67, 74.196], [867.17, 74.259], [882.96, 74.327], [899.02, 74.402], [915.39, 74.484], [932.05, 74.574], [949.01, 74.672], [966.28, 74.779], [983.87, 74.892], [1001.77, 75.012], [1020.00, 75.137], [1038.57, 75.267], [1057.47, 75.401], [1076.71, 75.538], [1096.31, 75.679], [1116.26, 75.822], [1136.58, 75.966], [1157.26, 76.109], [1178.32, 76.250], [1199.77, 76.387], [1221.60, 76.521], [1243.84, 76.648], [1266.47, 76.769], [1289.52, 76.885], [1312.99, 76.996], [1336.89, 77.102], [1361.22, 77.203], [1385.99, 77.299], [1411.22, 77.390], [1436.90, 77.475], [1463.05, 77.557], [1489.68, 77.634], [1516.79, 77.710], [1544.40, 77.783], [1572.50, 77.854], [1601.12, 77.925], [1630.26, 77.995], [1659.93, 78.067], [1690.14, 78.142], [1720.90, 78.220], [1752.22, 78.303], [1784.11, 78.391], [1816.58, 78.485], [1849.64, 78.583], [1883.30, 78.685], [1917.58, 78.790], [1952.48, 78.897], [1988.01, 79.003], [2024.19, 79.107], [2061.03, 79.207], [2098.54, 79.302], [2136.73, 79.392], [2175.62, 79.478], [2215.22, 79.564], [2255.53, 79.652], [2296.58, 79.744], [2338.38, 79.845], [2380.94, 79.955], [2424.27, 80.074], [2468.39, 80.196], [2513.31, 80.318], [2559.05, 80.429], [2605.63, 80.527], [2653.05, 80.607], [2701.33, 80.670], [2750.50, 80.720], [2800.55, 80.764], [2851.52, 80.809], [2903.42, 80.860], [2956.26, 80.920], [3010.06, 80.987], [3064.85, 81.055], [3120.62, 81.117], [3177.42, 81.163], [3235.25, 81.184], [3294.13, 81.176], [3354.08, 81.137], [3415.12, 81.068], [3477.27, 80.975], [3540.56, 80.863], [3605.00, 80.738], [3670.60, 80.606], [3737.41, 80.470], [3805.43, 80.336], [3874.68, 80.206], [3945.20, 80.083], [4017.00, 79.969], [4090.11, 79.865], [4164.55, 79.772], [4240.34, 79.692], [4317.51, 79.624], [4396.09, 79.569], [4476.10, 79.527], [4557.56, 79.499], [4640.50, 79.485], [4724.96, 79.485], [4810.95, 79.498], [4898.51, 79.520], [4987.66, 79.545], [5078.43, 79.565], [5170.86, 79.568], [5264.97, 79.542], [5360.79, 79.480], [5458.35, 79.377], [5557.69, 79.234], [5658.84, 79.064], [5761.82, 78.884], [5866.69, 78.715], [5973.46, 78.575], [6082.17, 78.474], [6192.87, 78.415], [6305.57, 78.391], [6420.33, 78.397], [6537.18, 78.430], [6656.15, 78.495], [6777.29, 78.605], [6900.63, 78.779], [7026.22, 79.035], [7154.10, 79.382], [7284.30, 79.814], [7416.87, 80.304], [7551.85, 80.801], [7689.29, 81.234], [7829.23, 81.522], [7971.72, 81.596], [8116.80, 81.418], [8264.53, 80.996], [8414.94, 80.374], [8568.09, 79.619], [8724.02, 78.792], [8882.79, 77.936], [9044.46, 77.071], [9209.06, 76.201], [9376.66, 75.323], [9547.31, 74.432], [9721.07, 73.532], [9897.99, 72.633], [10078.13, 71.756], [10261.55, 70.928], [10448.30, 70.181], [10638.45, 69.547], [10832.07, 69.051], [11029.21, 68.709], [11229.94, 68.519], [11434.32, 68.466], [11642.41, 68.523], [11854.30, 68.652], [12070.04, 68.807], [12289.71, 68.941], [12513.38, 69.008], [12741.12, 68.975], [12973.00, 68.830], [13209.10, 68.584], [13449.50, 68.277], [13694.28, 67.964], [13943.51, 67.711], [14197.27, 67.583], [14455.66, 67.629], [14718.74, 67.864], [14986.62, 68.243], [15259.37, 68.652], [15537.08, 68.933], [15819.85, 68.925], [16107.76, 68.530], [16400.92, 67.744], [16699.41, 66.647], [17003.33, 65.345], [17312.78, 63.920], [17627.86, 62.422], [17948.68, 60.886], [18275.34, 59.353], [18607.94, 57.873], [18946.60, 56.470], [19291.42, 55.135], [19642.52, 53.839], [20000.00, 52.551]] },
+        };
+
 /* ===== app/js/peqdb-module.js ===== */
 // Split out of the former monolithic app-core.js (2026 refactor).
 // PEQDB_Module: the Database/Similar-search tab (list rendering, curve
@@ -24072,101 +25208,10 @@ const PEQDB_SmartRFMethods = {
                 alignHz: '500',
                 alignDb: 75.0,
                 parseRawCurveText: function(rawText) {
-            if (typeof rawText !== 'string') return [];
-            // Guard against pathological drag-drop (e.g. multi-MB log file)
-            if (rawText.length > 2000000) {
-                console.warn("[PEQDB] Curve text too large (" + rawText.length + " chars), truncating to 2M");
-                try { if (typeof showToast === 'function') showToast("Curve file too large — truncated to 2M chars.", "⚠️"); } catch(_){}
-                rawText = rawText.slice(0, 2000000);
-            }
-
-            const lines = rawText.split(/\r\n|\r|\n/);
-            const data = [];
-                    let commaIsDecimal = false;
-                    for (let i = 0; i < Math.min(100, lines.length); i++) {
-                        const line = lines[i].trim();
-                        if (line.startsWith('#') || line === '') continue;
-                        // Comma-as-decimal when the line contains BOTH a comma
-                        // and a second separator. This includes plain spaces:
-                        // European exports like "1000,5 80,2" (space-delimited,
-                        // comma-decimal) previously failed this check, fell to
-                        // the comma-splitting branch, and mis-parsed every
-                        // pair ("1000,5 80,2" -> f=1000, a=5). Mirrors
-                        // parseRawFRText's heuristic so the DB loader and the
-                        // Smart RF importer agree on the same file. The strict
-                        // grouped-digit repair below still protects genuine
-                        // "1,000"-style thousands separators.
-                        if (line.includes(',') && (line.includes('\t') || line.includes(';') || line.includes(' '))) {
-                            commaIsDecimal = true;
-                            break;
-                        }
-                    }
-                    lines.forEach(line => {
-                        let cleanLine = line.trim();
-                        if (cleanLine.startsWith('#') || cleanLine.startsWith('*') || cleanLine.startsWith('//') || cleanLine === '') return;
-
-                        // Grouped-digit repair ("1,000" -> "1000"), applied
-                        // BEFORE the branch split regardless of commaIsDecimal:
-                        // a tab/semicolon elsewhere on the SAME line can flip
-                        // that heuristic to true, which would otherwise
-                        // reinterpret a thousands-separated frequency as a
-                        // decimal (e.g. tab-delimited "1,000\t6.5" -> 1 Hz
-                        // instead of 1000 Hz). The strict 3-digit-grouping
-                        // regex can never match a genuine decimal-comma token
-                        // like "1,5", so this is safe either way.
-                        const firstTok = cleanLine.split(/[\t;\s]+/)[0] || '';
-                        if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(firstTok)) {
-                            cleanLine = cleanLine.replace(/(\d),(\d{3})/g, '$1$2');
-                        }
-
-                        let parts = [];
-                        if (commaIsDecimal) {
-                            cleanLine = cleanLine.replace(/,/g, '.');
-                            parts = cleanLine.split(/[\t;\s]+/);
-                        } else {
-                            parts = cleanLine.split(/[\s,;\t]+/);
-                        }
-                        parts = parts.filter(p => p.length > 0);
-                        if (parts.length >= 2) {
-                            const f = parseFloat(parts[0]);
-                            const a = parseFloat(parts[1]);
-                            // Number.isFinite (not isNaN) also rejects
-                            // Infinity/-Infinity, which parseFloat happily
-                            // returns for overflowing literals like "1e999"
-                            // or the literal token "Infinity" -- isNaN alone
-                            // let those through and into the curve dataset.
-                            if (Number.isFinite(f) && Number.isFinite(a)) {
-                                if (f >= 1 && f <= 24000) {
-                                    data.push([f, a]);
-                                }
-                            }
-                        }
-                    });
-                    data.sort((a,b) => a[0] - b[0]);
-
-                    // Cap point count to protect spline solve (O(n log n) + tridiagonal)
-                    if (data.length > 10000) {
-                        console.warn("[PEQDB] Curve has " + data.length + " points, downsampling to 10k");
-                        const step = Math.ceil(data.length / 10000);
-                        const down = [];
-                        for (let i = 0; i < data.length; i += step) down.push(data[i]);
-                        // Ensure last point kept for interpolation range
-                        if (down[down.length-1] !== data[data.length-1]) down.push(data[data.length-1]);
-                        data.length = 0;
-                        for (let i = 0; i < down.length; i++) data.push(down[i]);
-                    }
-
-                    const deduped = [];
-                    for (let i = 0; i < data.length; i++) {
-                        const prev = deduped[deduped.length - 1];
-                        if (prev && Math.abs(Math.log10(data[i][0]) - Math.log10(prev[0])) < 1e-4) {
-                            prev[1] = (prev[1] + data[i][1]) / 2;
-                        } else {
-                            deduped.push(data[i]);
-                        }
-                    }
-                    return deduped;
-                },
+            // Single source of truth: CurveUtils.parseCurveText (utils.js).
+            // Kept as a method because ~30 call sites expect it on PEQDB_Module.
+            return CurveUtils.parseCurveText(rawText);
+        },
         debouncedFindSimilar: null,
         listRenderLimit: 40,
         // (similarityWorker removed — dead code; similarity runs inline via
@@ -24227,16 +25272,7 @@ const PEQDB_SmartRFMethods = {
                 EQ_Sculptor.resetSculptTarget(this);
             }
         },
-        TARGETS: {
-            harman: { id: 'harman', name: 'Harman IE 2019', data: [[20.00, 82.617], [20.36, 82.629], [20.73, 82.641], [21.11, 82.653], [21.50, 82.665], [21.89, 82.676], [22.29, 82.686], [22.69, 82.695], [23.10, 82.703], [23.52, 82.709], [23.95, 82.714], [24.39, 82.718], [24.83, 82.721], [25.28, 82.722], [25.74, 82.724], [26.21, 82.724], [26.69, 82.724], [27.18, 82.724], [27.67, 82.723], [28.17, 82.722], [28.69, 82.720], [29.21, 82.718], [29.74, 82.716], [30.28, 82.713], [30.83, 82.708], [31.39, 82.703], [31.97, 82.696], [32.55, 82.687], [33.14, 82.676], [33.74, 82.664], [34.36, 82.648], [34.98, 82.631], [35.62, 82.610], [36.27, 82.587], [36.93, 82.562], [37.60, 82.534], [38.28, 82.503], [38.98, 82.470], [39.69, 82.434], [40.41, 82.395], [41.15, 82.353], [41.90, 82.307], [42.66, 82.258], [43.44, 82.205], [44.23, 82.148], [45.03, 82.087], [45.85, 82.023], [46.68, 81.954], [47.53, 81.883], [48.40, 81.808], [49.28, 81.732], [50.18, 81.653], [51.09, 81.574], [52.02, 81.493], [52.97, 81.411], [53.93, 81.329], [54.91, 81.247], [55.91, 81.163], [56.93, 81.079], [57.97, 80.993], [59.02, 80.904], [60.09, 80.812], [61.19, 80.717], [62.30, 80.620], [63.44, 80.520], [64.59, 80.419], [65.77, 80.317], [66.96, 80.214], [68.18, 80.110], [69.42, 80.005], [70.69, 79.900], [71.97, 79.794], [73.28, 79.689], [74.62, 79.584], [75.97, 79.480], [77.36, 79.377], [78.76, 79.276], [80.20, 79.174], [81.66, 79.072], [83.14, 78.969], [84.66, 78.865], [86.20, 78.759], [87.77, 78.651], [89.36, 78.540], [90.99, 78.428], [92.65, 78.314], [94.33, 78.199], [96.05, 78.084], [97.80, 77.969], [99.58, 77.855], [101.39, 77.742], [103.23, 77.630], [105.11, 77.518], [107.03, 77.406], [108.97, 77.294], [110.96, 77.181], [112.98, 77.068], [115.03, 76.954], [117.13, 76.840], [119.26, 76.726], [121.43, 76.613], [123.64, 76.501], [125.89, 76.390], [128.18, 76.280], [130.51, 76.171], [132.89, 76.065], [135.31, 75.961], [137.77, 75.861], [140.28, 75.764], [142.83, 75.670], [145.43, 75.578], [148.07, 75.489], [150.77, 75.401], [153.51, 75.313], [156.31, 75.224], [159.15, 75.136], [162.05, 75.046], [165.00, 74.957], [168.00, 74.867], [171.06, 74.776], [174.17, 74.686], [177.34, 74.596], [180.57, 74.507], [183.86, 74.419], [187.20, 74.332], [190.61, 74.248], [194.08, 74.167], [197.61, 74.090], [201.21, 74.016], [204.87, 73.947], [208.60, 73.881], [212.39, 73.819], [216.26, 73.761], [220.19, 73.706], [224.20, 73.654], [228.28, 73.605], [232.44, 73.561], [236.67, 73.520], [240.97, 73.483], [245.36, 73.450], [249.82, 73.420], [254.37, 73.395], [259.00, 73.372], [263.71, 73.352], [268.51, 73.336], [273.40, 73.322], [278.38, 73.310], [283.44, 73.301], [288.60, 73.294], [293.85, 73.290], [299.20, 73.287], [304.65, 73.285], [310.19, 73.286], [315.84, 73.288], [321.59, 73.291], [327.44, 73.295], [333.40, 73.301], [339.47, 73.307], [345.64, 73.315], [351.93, 73.323], [358.34, 73.333], [364.86, 73.343], [371.50, 73.353], [378.26, 73.364], [385.15, 73.375], [392.16, 73.386], [399.29, 73.398], [406.56, 73.410], [413.96, 73.422], [421.49, 73.436], [429.16, 73.449], [436.97, 73.464], [444.93, 73.480], [453.02, 73.496], [461.27, 73.513], [469.66, 73.531], [478.21, 73.550], [486.91, 73.569], [495.78, 73.589], [504.80, 73.609], [513.99, 73.629], [523.34, 73.650], [532.87, 73.671], [542.56, 73.693], [552.44, 73.714], [562.49, 73.736], [572.73, 73.759], [583.15, 73.782], [593.77, 73.807], [604.57, 73.834], [615.57, 73.862], [626.78, 73.891], [638.18, 73.921], [649.80, 73.951], [661.63, 73.983], [673.67, 74.015], [685.93, 74.048], [698.41, 74.083], [711.12, 74.118], [724.06, 74.155], [737.24, 74.192], [750.66, 74.229], [764.32, 74.267], [778.23, 74.304], [792.39, 74.342], [806.82, 74.381], [821.50, 74.421], [836.45, 74.463], [851.67, 74.506], [867.17, 74.551], [882.96, 74.599], [899.02, 74.649], [915.39, 74.702], [932.05, 74.758], [949.01, 74.816], [966.28, 74.878], [983.87, 74.941], [1001.77, 75.006], [1020.00, 75.074], [1038.57, 75.145], [1057.47, 75.219], [1076.71, 75.297], [1096.31, 75.381], [1116.26, 75.470], [1136.58, 75.565], [1157.26, 75.665], [1178.32, 75.770], [1199.77, 75.880], [1221.60, 75.995], [1243.84, 76.116], [1266.47, 76.242], [1289.52, 76.374], [1312.99, 76.510], [1336.89, 76.648], [1361.22, 76.789], [1385.99, 76.929], [1411.22, 77.070], [1436.90, 77.211], [1463.05, 77.354], [1489.68, 77.500], [1516.79, 77.651], [1544.40, 77.807], [1572.50, 77.971], [1601.12, 78.141], [1630.26, 78.319], [1659.93, 78.504], [1690.14, 78.697], [1720.90, 78.897], [1752.22, 79.104], [1784.11, 79.319], [1816.58, 79.540], [1849.64, 79.768], [1883.30, 80.001], [1917.58, 80.237], [1952.48, 80.473], [1988.01, 80.706], [2024.19, 80.936], [2061.03, 81.161], [2098.54, 81.382], [2136.73, 81.601], [2175.62, 81.818], [2215.22, 82.033], [2255.53, 82.244], [2296.58, 82.451], [2338.38, 82.650], [2380.94, 82.840], [2424.27, 83.018], [2468.39, 83.186], [2513.31, 83.343], [2559.05, 83.490], [2605.63, 83.627], [2653.05, 83.753], [2701.33, 83.869], [2750.50, 83.973], [2800.55, 84.064], [2851.52, 84.144], [2903.42, 84.211], [2956.26, 84.269], [3010.06, 84.317], [3064.85, 84.357], [3120.62, 84.386], [3177.42, 84.405], [3235.25, 84.413], [3294.13, 84.411], [3354.08, 84.399], [3415.12, 84.377], [3477.27, 84.345], [3540.56, 84.305], [3605.00, 84.257], [3670.60, 84.202], [3737.41, 84.143], [3805.43, 84.079], [3874.68, 84.011], [3945.20, 83.941], [4017.00, 83.866], [4090.11, 83.788], [4164.55, 83.706], [4240.34, 83.620], [4317.51, 83.531], [4396.09, 83.439], [4476.10, 83.344], [4557.56, 83.246], [4640.50, 83.147], [4724.96, 83.046], [4810.95, 82.945], [4898.51, 82.845], [4987.66, 82.746], [5078.43, 82.648], [5170.86, 82.552], [5264.97, 82.458], [5360.79, 82.363], [5458.35, 82.269], [5557.69, 82.176], [5658.84, 82.082], [5761.82, 81.986], [5866.69, 81.884], [5973.46, 81.775], [6082.17, 81.654], [6192.87, 81.523], [6305.57, 81.383], [6420.33, 81.236], [6537.18, 81.081], [6656.15, 80.917], [6777.29, 80.741], [6900.63, 80.551], [7026.22, 80.347], [7154.10, 80.129], [7284.30, 79.898], [7416.87, 79.658], [7551.85, 79.411], [7689.29, 79.157], [7829.23, 78.898], [7971.72, 78.630], [8116.80, 78.351], [8264.53, 78.059], [8414.94, 77.755], [8568.09, 77.436], [8724.02, 77.104], [8882.79, 76.758], [9044.46, 76.400], [9209.06, 76.031], [9376.66, 75.652], [9547.31, 75.266], [9721.07, 74.877], [9897.99, 74.489], [10078.13, 74.106], [10261.55, 73.727], [10448.30, 73.351], [10638.45, 72.976], [10832.07, 72.598], [11029.21, 72.218], [11229.94, 71.835], [11434.32, 71.452], [11642.41, 71.071], [11854.30, 70.697], [12070.04, 70.330], [12289.71, 69.970], [12513.38, 69.615], [12741.12, 69.264], [12973.00, 68.918], [13209.10, 68.576], [13449.50, 68.241], [13694.28, 67.913], [13943.51, 67.592], [14197.27, 67.274], [14455.66, 66.955], [14718.74, 66.628], [14986.62, 66.285], [15259.37, 65.919], [15537.08, 65.522], [15819.85, 65.090], [16107.76, 64.614], [16400.92, 64.090], [16699.41, 63.512], [17003.33, 62.873], [17312.78, 62.169], [17627.86, 61.398], [17948.68, 60.560], [18275.34, 59.661], [18607.94, 58.716], [18946.60, 57.746], [19291.42, 56.777], [19642.52, 55.829], [20000.00, 54.901]] },
-            diffuse_field: { id: 'diffuse_field', name: 'Diffuse Field', data: [[20.00, 71.057], [20.36, 71.057], [20.73, 71.057], [21.11, 71.057], [21.50, 71.057], [21.89, 71.057], [22.29, 71.057], [22.69, 71.057], [23.10, 71.057], [23.52, 71.057], [23.95, 71.057], [24.39, 71.057], [24.83, 71.057], [25.28, 71.057], [25.74, 71.057], [26.21, 71.057], [26.69, 71.057], [27.18, 71.057], [27.67, 71.057], [28.17, 71.057], [28.69, 71.057], [29.21, 71.057], [29.74, 71.057], [30.28, 71.057], [30.83, 71.057], [31.39, 71.057], [31.97, 71.057], [32.55, 71.057], [33.14, 71.057], [33.74, 71.057], [34.36, 71.057], [34.98, 71.057], [35.62, 71.057], [36.27, 71.057], [36.93, 71.057], [37.60, 71.057], [38.28, 71.057], [38.98, 71.057], [39.69, 71.057], [40.41, 71.057], [41.15, 71.057], [41.90, 71.057], [42.66, 71.057], [43.44, 71.057], [44.23, 71.057], [45.03, 71.057], [45.85, 71.057], [46.68, 71.057], [47.53, 71.057], [48.40, 71.057], [49.28, 71.057], [50.18, 71.057], [51.09, 71.057], [52.02, 71.057], [52.97, 71.057], [53.93, 71.057], [54.91, 71.057], [55.91, 71.057], [56.93, 71.057], [57.97, 71.057], [59.02, 71.057], [60.09, 71.057], [61.19, 71.057], [62.30, 71.057], [63.44, 71.057], [64.59, 71.057], [65.77, 71.057], [66.96, 71.057], [68.18, 71.057], [69.42, 71.057], [70.69, 71.057], [71.97, 71.057], [73.28, 71.057], [74.62, 71.057], [75.97, 71.057], [77.36, 71.057], [78.76, 71.057], [80.20, 71.057], [81.66, 71.057], [83.14, 71.057], [84.66, 71.056], [86.20, 71.056], [87.77, 71.056], [89.36, 71.055], [90.99, 71.055], [92.65, 71.054], [94.33, 71.054], [96.05, 71.054], [97.80, 71.055], [99.58, 71.057], [101.39, 71.060], [103.23, 71.065], [105.11, 71.071], [107.03, 71.080], [108.97, 71.090], [110.96, 71.101], [112.98, 71.112], [115.03, 71.123], [117.13, 71.133], [119.26, 71.141], [121.43, 71.148], [123.64, 71.154], [125.89, 71.160], [128.18, 71.166], [130.51, 71.173], [132.89, 71.181], [135.31, 71.191], [137.77, 71.203], [140.28, 71.215], [142.83, 71.228], [145.43, 71.240], [148.07, 71.253], [150.77, 71.266], [153.51, 71.280], [156.31, 71.296], [159.15, 71.312], [162.05, 71.330], [165.00, 71.348], [168.00, 71.367], [171.06, 71.387], [174.17, 71.407], [177.34, 71.428], [180.57, 71.448], [183.86, 71.468], [187.20, 71.488], [190.61, 71.508], [194.08, 71.528], [197.61, 71.548], [201.21, 71.567], [204.87, 71.586], [208.60, 71.606], [212.39, 71.626], [216.26, 71.645], [220.19, 71.664], [224.20, 71.683], [228.28, 71.703], [232.44, 71.723], [236.67, 71.744], [240.97, 71.764], [245.36, 71.785], [249.82, 71.807], [254.37, 71.830], [259.00, 71.853], [263.71, 71.876], [268.51, 71.899], [273.40, 71.923], [278.38, 71.946], [283.44, 71.968], [288.60, 71.990], [293.85, 72.010], [299.20, 72.030], [304.65, 72.048], [310.19, 72.064], [315.84, 72.080], [321.59, 72.095], [327.44, 72.109], [333.40, 72.122], [339.47, 72.134], [345.64, 72.146], [351.93, 72.157], [358.34, 72.169], [364.86, 72.183], [371.50, 72.199], [378.26, 72.218], [385.15, 72.241], [392.16, 72.268], [399.29, 72.300], [406.56, 72.339], [413.96, 72.384], [421.49, 72.435], [429.16, 72.492], [436.97, 72.553], [444.93, 72.618], [453.02, 72.683], [461.27, 72.749], [469.66, 72.814], [478.21, 72.878], [486.91, 72.941], [495.78, 73.001], [504.80, 73.059], [513.99, 73.114], [523.34, 73.168], [532.87, 73.220], [542.56, 73.272], [552.44, 73.324], [562.49, 73.376], [572.73, 73.429], [583.15, 73.482], [593.77, 73.536], [604.57, 73.591], [615.57, 73.645], [626.78, 73.700], [638.18, 73.755], [649.80, 73.811], [661.63, 73.867], [673.67, 73.924], [685.93, 73.981], [698.41, 74.038], [711.12, 74.094], [724.06, 74.150], [737.24, 74.204], [750.66, 74.257], [764.32, 74.308], [778.23, 74.357], [792.39, 74.403], [806.82, 74.445], [821.50, 74.485], [836.45, 74.523], [851.67, 74.560], [867.17, 74.596], [882.96, 74.634], [899.02, 74.673], [915.39, 74.716], [932.05, 74.763], [949.01, 74.814], [966.28, 74.872], [983.87, 74.936], [1001.77, 75.007], [1020.00, 75.087], [1038.57, 75.174], [1057.47, 75.225], [1076.71, 75.372], [1096.31, 75.481], [1116.26, 75.594], [1136.58, 75.713], [1157.26, 75.835], [1178.32, 75.961], [1199.77, 76.091], [1221.60, 76.225], [1243.84, 76.363], [1266.47, 76.504], [1289.52, 76.648], [1312.99, 76.794], [1336.89, 76.941], [1361.22, 77.091], [1385.99, 77.241], [1411.22, 77.395], [1436.90, 77.552], [1463.05, 77.713], [1489.68, 77.881], [1516.79, 78.057], [1544.40, 78.242], [1572.50, 78.439], [1601.12, 78.649], [1630.26, 78.872], [1659.93, 79.108], [1690.14, 79.356], [1720.90, 79.616], [1752.22, 79.885], [1784.11, 80.161], [1816.58, 80.444], [1849.64, 80.733], [1883.30, 81.024], [1917.58, 81.319], [1952.48, 81.617], [1988.01, 81.917], [2024.19, 82.220], [2061.03, 82.527], [2098.54, 82.839], [2136.73, 83.157], [2175.62, 83.481], [2215.22, 83.810], [2255.53, 84.141], [2296.58, 84.471], [2338.38, 84.793], [2380.94, 85.104], [2424.27, 85.397], [2468.39, 85.666], [2513.31, 85.909], [2559.05, 86.120], [2605.63, 86.297], [2653.05, 86.441], [2701.33, 86.551], [2750.50, 86.630], [2800.55, 86.682], [2851.52, 86.709], [2903.42, 86.712], [2956.26, 86.694], [3010.06, 86.655], [3064.85, 86.595], [3120.62, 86.514], [3177.42, 86.414], [3235.25, 86.293], [3294.13, 86.153], [3354.08, 85.997], [3415.12, 85.827], [3477.27, 85.647], [3540.56, 85.457], [3605.00, 85.261], [3670.60, 85.059], [3737.41, 84.853], [3805.43, 84.644], [3874.68, 84.433], [3945.20, 84.221], [4017.00, 84.007], [4090.11, 83.794], [4164.55, 83.581], [4240.34, 83.369], [4317.51, 83.159], [4396.09, 82.953], [4476.10, 82.753], [4557.56, 82.559], [4640.50, 82.375], [4724.96, 82.200], [4810.95, 82.036], [4898.51, 81.885], [4987.66, 81.745], [5078.43, 81.618], [5170.86, 81.502], [5264.97, 81.396], [5360.79, 81.297], [5458.35, 81.205], [5557.69, 81.118], [5658.84, 81.036], [5761.82, 80.960], [5866.69, 80.890], [5973.46, 80.825], [6082.17, 80.767], [6192.87, 80.717], [6305.57, 80.673], [6420.33, 80.635], [6537.18, 80.603], [6656.15, 80.575], [6777.29, 80.550], [6900.63, 80.529], [7026.22, 80.509], [7154.10, 80.488], [7284.30, 80.465], [7416.87, 80.435], [7551.85, 80.396], [7689.29, 80.344], [7829.23, 80.276], [7971.72, 80.189], [8116.80, 80.081], [8264.53, 79.952], [8414.94, 79.805], [8568.09, 79.642], [8724.02, 79.469], [8882.79, 79.287], [9044.46, 79.101], [9209.06, 78.914], [9376.66, 78.725], [9547.31, 78.534], [9721.07, 78.342], [9897.99, 78.147], [10078.13, 77.948], [10261.55, 77.744], [10448.30, 77.535], [10638.45, 77.320], [10832.07, 77.099], [11029.21, 76.873], [11229.94, 76.641], [11434.32, 76.406], [11642.41, 76.166], [11854.30, 75.923], [12070.04, 75.677], [12289.71, 75.429], [12513.38, 75.178], [12741.12, 74.926], [12973.00, 74.674], [13209.10, 74.424], [13449.50, 74.177], [13694.28, 73.932], [13943.51, 73.691], [14197.27, 73.451], [14455.66, 73.214], [14718.74, 72.977], [14986.62, 72.741], [15259.37, 72.506], [15537.08, 72.271], [15819.85, 72.036], [16107.76, 71.800], [16400.92, 71.565], [16699.41, 71.328], [17003.33, 71.091], [17312.78, 70.853], [17627.86, 70.613], [17948.68, 70.372], [18275.34, 70.129], [18607.94, 69.884], [18946.60, 69.638], [19291.42, 69.389], [19642.52, 69.140], [20000.00, 68.890]] },
-            vshape: { id: 'vshape', name: 'V-Shape', data: [[20.00, 81.540], [20.36, 81.567], [20.73, 81.594], [21.11, 81.622], [21.50, 81.649], [21.89, 81.675], [22.29, 81.702], [22.69, 81.729], [23.10, 81.755], [23.52, 81.780], [23.95, 81.806], [24.39, 81.831], [24.83, 81.855], [25.28, 81.879], [25.74, 81.903], [26.21, 81.925], [26.69, 81.948], [27.18, 81.970], [27.67, 81.990], [28.17, 82.010], [28.69, 82.030], [29.21, 82.048], [29.74, 82.065], [30.28, 82.082], [30.83, 82.098], [31.39, 82.112], [31.97, 82.126], [32.55, 82.138], [33.14, 82.150], [33.74, 82.160], [34.36, 82.169], [34.98, 82.177], [35.62, 82.183], [36.27, 82.188], [36.93, 82.192], [37.60, 82.194], [38.28, 82.194], [38.98, 82.193], [39.69, 82.190], [40.41, 82.186], [41.15, 82.179], [41.90, 82.170], [42.66, 82.160], [43.44, 82.147], [44.23, 82.133], [45.03, 82.116], [45.85, 82.096], [46.68, 82.075], [47.53, 82.051], [48.40, 82.026], [49.28, 81.999], [50.18, 81.971], [51.09, 81.942], [52.02, 81.913], [52.97, 81.884], [53.93, 81.855], [54.91, 81.827], [55.91, 81.800], [56.93, 81.773], [57.97, 81.749], [59.02, 81.726], [60.09, 81.706], [61.19, 81.687], [62.30, 81.670], [63.44, 81.653], [64.59, 81.636], [65.77, 81.619], [66.96, 81.601], [68.18, 81.582], [69.42, 81.561], [70.69, 81.538], [71.97, 81.513], [73.28, 81.484], [74.62, 81.453], [75.97, 81.420], [77.36, 81.385], [78.76, 81.347], [80.20, 81.308], [81.66, 81.268], [83.14, 81.226], [84.66, 81.183], [86.20, 81.140], [87.77, 81.095], [89.36, 81.051], [90.99, 81.005], [92.65, 80.960], [94.33, 80.914], [96.05, 80.868], [97.80, 80.822], [99.58, 80.777], [101.39, 80.731], [103.23, 80.685], [105.11, 80.638], [107.03, 80.589], [108.97, 80.539], [110.96, 80.488], [112.98, 80.435], [115.03, 80.380], [117.13, 80.324], [119.26, 80.268], [121.43, 80.210], [123.64, 80.152], [125.89, 80.094], [128.18, 80.036], [130.51, 79.977], [132.89, 79.918], [135.31, 79.858], [137.77, 79.797], [140.28, 79.734], [142.83, 79.671], [145.43, 79.608], [148.07, 79.544], [150.77, 79.480], [153.51, 79.416], [156.31, 79.351], [159.15, 79.288], [162.05, 79.224], [165.00, 79.161], [168.00, 79.098], [171.06, 79.035], [174.17, 78.971], [177.34, 78.907], [180.57, 78.841], [183.86, 78.775], [187.20, 78.707], [190.61, 78.639], [194.08, 78.569], [197.61, 78.498], [201.21, 78.426], [204.87, 78.353], [208.60, 78.279], [212.39, 78.204], [216.26, 78.129], [220.19, 78.055], [224.20, 77.982], [228.28, 77.909], [232.44, 77.837], [236.67, 77.765], [240.97, 77.693], [245.36, 77.620], [249.82, 77.548], [254.37, 77.474], [259.00, 77.401], [263.71, 77.327], [268.51, 77.253], [273.40, 77.179], [278.38, 77.107], [283.44, 77.034], [288.60, 76.962], [293.85, 76.890], [299.20, 76.819], [304.65, 76.748], [310.19, 76.678], [315.84, 76.609], [321.59, 76.540], [327.44, 76.473], [333.40, 76.408], [339.47, 76.343], [345.64, 76.280], [351.93, 76.218], [358.34, 76.156], [364.86, 76.095], [371.50, 76.034], [378.26, 75.973], [385.15, 75.912], [392.16, 75.853], [399.29, 75.796], [406.56, 75.740], [413.96, 75.685], [421.49, 75.633], [429.16, 75.582], [436.97, 75.531], [444.93, 75.482], [453.02, 75.432], [461.27, 75.384], [469.66, 75.336], [478.21, 75.289], [486.91, 75.245], [495.78, 75.201], [504.80, 75.159], [513.99, 75.118], [523.34, 75.079], [532.87, 75.040], [542.56, 75.004], [552.44, 74.969], [562.49, 74.935], [572.73, 74.902], [583.15, 74.869], [593.77, 74.836], [604.57, 74.804], [615.57, 74.774], [626.78, 74.744], [638.18, 74.716], [649.80, 74.689], [661.63, 74.663], [673.67, 74.638], [685.93, 74.613], [698.41, 74.589], [711.12, 74.566], [724.06, 74.544], [737.24, 74.523], [750.66, 74.506], [764.32, 74.492], [778.23, 74.483], [792.39, 74.478], [806.82, 74.479], [821.50, 74.489], [836.45, 74.507], [851.67, 74.530], [867.17, 74.556], [882.96, 74.587], [899.02, 74.622], [915.39, 74.664], [932.05, 74.714], [949.01, 74.773], [966.28, 74.841], [983.87, 74.919], [1001.77, 75.009], [1020.00, 75.110], [1038.57, 75.224], [1057.47, 75.351], [1076.71, 75.489], [1096.31, 75.637], [1116.26, 75.794], [1136.58, 75.958], [1157.26, 76.126], [1178.32, 76.297], [1199.77, 76.470], [1221.60, 76.641], [1243.84, 76.809], [1266.47, 76.976], [1289.52, 77.140], [1312.99, 77.302], [1336.89, 77.460], [1361.22, 77.615], [1385.99, 77.768], [1411.22, 77.919], [1436.90, 78.068], [1463.05, 78.218], [1489.68, 78.369], [1516.79, 78.523], [1544.40, 78.679], [1572.50, 78.839], [1601.12, 79.006], [1630.26, 79.180], [1659.93, 79.361], [1690.14, 79.548], [1720.90, 79.740], [1752.22, 79.938], [1784.11, 80.143], [1816.58, 80.355], [1849.64, 80.574], [1883.30, 80.798], [1917.58, 81.023], [1952.48, 81.246], [1988.01, 81.464], [2024.19, 81.672], [2061.03, 81.866], [2098.54, 82.041], [2136.73, 82.193], [2175.62, 82.319], [2215.22, 82.416], [2255.53, 82.482], [2296.58, 82.515], [2338.38, 82.516], [2380.94, 82.484], [2424.27, 82.421], [2468.39, 82.331], [2513.31, 82.219], [2559.05, 82.092], [2605.63, 81.958], [2653.05, 81.822], [2701.33, 81.687], [2750.50, 81.558], [2800.55, 81.440], [2851.52, 81.339], [2903.42, 81.262], [2956.26, 81.216], [3010.06, 81.204], [3064.85, 81.232], [3120.62, 81.296], [3177.42, 81.393], [3235.25, 81.514], [3294.13, 81.648], [3354.08, 81.782], [3415.12, 81.903], [3477.27, 81.998], [3540.56, 82.056], [3605.00, 82.068], [3670.60, 82.032], [3737.41, 81.949], [3805.43, 81.825], [3874.68, 81.670], [3945.20, 81.494], [4017.00, 81.306], [4090.11, 81.112], [4164.55, 80.919], [4240.34, 80.732], [4317.51, 80.624], [4396.09, 80.419], [4476.10, 80.315], [4557.56, 80.254], [4640.50, 80.228], [4724.96, 80.212], [4810.95, 80.173], [4898.51, 80.075], [4987.66, 79.894], [5078.43, 79.622], [5170.86, 79.276], [5264.97, 78.882], [5360.79, 78.478], [5458.35, 78.098], [5557.69, 77.772], [5658.84, 77.516], [5761.82, 77.331], [5866.69, 77.206], [5973.46, 77.121], [6082.17, 77.062], [6192.87, 77.022], [6305.57, 77.006], [6420.33, 77.025], [6537.18, 77.095], [6656.15, 77.236], [6777.29, 77.465], [6900.63, 77.795], [7026.22, 78.229], [7154.10, 78.758], [7284.30, 79.357], [7416.87, 79.981], [7551.85, 80.568], [7689.29, 81.044], [7829.23, 81.335], [7971.72, 81.383], [8116.80, 81.164], [8264.53, 80.693], [8414.94, 80.018], [8568.09, 79.212], [8724.02, 78.355], [8882.79, 77.520], [9044.46, 76.773], [9209.06, 76.159], [9376.66, 75.697], [9547.31, 75.381], [9721.07, 75.180], [9897.99, 75.052], [10078.13, 74.945], [10261.55, 74.808], [10448.30, 74.604], [10638.45, 74.313], [10832.07, 73.438], [11029.21, 72.988], [11229.94, 72.513], [11434.32, 72.025], [11642.41, 71.538], [11854.30, 71.065], [12070.04, 70.989], [12289.71, 70.581], [12513.38, 70.246], [12741.12, 70.004], [12973.00, 69.870], [13209.10, 69.853], [13449.50, 69.954], [13694.28, 70.161], [13943.51, 70.443], [14197.27, 71.175], [14455.66, 72.015], [14718.74, 71.750], [14986.62, 71.485], [15259.37, 71.204], [15537.08, 70.011], [15819.85, 69.455], [16107.76, 68.945], [16400.92, 68.539], [16699.41, 68.187], [17003.33, 67.777], [17312.78, 67.189], [17627.86, 66.340], [17948.68, 65.194], [18275.34, 63.757], [18607.94, 62.065], [18946.60, 60.165], [19291.42, 58.107], [19642.52, 55.958], [20000.00, 53.788]] },
-            gaming: { id: 'gaming', name: 'Gaming', data: [[20.00, 80.699], [20.36, 80.739], [20.73, 80.778], [21.11, 80.816], [21.50, 80.854], [21.89, 80.890], [22.29, 80.925], [22.69, 80.960], [23.10, 80.992], [23.52, 81.024], [23.95, 81.054], [24.39, 81.083], [24.83, 81.111], [25.28, 81.138], [25.74, 81.163], [26.21, 81.187], [26.69, 81.209], [27.18, 81.231], [27.67, 81.251], [28.17, 81.269], [28.69, 81.287], [29.21, 81.303], [29.74, 81.317], [30.28, 81.331], [30.83, 81.343], [31.39, 81.354], [31.97, 81.363], [32.55, 81.372], [33.14, 81.378], [33.74, 81.384], [34.36, 81.388], [34.98, 81.391], [35.62, 81.393], [36.27, 81.393], [36.93, 81.393], [37.60, 81.392], [38.28, 81.389], [38.98, 81.385], [39.69, 81.380], [40.41, 81.374], [41.15, 81.367], [41.90, 81.358], [42.66, 81.349], [43.44, 81.337], [44.23, 81.325], [45.03, 81.312], [45.85, 81.297], [46.68, 81.281], [47.53, 81.263], [48.40, 81.245], [49.28, 81.225], [50.18, 81.203], [51.09, 81.181], [52.02, 81.157], [52.97, 81.132], [53.93, 81.105], [54.91, 81.078], [55.91, 81.049], [56.93, 81.020], [57.97, 80.989], [59.02, 80.957], [60.09, 80.924], [61.19, 80.891], [62.30, 80.856], [63.44, 80.821], [64.59, 80.784], [65.77, 80.748], [66.96, 80.710], [68.18, 80.672], [69.42, 80.632], [70.69, 80.593], [71.97, 80.552], [73.28, 80.511], [74.62, 80.470], [75.97, 80.427], [77.36, 80.384], [78.76, 80.340], [80.20, 80.296], [81.66, 80.251], [83.14, 80.205], [84.66, 80.160], [86.20, 80.113], [87.77, 80.066], [89.36, 80.019], [90.99, 79.972], [92.65, 79.923], [94.33, 79.875], [96.05, 79.825], [97.80, 79.774], [99.58, 79.722], [101.39, 79.669], [103.23, 79.615], [105.11, 79.561], [107.03, 79.506], [108.97, 79.450], [110.96, 79.393], [112.98, 79.337], [115.03, 79.280], [117.13, 79.223], [119.26, 79.167], [121.43, 79.110], [123.64, 79.055], [125.89, 79.000], [128.18, 78.946], [130.51, 78.893], [132.89, 78.842], [135.31, 78.792], [137.77, 78.744], [140.28, 78.698], [142.83, 78.653], [145.43, 78.608], [148.07, 78.564], [150.77, 78.520], [153.51, 78.475], [156.31, 78.429], [159.15, 78.383], [162.05, 78.334], [165.00, 78.285], [168.00, 78.233], [171.06, 78.179], [174.17, 78.124], [177.34, 78.068], [180.57, 78.011], [183.86, 77.953], [187.20, 77.894], [190.61, 77.836], [194.08, 77.778], [197.61, 77.720], [201.21, 77.663], [204.87, 77.607], [208.60, 77.552], [212.39, 77.498], [216.26, 77.445], [220.19, 77.393], [224.20, 77.342], [228.28, 77.292], [232.44, 77.241], [236.67, 77.191], [240.97, 77.139], [245.36, 77.087], [249.82, 77.034], [254.37, 76.980], [259.00, 76.925], [263.71, 76.869], [268.51, 76.812], [273.40, 76.756], [278.38, 76.700], [283.44, 76.644], [288.60, 76.589], [293.85, 76.535], [299.20, 76.483], [304.65, 76.433], [310.19, 76.385], [315.84, 76.338], [321.59, 76.293], [327.44, 76.249], [333.40, 76.207], [339.47, 76.164], [345.64, 76.122], [351.93, 76.078], [358.34, 76.034], [364.86, 75.989], [371.50, 75.943], [378.26, 75.895], [385.15, 75.847], [392.16, 75.798], [399.29, 75.749], [406.56, 75.701], [413.96, 75.653], [421.49, 75.605], [429.16, 75.558], [436.97, 75.512], [444.93, 75.466], [453.02, 75.421], [461.27, 75.376], [469.66, 75.332], [478.21, 75.288], [486.91, 75.246], [495.78, 75.204], [504.80, 75.163], [513.99, 75.123], [523.34, 75.083], [532.87, 75.043], [542.56, 75.004], [552.44, 74.965], [562.49, 74.927], [572.73, 74.889], [583.15, 74.851], [593.77, 74.815], [604.57, 74.779], [615.57, 74.745], [626.78, 74.712], [638.18, 74.680], [649.80, 74.650], [661.63, 74.621], [673.67, 74.594], [685.93, 74.568], [698.41, 74.545], [711.12, 74.523], [724.06, 74.502], [737.24, 74.484], [750.66, 74.469], [764.32, 74.456], [778.23, 74.446], [792.39, 74.440], [806.82, 74.435], [821.50, 74.433], [836.45, 74.434], [851.67, 74.439], [867.17, 74.455], [882.96, 74.484], [899.02, 74.528], [915.39, 74.587], [932.05, 74.658], [949.01, 74.738], [966.28, 74.824], [983.87, 74.915], [1001.77, 75.009], [1020.00, 75.107], [1038.57, 75.209], [1057.47, 75.315], [1076.71, 75.429], [1096.31, 75.553], [1116.26, 75.691], [1136.58, 75.840], [1157.26, 76.001], [1178.32, 76.170], [1199.77, 76.341], [1221.60, 76.512], [1243.84, 76.677], [1266.47, 76.838], [1289.52, 76.991], [1312.99, 77.137], [1336.89, 77.275], [1361.22, 77.405], [1385.99, 77.527], [1411.22, 77.645], [1436.90, 77.758], [1463.05, 77.868], [1489.68, 77.978], [1516.79, 78.088], [1544.40, 78.199], [1572.50, 78.309], [1601.12, 78.420], [1630.26, 78.533], [1659.93, 78.649], [1690.14, 78.769], [1720.90, 78.892], [1752.22, 79.020], [1784.11, 79.154], [1816.58, 79.292], [1849.64, 79.436], [1883.30, 79.584], [1917.58, 79.736], [1952.48, 79.891], [1988.01, 80.050], [2024.19, 80.214], [2061.03, 80.381], [2098.54, 80.553], [2136.73, 80.728], [2175.62, 80.905], [2215.22, 81.084], [2255.53, 81.264], [2296.58, 81.441], [2338.38, 81.615], [2380.94, 81.783], [2424.27, 81.944], [2468.39, 82.099], [2513.31, 82.249], [2559.05, 82.395], [2605.63, 82.539], [2653.05, 82.682], [2701.33, 82.823], [2750.50, 82.959], [2800.55, 83.086], [2851.52, 83.199], [2903.42, 83.292], [2956.26, 83.364], [3010.06, 83.410], [3064.85, 83.433], [3120.62, 83.432], [3177.42, 83.410], [3235.25, 83.370], [3294.13, 83.311], [3354.08, 83.235], [3415.12, 83.143], [3477.27, 83.036], [3540.56, 82.917], [3605.00, 82.790], [3670.60, 82.658], [3737.41, 82.526], [3805.43, 82.395], [3874.68, 82.268], [3945.20, 82.143], [4017.00, 82.023], [4090.11, 81.906], [4164.55, 81.791], [4240.34, 81.679], [4317.51, 81.569], [4396.09, 81.461], [4476.10, 81.357], [4557.56, 81.256], [4640.50, 81.161], [4724.96, 81.070], [4810.95, 80.984], [4898.51, 80.900], [4987.66, 80.819], [5078.43, 80.739], [5170.86, 80.659], [5264.97, 80.579], [5360.79, 80.498], [5458.35, 80.418], [5557.69, 80.340], [5658.84, 80.264], [5761.82, 80.193], [5866.69, 80.127], [5973.46, 80.067], [6082.17, 80.012], [6192.87, 79.965], [6305.57, 79.928], [6420.33, 79.903], [6537.18, 79.898], [6656.15, 79.920], [6777.29, 79.975], [6900.63, 80.073], [7026.22, 80.218], [7154.10, 80.411], [7284.30, 80.646], [7416.87, 80.904], [7551.85, 81.157], [7689.29, 81.361], [7829.23, 81.467], [7971.72, 81.425], [8116.80, 81.194], [8264.53, 80.756], [8414.94, 80.117], [8568.09, 79.309], [8724.02, 78.376], [8882.79, 77.366], [9044.46, 76.323], [9209.06, 75.281], [9376.66, 74.269], [9547.31, 73.308], [9721.07, 72.419], [9897.99, 71.617], [10078.13, 70.918], [10261.55, 70.337], [10448.30, 69.889], [10638.45, 69.583], [10832.07, 69.415], [11029.21, 69.369], [11229.94, 69.421], [11434.32, 69.551], [11642.41, 69.748], [11854.30, 70.014], [12070.04, 70.353], [12289.71, 70.762], [12513.38, 71.224], [12741.12, 71.698], [12973.00, 72.125], [13209.10, 72.444], [13449.50, 72.610], [13694.28, 72.614], [13943.51, 72.484], [14197.27, 72.269], [14455.66, 72.015], [14718.74, 71.750], [14986.62, 71.485], [15259.37, 71.204], [15537.08, 70.874], [15819.85, 70.455], [16107.76, 69.904], [16400.92, 69.193], [16699.41, 68.321], [17003.33, 67.318], [17312.78, 66.229], [17627.86, 65.090], [17948.68, 63.910], [18275.34, 62.672], [18607.94, 61.352], [18946.60, 59.940], [19291.42, 58.453], [19642.52, 56.924], [20000.00, 55.392]] },
-            moondrop_vdsf: { id: 'moondrop_vdsf', name: 'Moondrop VDSF', data: [[20.00, 77.103], [20.36, 77.093], [20.73, 77.083], [21.11, 77.073], [21.50, 77.062], [21.89, 77.051], [22.29, 77.039], [22.69, 77.026], [23.10, 77.013], [23.52, 76.999], [23.95, 76.985], [24.39, 76.971], [24.83, 76.957], [25.28, 76.943], [25.74, 76.930], [26.21, 76.917], [26.69, 76.906], [27.18, 76.895], [27.67, 76.884], [28.17, 76.875], [28.69, 76.867], [29.21, 76.859], [29.74, 76.852], [30.28, 76.845], [30.83, 76.839], [31.39, 76.834], [31.97, 76.829], [32.55, 76.824], [33.14, 76.819], [33.74, 76.815], [34.36, 76.811], [34.98, 76.807], [35.62, 76.803], [36.27, 76.799], [36.93, 76.795], [37.60, 76.791], [38.28, 76.787], [38.98, 76.783], [39.69, 76.779], [40.41, 76.774], [41.15, 76.770], [41.90, 76.765], [42.66, 76.759], [43.44, 76.753], [44.23, 76.747], [45.03, 76.740], [45.85, 76.731], [46.68, 76.722], [47.53, 76.711], [48.40, 76.698], [49.28, 76.684], [50.18, 76.667], [51.09, 76.649], [52.02, 76.628], [52.97, 76.604], [53.93, 76.579], [54.91, 76.551], [55.91, 76.521], [56.93, 76.489], [57.97, 76.455], [59.02, 76.420], [60.09, 76.385], [61.19, 76.349], [62.30, 76.312], [63.44, 76.277], [64.59, 76.242], [65.77, 76.208], [66.96, 76.176], [68.18, 76.146], [69.42, 76.118], [70.69, 76.091], [71.97, 76.067], [73.28, 76.044], [74.62, 76.023], [75.97, 76.004], [77.36, 75.986], [78.76, 75.969], [80.20, 75.952], [81.66, 75.935], [83.14, 75.918], [84.66, 75.900], [86.20, 75.881], [87.77, 75.861], [89.36, 75.839], [90.99, 75.816], [92.65, 75.790], [94.33, 75.763], [96.05, 75.733], [97.80, 75.702], [99.58, 75.668], [101.39, 75.633], [103.23, 75.597], [105.11, 75.559], [107.03, 75.520], [108.97, 75.481], [110.96, 75.442], [112.98, 75.404], [115.03, 75.366], [117.13, 75.329], [119.26, 75.294], [121.43, 75.260], [123.64, 75.228], [125.89, 75.198], [128.18, 75.170], [130.51, 75.143], [132.89, 75.118], [135.31, 75.093], [137.77, 75.069], [140.28, 75.045], [142.83, 75.020], [145.43, 74.993], [148.07, 74.965], [150.77, 74.934], [153.51, 74.901], [156.31, 74.863], [159.15, 74.822], [162.05, 74.777], [165.00, 74.728], [168.00, 74.674], [171.06, 74.616], [174.17, 74.555], [177.34, 74.490], [180.57, 74.423], [183.86, 74.355], [187.20, 74.286], [190.61, 74.219], [194.08, 74.153], [197.61, 74.091], [201.21, 74.033], [204.87, 73.981], [208.60, 73.934], [212.39, 73.894], [216.26, 73.860], [220.19, 73.832], [224.20, 73.810], [228.28, 73.793], [232.44, 73.782], [236.67, 73.775], [240.97, 73.772], [245.36, 73.772], [249.82, 73.776], [254.37, 73.784], [259.00, 73.794], [263.71, 73.806], [268.51, 73.822], [273.40, 73.840], [278.38, 73.860], [283.44, 73.883], [288.60, 73.906], [293.85, 73.931], [299.20, 73.957], [304.65, 73.982], [310.19, 74.007], [315.84, 74.030], [321.59, 74.051], [327.44, 74.071], [333.40, 74.088], [339.47, 74.102], [345.64, 74.115], [351.93, 74.125], [358.34, 74.134], [364.86, 74.141], [371.50, 74.148], [378.26, 74.153], [385.15, 74.157], [392.16, 74.162], [399.29, 74.165], [406.56, 74.169], [413.96, 74.173], [421.49, 74.176], [429.16, 74.179], [436.97, 74.183], [444.93, 74.187], [453.02, 74.191], [461.27, 74.195], [469.66, 74.201], [478.21, 74.208], [486.91, 74.216], [495.78, 74.226], [504.80, 74.239], [513.99, 74.254], [523.34, 74.273], [532.87, 74.294], [542.56, 74.320], [552.44, 74.348], [562.49, 74.380], [572.73, 74.414], [583.15, 74.451], [593.77, 74.489], [604.57, 74.528], [615.57, 74.568], [626.78, 74.607], [638.18, 74.646], [649.80, 74.683], [661.63, 74.717], [673.67, 74.749], [685.93, 74.777], [698.41, 74.802], [711.12, 74.823], [724.06, 74.841], [737.24, 74.855], [750.66, 74.867], [764.32, 74.877], [778.23, 74.885], [792.39, 74.891], [806.82, 74.896], [821.50, 74.901], [836.45, 74.906], [851.67, 74.910], [867.17, 74.914], [882.96, 74.919], [899.02, 74.925], [915.39, 74.932], [932.05, 74.941], [949.01, 74.952], [966.28, 74.965], [983.87, 74.982], [1001.77, 75.002], [1020.00, 75.026], [1038.57, 75.055], [1057.47, 75.088], [1076.71, 75.126], [1096.31, 75.169], [1116.26, 75.218], [1136.58, 75.272], [1157.26, 75.332], [1178.32, 75.400], [1199.77, 75.475], [1221.60, 75.559], [1243.84, 75.652], [1266.47, 75.754], [1289.52, 75.866], [1312.99, 75.987], [1336.89, 76.116], [1361.22, 76.253], [1385.99, 76.396], [1411.22, 76.546], [1436.90, 76.700], [1463.05, 76.859], [1489.68, 77.021], [1516.79, 77.187], [1544.40, 77.357], [1572.50, 77.530], [1601.12, 77.707], [1630.26, 77.887], [1659.93, 78.071], [1690.14, 78.257], [1720.90, 78.446], [1752.22, 78.636], [1784.11, 78.829], [1816.58, 79.024], [1849.64, 79.220], [1883.30, 79.419], [1917.58, 79.620], [1952.48, 79.823], [1988.01, 80.029], [2024.19, 80.237], [2061.03, 80.447], [2098.54, 80.658], [2136.73, 80.869], [2175.62, 81.077], [2215.22, 81.282], [2255.53, 81.481], [2296.58, 81.673], [2338.38, 81.857], [2380.94, 82.030], [2424.27, 82.193], [2468.39, 82.344], [2513.31, 82.483], [2559.05, 82.609], [2605.63, 82.724], [2653.05, 82.826], [2701.33, 82.915], [2750.50, 82.993], [2800.55, 83.059], [2851.52, 83.112], [2903.42, 83.154], [2956.26, 83.182], [3010.06, 83.198], [3064.85, 83.198], [3120.62, 83.184], [3177.42, 83.153], [3235.25, 83.106], [3294.13, 83.041], [3354.08, 82.959], [3415.12, 82.861], [3477.27, 82.749], [3540.56, 82.623], [3605.00, 82.487], [3670.60, 82.343], [3737.41, 82.194], [3805.43, 82.041], [3874.68, 81.887], [3945.20, 81.732], [4017.00, 81.578], [4090.11, 81.422], [4164.55, 81.266], [4240.34, 81.107], [4317.51, 80.944], [4396.09, 80.776], [4476.10, 80.603], [4557.56, 80.423], [4640.50, 80.237], [4724.96, 80.044], [4810.95, 79.846], [4898.51, 79.644], [4987.66, 79.439], [5078.43, 79.232], [5170.86, 79.025], [5264.97, 78.819], [5360.79, 78.616], [5458.35, 78.416], [5557.69, 78.220], [5658.84, 78.029], [5761.82, 77.843], [5866.69, 77.660], [5973.46, 77.482], [6082.17, 77.306], [6192.87, 77.133], [6305.57, 76.961], [6420.33, 76.791], [6537.18, 76.620], [6656.15, 76.451], [6777.29, 76.282], [6900.63, 76.114], [7026.22, 75.951], [7154.10, 75.793], [7284.30, 75.644], [7416.87, 75.508], [7551.85, 75.388], [7689.29, 75.287], [7829.23, 75.208], [7971.72, 75.154], [8116.80, 75.124], [8264.53, 75.117], [8414.94, 75.131], [8568.09, 75.160], [8724.02, 75.198], [8882.79, 75.237], [9044.46, 75.268], [9209.06, 75.282], [9376.66, 75.270], [9547.31, 75.221], [9721.07, 75.129], [9897.99, 74.985], [10078.13, 74.787], [10261.55, 74.530], [10448.30, 74.217], [10638.45, 73.851], [10832.07, 73.438], [11029.21, 72.988], [11229.94, 72.513], [11434.32, 72.025], [11642.41, 71.538], [11854.30, 71.065], [12070.04, 70.618], [12289.71, 70.205], [12513.38, 69.833], [12741.12, 69.503], [12973.00, 69.214], [13209.10, 68.963], [13449.50, 68.744], [13694.28, 68.548], [13943.51, 68.369], [14197.27, 68.200], [14455.66, 68.034], [14718.74, 67.867], [14986.62, 67.694], [15259.37, 67.511], [15537.08, 67.312], [15819.85, 67.090], [16107.76, 66.834], [16400.92, 66.527], [16699.41, 66.147], [17003.33, 65.661], [17312.78, 65.026], [17627.86, 64.186], [17948.68, 63.076], [18275.34, 61.615], [18607.94, 59.722], [18946.60, 57.322], [19291.42, 54.366], [19642.52, 50.866], [20000.00, 46.930]] },
-            peqdb_diamond: { id: 'peqdb_diamond', name: 'PEQdb Diamond', data: [[20.00, 82.981], [20.36, 82.974], [20.73, 82.967], [21.11, 82.959], [21.50, 82.952], [21.89, 82.944], [22.29, 82.935], [22.69, 82.926], [23.10, 82.917], [23.52, 82.908], [23.95, 82.898], [24.39, 82.887], [24.83, 82.876], [25.28, 82.865], [25.74, 82.853], [26.21, 82.841], [26.69, 82.828], [27.18, 82.815], [27.67, 82.801], [28.17, 82.787], [28.69, 82.772], [29.21, 82.756], [29.74, 82.740], [30.28, 82.723], [30.83, 82.705], [31.39, 82.686], [31.97, 82.667], [32.55, 82.647], [33.14, 82.626], [33.74, 82.604], [34.36, 82.581], [34.98, 82.557], [35.62, 82.532], [36.27, 82.507], [36.93, 82.479], [37.60, 82.451], [38.28, 82.422], [38.98, 82.391], [39.69, 82.359], [40.41, 82.326], [41.15, 82.291], [41.90, 82.255], [42.66, 82.218], [43.44, 82.178], [44.23, 82.138], [45.03, 82.095], [45.85, 82.051], [46.68, 82.005], [47.53, 81.957], [48.40, 81.907], [49.28, 81.855], [50.18, 81.801], [51.09, 81.745], [52.02, 81.687], [52.97, 81.627], [53.93, 81.565], [54.91, 81.500], [55.91, 81.433], [56.93, 81.363], [57.97, 81.291], [59.02, 81.216], [60.09, 81.139], [61.19, 81.060], [62.30, 80.977], [63.44, 80.893], [64.59, 80.805], [65.77, 80.715], [66.96, 80.622], [68.18, 80.527], [69.42, 80.429], [70.69, 80.328], [71.97, 80.224], [73.28, 80.118], [74.62, 80.010], [75.97, 79.899], [77.36, 79.785], [78.76, 79.669], [80.20, 79.551], [81.66, 79.431], [83.14, 79.308], [84.66, 79.182], [86.20, 79.055], [87.77, 78.927], [89.36, 78.795], [90.99, 78.663], [92.65, 78.529], [94.33, 78.394], [96.05, 78.257], [97.80, 78.121], [99.58, 77.985], [101.39, 77.848], [103.23, 77.714], [105.11, 77.579], [107.03, 77.448], [108.97, 77.317], [110.96, 77.187], [112.98, 77.057], [115.03, 76.927], [117.13, 76.797], [119.26, 76.666], [121.43, 76.534], [123.64, 76.403], [125.89, 76.272], [128.18, 76.142], [130.51, 76.015], [132.89, 75.891], [135.31, 75.770], [137.77, 75.652], [140.28, 75.537], [142.83, 75.424], [145.43, 75.313], [148.07, 75.204], [150.77, 75.098], [153.51, 74.996], [156.31, 74.897], [159.15, 74.801], [162.05, 74.710], [165.00, 74.621], [168.00, 74.535], [171.06, 74.453], [174.17, 74.374], [177.34, 74.299], [180.57, 74.225], [183.86, 74.154], [187.20, 74.085], [190.61, 74.019], [194.08, 73.956], [197.61, 73.895], [201.21, 73.836], [204.87, 73.779], [208.60, 73.726], [212.39, 73.675], [216.26, 73.625], [220.19, 73.578], [224.20, 73.534], [228.28, 73.492], [232.44, 73.453], [236.67, 73.417], [240.97, 73.382], [245.36, 73.350], [249.82, 73.321], [254.37, 73.294], [259.00, 73.270], [263.71, 73.247], [268.51, 73.227], [273.40, 73.208], [278.38, 73.191], [283.44, 73.174], [288.60, 73.158], [293.85, 73.142], [299.20, 73.127], [304.65, 73.112], [310.19, 73.096], [315.84, 73.081], [321.59, 73.066], [327.44, 73.052], [333.40, 73.037], [339.47, 73.023], [345.64, 73.009], [351.93, 72.995], [358.34, 72.984], [364.86, 72.975], [371.50, 72.969], [378.26, 72.966], [385.15, 72.969], [392.16, 72.976], [399.29, 72.989], [406.56, 73.009], [413.96, 73.036], [421.49, 73.070], [429.16, 73.110], [436.97, 73.155], [444.93, 73.204], [453.02, 73.254], [461.27, 73.305], [469.66, 73.355], [478.21, 73.405], [486.91, 73.454], [495.78, 73.500], [504.80, 73.545], [513.99, 73.587], [523.34, 73.628], [532.87, 73.668], [542.56, 73.708], [552.44, 73.747], [562.49, 73.788], [572.73, 73.829], [583.15, 73.870], [593.77, 73.913], [604.57, 73.956], [615.57, 73.999], [626.78, 74.042], [638.18, 74.086], [649.80, 74.131], [661.63, 74.176], [673.67, 74.221], [685.93, 74.267], [698.41, 74.312], [711.12, 74.357], [724.06, 74.401], [737.24, 74.444], [750.66, 74.485], [764.32, 74.524], [778.23, 74.560], [792.39, 74.594], [806.82, 74.623], [821.50, 74.650], [836.45, 74.675], [851.67, 74.699], [867.17, 74.721], [882.96, 74.744], [899.02, 74.769], [915.39, 74.797], [932.05, 74.828], [949.01, 74.863], [966.28, 74.905], [983.87, 74.952], [1001.77, 75.005], [1020.00, 75.066], [1038.57, 75.135], [1057.47, 75.211], [1076.71, 75.292], [1096.31, 75.380], [1116.26, 75.471], [1136.58, 75.567], [1157.26, 75.665], [1178.32, 75.766], [1199.77, 75.869], [1221.60, 75.976], [1243.84, 76.086], [1266.47, 76.197], [1289.52, 76.309], [1312.99, 76.423], [1336.89, 76.536], [1361.22, 76.650], [1385.99, 76.762], [1411.22, 76.877], [1436.90, 76.992], [1463.05, 77.110], [1489.68, 77.233], [1516.79, 77.361], [1544.40, 77.496], [1572.50, 77.640], [1601.12, 77.795], [1630.26, 77.960], [1659.93, 78.136], [1690.14, 78.321], [1720.90, 78.514], [1752.22, 78.714], [1784.11, 78.918], [1816.58, 79.126], [1849.64, 79.336], [1883.30, 79.546], [1917.58, 79.756], [1952.48, 79.967], [1988.01, 80.178], [2024.19, 80.389], [2061.03, 80.603], [2098.54, 80.820], [2136.73, 81.042], [2175.62, 81.271], [2215.22, 81.506], [2255.53, 81.744], [2296.58, 81.985], [2338.38, 82.222], [2380.94, 82.454], [2424.27, 82.675], [2468.39, 82.881], [2513.31, 83.071], [2559.05, 83.241], [2605.63, 83.389], [2653.05, 83.519], [2701.33, 83.629], [2750.50, 83.724], [2800.55, 83.807], [2851.52, 83.880], [2903.42, 83.943], [2956.26, 84.000], [3010.06, 84.048], [3064.85, 84.087], [3120.62, 84.115], [3177.42, 84.133], [3235.25, 84.138], [3294.13, 84.129], [3354.08, 84.110], [3415.12, 84.079], [3477.27, 84.041], [3540.56, 83.995], [3605.00, 83.943], [3670.60, 83.885], [3737.41, 83.822], [3805.43, 83.756], [3874.68, 83.685], [3945.20, 83.612], [4017.00, 83.535], [4090.11, 83.456], [4164.55, 83.374], [4240.34, 83.292], [4317.51, 83.208], [4396.09, 83.125], [4476.10, 83.046], [4557.56, 82.970], [4640.50, 82.901], [4724.96, 82.838], [4810.95, 82.783], [4898.51, 82.738], [4987.66, 82.701], [5078.43, 82.674], [5170.86, 82.655], [5264.97, 82.643], [5360.79, 82.634], [5458.35, 82.630], [5557.69, 82.628], [5658.84, 82.627], [5761.82, 82.630], [5866.69, 82.636], [5973.46, 82.643], [6082.17, 82.655], [6192.87, 82.672], [6305.57, 82.692], [6420.33, 82.715], [6537.18, 82.741], [6656.15, 82.769], [6777.29, 82.797], [6900.63, 82.827], [7026.22, 82.855], [7154.10, 82.879], [7284.30, 82.900], [7416.87, 82.911], [7551.85, 82.911], [7689.29, 82.896], [7829.23, 82.863], [7971.72, 82.809], [8116.80, 82.732], [8264.53, 82.633], [8414.94, 82.514], [8568.09, 82.377], [8724.02, 82.229], [8882.79, 82.071], [9044.46, 81.907], [9209.06, 81.741], [9376.66, 81.572], [9547.31, 81.399], [9721.07, 81.225], [9897.99, 81.046], [10078.13, 80.863], [10261.55, 80.673], [10448.30, 80.478], [10638.45, 80.276], [10832.07, 80.067], [11029.21, 79.852], [11229.94, 79.631], [11434.32, 79.406], [11642.41, 79.176], [11854.30, 78.942], [12070.04, 78.704], [12289.71, 78.464], [12513.38, 78.221], [12741.12, 77.976], [12973.00, 77.731], [13209.10, 77.487], [13449.50, 77.246], [13694.28, 77.006], [13943.51, 76.771], [14197.27, 76.536], [14455.66, 76.303], [14718.74, 76.070], [14986.62, 75.839], [15259.37, 75.607], [15537.08, 75.376], [15819.85, 75.144], [16107.76, 74.912], [16400.92, 74.680], [16699.41, 74.445], [17003.33, 74.211], [17312.78, 73.975], [17627.86, 73.738], [17948.68, 73.499], [18275.34, 73.258], [18607.94, 73.015], [18946.60, 72.770], [19291.42, 72.523], [19642.52, 72.275], [20000.00, 72.027]] },
-            'jm-1': { id: 'jm-1', name: 'JM-1', data: [[20.00, 4.538], [20.30, 4.543], [20.60, 4.547], [20.90, 4.549], [21.20, 4.550], [21.40, 4.551], [21.80, 4.553], [22.00, 4.554], [22.40, 4.555], [22.70, 4.556], [23.00, 4.557], [23.30, 4.558], [23.60, 4.559], [24.00, 4.560], [24.30, 4.561], [24.70, 4.562], [25.00, 4.563], [25.40, 4.563], [25.80, 4.564], [26.20, 4.566], [26.50, 4.566], [26.90, 4.567], [27.20, 4.567], [27.60, 4.568], [28.00, 4.568], [28.50, 4.569], [29.00, 4.570], [29.50, 4.570], [30.00, 4.570], [30.40, 4.570], [30.70, 4.570], [31.10, 4.571], [31.50, 4.571], [32.00, 4.571], [32.50, 4.570], [33.00, 4.569], [33.50, 4.567], [34.00, 4.566], [34.50, 4.565], [35.00, 4.563], [35.50, 4.562], [36.00, 4.560], [36.50, 4.558], [37.00, 4.556], [37.50, 4.553], [38.20, 4.549], [38.70, 4.546], [39.50, 4.540], [40.00, 4.536], [40.60, 4.531], [41.20, 4.526], [41.80, 4.521], [42.50, 4.513], [43.10, 4.507], [43.70, 4.500], [44.40, 4.491], [45.00, 4.483], [45.50, 4.476], [46.20, 4.466], [46.80, 4.457], [47.50, 4.445], [48.20, 4.433], [48.70, 4.424], [49.40, 4.411], [50.00, 4.399], [50.80, 4.382], [51.50, 4.367], [52.20, 4.350], [53.00, 4.331], [53.80, 4.311], [54.50, 4.293], [55.20, 4.273], [56.00, 4.250], [57.00, 4.220], [58.00, 4.189], [59.00, 4.156], [60.00, 4.121], [60.80, 4.092], [61.50, 4.067], [62.20, 4.041], [63.00, 4.010], [64.00, 3.969], [65.00, 3.927], [66.00, 3.884], [67.00, 3.839], [68.00, 3.794], [69.00, 3.746], [70.00, 3.698], [71.00, 3.648], [72.00, 3.597], [73.00, 3.545], [74.00, 3.492], [75.00, 3.437], [76.20, 3.371], [77.50, 3.297], [78.80, 3.222], [80.00, 3.152], [81.20, 3.081], [82.50, 3.003], [83.80, 2.924], [85.00, 2.850], [86.20, 2.776], [87.50, 2.695], [88.50, 2.633], [90.00, 2.539], [91.20, 2.463], [92.50, 2.382], [93.80, 2.301], [95.00, 2.225], [96.20, 2.151], [97.50, 2.070], [98.80, 1.990], [100.00, 1.917], [101.50, 1.826], [103.00, 1.735], [104.40, 1.652], [106.00, 1.559], [107.50, 1.473], [109.00, 1.388], [110.60, 1.300], [112.00, 1.224], [113.80, 1.129], [115.00, 1.067], [117.20, 0.956], [118.00, 0.916], [120.60, 0.792], [122.00, 0.727], [124.10, 0.634], [125.00, 0.595], [126.50, 0.531], [128.00, 0.469], [131.50, 0.332], [132.00, 0.314], [134.00, 0.241], [136.00, 0.172], [138.00, 0.105], [140.00, 0.041], [143.00, -0.050], [145.00, -0.106], [147.50, -0.172], [150.00, -0.235], [152.50, -0.293], [155.00, -0.347], [157.50, -0.398], [160.00, -0.445], [162.50, -0.489], [165.00, -0.530], [167.50, -0.567], [170.00, -0.602], [172.50, -0.635], [175.00, -0.665], [177.50, -0.692], [180.00, -0.718], [182.50, -0.741], [185.00, -0.761], [187.50, -0.781], [190.00, -0.798], [192.50, -0.815], [195.00, -0.830], [197.50, -0.843], [200.00, -0.855], [203.00, -0.868], [206.00, -0.879], [209.00, -0.889], [212.00, -0.898], [214.00, -0.902], [218.00, -0.909], [220.00, -0.911], [224.00, -0.915], [227.00, -0.917], [230.00, -0.917], [233.00, -0.917], [236.00, -0.917], [240.00, -0.915], [243.00, -0.912], [247.00, -0.908], [250.00, -0.905], [254.00, -0.898], [258.00, -0.891], [262.00, -0.883], [265.00, -0.877], [269.00, -0.867], [272.00, -0.860], [276.00, -0.849], [280.00, -0.839], [285.00, -0.826], [290.00, -0.812], [295.00, -0.798], [300.00, -0.781], [304.00, -0.766], [307.00, -0.755], [311.00, -0.740], [315.00, -0.725], [320.00, -0.707], [325.00, -0.689], [330.00, -0.671], [335.00, -0.653], [340.00, -0.635], [345.00, -0.617], [350.00, -0.598], [355.00, -0.579], [360.00, -0.560], [365.00, -0.540], [370.00, -0.519], [375.00, -0.499], [382.00, -0.470], [387.00, -0.448], [395.00, -0.414], [400.00, -0.392], [406.00, -0.365], [412.00, -0.338], [418.00, -0.310], [425.00, -0.277], [431.00, -0.249], [437.00, -0.220], [444.00, -0.186], [450.00, -0.157], [455.00, -0.133], [462.00, -0.099], [468.00, -0.069], [475.00, -0.034], [482.00, 0.000], [487.00, 0.025], [494.00, 0.060], [500.00, 0.090], [508.00, 0.129], [515.00, 0.164], [522.00, 0.198], [530.00, 0.236], [538.00, 0.275], [545.00, 0.309], [552.00, 0.342], [560.00, 0.379], [570.00, 0.424], [580.00, 0.468], [590.00, 0.512], [600.00, 0.553], [608.00, 0.585], [615.00, 0.613], [622.00, 0.640], [630.00, 0.670], [640.00, 0.707], [650.00, 0.742], [660.00, 0.775], [670.00, 0.808], [680.00, 0.839], [690.00, 0.869], [700.00, 0.898], [710.00, 0.926], [720.00, 0.953], [730.00, 0.979], [740.00, 1.004], [750.00, 1.028], [762.00, 1.056], [775.00, 1.085], [788.00, 1.114], [800.00, 1.139], [812.00, 1.164], [825.00, 1.191], [838.00, 1.217], [850.00, 1.242], [862.00, 1.266], [875.00, 1.293], [885.00, 1.315], [900.00, 1.348], [912.00, 1.376], [925.00, 1.407], [938.00, 1.440], [950.00, 1.472], [962.00, 1.506], [975.00, 1.544], [988.00, 1.584], [1000.00, 1.623], [1015.00, 1.674], [1030.00, 1.728], [1044.00, 1.780], [1060.00, 1.841], [1075.00, 1.900], [1090.00, 1.961], [1106.00, 2.028], [1120.00, 2.087], [1138.00, 2.164], [1150.00, 2.216], [1172.00, 2.312], [1180.00, 2.347], [1206.00, 2.463], [1220.00, 2.525], [1241.00, 2.619], [1250.00, 2.659], [1265.00, 2.726], [1280.00, 2.794], [1315.00, 2.951], [1320.00, 2.973], [1340.00, 3.063], [1360.00, 3.152], [1380.00, 3.241], [1400.00, 3.330], [1430.00, 3.463], [1450.00, 3.553], [1475.00, 3.664], [1500.00, 3.776], [1525.00, 3.888], [1550.00, 4.001], [1575.00, 4.115], [1600.00, 4.230], [1625.00, 4.346], [1650.00, 4.463], [1675.00, 4.582], [1700.00, 4.702], [1725.00, 4.824], [1750.00, 4.948], [1775.00, 5.074], [1800.00, 5.203], [1825.00, 5.335], [1850.00, 5.470], [1875.00, 5.608], [1900.00, 5.750], [1925.00, 5.894], [1950.00, 6.041], [1975.00, 6.190], [2000.00, 6.342], [2030.00, 6.524], [2060.00, 6.707], [2090.00, 6.888], [2120.00, 7.067], [2140.00, 7.184], [2180.00, 7.412], [2200.00, 7.522], [2240.00, 7.733], [2270.00, 7.883], [2300.00, 8.025], [2330.00, 8.159], [2360.00, 8.284], [2400.00, 8.440], [2430.00, 8.548], [2470.00, 8.681], [2500.00, 8.774], [2540.00, 8.888], [2580.00, 8.995], [2620.00, 9.095], [2650.00, 9.166], [2690.00, 9.257], [2720.00, 9.323], [2760.00, 9.407], [2800.00, 9.488], [2850.00, 9.583], [2900.00, 9.671], [2950.00, 9.749], [3000.00, 9.815], [3040.00, 9.859], [3070.00, 9.885], [3110.00, 9.911], [3150.00, 9.926], [3200.00, 9.930], [3250.00, 9.918], [3300.00, 9.891], [3350.00, 9.848], [3400.00, 9.792], [3450.00, 9.724], [3500.00, 9.645], [3550.00, 9.556], [3600.00, 9.460], [3650.00, 9.357], [3700.00, 9.248], [3750.00, 9.134], [3820.00, 8.970], [3870.00, 8.850], [3950.00, 8.654], [4000.00, 8.531], [4060.00, 8.384], [4120.00, 8.238], [4180.00, 8.093], [4250.00, 7.927], [4310.00, 7.789], [4370.00, 7.653], [4440.00, 7.500], [4500.00, 7.373], [4550.00, 7.271], [4620.00, 7.134], [4680.00, 7.021], [4750.00, 6.895], [4820.00, 6.776], [4870.00, 6.695], [4940.00, 6.588], [5000.00, 6.501], [5080.00, 6.393], [5150.00, 6.305], [5220.00, 6.223], [5300.00, 6.136], [5380.00, 6.057], [5450.00, 5.993], [5520.00, 5.935], [5600.00, 5.874], [5700.00, 5.806], [5800.00, 5.747], [5900.00, 5.697], [6000.00, 5.655], [6080.00, 5.628], [6150.00, 5.608], [6220.00, 5.591], [6300.00, 5.576], [6400.00, 5.564], [6500.00, 5.556], [6600.00, 5.555], [6700.00, 5.559], [6800.00, 5.567], [6900.00, 5.577], [7000.00, 5.590], [7100.00, 5.603], [7200.00, 5.617], [7300.00, 5.628], [7400.00, 5.635], [7500.00, 5.637], [7620.00, 5.628], [7750.00, 5.599], [7880.00, 5.548], [8000.00, 5.477], [8120.00, 5.382], [8250.00, 5.254], [8380.00, 5.104], [8500.00, 4.951], [8620.00, 4.785], [8750.00, 4.598], [8850.00, 4.449], [9000.00, 4.221], [9120.00, 4.036], [9250.00, 3.836], [9380.00, 3.634], [9500.00, 3.448], [9620.00, 3.262], [9750.00, 3.061], [9880.00, 2.860], [10000.00, 2.676], [10150.00, 2.447], [10300.00, 2.220], [10440.00, 2.010], [10600.00, 1.773], [10750.00, 1.555], [10900.00, 1.341], [11060.00, 1.118], [11200.00, 0.928], [11380.00, 0.691], [11500.00, 0.539], [11720.00, 0.272], [11800.00, 0.180], [12060.00, -0.107], [12200.00, -0.251], [12410.00, -0.455], [12500.00, -0.537], [12650.00, -0.667], [12800.00, -0.790], [13150.00, -1.056], [13200.00, -1.092], [13400.00, -1.230], [13600.00, -1.361], [13800.00, -1.488], [14000.00, -1.611], [14300.00, -1.791], [14500.00, -1.911], [14750.00, -2.061], [15000.00, -2.214], [15250.00, -2.370], [15500.00, -2.530], [15750.00, -2.694], [16000.00, -2.864], [16250.00, -3.038], [16500.00, -3.218], [16750.00, -3.402], [17000.00, -3.589], [17250.00, -3.779], [17500.00, -3.971], [17750.00, -4.163], [18000.00, -4.354], [18250.00, -4.544], [18500.00, -4.732], [18750.00, -4.917], [19000.00, -5.111], [19250.00, -5.357], [19500.00, -5.771], [19750.00, -6.453], [20000.00, -7.158]] },
-            basshead: { id: 'basshead', name: 'Basshead', data: [[20.00, 86.177], [20.36, 86.214], [20.73, 86.250], [21.11, 86.286], [21.50, 86.320], [21.89, 86.354], [22.29, 86.386], [22.69, 86.417], [23.10, 86.447], [23.52, 86.476], [23.95, 86.503], [24.39, 86.529], [24.83, 86.553], [25.28, 86.576], [25.74, 86.598], [26.21, 86.618], [26.69, 86.636], [27.18, 86.653], [27.67, 86.669], [28.17, 86.683], [28.69, 86.695], [29.21, 86.706], [29.74, 86.715], [30.28, 86.723], [30.83, 86.729], [31.39, 86.733], [31.97, 86.736], [32.55, 86.736], [33.14, 86.736], [33.74, 86.733], [34.36, 86.729], [34.98, 86.723], [35.62, 86.716], [36.27, 86.708], [36.93, 86.698], [37.60, 86.687], [38.28, 86.674], [38.98, 86.660], [39.69, 86.645], [40.41, 86.629], [41.15, 86.612], [41.90, 86.594], [42.66, 86.575], [43.44, 86.554], [44.23, 86.533], [45.03, 86.511], [45.85, 86.488], [46.68, 86.464], [47.53, 86.439], [48.40, 86.413], [49.28, 86.385], [50.18, 86.357], [51.09, 86.327], [52.02, 86.296], [52.97, 86.263], [53.93, 86.229], [54.91, 86.193], [55.91, 86.155], [56.93, 86.115], [57.97, 86.074], [59.02, 86.030], [60.09, 85.984], [61.19, 85.936], [62.30, 85.887], [63.44, 85.836], [64.59, 85.782], [65.77, 85.728], [66.96, 85.672], [68.18, 85.614], [69.42, 85.556], [70.69, 85.496], [71.97, 85.435], [73.28, 85.373], [74.62, 85.310], [75.97, 85.246], [77.36, 85.181], [78.76, 85.114], [80.20, 85.047], [81.66, 84.978], [83.14, 84.908], [84.66, 84.836], [86.20, 84.764], [87.77, 84.690], [89.36, 84.615], [90.99, 84.539], [92.65, 84.461], [94.33, 84.382], [96.05, 84.301], [97.80, 84.219], [99.58, 84.135], [101.39, 84.049], [103.23, 83.962], [105.11, 83.874], [107.03, 83.785], [108.97, 83.696], [110.96, 83.606], [112.98, 83.517], [115.03, 83.427], [117.13, 83.336], [119.26, 83.244], [121.43, 83.150], [123.64, 83.053], [125.89, 82.954], [128.18, 82.852], [130.51, 82.748], [132.89, 82.643], [135.31, 82.537], [137.77, 82.429], [140.28, 82.321], [142.83, 82.212], [145.43, 82.103], [148.07, 81.991], [150.77, 81.878], [153.51, 81.764], [156.31, 81.648], [159.15, 81.530], [162.05, 81.410], [165.00, 81.287], [168.00, 81.162], [171.06, 81.033], [174.17, 80.902], [177.34, 80.768], [180.57, 80.632], [183.86, 80.494], [187.20, 80.354], [190.61, 80.213], [194.08, 80.072], [197.61, 79.931], [201.21, 79.791], [204.87, 79.652], [208.60, 79.513], [212.39, 79.376], [216.26, 79.239], [220.19, 79.103], [224.20, 78.968], [228.28, 78.834], [232.44, 78.700], [236.67, 78.567], [240.97, 78.434], [245.36, 78.300], [249.82, 78.166], [254.37, 78.032], [259.00, 77.897], [263.71, 77.762], [268.51, 77.627], [273.40, 77.493], [278.38, 77.360], [283.44, 77.228], [288.60, 77.097], [293.85, 76.968], [299.20, 76.841], [304.65, 76.717], [310.19, 76.595], [315.84, 76.477], [321.59, 76.361], [327.44, 76.248], [333.40, 76.136], [339.47, 76.026], [345.64, 75.918], [351.93, 75.810], [358.34, 75.704], [364.86, 75.598], [371.50, 75.494], [378.26, 75.392], [385.15, 75.291], [392.16, 75.193], [399.29, 75.097], [406.56, 75.005], [413.96, 74.916], [421.49, 74.829], [429.16, 74.744], [436.97, 74.662], [444.93, 74.582], [453.02, 74.506], [461.27, 74.433], [469.66, 74.364], [478.21, 74.300], [486.91, 74.241], [495.78, 74.187], [504.80, 74.137], [513.99, 74.091], [523.34, 74.048], [532.87, 74.008], [542.56, 73.971], [552.44, 73.937], [562.49, 73.906], [572.73, 73.877], [583.15, 73.851], [593.77, 73.828], [604.57, 73.810], [615.57, 73.796], [626.78, 73.786], [638.18, 73.780], [649.80, 73.779], [661.63, 73.782], [673.67, 73.789], [685.93, 73.799], [698.41, 73.814], [711.12, 73.831], [724.06, 73.853], [737.24, 73.878], [750.66, 73.906], [764.32, 73.936], [778.23, 73.969], [792.39, 74.006], [806.82, 74.045], [821.50, 74.090], [836.45, 74.140], [851.67, 74.196], [867.17, 74.259], [882.96, 74.327], [899.02, 74.402], [915.39, 74.484], [932.05, 74.574], [949.01, 74.672], [966.28, 74.779], [983.87, 74.892], [1001.77, 75.012], [1020.00, 75.137], [1038.57, 75.267], [1057.47, 75.401], [1076.71, 75.538], [1096.31, 75.679], [1116.26, 75.822], [1136.58, 75.966], [1157.26, 76.109], [1178.32, 76.250], [1199.77, 76.387], [1221.60, 76.521], [1243.84, 76.648], [1266.47, 76.769], [1289.52, 76.885], [1312.99, 76.996], [1336.89, 77.102], [1361.22, 77.203], [1385.99, 77.299], [1411.22, 77.390], [1436.90, 77.475], [1463.05, 77.557], [1489.68, 77.634], [1516.79, 77.710], [1544.40, 77.783], [1572.50, 77.854], [1601.12, 77.925], [1630.26, 77.995], [1659.93, 78.067], [1690.14, 78.142], [1720.90, 78.220], [1752.22, 78.303], [1784.11, 78.391], [1816.58, 78.485], [1849.64, 78.583], [1883.30, 78.685], [1917.58, 78.790], [1952.48, 78.897], [1988.01, 79.003], [2024.19, 79.107], [2061.03, 79.207], [2098.54, 79.302], [2136.73, 79.392], [2175.62, 79.478], [2215.22, 79.564], [2255.53, 79.652], [2296.58, 79.744], [2338.38, 79.845], [2380.94, 79.955], [2424.27, 80.074], [2468.39, 80.196], [2513.31, 80.318], [2559.05, 80.429], [2605.63, 80.527], [2653.05, 80.607], [2701.33, 80.670], [2750.50, 80.720], [2800.55, 80.764], [2851.52, 80.809], [2903.42, 80.860], [2956.26, 80.920], [3010.06, 80.987], [3064.85, 81.055], [3120.62, 81.117], [3177.42, 81.163], [3235.25, 81.184], [3294.13, 81.176], [3354.08, 81.137], [3415.12, 81.068], [3477.27, 80.975], [3540.56, 80.863], [3605.00, 80.738], [3670.60, 80.606], [3737.41, 80.470], [3805.43, 80.336], [3874.68, 80.206], [3945.20, 80.083], [4017.00, 79.969], [4090.11, 79.865], [4164.55, 79.772], [4240.34, 79.692], [4317.51, 79.624], [4396.09, 79.569], [4476.10, 79.527], [4557.56, 79.499], [4640.50, 79.485], [4724.96, 79.485], [4810.95, 79.498], [4898.51, 79.520], [4987.66, 79.545], [5078.43, 79.565], [5170.86, 79.568], [5264.97, 79.542], [5360.79, 79.480], [5458.35, 79.377], [5557.69, 79.234], [5658.84, 79.064], [5761.82, 78.884], [5866.69, 78.715], [5973.46, 78.575], [6082.17, 78.474], [6192.87, 78.415], [6305.57, 78.391], [6420.33, 78.397], [6537.18, 78.430], [6656.15, 78.495], [6777.29, 78.605], [6900.63, 78.779], [7026.22, 79.035], [7154.10, 79.382], [7284.30, 79.814], [7416.87, 80.304], [7551.85, 80.801], [7689.29, 81.234], [7829.23, 81.522], [7971.72, 81.596], [8116.80, 81.418], [8264.53, 80.996], [8414.94, 80.374], [8568.09, 79.619], [8724.02, 78.792], [8882.79, 77.936], [9044.46, 77.071], [9209.06, 76.201], [9376.66, 75.323], [9547.31, 74.432], [9721.07, 73.532], [9897.99, 72.633], [10078.13, 71.756], [10261.55, 70.928], [10448.30, 70.181], [10638.45, 69.547], [10832.07, 69.051], [11029.21, 68.709], [11229.94, 68.519], [11434.32, 68.466], [11642.41, 68.523], [11854.30, 68.652], [12070.04, 68.807], [12289.71, 68.941], [12513.38, 69.008], [12741.12, 68.975], [12973.00, 68.830], [13209.10, 68.584], [13449.50, 68.277], [13694.28, 67.964], [13943.51, 67.711], [14197.27, 67.583], [14455.66, 67.629], [14718.74, 67.864], [14986.62, 68.243], [15259.37, 68.652], [15537.08, 68.933], [15819.85, 68.925], [16107.76, 68.530], [16400.92, 67.744], [16699.41, 66.647], [17003.33, 65.345], [17312.78, 63.920], [17627.86, 62.422], [17948.68, 60.886], [18275.34, 59.353], [18607.94, 57.873], [18946.60, 56.470], [19291.42, 55.135], [19642.52, 53.839], [20000.00, 52.551]] },
-        },
+        TARGETS: EQ_TARGETS_DATA,
         colorPalette: [
             '#ff9500', '#007aff', '#30d158', '#ff453a', '#bf5af2', '#ffd60a', '#5e5ce6', '#64d2ff',
             '#00e1d9', '#ff6482', '#a2845e', '#53d769', '#ff2d55', '#17c063', '#ff9f0a', '#00bfff'
@@ -24933,7 +25969,7 @@ const savedDb = localStorage.getItem('settings_align_db');
                 const connectorEmoji = FindEngine.connectorEmojis[item.connector] || '🔌';
 
                 const specIconsHtml = `
-                    ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:var(--t-micro);">$${esc(item.price_usd)}</span></span>` : ''}
+                    ${item.price_usd != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Price">💰<span class="ml-0.5" style="font-size:var(--t-micro);">${esc(item.price_usd)}</span></span>` : ''}
                     ${item.year != null ? `<span class="spec-icon-badge" style="width:auto !important; padding:0 4px;" data-tooltip="Release Year">📅<span class="ml-0.5" style="font-size:var(--t-micro);">${esc(item.year)}</span></span>` : ''}
                     ${item.driver_type ? `<span class="spec-icon-badge" data-tooltip="${esc(driverTooltip)}">${driverEmoji}</span>` : ''}
                     ${item.connector ? `<span class="spec-icon-badge" data-tooltip="${esc(item.connector)}">${connectorEmoji}</span>` : ''}
@@ -26306,6 +27342,95 @@ const TestLab_AbxMethods = {
 
         abPlaying: false,
 
+        // A-007: ABX used to force both arms to unity, so a 2 dB louder file
+        // revealed itself and "Highly Significant" could just mean "louder".
+        // Level matching is on by default; the offsets are measured from the
+        // decoded files and only ever attenuate (never boost into clipping).
+        abxLevelMatch: true,
+        abRmsA: null,
+        abRmsB: null,
+        _abxGainA: 1,
+        _abxGainB: 1,
+        _abxLevelsPromise: null,
+
+        toggleAbxLevelMatch: function() {
+            if (this.abxIsActive) {
+                showToast('Finish or stop the current test before changing level matching.', '⚠️');
+                return;
+            }
+            this.abxLevelMatch = !this.abxLevelMatch;
+            const btn = document.getElementById('abx-level-toggle');
+            if (btn) {
+                btn.textContent = this.abxLevelMatch ? '⚖️ Level match: ON' : '⚖️ Level match: OFF';
+                btn.classList.toggle('is-on', this.abxLevelMatch);
+            }
+            this.updateAbxLevelInfo();
+            showToast(this.abxLevelMatch
+                ? 'Level matching is on — the louder track is attenuated before each trial.'
+                : 'Level matching is off — a louder track can bias the result.', this.abxLevelMatch ? '⚖️' : '⚠️');
+        },
+
+        updateAbxLevelInfo: function() {
+            const el = document.getElementById('abx-level-info');
+            if (!el) return;
+            if (!this.abxLevelMatch) { el.textContent = 'Unmatched — loudness is a tell'; el.style.color = 'var(--accent-amber)'; return; }
+            if (!Number.isFinite(this.abRmsA) || !Number.isFinite(this.abRmsB)) {
+                el.textContent = 'Load both tracks to measure levels';
+                el.style.color = 'var(--text-secondary)';
+                return;
+            }
+            const dA = 20 * Math.log10(this._abxGainA || 1);
+            const dB = 20 * Math.log10(this._abxGainB || 1);
+            el.textContent = `Matched · A ${dA.toFixed(1)} dB · B ${dB.toFixed(1)} dB`;
+            el.style.color = 'var(--accent-green)';
+        },
+
+        measureAbxLevels: async function() {
+            if (!this.abxLevelMatch) return;
+            if (this._abxLevelsPromise) return this._abxLevelsPromise;
+            const audioA = document.getElementById('ab-audio-a');
+            const audioB = document.getElementById('ab-audio-b');
+            if (!audioA || !audioB || !audioA.src || !audioB.src) return;
+            this._abxLevelsPromise = (async () => {
+                const ctx = SharedAudio.init();
+                const rmsOf = async (src) => {
+                    const buf = await (await fetch(src)).arrayBuffer();
+                    const decoded = await ctx.decodeAudioData(buf.slice(0));
+                    const chans = decoded.numberOfChannels;
+                    const data = [];
+                    for (let c = 0; c < chans; c++) data.push(decoded.getChannelData(c));
+                    const block = Math.max(256, Math.floor(decoded.sampleRate * 0.05));
+                    let sumPower = 0, blocks = 0;
+                    for (let start = 0; start + block <= decoded.length; start += block) {
+                        let p = 0;
+                        for (let c = 0; c < chans; c++) {
+                            const ch = data[c];
+                            for (let i = start; i < start + block; i++) p += ch[i] * ch[i];
+                        }
+                        p /= block * chans;
+                        if (p > 1e-7) { sumPower += p; blocks++; }
+                    }
+                    return blocks ? 10 * Math.log10(sumPower / blocks) : null;
+                };
+                const [a, b] = await Promise.all([rmsOf(audioA.src), rmsOf(audioB.src)]);
+                this.abRmsA = a; this.abRmsB = b;
+                if (Number.isFinite(a) && Number.isFinite(b)) {
+                    const target = Math.min(a, b);
+                    this._abxGainA = Math.max(0.25, Math.min(1, Math.pow(10, (target - a) / 20)));
+                    this._abxGainB = Math.max(0.25, Math.min(1, Math.pow(10, (target - b) / 20)));
+                } else {
+                    this._abxGainA = 1; this._abxGainB = 1;
+                }
+                this.updateAbxLevelInfo();
+            })().catch(err => {
+                console.warn('[ABX] level measurement failed:', err);
+                this.abRmsA = null; this.abRmsB = null;
+                this._abxGainA = 1; this._abxGainB = 1;
+                this.updateAbxLevelInfo();
+            }).finally(() => { this._abxLevelsPromise = null; });
+            return this._abxLevelsPromise;
+        },
+
         abBlindMode: false,
 
         abTrackAPhysical: 'A',
@@ -26439,6 +27564,12 @@ const TestLab_AbxMethods = {
 
             this.setABXControlsEnabled(false);
 
+            // Measure + apply level offsets before the first trial. Failure is
+            // non-fatal (both arms fall back to unity); the readout says so.
+            const levelStatus = document.getElementById('abx-status-lbl');
+            if (levelStatus && this.abxLevelMatch) levelStatus.textContent = 'Matching playback levels...';
+            await this.measureAbxLevels();
+
             this.abxNextTrial();
         },
 
@@ -26479,7 +27610,7 @@ const TestLab_AbxMethods = {
             // every trial, on top of the .volume toggle below — verified in
             // a sandbox trace: a stale gainNodeB=0 makes every "B" target
             // trial completely silent while the UI still scores it.
-            this._abxSetArmGainsUnity();
+            this._abxSetArmGains();
 
             const audioA = document.getElementById('ab-audio-a');
             const audioB = document.getElementById('ab-audio-b');
@@ -26664,6 +27795,10 @@ const TestLab_AbxMethods = {
                         }
                         audioA.src = URL.createObjectURL(file);
                         audioA.load();
+                        this._abxLevelsPromise = null;
+                        this.abRmsA = null;
+                        this._abxGainA = 1;
+                        this.updateAbxLevelInfo();
                         const label = document.getElementById('ab-file-name-a');
                         if (label) label.textContent = file.name;
                         this.updateABMarquee();
@@ -26679,6 +27814,10 @@ const TestLab_AbxMethods = {
                         }
                         audioB.src = URL.createObjectURL(file);
                         audioB.load();
+                        this._abxLevelsPromise = null;
+                        this.abRmsB = null;
+                        this._abxGainB = 1;
+                        this.updateAbxLevelInfo();
                         const label = document.getElementById('ab-file-name-b');
                         if (label) label.textContent = file.name;
                         this.updateABMarquee();
@@ -26687,6 +27826,9 @@ const TestLab_AbxMethods = {
             }
 
             this.updateABMarquee();
+            this.updateAbxLevelInfo();
+            const levelBtn = document.getElementById('abx-level-toggle');
+            if (levelBtn) levelBtn.textContent = this.abxLevelMatch ? '⚖️ Level match: ON' : '⚖️ Level match: OFF';
 
             // Wire the START/STOP button's initial state. The static
             // data-action="click_101_TestLab_abxStart" was removed from
@@ -26773,14 +27915,16 @@ const TestLab_AbxMethods = {
             }
         },
 
-        // Forces both ABX playback arms to unity gain so the only thing
-        // distinguishing "A" from "B" during a trial is the .volume toggle
-        // in abxNextTrial() -- see the call site there for why this exists.
-        _abxSetArmGainsUnity: function() {
+        // Applies the measured level offsets to both ABX playback arms. With
+        // level matching off this is the old unity behaviour; the .volume
+        // toggle in abxNextTrial() still selects which arm is audible.
+        _abxSetArmGains: function() {
             if (!SharedAudio.ctx) return;
             const now = SharedAudio.ctx.currentTime;
-            if (this.gainNodeA) this.gainNodeA.gain.setTargetAtTime(1.0, now, 0.005);
-            if (this.gainNodeB) this.gainNodeB.gain.setTargetAtTime(1.0, now, 0.005);
+            const gA = this.abxLevelMatch ? (this._abxGainA || 1) : 1;
+            const gB = this.abxLevelMatch ? (this._abxGainB || 1) : 1;
+            if (this.gainNodeA) this.gainNodeA.gain.setTargetAtTime(gA, now, 0.005);
+            if (this.gainNodeB) this.gainNodeB.gain.setTargetAtTime(gB, now, 0.005);
         },
 
 setABXControlsEnabled: function(enabled) {
@@ -32528,6 +33672,8 @@ const Find_TasteMethods = {
                 iemDatabase: [],
                 filterTags: new Set(),
                 selectedPicks: [],
+                SOURCE_FILTER_KEY: 'find_source_filter_v1',
+                COMPARE_PAIR_KEY: 'find_compare_pair_v1',
                 // Canonical tag registry lives in data-core.js (shared with the
                 // Database/Review tabs). Getters, not snapshots: DataCore is
                 // concatenated AFTER this file, so the value is only read at
@@ -33701,7 +34847,10 @@ const Find_TasteMethods = {
                                     similarity: matchPct,
                                     fileScores: fileScores,
                                     interp: iem.interp,
-                                    isTuningMatch: true
+                                    isTuningMatch: true,
+                                    sourceCount: dsItem ? (dsItem.sourceCount || (dsItem.files ? dsItem.files.length : 1)) : 1,
+                                    consensusSpread: dsItem ? (dsItem.consensusSpread || 0) : 0,
+                                    hasConsensus: !!(dsItem && dsItem.consensus)
                                 });
                             });
 
@@ -33962,7 +35111,8 @@ const Find_TasteMethods = {
                         // worker's buildCanonicalProfiles guard (find-worker.js)
                         // so the local fallback path can't rank junk entries at
                         // the top when the Worker is unavailable.
-                        if (!item.data || item.data.length < 2) return;
+                        const curveData = item.consensus || item.data;
+                        if (!curveData || curveData.length < 2) return;
 
                         // Coerce: a non-string name (number/object from custom
                         // imports) previously threw on .toLowerCase().
@@ -33990,20 +35140,23 @@ const Find_TasteMethods = {
                     for (const [name, items] of Object.entries(groups)) {
                         if (items.length === 1) {
                             const item = items[0];
-                            const normalized = CurveUtils.normalizeTo75dB(item.data, 500, 75);
+                            const normalized = CurveUtils.normalizeTo75dB(item.consensus || item.data, 500, 75);
                             const interp = CurveUtils.cubicSplineInterpolate(normalized, freqs);
                             canonicalList.push({
                                 name: name,
                                 id: item.id,
                                 interp: Array.from(interp),
-                                sourceData: item.data
+                                sourceData: item.data,
+                                sourceCount: item.sourceCount || 1,
+                                consensusSpread: item.consensusSpread || 0,
+                                hasConsensus: !!item.consensus
                             });
                             continue;
                         }
 
                         const subgroups = [];
                         for (const item of items) {
-                            const normalized = CurveUtils.normalizeTo75dB(item.data, 500, 75);
+                            const normalized = CurveUtils.normalizeTo75dB(item.consensus || item.data, 500, 75);
                             const interp = CurveUtils.cubicSplineInterpolate(normalized, freqs);
 
                             let placed = false;
@@ -34053,7 +35206,10 @@ const Find_TasteMethods = {
                                 name: displayName,
                                 id: sub.items[0].item.id,
                                 interp: Array.from(averagedInterp),
-                                sourceData: sub.items[0].item.data
+                                sourceData: sub.items[0].item.data,
+                                sourceCount: sub.items[0].item.sourceCount || 1,
+                                consensusSpread: sub.items[0].item.consensusSpread || 0,
+                                hasConsensus: !!sub.items[0].item.consensus
                             });
                         });
                     }
@@ -34159,7 +35315,11 @@ const Find_TasteMethods = {
                         list.push({
                             id: item && item.id,
                             name: item && item.name,
-                            data: (item && item.data) || null,
+                            // Prefer the precomputed stock-measurement median
+                            // (SourceIndex / catalogue-index.json). Falling back
+                            // to the primary file keeps every path working when
+                            // the index is absent.
+                            data: (item && (item.consensus || item.data)) || null,
                             price: (isFinite(p) && p > 0) ? p : null,
                             brand: db.brand || (item && item.brand) || '',
                             tags: Array.isArray(db.tags) ? db.tags : (Array.isArray(item && item.tags) ? item.tags : [])
@@ -34241,9 +35401,15 @@ const Find_TasteMethods = {
                             const itemById = new Map();
                             items.forEach(i => { if (i && i.id != null) itemById.set(i.id, i); });
                             list.forEach(m => {
-                                if (m.data) return;
                                 const it = itemById.get(m.id);
-                                if (it) m.data = it.data || null;
+                                if (!it) return;
+                                if (!m.data) m.data = it.data || null;
+                                // Source metadata travels with the match so the
+                                // card can show "6 sources · ±1.2 dB" without a
+                                // second dataset lookup per render.
+                                m.sourceCount = it.sourceCount || (Array.isArray(it.files) ? it.files.length : 1);
+                                m.consensusSpread = it.consensusSpread || 0;
+                                m.hasConsensus = !!it.consensus;
                             });
                             list.sort((a, b) => b.similarity - a.similarity);
                             done(list);
@@ -34310,7 +35476,10 @@ const Find_TasteMethods = {
                                 data: iem.sourceData,
                                 similarity: matchPct,
                                 interp: iem.interp,
-                                isTuningMatch: true
+                                isTuningMatch: true,
+                                sourceCount: iem.sourceCount || 1,
+                                consensusSpread: iem.consensusSpread || 0,
+                                hasConsensus: !!iem.hasConsensus
                             });
                         });
                         matches.sort((a, b) => b.similarity - a.similarity);
@@ -35270,6 +36439,15 @@ const Find_TasteMethods = {
                         const rawFiles = (dbEntry && Array.isArray(dbEntry.files)) ? dbEntry.files : (item.files || []);
                         const fileCount = rawFiles.length;
                         const isMulti = fileCount > 1;
+                        const sourceCount = item.sourceCount || (dbEntry && dbEntry.sourceCount) || fileCount || 1;
+                        const consensusSpread = Number(item.consensusSpread || (dbEntry && dbEntry.consensusSpread) || 0);
+                        const hasConsensus = !!(item.hasConsensus || (dbEntry && dbEntry.consensus));
+                        const primarySource = (typeof SourceIndex !== 'undefined' && rawFiles[0])
+                            ? SourceIndex.parsePath(rawFiles[0]).source
+                            : '';
+                        const primarySourceLabel = primarySource
+                            ? SourceIndex.sourceLabel(primarySource)
+                            : '';
 
                         let cardStyle = "";
                         let rankEmoji = "🏆";
@@ -35425,6 +36603,11 @@ const Find_TasteMethods = {
                                             </div>
                                         </div>
 
+                                        ${item.isTuningMatch ? `<button type="button" data-cmd="FindEngine.openSourceExplorer" data-arg-0="${escJs(curveIdToLoad)}" class="w-full flex items-center justify-between gap-2 mt-1 px-1.5 py-1 border border-[var(--line)] bg-[var(--bg-input)] hover:border-[var(--accent-blue)] cursor-pointer text-left" title="See every measurement behind this score, and where they disagree">
+                                            <span class="type-micro font-black uppercase tracking-wider ${hasConsensus ? 'text-emerald-400' : 'text-zinc-400'} truncate">${hasConsensus ? '🧬 Consensus' : '📏 Single'} · ${sourceCount} source${sourceCount === 1 ? '' : 's'}</span>
+                                            <span class="type-micro font-mono text-zinc-400 whitespace-nowrap">${consensusSpread > 0 ? '±' + consensusSpread.toFixed(1) + ' dB' : (primarySourceLabel ? esc(primarySourceLabel) : 'View')} ›</span>
+                                        </button>` : ''}
+
                                         <div class="flex items-center justify-start gap-2.5 px-0.5 py-0.5 mt-1 select-none font-mono">
                                             ${price !== null && price !== undefined ? `<span class="type-micro font-black text-amber-400 whitespace-nowrap">💰 $${esc(price)}</span>` : ''}
                                             ${year ? `<span class="type-micro font-black text-stone-300 whitespace-nowrap">📅 ${esc(year)}</span>` : ''}
@@ -35552,6 +36735,887 @@ const Find_TasteMethods = {
 
 
 
+                // A-008 follow-up: open the publisher behind one curve. The
+                // source folder is the only authorship information a measurement
+                // file carries, so it is resolved through the same attribution
+                // table as Settings > Measurement sources.
+                openSourceCredit: function(source) {
+                    const credit = (typeof SourceIndex !== 'undefined' && SourceIndex.creditFor)
+                        ? SourceIndex.creditFor(source)
+                        : null;
+                    if (!credit || !credit.url) {
+                        showToast('No published link is known for this measurement source.', '⚠️');
+                        return;
+                    }
+                    if (typeof App === 'undefined' || typeof App.openCreditUrl !== 'function') {
+                        showToast('Source links are unavailable in this build.', '⚠️');
+                        return;
+                    }
+                    App.openCreditUrl(credit.url);
+                },
+
+                // A-008 follow-up: the source filter is a preference, not a
+                // per-product setting. Store the reviewers the user keeps on
+                // so opening another product applies the same selection. Only
+                // a strict subset is stored; showing every source clears the
+                // key, and sources missing from the current product are kept
+                // so narrowing one product does not forget other reviewers.
+                readSourceFilter: function () {
+                    const saved = new Set();
+                    try {
+                        if (typeof SafeStorage === 'undefined') return saved;
+                        const raw = SafeStorage.getItem(this.SOURCE_FILTER_KEY);
+                        if (!raw) return saved;
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(src => {
+                                const key = String(src || '').trim();
+                                if (key) saved.add(key);
+                            });
+                        }
+                    } catch (e) {
+                        console.warn('[Find] Ignoring unreadable source filter.', e);
+                    }
+                    return saved;
+                },
+
+                saveSourceFilter: function (selectedSources, availableSources) {
+                    try {
+                        if (typeof SafeStorage === 'undefined') return;
+                        const available = new Set(availableSources);
+                        const allOn = Array.from(available).every(src => selectedSources.has(src));
+                        // Everything on (or nothing selected) is "no saved
+                        // restriction". Persisting such a set would hide sources
+                        // that only exist in other products.
+                        if (!selectedSources.size || allOn) {
+                            SafeStorage.removeItem(this.SOURCE_FILTER_KEY);
+                            return;
+                        }
+                        const next = new Set();
+                        this.readSourceFilter().forEach(src => {
+                            if (!available.has(src)) next.add(src);
+                        });
+                        selectedSources.forEach(src => next.add(src));
+                        SafeStorage.setItem(this.SOURCE_FILTER_KEY, JSON.stringify(Array.from(next).sort()));
+                    } catch (e) {
+                        console.warn('[Find] Could not save the source filter.', e);
+                    }
+                },
+
+                // The last pair is a view preference: reopening the picker
+                // restores it whenever both reviewers measured that product.
+                readComparePair: function () {
+                    try {
+                        if (typeof SafeStorage === 'undefined') return null;
+                        const raw = SafeStorage.getItem(this.COMPARE_PAIR_KEY);
+                        if (!raw) return null;
+                        const parsed = JSON.parse(raw);
+                        if (!Array.isArray(parsed) || parsed.length !== 2) return null;
+                        const pair = parsed.map(src => String(src || '').trim());
+                        if (!pair[0] || !pair[1] || pair[0] === pair[1]) return null;
+                        return pair;
+                    } catch (e) {
+                        console.warn('[Find] Ignoring unreadable compare pair.', e);
+                        return null;
+                    }
+                },
+
+                saveComparePair: function (pair) {
+                    try {
+                        if (typeof SafeStorage === 'undefined') return;
+                        if (!Array.isArray(pair) || pair.length !== 2) return;
+                        const clean = pair.map(src => String(src || '').trim());
+                        if (!clean[0] || !clean[1] || clean[0] === clean[1]) return;
+                        SafeStorage.setItem(this.COMPARE_PAIR_KEY, JSON.stringify(clean));
+                    } catch (e) {
+                        console.warn('[Find] Could not save the compare pair.', e);
+                    }
+                },
+
+                // N-001: every measurement behind a score, in one place.
+                // Shows the stock-measurement consensus, the individual source
+                // curves, per-source match scores and where the corpus disagrees.
+                openSourceExplorer: async function(itemId) {
+                    const dsItem = (PEQDB_Module.STATE.dataset || []).find(d => d.id === itemId);
+                    if (!dsItem) { showToast('That product is not in the loaded catalogue.', '⚠️'); return; }
+                    if (typeof SourceIndex === 'undefined' || typeof UIKit === 'undefined') return;
+
+                    showToast(`Reading ${dsItem.files ? dsItem.files.length : 1} measurement file(s)...`, '🧬');
+                    const curves = await SourceIndex.loadSourceCurves(dsItem);
+                    if (!curves.length) { showToast('No readable measurement files for this product.', '⚠️'); return; }
+
+                    const targetCurve = this.generateTargetCurve();
+                    const freqs = CurveUtils.generateLogGrid(100);
+                    const targetInterp = CurveUtils.normalizeTo75dB(targetCurve, 500, 75).map(pt => pt[1]);
+                    const scored = curves.map(c => ({
+                        ...c,
+                        score: this._scoreInterp(c.interp, targetInterp, freqs, true)
+                    }));
+                    const stock = scored.filter(c => !c.isMod);
+                    const toggle = { stockOnly: stock.length >= 2 };
+                    // Every distinct publisher in this product's files. The bar
+                    // starts from the remembered selection (or everything when
+                    // none is saved); the chips only narrow what the graph and
+                    // table draw, never the underlying data or the credit table.
+                    const sources = Array.from(new Set(scored.map(c => c.source))).filter(Boolean);
+                    // A saved reviewer selection is an include-list. If none of
+                    // the remembered sources measured this product, show every
+                    // source rather than opening an empty explorer.
+                    const savedFilter = this.readSourceFilter();
+                    const preferred = sources.filter(src => savedFilter.has(src));
+                    const selectedSources = new Set(preferred.length ? preferred : sources);
+                    let savedMiss = savedFilter.size > 0 && !preferred.length;
+                    // Compare is a view mode, not a saved preference: it starts
+                    // from exactly two selected reviewers and is cleared by any
+                    // chip change, solo, or Show all.
+                    let comparePair = null;
+                    // The pair picker is a draft: opening it must not alter the
+                    // source chips until the user confirms the two reviewers.
+                    let pairPickerOpen = false;
+                    let pairDraftA = '';
+                    let pairDraftB = '';
+                    // Which difference band the user is inspecting. Null is the
+                    // full 20 Hz–20 kHz view; the band name survives redraws
+                    // (stock-only, for example) without holding a stale object.
+                    let deltaZoom = null;
+
+                    UIKit.read({
+                        title: `🧬 Measurements · ${dsItem.name}`,
+                        subtitle: 'The card score is the median of the stock measurements — not a single file. This view follows your source filter.',
+                        render: (body) => {
+                            // Shared plotter for the combined graph and the two
+                            // half-width comparison plots. Keeping the axes in
+                            // one place means side-by-side panels stay on the
+                            // same 55-95 dB scale and cannot drift apart.
+                            const paintSourceGraph = (canvas, opts = {}) => {
+                                if (!canvas) return;
+                                const ctx = canvas.getContext('2d');
+                                const compact = !!opts.compact;
+                                const curves = Array.isArray(opts.curves) ? opts.curves : [];
+                                const W = canvas.width, H = canvas.height;
+                                const padL = compact ? 32 : 38, padR = compact ? 8 : 10;
+                                const padT = compact ? 8 : 10, padB = compact ? 19 : 22;
+                                const xOf = f => padL + (Math.log10(f / 20) / Math.log10(20000 / 20)) * (W - padL - padR);
+                                const yOf = db => padT + (1 - (db - 55) / 40) * (H - padT - padB);
+                                ctx.fillStyle = '#08080a'; ctx.fillRect(0, 0, W, H);
+                                ctx.font = compact ? '9px ui-monospace,monospace' : '10px ui-monospace,monospace';
+                                ctx.strokeStyle = 'rgba(255,255,255,0.09)'; ctx.fillStyle = 'rgba(255,255,255,0.38)';
+                                [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000].forEach(f => {
+                                    const x = xOf(f);
+                                    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke();
+                                    ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : String(f), x + 2, H - (compact ? 5 : 7));
+                                });
+                                [60, 70, 80, 90].forEach(db => {
+                                    const y = yOf(db);
+                                    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+                                    ctx.fillText(db + ' dB', 2, y + 3);
+                                });
+                                const stroke = (interp, color, width, dash) => {
+                                    if (!interp) return;
+                                    ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash || []);
+                                    ctx.beginPath();
+                                    for (let i = 0; i < freqs.length; i++) {
+                                        const x = xOf(freqs[i]), y = yOf(interp[i]);
+                                        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                                    }
+                                    ctx.stroke(); ctx.restore();
+                                };
+                                if (opts.reference) stroke(opts.reference, 'rgba(255,255,255,0.32)', 1.1, [2, 3]);
+                                const palette = ['#f59e0b','#38bdf8','#34d399','#fb7185','#a78bfa','#f472b6','#facc15','#22d3ee'];
+                                curves.forEach((c, i) => {
+                                    const color = opts.color || palette[i % palette.length];
+                                    stroke(c.interp, color + (c.isMod ? '77' : 'aa'), c.isMod ? 1 : 1.4, c.isMod ? [3, 3] : []);
+                                });
+                                if (opts.consensus) stroke(opts.consensus, '#f2f3f5', 2.6);
+                                stroke(targetInterp, '#3b82f6', compact ? 1.6 : 2, [6, 4]);
+                                if (opts.legend) {
+                                    ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = '11px ui-monospace,monospace';
+                                    ctx.fillText(opts.legend, padL + 6, padT + 12);
+                                }
+                            };
+
+                            // A − B across the same log frequency grid. The y axis
+                            // is symmetric around 0 dB and auto-fits the observed
+                            // gap, so a 1 dB disagreement is not flattened by a
+                            // curve that happens to swing 12 dB.
+                            const paintDeltaGraph = (canvas, delta, highlight, zoom, hover) => {
+                                if (!canvas || !delta || !delta.length) return;
+                                const ctx = canvas.getContext('2d');
+                                const W = canvas.width, H = canvas.height;
+                                const padL = 42, padR = 10, padT = 9, padB = 20;
+                                // Zoom re-maps the x axis to the band and fits the
+                                // y axis to the band's own values, so a small
+                                // disagreement is not flattened by an unrelated
+                                // 12 dB spike elsewhere in the curve.
+                                const zoomBand = zoom && Number.isFinite(zoom.min) && Number.isFinite(zoom.max)
+                                    ? zoom : null;
+                                const domainMin = zoomBand ? Math.max(20, zoomBand.min) : 20;
+                                const domainMax = zoomBand ? Math.min(20000, zoomBand.max) : 20000;
+                                const logSpan = Math.log10(domainMax / domainMin);
+                                let peak = 0.5;
+                                for (let i = 0; i < delta.length; i++) {
+                                    if (freqs[i] >= domainMin && freqs[i] <= domainMax) {
+                                        peak = Math.max(peak, Math.abs(delta[i]));
+                                    }
+                                }
+                                const step = peak <= 1 ? 0.5 : peak <= 2 ? 1 : peak <= 5 ? 2 : peak <= 10 ? 5 : 10;
+                                const maxAbs = Math.ceil(peak / step) * step;
+                                const xOf = f => padL + (logSpan > 0 ? Math.log10(f / domainMin) / logSpan : 0) * (W - padL - padR);
+                                const yOf = db => padT + (1 - (db + maxAbs) / (2 * maxAbs)) * (H - padT - padB);
+                                const zeroY = yOf(0);
+                                // The band wash belongs to the full view. While
+                                // zoomed, the whole plot already is that band.
+                                const band = !zoomBand && highlight && Number.isFinite(highlight.min) && Number.isFinite(highlight.max)
+                                    ? highlight : null;
+                                const bandX0 = band ? xOf(Math.max(20, band.min)) : 0;
+                                const bandX1 = band ? xOf(Math.min(20000, band.max)) : 0;
+                                // Zoomed axes label their exact band edges as
+                                // well as the usual decades, so 250 Hz and 2 kHz
+                                // do not become unmarked edges of the plot.
+                                const tickFreqs = Array.from(new Set([
+                                    ...[20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+                                        .filter(f => f >= domainMin && f <= domainMax),
+                                    ...(zoomBand ? [domainMin, domainMax] : [])
+                                ])).sort((a, b) => a - b);
+
+                                ctx.fillStyle = '#08080a'; ctx.fillRect(0, 0, W, H);
+                                // The named band is a quiet backdrop behind the
+                                // grid and tinted fills, so it never changes the
+                                // meaning of the curve itself.
+                                if (band) {
+                                    ctx.fillStyle = 'rgba(255,255,255,0.045)';
+                                    ctx.fillRect(bandX0, padT, bandX1 - bandX0, H - padT - padB);
+                                }
+                                ctx.font = '10px ui-monospace,monospace';
+                                ctx.strokeStyle = 'rgba(255,255,255,0.09)';
+                                ctx.fillStyle = 'rgba(255,255,255,0.38)';
+                                tickFreqs.forEach((f, i) => {
+                                    const x = xOf(f);
+                                    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke();
+                                    // Keep the edge labels inside the plot when the
+                                    // axis is zoomed to a band boundary.
+                                    const left = i === 0 && f <= domainMin;
+                                    const right = i === tickFreqs.length - 1 && f >= domainMax;
+                                    ctx.textAlign = left ? 'left' : right ? 'right' : 'center';
+                                    ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : String(f), x + (left ? 2 : right ? -2 : 0), H - 5);
+                                });
+                                ctx.textAlign = 'left';
+                                const ticks = Math.round(maxAbs / step);
+                                for (let t = -ticks; t <= ticks; t++) {
+                                    const db = t * step;
+                                    const y = yOf(db);
+                                    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+                                    const label = (db > 0 ? '+' : '') + db.toFixed(step < 1 ? 1 : 0) + ' dB';
+                                    ctx.fillText(label, 2, y + 3);
+                                }
+
+                                // Tint the two halves so the sign reads without
+                                // tracing every curve back to the zero line.
+                                const fillSide = (top, bottom, color) => {
+                                    ctx.save();
+                                    ctx.beginPath();
+                                    ctx.rect(padL, Math.min(top, bottom), W - padL - padR, Math.abs(bottom - top));
+                                    ctx.clip();
+                                    ctx.beginPath();
+                                    ctx.moveTo(xOf(freqs[0]), zeroY);
+                                    for (let i = 0; i < freqs.length; i++) ctx.lineTo(xOf(freqs[i]), yOf(delta[i]));
+                                    ctx.lineTo(xOf(freqs[freqs.length - 1]), zeroY);
+                                    ctx.closePath();
+                                    ctx.fillStyle = color; ctx.fill(); ctx.restore();
+                                };
+                                fillSide(padT, zeroY, 'rgba(245,158,11,0.16)');
+                                fillSide(zeroY, H - padB, 'rgba(167,139,250,0.16)');
+
+                                ctx.save();
+                                ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+                                ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+                                ctx.beginPath(); ctx.moveTo(padL, zeroY); ctx.lineTo(W - padR, zeroY); ctx.stroke();
+                                ctx.restore();
+
+                                ctx.save();
+                                ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 2;
+                                ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+                                ctx.beginPath();
+                                for (let i = 0; i < freqs.length; i++) {
+                                    const x = xOf(freqs[i]), y = yOf(delta[i]);
+                                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                                }
+                                ctx.stroke(); ctx.restore();
+
+                                if (band) {
+                                    ctx.save();
+                                    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+                                    ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+                                    [bandX0, bandX1].forEach(x => {
+                                        ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke();
+                                    });
+                                    ctx.fillStyle = 'rgba(255,255,255,0.58)';
+                                    ctx.font = '9px ui-monospace,monospace';
+                                    ctx.textAlign = 'center';
+                                    ctx.fillText(band.name.toUpperCase(), (bandX0 + bandX1) / 2, padT + 10);
+                                    ctx.restore();
+                                } else if (zoomBand) {
+                                    ctx.save();
+                                    ctx.fillStyle = 'rgba(255,255,255,0.58)';
+                                    ctx.font = '9px ui-monospace,monospace';
+                                    ctx.textAlign = 'center';
+                                    ctx.fillText(`${zoomBand.name.toUpperCase()} · ${zoomBand.range.toUpperCase()}`, W / 2, padT + 10);
+                                    ctx.restore();
+                                }
+
+                                // Hover crosshair: a thin vertical rule and a dot
+                                // on the curve at the pointer's frequency. The
+                                // readout above the plot carries the exact gap.
+                                if (hover && Number.isFinite(hover.freq) && Number.isFinite(hover.value)) {
+                                    const hx = Math.max(padL, Math.min(W - padR, xOf(hover.freq)));
+                                    const hy = yOf(hover.value);
+                                    ctx.save();
+                                    ctx.strokeStyle = 'rgba(255,255,255,0.42)';
+                                    ctx.lineWidth = 1;
+                                    ctx.setLineDash([3, 3]);
+                                    ctx.beginPath(); ctx.moveTo(hx, padT); ctx.lineTo(hx, H - padB); ctx.stroke();
+                                    ctx.setLineDash([]);
+                                    ctx.fillStyle = '#f2f3f5';
+                                    ctx.strokeStyle = '#08080a';
+                                    ctx.lineWidth = 2;
+                                    ctx.beginPath(); ctx.arc(hx, Math.max(padT + 2, Math.min(H - padB - 2, hy)), 3.5, 0, Math.PI * 2);
+                                    ctx.fill(); ctx.stroke();
+                                    ctx.restore();
+                                }
+                            };
+
+                            const draw = () => {
+                                const candidates = toggle.stockOnly && stock.length ? stock : scored;
+                                const rows = candidates.filter(c => selectedSources.has(c.source));
+                                const consensus = SourceIndex.consensusOf(rows);
+                                const consensusScore = consensus.interp
+                                    ? this._scoreInterp(consensus.interp, targetInterp, freqs, true)
+                                    : 0;
+                                const agreement = consensus.spread < 0.75 ? ['High', 'text-emerald-400']
+                                    : consensus.spread < 1.6 ? ['Fair', 'text-amber-400']
+                                    : ['Low', 'text-rose-400'];
+
+                                // Counts follow the stock-only switch but not the
+                                // source filter itself: switching another source
+                                // off must not rewrite every other chip's count.
+                                const sourceCounts = new Map();
+                                candidates.forEach(c => sourceCounts.set(c.source, (sourceCounts.get(c.source) || 0) + 1));
+                                const narrowed = selectedSources.size > 0 && selectedSources.size < sources.length;
+                                const missNote = savedMiss && selectedSources.size === sources.length;
+                                const compareMode = !!(comparePair && comparePair.length === 2
+                                    && selectedSources.size === 2
+                                    && comparePair.every(src => selectedSources.has(src)));
+                                // Leaving compare drops the band zoom; otherwise it
+                                // would silently reappear on the next pair.
+                                if (!compareMode) deltaZoom = null;
+                                const comparePanels = compareMode ? comparePair.map((src, idx) => {
+                                    const panelRows = rows.filter(c => c.source === src);
+                                    const panelConsensus = SourceIndex.consensusOf(panelRows);
+                                    const hasData = !!(panelRows.length && panelConsensus.interp);
+                                    const score = hasData
+                                        ? this._scoreInterp(panelConsensus.interp, targetInterp, freqs, true)
+                                        : 0;
+                                    let avgDelta = 0;
+                                    if (hasData && consensus.interp) {
+                                        let total = 0;
+                                        for (let i = 0; i < freqs.length; i++) {
+                                            total += Math.abs(panelConsensus.interp[i] - consensus.interp[i]);
+                                        }
+                                        avgDelta = total / freqs.length;
+                                    }
+                                    return {
+                                        src,
+                                        color: idx === 0 ? '#f59e0b' : '#a78bfa',
+                                        label: SourceIndex.sourceLabel(src),
+                                        rows: panelRows,
+                                        hasData,
+                                        score,
+                                        avgDelta,
+                                        spread: panelConsensus.spread,
+                                        consensus: panelConsensus
+                                    };
+                                }) : [];
+                                let deltaStats = null;
+                                if (compareMode && comparePanels.length === 2
+                                    && comparePanels[0].hasData && comparePanels[1].hasData) {
+                                    const a = comparePanels[0].consensus.interp;
+                                    const b = comparePanels[1].consensus.interp;
+                                    // freqs is a Float32Array, so map() would return
+                                    // a typed array and the plotter's array check
+                                    // would skip painting it.
+                                    const values = Array.from(freqs, (_f, i) => a[i] - b[i]);
+                                    let maxIdx = 0;
+                                    for (let i = 1; i < values.length; i++) {
+                                        if (Math.abs(values[i]) > Math.abs(values[maxIdx])) maxIdx = i;
+                                    }
+                                    deltaStats = {
+                                        values,
+                                        mean: values.reduce((sum, v) => sum + v, 0) / values.length,
+                                        max: values[maxIdx],
+                                        maxFreq: freqs[maxIdx]
+                                    };
+                                }
+                                const fmtHz = f => f >= 1000
+                                    ? `${(f / 1000).toFixed(f >= 10000 ? 0 : 1).replace(/\.0$/, '')} kHz`
+                                    : `${Math.round(f)} Hz`;
+                                // Bass / midrange / treble means. The grid is
+                                // logarithmically spaced, so a plain mean is
+                                // already log-weighted rather than dominated by
+                                // the 10-20 kHz octave.
+                                const deltaBands = deltaStats ? [
+                                    { name: 'Bass', range: '20–250 Hz', min: 20, max: 250 },
+                                    { name: 'Midrange', range: '250 Hz–2 kHz', min: 250, max: 2000 },
+                                    { name: 'Treble', range: '2–20 kHz', min: 2000, max: 20001 }
+                                ].map(band => {
+                                    let sum = 0, count = 0;
+                                    for (let i = 0; i < freqs.length; i++) {
+                                        if (freqs[i] >= band.min && freqs[i] < band.max) {
+                                            sum += deltaStats.values[i];
+                                            count++;
+                                        }
+                                    }
+                                    return { ...band, mean: count ? sum / count : 0 };
+                                }) : [];
+                                const zoomBand = deltaZoom ? (deltaBands.find(band => band.name === deltaZoom) || null) : null;
+                                const bandHtml = deltaBands.map(band => {
+                                    const zero = Math.abs(band.mean) < 0.05;
+                                    const tone = zero ? 'is-zero' : band.mean > 0 ? 'is-a' : 'is-b';
+                                    const value = zero ? 'match'
+                                        : `${band.mean > 0 ? 'A' : 'B'} ${Math.abs(band.mean).toFixed(1)} dB`;
+                                    const spoken = zero ? 'A and B match'
+                                        : band.mean > 0
+                                            ? `A is ${Math.abs(band.mean).toFixed(1)} dB above B`
+                                            : `B is ${Math.abs(band.mean).toFixed(1)} dB above A`;
+                                    const active = !!zoomBand && zoomBand.name === band.name;
+                                    return `<button type="button" class="src-delta-band no-tactile${active ? ' is-active' : ''}" data-delta-band="${band.name}" aria-pressed="${active}" aria-label="${band.name} ${band.range}: ${spoken}. ${active ? 'Showing this band; activate again for the full range' : 'Activate to zoom the difference chart to this band'}">
+                                        <span class="src-delta-band-name">${band.name}</span>
+                                        <strong class="src-delta-band-value ${tone}">${value}</strong>
+                                        <span class="src-delta-band-range">${band.range}</span>
+                                    </button>`;
+                                }).join('');
+                                const zoomStats = zoomBand && deltaStats ? (() => {
+                                    let best = -1;
+                                    for (let i = 0; i < freqs.length; i++) {
+                                        if (freqs[i] < zoomBand.min || freqs[i] > zoomBand.max) continue;
+                                        if (best < 0 || Math.abs(deltaStats.values[i]) > Math.abs(deltaStats.values[best])) best = i;
+                                    }
+                                    return best >= 0 ? { max: deltaStats.values[best], maxFreq: freqs[best] } : null;
+                                })() : null;
+                                const shownMean = deltaStats ? (zoomBand ? zoomBand.mean : deltaStats.mean) : 0;
+                                const deltaMeanAbs = Math.abs(shownMean);
+                                const deltaAverage = !deltaStats ? ''
+                                    : deltaMeanAbs < 0.05 ? 'A and B match on average'
+                                    : shownMean > 0 ? `A sits ${deltaMeanAbs.toFixed(1)} dB above B on average`
+                                    : `B sits ${deltaMeanAbs.toFixed(1)} dB above A on average`;
+                                const worstBand = deltaBands.reduce((worst, band) =>
+                                    !worst || Math.abs(band.mean) > Math.abs(worst.mean) ? band : worst, null);
+                                const worstAbs = worstBand ? Math.abs(worstBand.mean) : 0;
+                                const worstClause = !worstBand ? ''
+                                    : worstAbs < 0.05 ? 'all bands match on average'
+                                    : `${worstBand.name} differs most (avg ${worstAbs.toFixed(1)} dB)`;
+                                const highlightedBand = worstBand && worstAbs >= 0.05 ? worstBand : null;
+                                const gapStats = zoomStats || deltaStats;
+                                const deltaSummary = deltaStats && gapStats
+                                    ? `${zoomBand ? `${zoomBand.name} view · ` : ''}${deltaAverage} · largest gap ${Math.abs(gapStats.max).toFixed(1)} dB at ${fmtHz(gapStats.maxFreq)}${!zoomBand && worstClause ? ` · ${worstClause}` : ''}`
+                                    : '';
+                                const deltaHtml = compareMode ? (deltaStats ? `
+                                    <section class="src-delta-card" aria-label="Difference between Reviewer A and Reviewer B">
+                                        <div class="src-delta-head">
+                                            <div class="src-delta-title">Difference · A − B</div>
+                                            ${zoomBand ? `<button type="button" class="src-delta-reset no-tactile" data-delta-reset="1" title="Show the full 20 Hz–20 kHz range">↺ Full range</button>` : ''}
+                                            <div class="src-delta-summary" aria-live="polite">${deltaSummary}</div>
+                                        </div>
+                                        <div class="src-compare-plot src-delta-plot">
+                                            <canvas data-delta-canvas="1" width="820" height="168" style="display:block;width:100%;height:auto" role="img" aria-label="Difference between ${esc(comparePanels[0].label)} and ${esc(comparePanels[1].label)} in decibels across frequency${zoomBand ? `, zoomed to the ${zoomBand.name} band (${zoomBand.range})` : highlightedBand ? `, highlighted ${highlightedBand.name} band` : ''}"></canvas>
+                                            <div class="src-delta-readout" data-delta-readout="1" aria-hidden="true"></div>
+                                        </div>
+                                        <div class="src-delta-bands" role="group" aria-label="Difference by frequency band">
+                                            ${bandHtml}
+                                        </div>
+                                        <div class="src-delta-legend">
+                                            <span><i class="is-a"></i>A above B</span>
+                                            <span><i class="is-b"></i>B above A</span>
+                                            <span><i class="is-zero"></i>0 dB</span>
+                                            <span class="src-delta-legend-hint">Click a band to zoom · click again to reset</span>
+                                        </div>
+                                    </section>` : `
+                                    <section class="src-delta-card" aria-label="Difference unavailable">
+                                        <div class="src-delta-head"><div class="src-delta-title">Difference · A − B</div></div>
+                                        <div class="src-compare-empty">Both reviewers need measurements in view to draw a difference curve.</div>
+                                    </section>`) : '';
+                                const compareHtml = compareMode ? `
+                                    <div class="src-compare-grid" role="group" aria-label="Two-reviewer comparison">
+                                        ${comparePanels.map((panel, idx) => {
+                                            const other = comparePanels[1 - idx];
+                                            const credit = SourceIndex.creditFor(panel.src);
+                                            const name = credit
+                                                ? `<button type="button" class="source-credit-link no-tactile" data-cmd="FindEngine.openSourceCredit" data-arg-0="${esc(panel.src)}" title="Measured by ${esc(credit.label)} — open their measurement database" aria-label="Open ${esc(credit.label)} measurement database">${esc(panel.label)} <span aria-hidden="true">↗</span></button>`
+                                                : `<span>${esc(panel.label)}</span>`;
+                                            return `<section class="src-compare-card" aria-label="Reviewer ${idx + 1}: ${esc(panel.label)}">
+                                                <div class="src-compare-head">
+                                                    <div class="src-compare-id">
+                                                        <span class="src-compare-letter" aria-hidden="true">${idx === 0 ? 'A' : 'B'}</span>
+                                                        <div class="src-compare-title">
+                                                            <div class="src-compare-name">${name}</div>
+                                                            <div class="src-compare-sub">${panel.rows.length} measurement${panel.rows.length === 1 ? '' : 's'} in view</div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="src-compare-score">${panel.hasData ? `${panel.score.toFixed(1)}<span class="src-compare-unit">%</span>` : '<span class="src-compare-nil">—</span>'}<small>match</small></div>
+                                                </div>
+                                                ${panel.hasData ? `<div class="src-compare-facts">
+                                                    <span><strong>${panel.avgDelta.toFixed(2)} dB</strong> from pair median</span>
+                                                    <span><strong>±${panel.spread.toFixed(2)} dB</strong> spread</span>
+                                                </div>` : ''}
+                                                <div class="src-compare-plot"><canvas data-compare-canvas="${idx}" width="360" height="214" style="display:block;width:100%;height:auto" aria-label="Frequency response from ${esc(panel.label)}"></canvas></div>
+                                                <div class="src-compare-legend">
+                                                    <span><i style="background:${panel.color}"></i>${esc(panel.label)}</span>
+                                                    <span><i class="is-other"></i>${esc(other.label)}</span>
+                                                    <span><i class="is-target"></i>target</span>
+                                                </div>
+                                                <div class="src-compare-files">
+                                                    ${panel.rows.length ? panel.rows.map(c => `<div class="src-compare-file">
+                                                        <span title="${esc(c.path)}">${esc(c.file)}${c.conditionLabel ? ` · <em>${esc(c.conditionLabel)}</em>` : ''}</span>
+                                                        <strong>${c.score.toFixed(1)}%</strong>
+                                                    </div>`).join('') : '<div class="src-compare-empty">No measurements from this reviewer in the current view.</div>'}
+                                                </div>
+                                            </section>`;
+                                        }).join('')}
+                                    </div>
+                                    ${deltaHtml}` : '';
+                                const pairValid = !!(pairDraftA && pairDraftB && pairDraftA !== pairDraftB);
+                                const pairOption = (src, selected) => `<option value="${esc(src)}"${selected ? ' selected' : ''}>${esc(SourceIndex.sourceLabel(src))}</option>`;
+                                const pairPickerHtml = pairPickerOpen && !compareMode ? `
+                                    <div class="src-pair-picker" role="group" aria-label="Choose two reviewers to compare">
+                                        <label class="src-pair-field">
+                                            <span>Reviewer A</span>
+                                            <select data-pair-a="1">${sources.map(src => pairOption(src, src === pairDraftA)).join('')}</select>
+                                        </label>
+                                        <span class="src-pair-vs" aria-hidden="true">vs</span>
+                                        <label class="src-pair-field">
+                                            <span>Reviewer B</span>
+                                            <select data-pair-b="1">${sources.map(src => pairOption(src, src === pairDraftB)).join('')}</select>
+                                        </label>
+                                        <div class="src-pair-actions">
+                                            <button type="button" class="src-source-chip no-tactile" data-pair-cancel="1">Cancel</button>
+                                            <button type="button" class="src-source-chip no-tactile src-source-compare" data-pair-confirm="1"${pairValid ? '' : ' disabled'}>Compare</button>
+                                        </div>
+                                        <div class="src-pair-hint${pairValid ? '' : ' is-on'}" data-pair-hint="1" aria-live="polite">Choose two different reviewers.</div>
+                                    </div>` : '';
+                                const sourceBar = sources.length > 1 ? `
+                                    <div class="src-source-bar" role="group" aria-label="Filter by measurement source">
+                                        <span class="src-source-bar-label">Sources</span>
+                                        ${sources.map(src => {
+                                            const on = selectedSources.has(src);
+                                            const label = SourceIndex.sourceLabel(src);
+                                            // Split pill: the label toggles this reviewer in
+                                            // the multi-select, while "only" is the
+                                            // single-click isolate action. One wrapper
+                                            // keeps them reading as one chip.
+                                            return `<span class="src-source-unit${on ? ' is-on' : ''}">
+                                                <button type="button" class="src-source-chip no-tactile${on ? ' is-on' : ''}" data-source="${esc(src)}" aria-pressed="${on}" title="${on ? 'Hide' : 'Show'} measurements from ${esc(label)}">${esc(label)}<span class="src-source-count">${sourceCounts.get(src) || 0}</span></button>
+                                                <button type="button" class="src-source-solo no-tactile" data-source-solo="${esc(src)}" title="Show only measurements from ${esc(label)}" aria-label="Show only measurements from ${esc(label)}">only</button>
+                                            </span>`;
+                                        }).join('')}
+                                        ${compareMode ? `<button type="button" class="src-source-chip no-tactile src-source-compare" data-source-compare-exit="1" title="Return to the combined view">Exit compare</button>`
+                                            : `<button type="button" class="src-source-chip no-tactile src-source-compare" data-source-compare="1" title="Choose two reviewers to compare side by side — your last pair is restored when available">Compare pair…</button>`}
+                                        ${selectedSources.size < sources.length ? `<button type="button" class="src-source-chip no-tactile src-source-all" data-source-all="1" title="Show every source and clear the selection remembered for other products">Show all</button>` : ''}
+                                        ${narrowed ? `<span class="src-source-note" title="This source selection is remembered when you open other products. Show all clears it.">remembered</span>` : ''}
+                                        ${missNote ? `<span class="src-source-note is-miss" title="Your remembered sources have no measurements for this product, so every source is shown.">saved sources unavailable here</span>
+                                        <button type="button" class="src-source-chip no-tactile src-source-all" data-source-forget="1" title="Forget the source selection saved for other products">Clear saved filter</button>` : ''}
+                                    </div>` : '';
+
+                                body.innerHTML = `
+                                    <div class="flex flex-wrap items-center gap-x-5 gap-y-1 mb-2 type-xs" style="color:var(--text-mid)">
+                                        ${rows.length ? `
+                                            <span><strong style="color:var(--text-hi)">${consensusScore.toFixed(1)}%</strong> ${compareMode ? 'pair median match' : 'consensus match'}</span>
+                                            <span><strong style="color:var(--text-hi)">${rows.length}</strong> of ${scored.length} measurements</span>
+                                            <span>spread <strong style="color:var(--text-hi)">±${consensus.spread.toFixed(2)} dB</strong></span>
+                                            <span>agreement <strong class="${agreement[1]}">${agreement[0]}</strong></span>
+                                        ` : `
+                                            <span><strong style="color:var(--text-hi)">0</strong> of ${scored.length} measurements</span>
+                                            <span>Select at least one source to see the consensus.</span>
+                                        `}
+                                        ${stock.length >= 2 ? `<label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" id="src-stock-only" ${toggle.stockOnly ? 'checked' : ''}> stock only</label>` : ''}
+                                    </div>
+                                    ${sourceBar}
+                                    ${pairPickerHtml}
+                                    ${rows.length ? (compareMode ? compareHtml : `<div style="background:#08080a;border:1px solid var(--line);border-radius:6px;overflow:hidden">
+                                        <canvas id="src-explorer-canvas" width="820" height="300" style="display:block;width:100%;height:auto"></canvas>
+                                    </div>
+                                    <div style="max-height:210px;overflow:auto;margin-top:8px">
+                                        <table style="width:100%;border-collapse:collapse;font-size:var(--t-xs)">
+                                            <thead><tr style="color:var(--text-lo);text-align:left">
+                                                <th style="padding:3px 4px">Measured by</th><th style="padding:3px 4px">File / condition</th>
+                                                <th style="padding:3px 4px;text-align:right">Match</th><th style="padding:3px 4px;text-align:right">vs median</th>
+                                            </tr></thead>
+                                            <tbody>${rows.map((c, i) => {
+                                                const delta = c.score - consensusScore;
+                                                const outlier = Math.abs(delta) >= 8;
+                                                const credit = (typeof SourceIndex !== 'undefined' && SourceIndex.creditFor)
+                                                    ? SourceIndex.creditFor(c.source)
+                                                    : null;
+                                                const source = credit
+                                                    ? `<button type="button" class="source-credit-link no-tactile" data-cmd="FindEngine.openSourceCredit" data-arg-0="${esc(c.source)}" title="Measured by ${esc(credit.label)} — open their measurement database" aria-label="Open ${esc(credit.label)} measurement database">${esc(c.sourceLabel)} <span aria-hidden="true">↗</span></button>`
+                                                    : `<span>${esc(c.sourceLabel)}</span>`;
+                                                return `<tr style="border-top:1px solid var(--line)">
+                                                    <td style="padding:3px 4px;color:var(--text-hi);white-space:nowrap"><span style="display:inline-block;width:8px;height:8px;margin-right:5px;background:${['#f59e0b','#38bdf8','#34d399','#fb7185','#a78bfa','#f472b6','#facc15','#22d3ee'][i % 8]}"></span>${source}</td>
+                                                    <td style="padding:3px 4px;color:var(--text-mid)" title="${esc(c.path)}">${esc(c.file)}${c.conditionLabel ? ` · <span style="color:var(--accent-amber)">${esc(c.conditionLabel)}</span>` : ''}</td>
+                                                    <td style="padding:3px 4px;text-align:right;font-family:ui-monospace,monospace;color:var(--text-hi)">${c.score.toFixed(1)}%</td>
+                                                    <td style="padding:3px 4px;text-align:right;font-family:ui-monospace,monospace;color:${outlier ? 'var(--danger)' : 'var(--text-mid)'}">${delta >= 0 ? '+' : ''}${delta.toFixed(1)}${outlier ? ' ⚠️' : ''}</td>
+                                                </tr>`;
+                                            }).join('')}</tbody>
+                                        </table>
+                                    </div>`) : `<div class="src-source-empty">No measurements from the selected sources. Choose another source above.</div>`}`;
+
+                                // Band cards are push-buttons for the difference
+                                // chart. Clicking the active band returns to the
+                                // full range, and focus follows the re-render the
+                                // same way it does for the source chips.
+                                body.querySelectorAll('[data-delta-band]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        const band = btn.getAttribute('data-delta-band');
+                                        deltaZoom = deltaZoom === band ? null : band;
+                                        draw();
+                                        const next = body.querySelector(`[data-delta-band="${band}"]`);
+                                        if (next) next.focus();
+                                    };
+                                });
+                                body.querySelectorAll('[data-delta-reset]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        const previous = deltaZoom;
+                                        deltaZoom = null;
+                                        draw();
+                                        const next = body.querySelector(previous ? `[data-delta-band="${previous}"]` : '[data-delta-band]');
+                                        if (next) next.focus();
+                                    };
+                                });
+
+                                // Pair-picker controls are rebuilt with the bar.
+                                // Updating the selects must not redraw the world:
+                                // that would steal focus from the native dropdown.
+                                const pairA = body.querySelector('[data-pair-a]');
+                                const pairB = body.querySelector('[data-pair-b]');
+                                const syncPairPicker = () => {
+                                    const valid = !!(pairDraftA && pairDraftB && pairDraftA !== pairDraftB);
+                                    const confirm = body.querySelector('[data-pair-confirm]');
+                                    if (confirm) confirm.disabled = !valid;
+                                    const hint = body.querySelector('[data-pair-hint]');
+                                    if (hint) hint.classList.toggle('is-on', !valid);
+                                };
+                                if (pairA) pairA.onchange = () => { pairDraftA = pairA.value; syncPairPicker(); };
+                                if (pairB) pairB.onchange = () => { pairDraftB = pairB.value; syncPairPicker(); };
+                                body.querySelectorAll('[data-pair-cancel]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        pairPickerOpen = false;
+                                        draw();
+                                        const trigger = body.querySelector('[data-source-compare]');
+                                        if (trigger) trigger.focus();
+                                    };
+                                });
+                                body.querySelectorAll('[data-pair-confirm]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        if (!pairDraftA || !pairDraftB || pairDraftA === pairDraftB) return;
+                                        selectedSources.clear();
+                                        selectedSources.add(pairDraftA);
+                                        selectedSources.add(pairDraftB);
+                                        savedMiss = false;
+                                        pairPickerOpen = false;
+                                        // The picker labels A and B are also the
+                                        // left/right card order. Save that same
+                                        // pair as the last one compared.
+                                        comparePair = [pairDraftA, pairDraftB];
+                                        this.saveComparePair(comparePair);
+                                        this.saveSourceFilter(selectedSources, sources);
+                                        draw();
+                                        const exitBtn = body.querySelector('[data-source-compare-exit]');
+                                        if (exitBtn) exitBtn.focus();
+                                    };
+                                });
+
+                                // Source chips are rebuilt by every draw, so their
+                                // handlers are attached here rather than once.
+                                body.querySelectorAll('.src-source-chip[data-source]').forEach(chip => {
+                                    chip.onclick = () => {
+                                        const src = chip.getAttribute('data-source');
+                                        if (selectedSources.has(src)) selectedSources.delete(src);
+                                        else selectedSources.add(src);
+                                        savedMiss = false;
+                                        comparePair = null;
+                                        pairPickerOpen = false;
+                                        this.saveSourceFilter(selectedSources, sources);
+                                        draw();
+                                        // Keep keyboard focus on the toggle the user
+                                        // just pressed; draw() replaced the element.
+                                        const next = Array.from(body.querySelectorAll('.src-source-chip[data-source]'))
+                                            .find(el => el.getAttribute('data-source') === src);
+                                        if (next) next.focus();
+                                    };
+                                });
+                                body.querySelectorAll('[data-source-solo]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        const src = btn.getAttribute('data-source-solo');
+                                        selectedSources.clear();
+                                        selectedSources.add(src);
+                                        savedMiss = false;
+                                        comparePair = null;
+                                        pairPickerOpen = false;
+                                        this.saveSourceFilter(selectedSources, sources);
+                                        draw();
+                                        // Focus the source's toggle, not the
+                                        // action that disappeared from under
+                                        // the user's keyboard focus.
+                                        const next = Array.from(body.querySelectorAll('.src-source-chip[data-source]'))
+                                            .find(el => el.getAttribute('data-source') === src);
+                                        if (next) next.focus();
+                                    };
+                                });
+                                body.querySelectorAll('[data-source-forget]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        savedMiss = false;
+                                        comparePair = null;
+                                        pairPickerOpen = false;
+                                        this.saveSourceFilter(new Set(), sources);
+                                        draw();
+                                        const first = body.querySelector('.src-source-chip[data-source]');
+                                        if (first) first.focus();
+                                    };
+                                });
+                                body.querySelectorAll('[data-source-compare]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        if (pairPickerOpen) {
+                                            const current = body.querySelector('[data-pair-a]');
+                                            if (current) current.focus();
+                                            return;
+                                        }
+                                        pairPickerOpen = true;
+                                        // Restore the last compared pair when this
+                                        // product carries both reviewers. Opening
+                                        // the picker still does not touch the
+                                        // chips. Otherwise seed from the current
+                                        // selection, falling back to the first two.
+                                        const lastPair = this.readComparePair();
+                                        const restore = lastPair && lastPair.every(src => sources.includes(src))
+                                            ? lastPair : null;
+                                        const chosen = sources.filter(src => selectedSources.has(src));
+                                        pairDraftA = restore ? restore[0] : (chosen[0] || sources[0] || '');
+                                        pairDraftB = restore ? restore[1] : (chosen[1] || sources.find(src => src !== pairDraftA) || '');
+                                        draw();
+                                        const first = body.querySelector('[data-pair-a]');
+                                        if (first) first.focus();
+                                    };
+                                });
+                                body.querySelectorAll('[data-source-compare-exit]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        comparePair = null;
+                                        pairPickerOpen = false;
+                                        draw();
+                                        const compareBtn = body.querySelector('[data-source-compare]');
+                                        if (compareBtn) compareBtn.focus();
+                                    };
+                                });
+                                body.querySelectorAll('[data-source-all]').forEach(btn => {
+                                    btn.onclick = () => {
+                                        sources.forEach(src => selectedSources.add(src));
+                                        savedMiss = false;
+                                        comparePair = null;
+                                        pairPickerOpen = false;
+                                        // Show all also resets the remembered
+                                        // filter, otherwise the chips the user
+                                        // just cleared would return on the next
+                                        // product.
+                                        this.saveSourceFilter(new Set(), sources);
+                                        draw();
+                                        const first = body.querySelector('.src-source-chip[data-source]');
+                                        if (first) first.focus();
+                                    };
+                                });
+
+                                const box = body.querySelector('#src-stock-only');
+                                if (box) box.onchange = () => { toggle.stockOnly = box.checked; draw(); };
+                                if (!rows.length) return;
+
+                                if (compareMode) {
+                                    comparePanels.forEach((panel, idx) => {
+                                        const other = comparePanels[1 - idx];
+                                        paintSourceGraph(body.querySelector(`[data-compare-canvas="${idx}"]`), {
+                                            curves: panel.rows,
+                                            reference: other && other.hasData ? other.consensus.interp : null,
+                                            color: panel.color,
+                                            compact: true
+                                        });
+                                    });
+                                    if (deltaStats) {
+                                        const canvas = body.querySelector('[data-delta-canvas]');
+                                        const readout = body.querySelector('[data-delta-readout]');
+                                        if (canvas && readout) {
+                                            const domainMin = zoomBand ? Math.max(20, zoomBand.min) : 20;
+                                            const domainMax = zoomBand ? Math.min(20000, zoomBand.max) : 20000;
+                                            const paint = hover => paintDeltaGraph(canvas, deltaStats.values, highlightedBand, zoomBand, hover);
+                                            paint(null);
+                                            const clearHover = () => {
+                                                readout.classList.remove('is-on');
+                                                readout.setAttribute('aria-hidden', 'true');
+                                                paint(null);
+                                            };
+                                            canvas.addEventListener('pointermove', (event) => {
+                                                const rect = canvas.getBoundingClientRect();
+                                                if (!rect.width) return;
+                                                const px = (event.clientX - rect.left) * (canvas.width / rect.width);
+                                                const padL = 42, padR = 10;
+                                                if (px < padL - 0.5 || px > canvas.width - padR + 0.5) { clearHover(); return; }
+                                                const t = (px - padL) / (canvas.width - padL - padR);
+                                                const freq = domainMin * Math.pow(domainMax / domainMin, Math.max(0, Math.min(1, t)));
+                                                let i = 0;
+                                                while (i < freqs.length - 1 && freqs[i + 1] < freq) i++;
+                                                const f0 = freqs[i], f1 = freqs[i + 1] === undefined ? f0 : freqs[i + 1];
+                                                let value = deltaStats.values[i];
+                                                if (f1 > f0) {
+                                                    const ratio = Math.max(0, Math.min(1, Math.log(freq / f0) / Math.log(f1 / f0)));
+                                                    value = deltaStats.values[i] + (deltaStats.values[i + 1] - deltaStats.values[i]) * ratio;
+                                                }
+                                                const near = Math.abs(value) < 0.05;
+                                                readout.textContent = `${fmtHz(freq)} · ${near ? 'match' : `${value > 0 ? 'A' : 'B'} ${Math.abs(value).toFixed(1)} dB`}`;
+                                                readout.title = near
+                                                    ? `A and B match at ${fmtHz(freq)}`
+                                                    : `${value > 0 ? 'A is' : 'B is'} ${Math.abs(value).toFixed(1)} dB above ${value > 0 ? 'B' : 'A'} at ${fmtHz(freq)}`;
+                                                readout.style.left = `${Math.max(readout.offsetWidth / 2 + 5, Math.min(rect.width - readout.offsetWidth / 2 - 5, event.clientX - rect.left))}px`;
+                                                readout.classList.add('is-on');
+                                                readout.setAttribute('aria-hidden', 'false');
+                                                paint({ freq, value });
+                                            });
+                                            canvas.addEventListener('pointerleave', clearHover);
+                                            canvas.addEventListener('pointercancel', clearHover);
+                                        }
+                                    }
+                                } else {
+                                    paintSourceGraph(body.querySelector('#src-explorer-canvas'), {
+                                        curves: rows,
+                                        consensus: consensus.interp,
+                                        legend: '— consensus   - - target   thin = individual source'
+                                    });
+                                }
+                            };
+                            draw();
+                        },
+                        actions: [{
+                            label: '📈 Overlay on EQ graph',
+                            onClick: () => {
+                                UIKit.closeReader();
+                                const checked = { id: dsItem.id, name: dsItem.name };
+                                const ds = PEQDB_Module.STATE.dataset.find(d => d.id === checked.id);
+                                if (!ds || !ds.data) return;
+                                PEQDB_Module.STATE.activeCurves = PEQDB_Module.STATE.activeCurves.filter(c => c.role !== 'reference');
+                                PEQDB_Module.STATE.activeCurves.push({
+                                    uid: checked.id + '-ref-' + Date.now(), id: checked.id, name: checked.name,
+                                    data: ds.data, color: PEQDB_Module.colorPalette[0], role: 'reference', visible: true, offset: 0
+                                });
+                                PEQDB_Module.updateAll();
+                                App.switchTab('eq');
+                            }
+                        }]
+                    });
+                },
+
                 compareSelected: function() {
                     const checked = document.querySelectorAll('.find-compare-cb:checked');
                     if (checked.length < 2 || checked.length > 4) {
@@ -35651,6 +37715,1408 @@ Object.assign(FindEngine, Find_GenreMethods);
                 get audio() { return SharedAudio; }
             };
             window.AppState = AppState;
+
+/* ===== app/js/personal-targets.js ===== */
+// My Sound: personal targets, a listening preference trainer, and the guided
+// fix-my-sound coach live behind one entry point on the EQ target row.
+//
+// A personal target is built from the same ingredients the app already has:
+//   * a built-in baseline (Harman / Moondrop VDSF / Diffuse / ...),
+//   * the average deviation of the user's Find taste favourites from that
+//     baseline (a preference, not a correction),
+//   * the hearing-calibration offsets Test Lab measured,
+//   * the user's own ear-canal resonance frequency,
+//   * the bass/treble tilt the A/B trainer learned.
+// Nothing here invents measurements: every ingredient is either a curve the
+// app already ships, a curve the user favourited, or a value the user measured
+// in Test Lab. Missing ingredients are simply left out and disclosed in the
+// preview summary.
+const PersonalTargets = {
+    TARGET_KEY: 'iem_personal_targets_v1',
+    TRAIN_KEY: 'iem_trained_prefs_v1',
+    _modal: null,
+    _tab: 'targets',
+    _trainer: null,
+    _preview: null,
+
+    install: function () {
+        this.refreshTargetCatalog();
+        // Keep the target stepper in sync when a different saved profile is
+        // created in another window/tab of the same app.
+        window.addEventListener('storage', (e) => {
+            if (e && e.key === this.TARGET_KEY) this.refreshTargetCatalog();
+        });
+    },
+
+    _readJSON: function (key, fallback) {
+        try {
+            const raw = localStorage.getItem(key);
+            if (!raw) return fallback;
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : fallback;
+        } catch (e) { return fallback; }
+    },
+
+    _writeJSON: function (key, value) {
+        try { localStorage.setItem(key, JSON.stringify(value)); return true; }
+        catch (e) {
+            showToast('Could not save — browser storage is full.', '⚠️');
+            return false;
+        }
+    },
+
+    _loadSaved: function () {
+        const raw = this._readJSON(this.TARGET_KEY, []);
+        return (Array.isArray(raw) ? raw : []).filter(t =>
+            t && typeof t.id === 'string' && t.id.indexOf('personal_') === 0 &&
+            Array.isArray(t.data) && t.data.length > 1
+        );
+    },
+
+    _saveSaved: function (list) {
+        // Keep newest first and cap the list: every target is a full curve.
+        const kept = list.slice(0, 24).map(t => ({
+            id: t.id,
+            name: String(t.name || 'My Target').slice(0, 60),
+            data: t.data,
+            createdAt: t.createdAt || Date.now(),
+            summary: t.summary || ''
+        }));
+        return this._writeJSON(this.TARGET_KEY, kept);
+    },
+
+    // Rebuild the TARGETS map and the stepper's option list from the saved
+    // records. Called at boot and after every create/delete.
+    refreshTargetCatalog: function () {
+        if (typeof PEQDB_Module === 'undefined' || !PEQDB_Module.TARGETS) return;
+        const saved = this._loadSaved();
+        Object.keys(PEQDB_Module.TARGETS).forEach(key => {
+            if (key.indexOf('personal_') === 0) delete PEQDB_Module.TARGETS[key];
+        });
+        saved.forEach(t => {
+            PEQDB_Module.TARGETS[t.id] = { id: t.id, name: t.name, data: t.data, personal: true };
+        });
+        const baseOptions = (PEQDB_Module.targetOptions || []).filter(o => o.val === '' || o.val.indexOf('personal_') !== 0);
+        const personalOptions = saved.map(t => ({ val: t.id, label: '⭐ ' + t.name }));
+        PEQDB_Module.targetOptions = baseOptions.concat(personalOptions);
+        // The selected target's index drives the ◀/▶ stepper; rebuild it so a
+        // delete does not leave the stepper pointing at a stale row.
+        const active = PEQDB_Module.targetMode || '';
+        const idx = PEQDB_Module.targetOptions.findIndex(o => o.val === active);
+        PEQDB_Module.currentTargetIdx = idx >= 0 ? idx : 0;
+    },
+
+    _builtInTargets: function () {
+        const out = [];
+        const opts = (PEQDB_Module && PEQDB_Module.targetOptions) || [];
+        opts.forEach(o => {
+            if (!o.val || o.val === 'sculptor' || o.val.indexOf('personal_') === 0) return;
+            if (PEQDB_Module.TARGETS[o.val]) out.push({ val: o.val, label: (o.label || o.val).replace(/^[^\w]+/, '').trim() });
+        });
+        return out;
+    },
+
+    _grid: function () {
+        return CurveUtils.generateLogGrid(220, 20, 20000);
+    },
+
+    _interp: function (data, grid) {
+        if (!Array.isArray(data) || data.length < 2) return null;
+        return CurveUtils.cubicSplineInterpolate(data, grid);
+    },
+
+    _clamp: function (v, lo, hi) { return Math.max(lo, Math.min(hi, v)); },
+
+    _lowShelfCurve: function (grid, gain, cornerHz) {
+        return Array.from(grid, f => {
+            const t = Math.log10(f / cornerHz) / 0.28;
+            return gain * 0.5 * (1 - Math.tanh(t));
+        });
+    },
+
+    _highShelfCurve: function (grid, gain, cornerHz) {
+        return Array.from(grid, f => {
+            const t = Math.log10(f / cornerHz) / 0.28;
+            return gain * 0.5 * (1 + Math.tanh(t));
+        });
+    },
+
+    _peakingCurve: function (grid, gain, centerHz, widthLog) {
+        const sigma = widthLog || 0.22;
+        return Array.from(grid, f => {
+            const d = Math.log10(f / centerHz) / sigma;
+            return gain * Math.exp(-0.5 * d * d);
+        });
+    },
+
+    _trainedPrefs: function () {
+        const p = this._readJSON(this.TRAIN_KEY, null);
+        if (!p || typeof p !== 'object') return null;
+        const dims = ['bass', 'treble', 'warmth', 'mid', 'air'];
+        const out = { rounds: p.rounds || 0, values: {} };
+        let any = false;
+        dims.forEach(k => {
+            const v = Number(p.values && p.values[k]);
+            out.values[k] = Number.isFinite(v) ? this._clamp(v, -3, 3) : 0;
+            if (Math.abs(out.values[k]) >= 0.1) any = true;
+        });
+        return (any && out.rounds >= 4) ? out : null;
+    },
+
+    // Average how far the user's favourite signatures sit from the baseline
+    // (after a broadband-level normalisation), so a bass-heavy favourite pulls
+    // the target's bass up rather than shifting the whole curve.
+    _tasteDelta: async function (grid, baseInterp) {
+        if (typeof FindEngine === 'undefined' || !Array.isArray(FindEngine.tasteFavorites) || !FindEngine.tasteFavorites.length) {
+            return { delta: null, count: 0, names: [] };
+        }
+        const dataset = (PEQDB_Module.STATE && PEQDB_Module.STATE.dataset) || [];
+        const usable = [];
+        for (const fav of FindEngine.tasteFavorites) {
+            const item = dataset.find(i => i.id === fav.id);
+            if (!item) continue;
+            if ((!item.data || item.data.length < 2) && typeof CurveIndexer !== 'undefined') {
+                try { await CurveIndexer.loadCurve(item, 0); } catch (e) {}
+            }
+            if (item.data && item.data.length > 1) usable.push({ name: fav.name || item.name, data: item.data });
+        }
+        if (!usable.length) return { delta: null, count: 0, names: [] };
+
+        const baseAtOne = baseInterp[this._nearestIndex(grid, 1000)];
+        const sums = new Float64Array(grid.length);
+        usable.forEach(u => {
+            const normalized = CurveUtils.normalizeTo75dB(u.data, 1000, 75);
+            const interp = this._interp(normalized, grid);
+            if (!interp) return;
+            for (let i = 0; i < grid.length; i++) {
+                // Compare each favourite to the baseline at the same level.
+                sums[i] += interp[i] - (baseInterp[i] - baseAtOne + 75);
+            }
+        });
+        const delta = new Float32Array(grid.length);
+        for (let i = 0; i < grid.length; i++) {
+            delta[i] = this._clamp((sums[i] / usable.length) * 0.55, -6, 6);
+        }
+        const smoothed = CurveUtils.gaussianSmooth(grid, delta, 0.11);
+        return { delta: smoothed, count: usable.length, names: usable.map(u => u.name) };
+    },
+
+    _nearestIndex: function (grid, hz) {
+        let best = 0, bestD = Infinity;
+        for (let i = 0; i < grid.length; i++) {
+            const d = Math.abs(Math.log(grid[i] / hz));
+            if (d < bestD) { bestD = d; best = i; }
+        }
+        return best;
+    },
+
+    _hearingDelta: function (grid) {
+        if (typeof EQ_Module === 'undefined' || !EQ_Module.hearingCalEnabled) return null;
+        const offsets = Array.isArray(EQ_Module.hearingOffsets) ? EQ_Module.hearingOffsets : null;
+        if (!offsets || !offsets.some(v => Number(v) > 0)) return null;
+        const anchors = [250, 500, 1000, 2000, 4000, 8000, 12000, 16000];
+        const vals = offsets.map(v => this._clamp(Number(v) || 0, 0, 6));
+        if (!vals.some(v => v > 0)) return null;
+        const out = new Float32Array(grid.length);
+        for (let i = 0; i < grid.length; i++) {
+            const f = grid[i];
+            if (f <= anchors[0]) { out[i] = vals[0] * 0.6; continue; }
+            if (f >= anchors[anchors.length - 1]) { out[i] = vals[vals.length - 1] * 0.6; continue; }
+            let k = 0;
+            while (k < anchors.length - 2 && anchors[k + 1] < f) k++;
+            const t = (Math.log(f) - Math.log(anchors[k])) / (Math.log(anchors[k + 1]) - Math.log(anchors[k]));
+            out[i] = (vals[k] + (vals[k + 1] - vals[k]) * t) * 0.6;
+        }
+        return out;
+    },
+
+    _resonanceDelta: function (grid) {
+        const hz = Number(PEQDB_Module.resonanceHz);
+        if (!Number.isFinite(hz) || hz < 2000 || hz > 16000) return null;
+        // A canal resonance peak makes that band louder for this listener; a
+        // gentle dip in the target keeps the perceived balance closer to flat.
+        return this._peakingCurve(grid, -1.8, hz, 0.13);
+    },
+
+    _trainedDelta: function (grid) {
+        const p = this._trainedPrefs();
+        if (!p) return null;
+        const v = p.values;
+        const out = new Float32Array(grid.length);
+        const bass = this._lowShelfCurve(grid, v.bass, 130);
+        const treble = this._highShelfCurve(grid, v.treble, 5500);
+        const warmth = this._peakingCurve(grid, v.warmth, 250, 0.25);
+        const mid = this._peakingCurve(grid, v.mid, 2600, 0.2);
+        const air = this._highShelfCurve(grid, v.air, 11000);
+        for (let i = 0; i < grid.length; i++) out[i] = bass[i] + treble[i] + warmth[i] + mid[i] + air[i];
+        return out;
+    },
+
+    // opts: { baseId, useTaste, useHearing, useResonance, useTrained }
+    buildCurve: async function (opts) {
+        opts = opts || {};
+        const grid = this._grid();
+        const baseId = opts.baseId || (PEQDB_Module.targetMode && PEQDB_Module.TARGETS[PEQDB_Module.targetMode] ? PEQDB_Module.targetMode : 'harman');
+        const base = PEQDB_Module.TARGETS[baseId] || PEQDB_Module.TARGETS.harman;
+        const baseInterp = this._interp(base.data, grid);
+        if (!baseInterp) throw new Error('Target baseline has no usable curve data.');
+        const out = Float32Array.from(baseInterp);
+        const sources = ['Baseline: ' + (base.name || baseId)];
+
+        if (opts.useTaste) {
+            const taste = await this._tasteDelta(grid, baseInterp);
+            if (taste.delta) {
+                for (let i = 0; i < grid.length; i++) out[i] += taste.delta[i];
+                sources.push(`${taste.count} taste favourite${taste.count === 1 ? '' : 's'}`);
+            } else {
+                sources.push('no loaded taste favourites');
+            }
+        }
+        if (opts.useHearing) {
+            const h = this._hearingDelta(grid);
+            if (h) {
+                for (let i = 0; i < grid.length; i++) out[i] += h[i];
+                sources.push('hearing calibration');
+            } else {
+                sources.push('no hearing calibration');
+            }
+        }
+        if (opts.useResonance) {
+            const r = this._resonanceDelta(grid);
+            if (r) {
+                for (let i = 0; i < grid.length; i++) out[i] += r[i];
+                sources.push(`canal resonance ${Math.round(Number(PEQDB_Module.resonanceHz)).toLocaleString()} Hz`);
+            } else {
+                sources.push('no locked resonance peak');
+            }
+        }
+        if (opts.useTrained) {
+            const t = this._trainedDelta(grid);
+            if (t) {
+                for (let i = 0; i < grid.length; i++) out[i] += t[i];
+                sources.push('trainer preference');
+            } else {
+                sources.push('no trainer result');
+            }
+        }
+
+        // Keep the target level at the usual 1 kHz anchor so it drops into the
+        // existing graph/AutoEQ flow exactly like a built-in target.
+        const one = this._nearestIndex(grid, 1000);
+        const offset = 75 - out[one];
+        const data = [];
+        for (let i = 0; i < grid.length; i++) {
+            data.push([Math.round(grid[i] * 100) / 100, Math.round((out[i] + offset) * 100) / 100]);
+        }
+        return { data, summary: sources.join(' · '), grid, curve: out, baseName: base.name || baseId };
+    },
+
+    saveTarget: async function (name, opts) {
+        const clean = String(name || '').trim().slice(0, 60);
+        if (!clean) { showToast('Give this target a name first.', '⚠️'); return null; }
+        const built = await this.buildCurve(opts);
+        const id = 'personal_' + Date.now().toString(36);
+        const rec = { id, name: clean, data: built.data, createdAt: Date.now(), summary: built.summary };
+        const list = this._loadSaved();
+        list.unshift(rec);
+        if (!this._saveSaved(list)) return null;
+        this.refreshTargetCatalog();
+        if (typeof PEQDB_Module.setTarget === 'function') PEQDB_Module.setTarget(id);
+        showToast(`Saved "${clean}" as a target and applied it.`, '⭐');
+        return rec;
+    },
+
+    deleteTarget: async function (id) {
+        const rec = this._loadSaved().find(t => t.id === id);
+        if (!rec) return;
+        const ok = await UIKit.confirm({
+            title: 'Delete this target?',
+            message: `"${rec.name}" will be removed. A copy already exported to an EQ preset is not affected.`,
+            confirmLabel: 'Delete', danger: true
+        });
+        if (!ok) return;
+        if (PEQDB_Module.targetMode === id) PEQDB_Module.setTarget('');
+        this._saveSaved(this._loadSaved().filter(t => t.id !== id));
+        this.refreshTargetCatalog();
+        this.renderTargetsTab();
+        showToast('Target deleted.', '🗑️');
+    },
+
+    // ---------------------------------------------------------------- UI ----
+    ensureModal: function () {
+        if (this._modal) return this._modal;
+        const wrap = document.createElement('div');
+        wrap.id = 'my-sound-modal';
+        wrap.className = 'fixed inset-0 bg-black/85 backdrop-blur-sm z-[300] hidden items-center justify-center p-4';
+        wrap.setAttribute('role', 'dialog');
+        wrap.setAttribute('aria-modal', 'true');
+        wrap.setAttribute('aria-labelledby', 'my-sound-title');
+        wrap.innerHTML = `
+            <div class="bg-[var(--bg-card)] border border-[var(--line)] w-full max-w-3xl flex flex-col overflow-hidden" style="border-radius: var(--r-xl); box-shadow: var(--sh-3); max-height: calc(100vh - 32px);">
+                <div class="flex items-center justify-between gap-3 px-5 py-3 border-b border-[var(--line)] flex-shrink-0">
+                    <div class="min-w-0">
+                        <div id="my-sound-title" class="type-md font-semibold flex items-center gap-2" style="color: var(--text-hi);">🎧 My Sound</div>
+                        <div class="type-xs mt-0.5" style="color: var(--text-mid);">Targets built from your ears, not a generic average.</div>
+                    </div>
+                    <button id="my-sound-x" type="button" class="app-caption-btn" style="width:28px;height:28px;" aria-label="Close">✕</button>
+                </div>
+                <div class="flex gap-1.5 px-5 pt-3 flex-shrink-0" role="tablist" aria-label="My Sound sections">
+                    <button type="button" class="my-sound-tab" data-tab="targets" role="tab">⭐ Targets</button>
+                    <button type="button" class="my-sound-tab" data-tab="trainer" role="tab">🧪 Trainer</button>
+                    <button type="button" class="my-sound-tab" data-tab="fix" role="tab">🩺 Fix my sound</button>
+                </div>
+                <div id="my-sound-body" class="p-5 overflow-y-auto" style="flex:1 1 auto; min-height:220px;"></div>
+                <div id="my-sound-foot" class="px-5 py-2.5 border-t border-[var(--line)] type-micro flex items-center justify-between gap-3 flex-shrink-0" style="color: var(--text-lo);">
+                    <span>Every ingredient is optional. Nothing is invented.</span>
+                    <button id="my-sound-done" type="button" class="btn-clear cursor-pointer" style="height:30px;padding:0 14px;border-radius:var(--r-md);">Done</button>
+                </div>
+            </div>`;
+        document.body.appendChild(wrap);
+        const close = () => this.close();
+        wrap.querySelector('#my-sound-x').onclick = close;
+        wrap.querySelector('#my-sound-done').onclick = close;
+        wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
+        wrap.querySelectorAll('.my-sound-tab').forEach(btn => {
+            btn.addEventListener('click', () => this.showTab(btn.getAttribute('data-tab')));
+        });
+        this._modal = wrap;
+        return wrap;
+    },
+
+    open: function (tab) {
+        this.ensureModal();
+        this._modal.classList.remove('hidden');
+        this._modal.classList.add('flex');
+        this.showTab(tab || this._tab || 'targets');
+        this._lastFocus = document.activeElement;
+    },
+
+    close: function () {
+        if (this._trainer) this.stopTrainer();
+        const wrap = this._modal;
+        if (!wrap) return;
+        wrap.classList.add('hidden');
+        wrap.classList.remove('flex');
+        const back = this._lastFocus;
+        this._lastFocus = null;
+        if (back && back.isConnected) { try { back.focus(); } catch (e) {} }
+    },
+
+    showTab: function (tab) {
+        this._tab = tab;
+        this._modal.querySelectorAll('.my-sound-tab').forEach(btn => {
+            const on = btn.getAttribute('data-tab') === tab;
+            btn.classList.toggle('is-on', on);
+            btn.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        const body = this._modal.querySelector('#my-sound-body');
+        body.scrollTop = 0;
+        if (tab === 'trainer') this.renderTrainerTab();
+        else if (tab === 'fix') this.renderFixTab();
+        else this.renderTargetsTab();
+    },
+
+    _summaryLine: function (tag, text, on) {
+        return `<span class="pt-chip ${on ? 'is-on' : ''}">${tag} ${esc(text)}</span>`;
+    },
+
+    renderTargetsTab: function () {
+        const body = this._modal.querySelector('#my-sound-body');
+        const bases = this._builtInTargets();
+        const saved = this._loadSaved();
+        const tasteCount = (typeof FindEngine !== 'undefined' && Array.isArray(FindEngine.tasteFavorites)) ? FindEngine.tasteFavorites.length : 0;
+        const hearingOn = typeof EQ_Module !== 'undefined' && EQ_Module.hearingCalEnabled && Array.isArray(EQ_Module.hearingOffsets) && EQ_Module.hearingOffsets.some(v => Number(v) > 0);
+        const resoHz = Number(PEQDB_Module.resonanceHz);
+        const resoOn = Number.isFinite(resoHz) && resoHz >= 2000 && resoHz <= 16000;
+        const trained = this._trainedPrefs();
+        const currentBase = (PEQDB_Module.targetMode && PEQDB_Module.TARGETS[PEQDB_Module.targetMode] && !PEQDB_Module.TARGETS[PEQDB_Module.targetMode].personal)
+            ? PEQDB_Module.targetMode : 'harman';
+
+        body.innerHTML = `
+            <div class="grid gap-4" style="grid-template-columns: minmax(0,1fr) minmax(0,1.05fr);">
+                <div>
+                    <label class="type-micro font-black uppercase tracking-wider" style="color: var(--text-lo);">Target name</label>
+                    <input id="pt-name" type="text" maxlength="60" placeholder="e.g. My warm Harman" class="w-full mt-1 mb-3" style="height:34px;padding:0 10px;background:var(--bg-input);border:1px solid var(--line);border-radius:var(--r-sm);color:var(--text-hi);font-size:var(--t-sm);">
+                    <label class="type-micro font-black uppercase tracking-wider" style="color: var(--text-lo);">Baseline</label>
+                    <select id="pt-base" class="w-full mt-1 mb-3" style="height:34px;padding:0 8px;background:var(--bg-input);border:1px solid var(--line);border-radius:var(--r-sm);color:var(--text-hi);font-size:var(--t-sm);">
+                        ${bases.map(b => `<option value="${esc(b.val)}" ${b.val === currentBase ? 'selected' : ''}>${esc(b.label)}</option>`).join('')}
+                    </select>
+                    <div class="type-micro font-black uppercase tracking-wider mb-1.5" style="color: var(--text-lo);">Blend in</div>
+                    <label class="pt-opt ${tasteCount ? '' : 'is-disabled'}"><input id="pt-use-taste" type="checkbox" ${tasteCount ? '' : 'disabled'} ${tasteCount ? 'checked' : ''}> <span>❤️ Taste favourites</span><em>${tasteCount ? tasteCount + ' loaded' : 'add favourites in Find'}</em></label>
+                    <label class="pt-opt ${hearingOn ? '' : 'is-disabled'}"><input id="pt-use-hearing" type="checkbox" ${hearingOn ? '' : 'disabled'} ${hearingOn ? 'checked' : ''}> <span>👂 Hearing calibration</span><em>${hearingOn ? 'measured' : 'run the hearing test'}</em></label>
+                    <label class="pt-opt ${resoOn ? '' : 'is-disabled'}"><input id="pt-use-reso" type="checkbox" ${resoOn ? '' : 'disabled'} ${resoOn ? 'checked' : ''}> <span>🎯 Canal resonance</span><em>${resoOn ? Math.round(resoHz).toLocaleString() + ' Hz' : 'lock a peak in Test Lab'}</em></label>
+                    <label class="pt-opt ${trained ? '' : 'is-disabled'}"><input id="pt-use-train" type="checkbox" ${trained ? '' : 'disabled'} ${trained ? 'checked' : ''}> <span>🧪 Trainer tilt</span><em>${trained ? trained.rounds + ' rounds' : 'run the trainer'}</em></label>
+                    <div class="flex gap-2 mt-3">
+                        <button id="pt-preview" type="button" class="btn-clear cursor-pointer" style="height:32px;padding:0 12px;border-radius:var(--r-sm);">Preview</button>
+                        <button id="pt-save" type="button" class="cta-primary no-tactile cursor-pointer" style="height:32px;padding:0 14px;border-radius:var(--r-sm);">Save &amp; apply</button>
+                    </div>
+                </div>
+                <div>
+                    <div class="type-micro font-black uppercase tracking-wider mb-1.5" style="color: var(--text-lo);">Preview</div>
+                    <div class="pt-preview-box"><canvas id="pt-canvas" width="420" height="150"></canvas></div>
+                    <div id="pt-summary" class="type-xs mt-2 leading-relaxed" style="color: var(--text-mid);">Pick a baseline and press Preview.</div>
+                    <div class="type-micro font-black uppercase tracking-wider mt-4 mb-1.5" style="color: var(--text-lo);">Saved targets</div>
+                    <div id="pt-list" class="grid gap-1.5">${saved.length ? '' : '<div class="type-xs" style="color:var(--text-lo);">No personal targets yet.</div>'}</div>
+                </div>
+            </div>`;
+
+        body.querySelectorAll('#pt-use-taste, #pt-use-hearing, #pt-use-reso, #pt-use-train, #pt-base').forEach(el => {
+            el.addEventListener('change', () => this.previewTargets());
+        });
+        body.querySelector('#pt-preview').addEventListener('click', () => this.previewTargets());
+        body.querySelector('#pt-save').addEventListener('click', () => this.saveFromForm());
+        this._renderSavedTargetList(body, saved);
+        this.previewTargets();
+    },
+
+    _renderSavedTargetList: function (body, saved) {
+        const list = body.querySelector('#pt-list');
+        if (!list) return;
+        list.innerHTML = '';
+        saved.forEach(t => {
+            const row = document.createElement('div');
+            row.className = 'flex items-center gap-2';
+            row.style.cssText = 'padding:6px 8px;background:var(--bg-input);border:1px solid var(--line);border-radius:var(--r-sm);';
+            row.innerHTML = `<span class="type-xs font-semibold truncate flex-1" style="color:var(--text-hi);" title="${esc(t.summary || '')}">⭐ ${esc(t.name)}</span>`;
+            const apply = document.createElement('button');
+            apply.type = 'button';
+            apply.className = 'btn-clear cursor-pointer type-micro';
+            apply.style.cssText = 'height:26px;padding:0 9px;border-radius:var(--r-xs);';
+            apply.textContent = PEQDB_Module.targetMode === t.id ? 'Applied' : 'Apply';
+            apply.disabled = PEQDB_Module.targetMode === t.id;
+            apply.addEventListener('click', () => {
+                PEQDB_Module.setTarget(t.id);
+                this.renderTargetsTab();
+                showToast('Applied "' + t.name + '" as the target.', '⭐');
+            });
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'type-micro cursor-pointer';
+            del.style.cssText = 'height:26px;padding:0 7px;background:transparent;border:1px solid transparent;color:var(--text-lo);border-radius:var(--r-xs);';
+            del.textContent = '✕';
+            del.title = 'Delete this target';
+            del.addEventListener('click', () => this.deleteTarget(t.id));
+            row.appendChild(apply);
+            row.appendChild(del);
+            list.appendChild(row);
+        });
+    },
+
+    _formOptions: function () {
+        const q = (id) => {
+            const el = this._modal.querySelector(id);
+            return el ? el.checked : false;
+        };
+        return {
+            baseId: this._modal.querySelector('#pt-base').value || 'harman',
+            useTaste: q('#pt-use-taste'),
+            useHearing: q('#pt-use-hearing'),
+            useResonance: q('#pt-use-reso'),
+            useTrained: q('#pt-use-train')
+        };
+    },
+
+    previewTargets: async function () {
+        if (this._previewBusy) return;
+        this._previewBusy = true;
+        try {
+            const opts = this._formOptions();
+            const built = await this.buildCurve(opts);
+            this._preview = built;
+            const canvas = this._modal.querySelector('#pt-canvas');
+            if (canvas) this._drawPreview(canvas, built.curve, built.grid);
+            const summary = this._modal.querySelector('#pt-summary');
+            if (summary) summary.textContent = built.summary;
+        } catch (e) {
+            console.error('[My Sound] preview failed', e);
+            const summary = this._modal.querySelector('#pt-summary');
+            if (summary) summary.textContent = 'Could not build a preview: ' + (e && e.message ? e.message : e);
+        } finally {
+            this._previewBusy = false;
+        }
+    },
+
+    _drawPreview: function (canvas, curve, grid) {
+        const dpr = window.devicePixelRatio || 1;
+        const cssW = canvas.clientWidth || 420, cssH = canvas.clientHeight || 150;
+        if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+            canvas.width = Math.round(cssW * dpr);
+            canvas.height = Math.round(cssH * dpr);
+        }
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, cssW, cssH);
+        ctx.fillStyle = '#050507';
+        ctx.fillRect(0, 0, cssW, cssH);
+        const padL = 26, padR = 8, padT = 10, padB = 18;
+        const fMin = 20, fMax = 20000;
+        const x = (f) => padL + (Math.log10(f) - Math.log10(fMin)) / (Math.log10(fMax) - Math.log10(fMin)) * (cssW - padL - padR);
+        const y = (db) => padT + (100 - db) / (100 - 50) * (cssH - padT - padB);
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        ctx.lineWidth = 1;
+        [50, 60, 70, 80, 90, 100].forEach(db => {
+            ctx.beginPath(); ctx.moveTo(padL, y(db)); ctx.lineTo(cssW - padR, y(db)); ctx.stroke();
+        });
+        [20, 100, 1000, 10000, 20000].forEach(f => {
+            ctx.beginPath(); ctx.moveTo(x(f), padT); ctx.lineTo(x(f), cssH - padB); ctx.stroke();
+        });
+        ctx.strokeStyle = '#60a5fa';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i < grid.length; i++) {
+            const px = x(grid[i]), py = y(curve[i]);
+            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.font = '9px monospace';
+        ctx.fillText('20', 2, cssH - 6);
+        ctx.fillText('1k', x(1000) - 5, cssH - 6);
+        ctx.fillText('20k', cssW - 22, cssH - 6);
+    },
+
+    saveFromForm: async function () {
+        const nameEl = this._modal.querySelector('#pt-name');
+        const name = nameEl ? nameEl.value : '';
+        if (!String(name || '').trim()) { showToast('Give this target a name first.', '⚠️'); return; }
+        try {
+            await this.saveTarget(name, this._formOptions());
+            this.renderTargetsTab();
+        } catch (e) {
+            showToast('Could not build that target: ' + (e && e.message ? e.message : e), '⚠️');
+        }
+    },
+
+    // ------------------------------------------------------------ Trainer ----
+    renderTrainerTab: function () {
+        const body = this._modal.querySelector('#my-sound-body');
+        const trained = this._trainedPrefs();
+        const t = this._trainer;
+        body.innerHTML = `
+            <div class="grid gap-4" style="grid-template-columns: minmax(0,1.1fr) minmax(0,0.9fr);">
+                <div>
+                    <div class="type-sm font-semibold" style="color:var(--text-hi);">Which tilt do you actually prefer?</div>
+                    <p class="type-xs mt-1 leading-relaxed" style="color:var(--text-mid);">Eight short A/B comparisons over a synthesized loop. Each pair differs by one band — bass weight, warmth, presence, treble or air. Pick the one that sounds more natural; the trainer turns your wins into a small tilt that can be blended into a personal target.</p>
+                    <div id="pt-train-stage" class="mt-3"></div>
+                </div>
+                <div>
+                    <div class="type-micro font-black uppercase tracking-wider mb-1.5" style="color:var(--text-lo);">Learned preference</div>
+                    <div id="pt-train-summary" class="type-xs leading-relaxed" style="color:var(--text-mid);">${trained ? this._trainedSummaryText(trained) : 'No result yet — run the trainer.'}</div>
+                    <div class="type-micro mt-3" style="color:var(--text-lo);">The loop is generated locally (no files, no uploads). Use headphones; pause your music first.</div>
+                </div>
+            </div>`;
+        if (!t || !t.active) this._renderTrainerIdle();
+        else this._renderTrainerRound();
+    },
+
+    _trainedSummaryText: function (p) {
+        const labels = { bass: 'Bass', warmth: 'Warmth', mid: 'Presence', treble: 'Treble', air: 'Air' };
+        const parts = Object.keys(labels).filter(k => Math.abs(p.values[k] || 0) >= 0.1)
+            .map(k => `${labels[k]} ${p.values[k] > 0 ? '+' : ''}${p.values[k].toFixed(1)} dB`);
+        return (parts.length ? parts.join(' · ') : 'Neutral (no clear tilt)') + ` — ${p.rounds} rounds.`;
+    },
+
+    _renderTrainerIdle: function () {
+        const stage = this._modal.querySelector('#pt-train-stage');
+        if (!stage) return;
+        stage.innerHTML = `
+            <div class="pt-preview-box flex flex-col items-center justify-center gap-2" style="height:168px;">
+                <span style="font-size:32px;">🧪</span>
+                <button id="pt-train-start" type="button" class="cta-primary no-tactile cursor-pointer" style="height:34px;padding:0 18px;border-radius:var(--r-sm);">Start 8-round trainer</button>
+                <span class="type-micro" style="color:var(--text-lo);">Takes about a minute</span>
+            </div>`;
+        stage.querySelector('#pt-train-start').addEventListener('click', () => this.startTrainer());
+    },
+
+    _trainerDims: ['bass', 'treble', 'warmth', 'mid', 'air', 'bass', 'treble', 'mid'],
+
+    startTrainer: async function () {
+        try {
+            this._initTrainerAudio();
+        } catch (e) {
+            showToast('Could not start the trainer audio: ' + (e && e.message ? e.message : e), '⚠️');
+            return;
+        }
+        this._trainer = {
+            active: true,
+            round: 0,
+            total: this._trainerDims.length,
+            scores: { bass: 0, treble: 0, warmth: 0, mid: 0, air: 0 },
+            counts: { bass: 0, treble: 0, warmth: 0, mid: 0, air: 0 },
+            current: null,
+            choices: []
+        };
+        this._nextTrainerRound();
+    },
+
+    _nextTrainerRound: function () {
+        const t = this._trainer;
+        if (!t || !t.active) return;
+        if (t.round >= t.total) { this._finishTrainer(); return; }
+        const dim = this._trainerDims[t.round];
+        const flip = Math.random() < 0.5 ? 1 : -1;
+        const amount = 2.2;
+        // A is +amount, B is -amount (or the reverse). The side is randomized so
+        // the answer is about sound, not about always pressing A.
+        const aSign = flip;
+        t.current = { dim, aSign, bSign: -flip };
+        this._applyTrainerGains(dim, aSign * amount, -flip * amount);
+        this._setTrainerSide('A');
+        this._renderTrainerRound();
+    },
+
+    _renderTrainerRound: function () {
+        const stage = this._modal.querySelector('#pt-train-stage');
+        const t = this._trainer;
+        if (!stage || !t || !t.current) return;
+        const pct = Math.round((t.round / t.total) * 100);
+        stage.innerHTML = `
+            <div class="flex items-center justify-between type-micro font-black uppercase tracking-wider mb-1" style="color:var(--text-lo);">
+                <span>Round ${t.round + 1} / ${t.total}</span>
+                <span>${esc(this._dimLabel(t.current.dim))}</span>
+            </div>
+            <div style="height:4px;background:var(--bg-input);border-radius:99px;overflow:hidden;margin-bottom:10px;"><div style="height:100%;width:${pct}%;background:var(--accent);"></div></div>
+            <div class="pt-ab-row">
+                <button id="pt-ab-a" type="button" class="pt-ab-btn is-on">A</button>
+                <button id="pt-ab-b" type="button" class="pt-ab-btn">B</button>
+                <button id="pt-ab-toggle" type="button" class="btn-clear cursor-pointer type-micro" style="height:38px;padding:0 10px;border-radius:var(--r-sm);" title="Switch between A and B">🔀</button>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mt-3">
+                <button id="pt-pick-a" type="button" class="cta-primary no-tactile cursor-pointer" style="height:38px;border-radius:var(--r-sm);">Prefer A</button>
+                <button id="pt-pick-b" type="button" class="cta-primary no-tactile cursor-pointer" style="height:38px;border-radius:var(--r-sm);">Prefer B</button>
+            </div>
+            <div class="flex justify-between mt-2.5">
+                <button id="pt-train-stop" type="button" class="type-micro cursor-pointer" style="background:transparent;border:0;color:var(--text-lo);">Stop</button>
+                <span class="type-micro" style="color:var(--text-lo);">The level is matched; only the tilt changes.</span>
+            </div>`;
+        const choose = (side) => this._chooseTrainerSide(side);
+        stage.querySelector('#pt-ab-a').addEventListener('click', () => this._setTrainerSide('A'));
+        stage.querySelector('#pt-ab-b').addEventListener('click', () => this._setTrainerSide('B'));
+        stage.querySelector('#pt-ab-toggle').addEventListener('click', () => this._setTrainerSide(this._trainerSide === 'A' ? 'B' : 'A'));
+        stage.querySelector('#pt-pick-a').addEventListener('click', () => choose('A'));
+        stage.querySelector('#pt-pick-b').addEventListener('click', () => choose('B'));
+        stage.querySelector('#pt-train-stop').addEventListener('click', () => this.stopTrainer(true));
+    },
+
+    _dimLabel: function (dim) {
+        return ({ bass: 'Bass weight', treble: 'Treble energy', warmth: 'Lower-mid warmth', mid: 'Vocal presence', air: 'Air / sparkle' })[dim] || dim;
+    },
+
+    _chooseTrainerSide: function (side) {
+        const t = this._trainer;
+        if (!t || !t.active || !t.current) return;
+        const sign = side === 'A' ? t.current.aSign : t.current.bSign;
+        t.scores[t.current.dim] += sign;
+        t.counts[t.current.dim] += 1;
+        t.choices.push({ dim: t.current.dim, sign });
+        t.round++;
+        this._nextTrainerRound();
+    },
+
+    _finishTrainer: function () {
+        const t = this._trainer;
+        const values = {};
+        ['bass', 'treble', 'warmth', 'mid', 'air'].forEach(k => {
+            values[k] = t.counts[k] ? this._clamp((t.scores[k] / t.counts[k]) * 2.4, -3, 3) : 0;
+        });
+        const record = { rounds: t.round, values, updatedAt: Date.now() };
+        this._writeJSON(this.TRAIN_KEY, record);
+        this.stopTrainer(false);
+        this._trainer = null;
+        this.renderTrainerTab();
+        showToast('Preference trainer complete — ' + this._trainedSummaryText(this._trainedPrefs()), '🧪', { duration: 6000 });
+    },
+
+    stopTrainer: function (announce) {
+        if (this._trainer) this._trainer.active = false;
+        this._stopTrainerAudio();
+        if (announce) {
+            this._trainer = null;
+            this.renderTrainerTab();
+            showToast('Trainer stopped — your existing result is unchanged.', '⏹️');
+        }
+    },
+
+    _initTrainerAudio: function () {
+        if (this._audioCtx) return;
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) throw new Error('Web Audio is unavailable.');
+        const ctx = new Ctx({ latencyHint: 'interactive' });
+        const sr = ctx.sampleRate;
+        const dur = 4;
+        const buffer = ctx.createBuffer(2, Math.floor(sr * dur), sr);
+        for (let ch = 0; ch < 2; ch++) {
+            const d = buffer.getChannelData(ch);
+            let b0 = 0, b1 = 0, b2 = 0;
+            const chord = [110, 164.81, 220, 277.18, 329.63, 440];
+            for (let i = 0; i < d.length; i++) {
+                const white = Math.random() * 2 - 1;
+                b0 = 0.99765 * b0 + white * 0.0990460;
+                b1 = 0.96300 * b1 + white * 0.2965164;
+                b2 = 0.57000 * b2 + white * 1.0526913;
+                const pink = (b0 + b1 + b2 + white * 0.1848) * 0.16;
+                let tone = 0;
+                const tw = (2 * Math.PI * i) / d.length;
+                for (let k = 0; k < chord.length; k++) {
+                    const f = chord[k];
+                    // Quantize to the loop length so every partial closes exactly.
+                    const cycles = Math.round(f * dur);
+                    tone += Math.sin((2 * Math.PI * cycles * i) / d.length + k * 0.7) * (0.12 / (k + 1));
+                    tone += Math.sin((2 * Math.PI * cycles * 2 * i) / d.length + k) * (0.035 / (k + 1));
+                }
+                const pulse = 0.72 + 0.28 * Math.sin(tw * 2 + (ch ? 1.2 : 0));
+                d[i] = (pink + tone) * pulse * 0.8;
+            }
+            // Loop without a click: crossfade the tail into the head.
+            const fade = Math.floor(sr * 0.04);
+            for (let i = 0; i < fade; i++) {
+                const a = i / fade;
+                d[i] = d[i] * a + d[d.length - fade + i] * (1 - a);
+            }
+        }
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.loop = true;
+        const specs = [
+            { type: 'lowshelf', hz: 105, q: 0.7 },
+            { type: 'peaking', hz: 250, q: 0.9 },
+            { type: 'peaking', hz: 2600, q: 1.3 },
+            { type: 'highshelf', hz: 5500, q: 0.7 },
+            { type: 'highshelf', hz: 11000, q: 0.7 }
+        ];
+        const makeChain = () => {
+            const filters = specs.map(s => {
+                const f = ctx.createBiquadFilter();
+                f.type = s.type; f.frequency.value = s.hz; f.Q.value = s.q; f.gain.value = 0;
+                return f;
+            });
+            const gain = ctx.createGain();
+            gain.gain.value = 0;
+            for (let i = 0; i < filters.length; i++) {
+                if (i === 0) source.connect(filters[i]); else filters[i - 1].connect(filters[i]);
+            }
+            filters[filters.length - 1].connect(gain);
+            gain.connect(ctx.destination);
+            return { filters, gain };
+        };
+        const chainA = makeChain();
+        const chainB = makeChain();
+        this._audioCtx = ctx;
+        this._audioSource = source;
+        this._audioChains = { A: chainA, B: chainB };
+        this._trainerSide = 'A';
+        source.start(0);
+        // Honour the app's output-device choice where Chromium supports it.
+        try {
+            const saved = localStorage.getItem('settings_audio_output');
+            if (saved && typeof ctx.setSinkId === 'function') ctx.setSinkId(saved).catch(() => {});
+        } catch (e) {}
+    },
+
+    _applyTrainerGains: function (dim, gainA, gainB) {
+        const chains = this._audioChains;
+        if (!chains) return;
+        const info = {
+            bass: { index: 0 }, warmth: { index: 1 }, mid: { index: 2 },
+            treble: { index: 3 }, air: { index: 4 }
+        }[dim];
+        if (!info) return;
+        const now = this._audioCtx.currentTime;
+        const set = (chain, value) => {
+            chain.filters.forEach((f, i) => {
+                f.gain.cancelScheduledValues(now);
+                f.gain.setTargetAtTime(i === info.index ? value : 0, now, 0.03);
+            });
+        };
+        set(chains.A, gainA);
+        set(chains.B, gainB);
+    },
+
+    _setTrainerSide: function (side) {
+        this._trainerSide = side;
+        const chains = this._audioChains, ctx = this._audioCtx;
+        if (!chains || !ctx) return;
+        const now = ctx.currentTime;
+        chains.A.gain.gain.setTargetAtTime(side === 'A' ? 0.9 : 0, now, 0.02);
+        chains.B.gain.gain.setTargetAtTime(side === 'B' ? 0.9 : 0, now, 0.02);
+        const a = this._modal && this._modal.querySelector('#pt-ab-a');
+        const b = this._modal && this._modal.querySelector('#pt-ab-b');
+        if (a) a.classList.toggle('is-on', side === 'A');
+        if (b) b.classList.toggle('is-on', side === 'B');
+    },
+
+    _stopTrainerAudio: function () {
+        try { if (this._audioSource) this._audioSource.stop(); } catch (e) {}
+        try { if (this._audioCtx && this._audioCtx.state !== 'closed') this._audioCtx.close(); } catch (e) {}
+        this._audioSource = null;
+        this._audioCtx = null;
+        this._audioChains = null;
+    },
+
+    // --------------------------------------------------------------- Coach ----
+    renderFixTab: function () {
+        const body = this._modal.querySelector('#my-sound-body');
+        if (typeof EQ_Module === 'undefined' || typeof EQ_Module.renderCoachPanel !== 'function') {
+            body.innerHTML = '<div class="type-xs" style="color:var(--text-mid);">The coach is unavailable because the EQ module did not load.</div>';
+            return;
+        }
+        EQ_Module.renderCoachPanel(body);
+    }
+};
+
+if (typeof window !== 'undefined') window.PersonalTargets = PersonalTargets;
+
+// Attach the entry points after all method-set files have been concatenated.
+// A DOMContentLoaded guard is used because the bundle can execute after the DOM
+// is already parsed (it is appended at the end of <body>).
+(function () {
+    const boot = () => {
+        try { PersonalTargets.install(); } catch (e) { console.warn('[My Sound] install failed', e); }
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+    else boot();
+})();
+
+/* ===== app/js/eq-coach.js ===== */
+// Guided "fix my sound" coach. A short symptom interview that turns plain
+// language into a small, reversible set of EQ moves. It is deliberately not a
+// black box: every recommendation names the band, the gain and what it should
+// change, and Apply is one Undo away (toast action restores a full snapshot).
+//
+// The panel is rendered inside the My Sound hub (personal-targets.js), which is
+// why it takes a container instead of owning a modal.
+const EQ_CoachMethods = {
+    COACH_SYMPTOMS: [
+        {
+            id: 'bass-light', emoji: '🥁', label: 'Bass feels light',
+            why: 'A low shelf at 100 Hz adds weight without thickening the mids.',
+            moves: [{ type: 'lowshelf', hz: 100, q: 0.7, gain: 4.0 }]
+        },
+        {
+            id: 'bass-bloated', emoji: '🌊', label: 'Bass is bloated / boomy',
+            why: 'Trim the sub-bass shelf; keep the punch around 150–250 Hz intact.',
+            moves: [{ type: 'lowshelf', hz: 90, q: 0.7, gain: -3.5 }]
+        },
+        {
+            id: 'muddy', emoji: '🌫️', label: 'Mids sound muddy',
+            why: 'A gentle cut at 250 Hz clears congestion without hollowing vocals.',
+            moves: [{ type: 'peaking', hz: 260, q: 0.9, gain: -2.5 }]
+        },
+        {
+            id: 'shouty', emoji: '📣', label: 'Vocals are shouty',
+            why: 'The 2–3 kHz pinna region is too forward for your ears.',
+            moves: [{ type: 'peaking', hz: 2600, q: 1.3, gain: -3.0 }]
+        },
+        {
+            id: 'sibilant', emoji: '🐍', label: '“S” sounds pierce',
+            why: 'A narrow cut at 6.5 kHz tames sibilance without dulling the whole treble.',
+            moves: [{ type: 'peaking', hz: 6500, q: 2.4, gain: -3.5 }]
+        },
+        {
+            id: 'harsh', emoji: '⚡', label: 'Treble is harsh',
+            why: 'A high shelf softens the whole top octave instead of notching one band.',
+            moves: [{ type: 'highshelf', hz: 6000, q: 0.7, gain: -3.0 }]
+        },
+        {
+            id: 'dull', emoji: '🌑', label: 'Treble sounds dull',
+            why: 'A high shelf at 7 kHz restores air and detail.',
+            moves: [{ type: 'highshelf', hz: 7000, q: 0.7, gain: 3.0 }]
+        },
+        {
+            id: 'thin', emoji: '🪶', label: 'Sound is thin / hollow',
+            why: 'Lift the lower mids a touch and reduce any 1 kHz scoop.',
+            moves: [
+                { type: 'peaking', hz: 180, q: 0.8, gain: 2.0 },
+                { type: 'peaking', hz: 800, q: 1.0, gain: 1.5 }
+            ]
+        },
+        {
+            id: 'metallic', emoji: '🔔', label: 'Upper mids ring',
+            why: 'A focused cut around 4 kHz removes the metallic edge.',
+            moves: [{ type: 'peaking', hz: 4000, q: 1.8, gain: -3.0 }]
+        },
+        {
+            id: 'imbalance', emoji: '↔️', label: 'One side is louder',
+            why: 'That is a channel/fit problem, not an EQ problem. Measure it in Test Lab → Balance first.',
+            moves: [], route: 'balance'
+        }
+    ],
+
+    _coachSelected: null,
+
+    renderCoachPanel: function (container) {
+        if (!this._coachSelected) this._coachSelected = new Set();
+        const selected = this._coachSelected;
+        container.innerHTML = `
+            <div class="grid gap-4" style="grid-template-columns: minmax(0,1.1fr) minmax(0,0.9fr);">
+                <div>
+                    <div class="type-sm font-semibold" style="color:var(--text-hi);">What is wrong with the sound?</div>
+                    <p class="type-xs mt-1 leading-relaxed" style="color:var(--text-mid);">Pick every symptom you recognise. The coach only uses small, reversible moves and never touches bands it did not list.</p>
+                    <div id="coach-chips" class="flex flex-wrap gap-1.5 mt-2.5"></div>
+                    <div class="flex gap-2 mt-3">
+                        <button id="coach-apply" type="button" class="cta-primary no-tactile cursor-pointer" style="height:32px;padding:0 14px;border-radius:var(--r-sm);" disabled>Apply to EQ</button>
+                        <button id="coach-clear" type="button" class="btn-clear cursor-pointer" style="height:32px;padding:0 12px;border-radius:var(--r-sm);">Clear</button>
+                    </div>
+                </div>
+                <div>
+                    <div class="type-micro font-black uppercase tracking-wider mb-1.5" style="color:var(--text-lo);">Recommendation</div>
+                    <div id="coach-result" class="type-xs leading-relaxed" style="color:var(--text-mid);">Select a symptom to see the fix.</div>
+                </div>
+            </div>`;
+
+        const chips = container.querySelector('#coach-chips');
+        this.COACH_SYMPTOMS.forEach(sym => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'pt-chip cursor-pointer' + (selected.has(sym.id) ? ' is-on' : '');
+            b.dataset.sym = sym.id;
+            b.textContent = sym.emoji + ' ' + sym.label;
+            b.addEventListener('click', () => {
+                if (selected.has(sym.id)) selected.delete(sym.id); else selected.add(sym.id);
+                b.classList.toggle('is-on', selected.has(sym.id));
+                this._renderCoachResult(container);
+            });
+            chips.appendChild(b);
+        });
+        container.querySelector('#coach-clear').addEventListener('click', () => {
+            selected.clear();
+            chips.querySelectorAll('.pt-chip').forEach(c => c.classList.remove('is-on'));
+            this._renderCoachResult(container);
+        });
+        container.querySelector('#coach-apply').addEventListener('click', () => this._applyCoach(container));
+        this._renderCoachResult(container);
+    },
+
+    _coachMoves: function () {
+        const chosen = this.COACH_SYMPTOMS.filter(s => this._coachSelected.has(s.id));
+        const merged = [];
+        chosen.forEach(sym => {
+            sym.moves.forEach(m => {
+                // Coalesce identical/near-identical bands so two symptoms that
+                // both cut 250 Hz produce one move, not two competing ones.
+                const hit = merged.find(x => x.type === m.type && Math.abs(Math.log(x.hz / m.hz)) < 0.08);
+                if (hit) hit.gain = this._clampCoachGain(hit.gain + m.gain);
+                else merged.push({ type: m.type, hz: m.hz, q: m.q, gain: m.gain, why: sym.why });
+            });
+        });
+        return { chosen, moves: merged };
+    },
+
+    _clampCoachGain: function (g) {
+        return Math.max(-8, Math.min(8, Math.round(g * 10) / 10));
+    },
+
+    _renderCoachResult: function (container) {
+        const result = container.querySelector('#coach-result');
+        const apply = container.querySelector('#coach-apply');
+        if (!result) return;
+        const { chosen, moves } = this._coachMoves();
+        if (!chosen.length) {
+            result.innerHTML = 'Select a symptom to see the fix.';
+            if (apply) apply.disabled = true;
+            return;
+        }
+        if (!moves.length) {
+            result.innerHTML = chosen.map(s => `<div class="mb-2"><strong style="color:var(--text-hi)">${s.emoji} ${esc(s.label)}</strong><br>${esc(s.why)}</div>`).join('') +
+                '<button id="coach-open-balance" type="button" class="btn-clear cursor-pointer type-micro mt-1" style="height:28px;padding:0 9px;border-radius:var(--r-xs);">Open Test Lab → Balance</button>';
+            if (apply) apply.disabled = true;
+            const go = result.querySelector('#coach-open-balance');
+            if (go) go.addEventListener('click', () => {
+                PersonalTargets.close();
+                if (typeof TestLab !== 'undefined' && TestLab.switchLeftTab) TestLab.switchLeftTab('balance');
+                if (typeof App !== 'undefined') App.switchTab('testlab');
+            });
+            return;
+        }
+        const typeLabel = { lowshelf: 'Low shelf', highshelf: 'High shelf', peaking: 'Peak' };
+        result.innerHTML = chosen.map(s => `<div class="mb-2"><strong style="color:var(--text-hi)">${s.emoji} ${esc(s.label)}</strong><br>${esc(s.why)}</div>`).join('') +
+            '<div class="type-micro font-black uppercase tracking-wider mt-2 mb-1" style="color:var(--text-lo);">Moves</div>' +
+            moves.map(m => `<div class="flex justify-between gap-2 py-0.5" style="border-bottom:1px solid var(--line);"><span>${typeLabel[m.type] || 'Peak'} · ${Math.round(m.hz).toLocaleString()} Hz</span><strong style="color:${m.gain > 0 ? 'var(--accent-blue)' : 'var(--accent-amber)'}">${m.gain > 0 ? '+' : ''}${m.gain.toFixed(1)} dB</strong></div>`).join('') +
+            '<div class="type-micro mt-2" style="color:var(--text-lo);">Applied to bands 1–' + moves.length + '. Undo is offered in the toast.</div>';
+        if (apply) apply.disabled = false;
+    },
+
+    _applyCoach: function (container) {
+        if (typeof EQ_Module === 'undefined' || !Array.isArray(EQ_Module.bands)) return;
+        const { moves } = this._coachMoves();
+        if (!moves.length) return;
+        const snap = EQ_Module.snapshotEQState ? EQ_Module.snapshotEQState() : null;
+        const count = Math.min(moves.length, EQ_Module.bands.length);
+        for (let i = 0; i < EQ_Module.bands.length; i++) {
+            if (i < count) {
+                const m = moves[i];
+                EQ_Module.handleTypeChange(i, m.type);
+                EQ_Module.handleFreqNumInput(i, m.hz);
+                EQ_Module.handleQNumInput(i, m.q);
+                EQ_Module.handleGainNumInput(i, m.gain);
+            } else {
+                // Leave unrelated bands alone except for the bands the coach
+                // previously wrote into. We do not know which those were, so
+                // only zero the unused tail if it is completely flat already.
+                const b = EQ_Module.bands[i];
+                if (b && Math.abs(Number(b.gain) || 0) < 0.001) {
+                    EQ_Module.handleGainNumInput(i, 0);
+                }
+            }
+        }
+        if (typeof EQ_Module.drawCurve === 'function') EQ_Module.drawCurve();
+        showToast('Coach applied ' + count + ' EQ move' + (count === 1 ? '' : 's') + '.', '🩺', {
+            action: snap ? {
+                label: 'Undo',
+                onClick: () => {
+                    try {
+                        EQ_Module.restoreEQState(snap);
+                        showToast('EQ restored.', '↩️');
+                    } catch (e) {
+                        console.error('[Coach] undo failed', e);
+                    }
+                }
+            } : null
+        });
+    }
+};
+
+Object.assign(EQ_Module, EQ_CoachMethods);
+
+/* ===== app/js/find-extras.js ===== */
+// Find extras: side-by-side spec comparison, the price/performance value map,
+// and the one-click "match this set to that set" solve.
+//
+// These three tools all answer the same follow-up question after a scan:
+// "I have a shortlist — how do I choose, and how do I make one sound like the
+// other?" They reuse the already-computed match list and the existing AutoEQ
+// solver, so nothing here re-scans the catalogue.
+const Find_ExtrasMethods = {
+    _checkedFindItems: function () {
+        const checked = Array.from(document.querySelectorAll('.find-compare-cb:checked'));
+        return checked.map(cb => ({
+            id: cb.getAttribute('data-id'),
+            name: cb.getAttribute('data-name')
+        })).filter(x => x.id);
+    },
+
+    _findItemRecord: function (id) {
+        const item = (PEQDB_Module.STATE.dataset || []).find(d => d.id === id);
+        const match = (this._lastMatches || []).find(m => m.id === id || (m.dbEntry && m.dbEntry.id === id));
+        const db = (match && match.dbEntry) || (this.iemDatabase || []).find(d => d.id === id) || item;
+        return { item, match, db };
+    },
+
+    _specRows: function (id) {
+        const { item, match, db } = this._findItemRecord(id);
+        const src = db || item || {};
+        const tags = Array.isArray(src.tags) ? src.tags : [];
+        const files = Array.isArray(src.files) ? src.files : [];
+        const sourceCount = (match && match.sourceCount) || src.sourceCount || files.length || 1;
+        const spread = Number((match && match.consensusSpread) || src.consensusSpread || 0);
+        return {
+            id,
+            name: (match && match.name) || src.name || id,
+            brand: src.brand || '',
+            model: src.model || '',
+            variant: src.variant || '',
+            year: src.year || '',
+            price: Number(src.price_usd || src.price || 0) || null,
+            driver: src.driver_config || src.driver_type || '',
+            driverType: src.driver_type || '',
+            form: src.form_factor || '',
+            connector: src.connector || '',
+            impedance: Number(src.impedance) || null,
+            sensitivity: Number(src.sensitivity) || null,
+            tags,
+            files: sourceCount,
+            spread,
+            score: (match && Number.isFinite(Number(match.score))) ? Number(match.score) : null,
+            hasConsensus: !!(match && match.hasConsensus)
+        };
+    },
+
+    openSpecCompare: function () {
+        const selected = this._checkedFindItems();
+        if (selected.length < 2 || selected.length > 4) {
+            showToast('Check 2–4 IEMs first, then open Compare specs.', '⚠️');
+            return;
+        }
+        const rows = selected.map(s => this._specRows(s.id));
+        const defs = [
+            ['Match score', r => r.score === null ? '—' : r.score.toFixed(1) + '%'],
+            ['Price', r => r.price ? '$' + r.price : '—'],
+            ['Year', r => r.year || '—'],
+            ['Driver', r => r.driver || '—'],
+            ['Form factor', r => r.form || '—'],
+            ['Connector', r => r.connector || '—'],
+            ['Impedance', r => r.impedance ? r.impedance + ' Ω' : '—'],
+            ['Sensitivity', r => r.sensitivity ? r.sensitivity + ' dB' : '—'],
+            ['Measurements', r => r.files + (r.files === 1 ? ' source' : ' sources')],
+            ['Source spread', r => r.spread > 0 ? '±' + r.spread.toFixed(2) + ' dB' : (r.hasConsensus ? 'consensus' : 'single source')],
+            ['Tags', r => r.tags.length ? r.tags.join(' · ') : '—']
+        ];
+        const escCell = (v) => esc(String(v));
+        const actions = [];
+        if (rows.length >= 2) {
+            actions.push({
+                label: '🪄 Match ' + this._shortName(rows[0]) + ' → ' + this._shortName(rows[1]),
+                title: 'Load the first as Base, the second as Target, and solve AutoEQ',
+                onClick: () => {
+                    UIKit.closeReader();
+                    this.matchSound(rows[0].id, rows[1].id);
+                }
+            });
+            actions.push({
+                label: '🪄 Match ' + this._shortName(rows[1]) + ' → ' + this._shortName(rows[0]),
+                title: 'Load the second as Base, the first as Target, and solve AutoEQ',
+                onClick: () => {
+                    UIKit.closeReader();
+                    this.matchSound(rows[1].id, rows[0].id);
+                }
+            });
+        }
+        UIKit.read({
+            title: '📊 Compare specs',
+            subtitle: rows.map(r => this._shortName(r)).join('  vs  '),
+            actions,
+            render: (body) => {
+                const table = document.createElement('table');
+                table.style.cssText = 'width:100%;border-collapse:collapse;font-size:var(--t-xs);';
+                const head = document.createElement('thead');
+                head.innerHTML = '<tr><th style="text-align:left;padding:6px 8px;color:var(--text-lo);font-size:var(--t-micro);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--line);">Spec</th>' +
+                    rows.map(r => `<th style="text-align:left;padding:6px 8px;color:var(--text-hi);border-bottom:1px solid var(--line);">${esc(this._shortName(r))}</th>`).join('') + '</tr>';
+                table.appendChild(head);
+                const tbody = document.createElement('tbody');
+                defs.forEach(([label, get]) => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td style="padding:6px 8px;color:var(--text-lo);border-bottom:1px solid var(--line);white-space:nowrap;">${esc(label)}</td>` +
+                        rows.map(r => `<td style="padding:6px 8px;color:var(--text-mid);border-bottom:1px solid var(--line);">${escCell(get(r))}</td>`).join('');
+                    tbody.appendChild(tr);
+                });
+                table.appendChild(tbody);
+                body.appendChild(table);
+                if (rows.some(r => r.files > 1)) {
+                    const note = document.createElement('div');
+                    note.className = 'type-micro';
+                    note.style.cssText = 'margin-top:8px;color:var(--text-lo);line-height:1.5;';
+                    note.textContent = 'Source spread is how far the individual measurements disagree after levelling. A small spread means the score is stable; a large one means the published measurements themselves disagree.';
+                    body.appendChild(note);
+                }
+            }
+        });
+    },
+
+    _shortName: function (r) {
+        const n = r && (r.name || r.id) || '';
+        return n.length > 28 ? n.slice(0, 26) + '…' : n;
+    },
+
+    // Load from as Base, to as Target, then solve. This is the same solver the
+    // EQ workspace uses; the difference is that the two products come from the
+    // Find shortlist with one click instead of two manual role assignments.
+    matchSound: async function (fromId, toId) {
+        const from = (PEQDB_Module.STATE.dataset || []).find(d => d.id === fromId);
+        const to = (PEQDB_Module.STATE.dataset || []).find(d => d.id === toId);
+        if (!from || !to) { showToast('Could not resolve those products.', '⚠️'); return; }
+        const ensure = async (item) => {
+            if (!item.data || item.data.length < 2) {
+                if (typeof CurveIndexer !== 'undefined') await CurveIndexer.loadCurve(item, 0);
+            }
+            return item.data && item.data.length > 1;
+        };
+        const okFrom = await ensure(from);
+        const okTo = await ensure(to);
+        if (!okFrom || !okTo) { showToast('One of those products has no usable measurement.', '⚠️'); return; }
+
+        // Clear through setTarget so the stepper label and hidden selector are
+        // reset from the same place as every other target change; then label
+        // the custom Target card explicitly (targetMode stays empty because
+        // this target is a measured curve, not a catalogue target id).
+        PEQDB_Module.setTarget('');
+        PEQDB_Module.STATE.activeCurves = PEQDB_Module.STATE.activeCurves.filter(c => c.role !== 'base' && c.role !== 'target');
+        const targetBtn = document.getElementById('target-cycle-btn');
+        if (targetBtn) {
+            targetBtn.textContent = '🎯 ' + to.name;
+            targetBtn.title = 'Custom target: ' + to.name;
+        }
+        const colorBase = PEQDB_Module.colorPalette[0];
+        const colorTarget = '#2563eb';
+        PEQDB_Module.STATE.activeCurves.push({
+            uid: from.id + '-match-base-' + Date.now(), id: from.id, name: from.name,
+            data: from.data, color: colorBase, role: 'base', visible: true, offset: 0
+        });
+        PEQDB_Module.STATE.activeCurves.push({
+            uid: to.id + '-match-target-' + Date.now(), id: to.id, name: to.name,
+            data: to.data, color: colorTarget, role: 'target', visible: true, offset: 0
+        });
+        PEQDB_Module.updateAll();
+        App.switchTab('eq');
+        showToast(`Matching ${from.name} → ${to.name}…`, '🪄', { duration: 2200 });
+        try {
+            await PEQDB_Module.generateLeastSquaresAutoEQ();
+        } catch (e) {
+            console.error('[Match sound] solve failed', e);
+            showToast('The match solve failed: ' + (e && e.message ? e.message : e), '⚠️');
+        }
+    },
+
+    openValueMap: function () {
+        const matches = Array.isArray(this._lastMatches) ? this._lastMatches : [];
+        if (!matches.length) {
+            showToast('Run FIND MATCHES first — the value map uses that shortlist.', 'ℹ️');
+            return;
+        }
+        const points = [];
+        matches.forEach(m => {
+            const { db } = this._findItemRecord(m.id);
+            const price = Number((db && (db.price_usd || db.price)) || m.price || 0);
+            const score = Number(m.score);
+            if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(score)) return;
+            points.push({
+                id: m.id,
+                name: m.name || (db && db.name) || m.id,
+                price, score,
+                sources: m.sourceCount || (db && db.files && db.files.length) || 1,
+                form: (db && db.form_factor) || m.formFactor || ''
+            });
+        });
+        if (points.length < 4) {
+            showToast('The current shortlist has too few priced matches for a value map.', 'ℹ️');
+            return;
+        }
+
+        // Pareto frontier: the highest score available at or below each price.
+        // A product on it is not beaten by anything cheaper; a product below it
+        // costs more for less score, which is the useful part of the picture.
+        const sorted = points.slice().sort((a, b) => a.price - b.price);
+        let best = -Infinity;
+        const frontier = [];
+        sorted.forEach(p => {
+            if (p.score > best) { best = p.score; frontier.push(p); }
+        });
+        const frontierIds = new Set(frontier.map(p => p.id));
+        const bestValue = frontier.slice().sort((a, b) => (b.score / Math.log10(b.price + 10)) - (a.score / Math.log10(a.price + 10))).slice(0, 8);
+
+        UIKit.read({
+            title: '💎 Value map',
+            subtitle: `${points.length} priced matches · drag the pointer over a dot for details`,
+            actions: [{
+                label: 'Close',
+                onClick: () => UIKit.closeReader()
+            }],
+            render: (body) => {
+                body.style.position = 'relative';
+                const canvas = document.createElement('canvas');
+                canvas.width = 920;
+                canvas.height = 440;
+                canvas.style.cssText = 'width:100%;height:auto;display:block;background:#050507;border:1px solid var(--line);border-radius:var(--r-xs);';
+                body.appendChild(canvas);
+                const tip = document.createElement('div');
+                tip.style.cssText = 'position:absolute;pointer-events:none;display:none;background:#000;color:#fff;border:1px solid var(--line);padding:4px 6px;font-size:11px;line-height:1.35;z-index:5;white-space:nowrap;';
+                body.appendChild(tip);
+
+                const draw = () => {
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) return;
+                    const W = canvas.width, H = canvas.height;
+                    const padL = 58, padR = 24, padT = 26, padB = 44;
+                    ctx.clearRect(0, 0, W, H);
+                    ctx.fillStyle = '#050507';
+                    ctx.fillRect(0, 0, W, H);
+                    const minP = Math.max(5, Math.floor(Math.min(...points.map(p => p.price)) / 10) * 10);
+                    const maxP = Math.ceil(Math.max(...points.map(p => p.price)) / 10) * 10;
+                    const minS = 0, maxS = 100;
+                    const x = (price) => padL + (Math.log10(price) - Math.log10(minP)) / (Math.log10(maxP) - Math.log10(minP)) * (W - padL - padR);
+                    const y = (score) => padT + (maxS - score) / (maxS - minS) * (H - padT - padB);
+                    // grid
+                    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+                    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+                    ctx.font = '11px ui-monospace, monospace';
+                    ctx.lineWidth = 1;
+                    [0, 25, 50, 75, 100].forEach(s => {
+                        ctx.beginPath(); ctx.moveTo(padL, y(s)); ctx.lineTo(W - padR, y(s)); ctx.stroke();
+                        ctx.fillText(s + '%', 12, y(s) + 4);
+                    });
+                    const ticks = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000].filter(v => v >= minP && v <= maxP);
+                    ticks.forEach(v => {
+                        ctx.beginPath(); ctx.moveTo(x(v), padT); ctx.lineTo(x(v), H - padB); ctx.stroke();
+                        ctx.fillText('$' + v, x(v) - 10, H - 18);
+                    });
+                    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+                    ctx.fillText('PRICE (log)', W / 2 - 32, H - 4);
+                    ctx.save();
+                    ctx.translate(14, H / 2 + 30);
+                    ctx.rotate(-Math.PI / 2);
+                    ctx.fillText('MATCH SCORE', 0, 0);
+                    ctx.restore();
+
+                    // frontier line
+                    if (frontier.length > 1) {
+                        ctx.strokeStyle = 'rgba(52,211,153,0.75)';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        frontier.forEach((p, i) => { if (i === 0) ctx.moveTo(x(p.price), y(p.score)); else ctx.lineTo(x(p.price), y(p.score)); });
+                        ctx.stroke();
+                    }
+                    const drawPoint = (p) => {
+                        const on = frontierIds.has(p.id);
+                        const r = Math.max(4, Math.min(9, 3 + Math.log2(p.sources || 1)));
+                        ctx.beginPath();
+                        ctx.arc(x(p.price), y(p.score), r, 0, Math.PI * 2);
+                        ctx.fillStyle = on ? 'rgba(52,211,153,0.85)' : 'rgba(96,165,250,0.55)';
+                        ctx.fill();
+                        ctx.strokeStyle = on ? '#34d399' : 'rgba(255,255,255,0.25)';
+                        ctx.lineWidth = 1.2;
+                        ctx.stroke();
+                    };
+                    points.forEach(drawPoint);
+
+                    // label the extreme value picks only; labelling every dot
+                    // turns the map into unreadable confetti.
+                    ctx.font = '10px ui-monospace, monospace';
+                    bestValue.slice(0, 4).forEach(p => {
+                        ctx.fillStyle = '#34d399';
+                        const tx = Math.min(W - 150, Math.max(padL, x(p.price) + 8));
+                        ctx.fillText(p.name.length > 22 ? p.name.slice(0, 20) + '…' : p.name, tx, Math.max(padT + 10, y(p.score) - 8));
+                    });
+
+                    canvas._map = { x, y, minP, maxP, points };
+                };
+                draw();
+
+                canvas.addEventListener('mousemove', (e) => {
+                    const rect = canvas.getBoundingClientRect();
+                    const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+                    const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+                    const map = canvas._map;
+                    if (!map) return;
+                    let nearest = null, nd = 16;
+                    map.points.forEach(p => {
+                        const dx = map.x(p.price) - mx, dy = map.y(p.score) - my;
+                        const d = Math.sqrt(dx * dx + dy * dy);
+                        if (d < nd) { nd = d; nearest = p; }
+                    });
+                    if (!nearest) { tip.style.display = 'none'; return; }
+                    tip.innerHTML = `<strong>${esc(nearest.name)}</strong><br>$${nearest.price} · ${nearest.score.toFixed(1)}% · ${nearest.sources} src${frontierIds.has(nearest.id) ? ' · ◆ value' : ''}`;
+                    tip.style.display = 'block';
+                    tip.style.left = Math.min(rect.width - 220, e.clientX - rect.left + 12) + 'px';
+                    tip.style.top = Math.max(4, e.clientY - rect.top - 44) + 'px';
+                });
+                canvas.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+
+                const table = document.createElement('div');
+                table.style.cssText = 'margin-top:10px;display:grid;grid-template-columns:1fr auto auto;gap:3px 10px;font-size:var(--t-xs);';
+                table.innerHTML = '<div style="color:var(--text-lo);font-size:var(--t-micro);text-transform:uppercase;letter-spacing:.06em;">Best value</div><div style="color:var(--text-lo);font-size:var(--t-micro);text-transform:uppercase;letter-spacing:.06em;text-align:right;">Price</div><div style="color:var(--text-lo);font-size:var(--t-micro);text-transform:uppercase;letter-spacing:.06em;text-align:right;">Score</div>' +
+                    bestValue.map(p => `<div style="color:var(--text-hi);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.name)}</div><div style="color:var(--text-mid);text-align:right;">$${p.price}</div><div style="color:var(--accent);text-align:right;">${p.score.toFixed(1)}%</div>`).join('');
+                body.appendChild(table);
+                const note = document.createElement('div');
+                note.className = 'type-micro';
+                note.style.cssText = 'margin-top:8px;color:var(--text-lo);line-height:1.5;';
+                note.textContent = 'Green dots and the line are the Pareto frontier: nothing cheaper scores higher. Dot size is the number of measurements behind the score.';
+                body.appendChild(note);
+            }
+        });
+    }
+};
+
+Object.assign(FindEngine, Find_ExtrasMethods);
 
 /* ===== app/js/data-core.js ===== */
 /* ===== data-core.js =====
@@ -40594,6 +44060,42 @@ const handlers = {
             showToast("Settings reset. Reloading…", "🛟");
             setTimeout(function() { location.reload(); }, 300);
         },
+        // Settings > Library > Reset. Replaces the old pair of destructive
+        // buttons ("Clear workspace" / "Delete reviews"), which between them
+        // still left custom presets, favourites, hearing calibration and any
+        // Database-tab edits behind - so "reset" never actually reset the app.
+        // This one erases everything the app persists and restarts it into the
+        // first-run state, which is what the row now promises.
+        //
+        // The wipe itself is in main.js (`app:factory-reset`), not here: the
+        // settings, presets and favourites are localStorage, reviews and the
+        // curve cache are IndexedDB, and the user's database edits are files in
+        // IEM-Data. Only the main process can clear all three without fighting
+        // the open IndexedDB connections this page is holding.
+        "click_1011_App_factoryReset": async function(event, element) {
+            const bridge = window.appBridge;
+            if (!bridge || typeof bridge.factoryReset !== 'function') {
+                showToast("Reset only works in the desktop app.", "⚠️");
+                return;
+            }
+            const ok = await UIKit.confirm({
+                title: "Reset IEM Tool to factory defaults?",
+                message: "Everything the app has stored is erased:\n\n• Saved reviews and their photos\n• Custom EQ presets, Find favourites, hearing calibration and every setting\n• Database entries and measurement files you added\n\nThe app closes and starts again like a fresh install. A backup file you exported is not touched. This cannot be undone.",
+                confirmLabel: "Reset everything",
+                danger: true
+            });
+            if (!ok) return;
+            showToast("Resetting IEM Tool…", "🧹");
+            // The window is replaced by the relaunch, so a resolved call usually
+            // shows nothing. Only a failure comes back to a live page, and it
+            // must be reported rather than looking like a silent no-op.
+            try {
+                const r = await bridge.factoryReset();
+                if (!r || !r.ok) throw new Error((r && r.error) || 'reset failed');
+            } catch (e) {
+                showToast("Reset failed: " + ((e && e.message) || e), "⚠️");
+            }
+        },
         "click_196_IEM_saveConfig": function(event, element) { IEM.saveConfig() },
         "click_197_EQ_applyGenreTargetAutoEQ__music": function(event, element) { EQ.applyGenreTargetAutoEQ('music') },
         "click_198_App_switchTab__iem": function(event, element) { App.switchTab('iem') },
@@ -40612,7 +44114,6 @@ const handlers = {
         "click_212_Accessibility_toggleBlueLightFilter": function(event, element) { Accessibility.toggleBlueLightFilter() },
         "click_213_IEM_toggleSensUnit": function(event, element) { IEM.toggleSensUnit() },
         "click_214_document_getElementById__image_upload___click": function(event, element) { document.getElementById('image-upload').click() },
-        "click_215_EQ_toggleGapless": function(event, element) { EQ.toggleGapless() },
         "click_216_IEM_cycleLeftTab__1": function(event, element) { IEM.cycleLeftTab(-1) },
         "click_217_IEM_compareSelected": function(event, element) { IEM.compareSelected() },
         "click_218_EQ_toggleShuffle": function(event, element) { EQ.toggleShuffle() },
@@ -40716,7 +44217,16 @@ const handlers = {
         "click_46_EQ_applyGenreTargetAutoEQ__game": function(event, element) { EQ.applyGenreTargetAutoEQ('game') },
         "click_47_EQ_cycleConsoleTab__1": function(event, element) { EQ.cycleConsoleTab(-1) },
         "click_48_TestLab_abxCycleTrials_1": function(event, element) { TestLab.abxCycleTrials(1) },
-        "click_49_IEM_resetAll": function(event, element) { IEM.resetAll() },
+        "click_1002_TestLab_toggleAbxLevelMatch": function(event, element) { TestLab.toggleAbxLevelMatch() },
+        "click_1004_App_checkAppUpdate": function(event, element) { App.checkAppUpdate() },
+        "click_1005_App_openReleasePage": function(event, element) { App.openReleasePage() },
+        "click_1006_App_checkDatabaseUpdate": function(event, element) { App.checkDatabaseUpdate() },
+        "click_1007_App_downloadDatabaseUpdate": function(event, element) { App.downloadDatabaseUpdate() },
+        "click_1008_App_cycleAudioOutput": function(event, element) { App.cycleAudioOutput() },
+        "click_1101_PEQDB_Module_openMySound": function(event, element) { PersonalTargets.open('targets') },
+        "click_1102_FindEngine_openValueMap": function(event, element) { FindEngine.openValueMap() },
+        "click_1103_FindEngine_openSpecCompare": function(event, element) { FindEngine.openSpecCompare() },
+        "click_1104_App_openSourceCredits": function(event, element) { App.openSourceCredits() },
         "click_4_EQ_cycleTapeMod__1": function(event, element) { EQ.cycleTapeMod(-1) },
         "click_50_toggleAudioMode": function(event, element) { toggleAudioMode() },
         "click_53_PEQDB_Module_cycleAlignHz": function(event, element) { PEQDB_Module.cycleAlignHz() },
@@ -40737,7 +44247,6 @@ const handlers = {
         "click_72_EQ_cycleSealQuality": function(event, element) { EQ.cycleSealQuality() },
         "click_73_FindEngine_resetFindResults": function(event, element) { FindEngine.resetFindResults() },
         "click_74_TestLab_cycleSpatialSource": function(event, element) { TestLab.cycleSpatialSource() },
-        "click_75_EQ_toggleCrossfade": function(event, element) { EQ.toggleCrossfade() },
         "click_76_FindEngine_cycleGoalIndex__1": function(event, element) { FindEngine.cycleGoalIndex(-1) },
         "click_77_EQ_toggleGenreTargetPicker__music": function(event, element) { EQ.toggleGenreTargetPicker('music') },
         "click_78_IEM_cycleExportFontDirection__1": function(event, element) { IEM.cycleExportFontDirection(-1) },

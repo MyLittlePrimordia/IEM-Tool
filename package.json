@@ -18,16 +18,22 @@
     "predist-linux": "npm run package:prepare",
     "dist-linux": "electron-builder --linux --publish never",
     "package:prepare": "npm run check && node scripts/build-bundle.mjs --strict",
-    "sync:db": "node scripts/sync-database-gz.mjs",
+    "sync:db": "node scripts/sync-database-gz.mjs && node scripts/build-catalogue-index.mjs",
     "build:js": "node scripts/build-bundle.mjs",
     "check:js": "node scripts/check-js.mjs",
+    "check:ipc": "node scripts/check-ipc.mjs",
+    "check:bridge": "node scripts/check-bridge.mjs",
     "check:reach": "node scripts/check-reachability.mjs",
     "check:integrity": "node scripts/sync-database-gz.mjs && node scripts/check-integrity.mjs",
     "check:workflow": "node tools/check-workflow.mjs",
-    "test": "node --test tools/test-data-core.mjs tools/test-name-utils.mjs tools/test-worker-load.mjs",
-    "check": "npm run check:js && npm run check:reach && npm run check:integrity && npm run check:workflow",
+    "check:suites": "node scripts/check-ui-suites.mjs",
+    "check:profiles": "node scripts/check-verify-profile.mjs",
+    "test": "node --test tools/test-data-core.mjs tools/test-name-utils.mjs tools/test-worker-load.mjs tools/test-source-credits.mjs",
+    "check": "npm run check:js && npm run check:ipc && npm run check:bridge && npm run check:reach && npm run check:integrity && npm run check:workflow && npm run check:suites && npm run check:profiles",
     "verify:ui": "node tools/run-ui-verify.mjs",
-    "build:css": "tailwindcss -c twbuild/tailwind.config.js -i twbuild/input.css -o app/css/tailwind.output.css --minify"
+    "build:css": "tailwindcss -c twbuild/tailwind.config.js -i twbuild/input.css -o app/css/tailwind.output.css --minify",
+    "build:index": "node scripts/build-catalogue-index.mjs",
+    "check:index": "node scripts/build-catalogue-index.mjs --check"
   },
   "devDependencies": {
     "electron": "^43.4.0",
@@ -113,6 +119,14 @@
       {
         "from": "data",
         "to": "data"
+      },
+      {
+        "from": "catalogue-index.json",
+        "to": "catalogue-index.json"
+      },
+      {
+        "from": "catalogue-index.json.gz",
+        "to": "catalogue-index.json.gz"
       }
     ],
     "nsis": {

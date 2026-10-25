@@ -1,6 +1,7 @@
 // Inspect the Blind-test trial stepper + pre-start UI state.
 // Run: electron tools/audit-blind-test.js
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('audit-blind-test');
 const http = require('http'); const fs = require('fs'); const path = require('path'); const os = require('os');
 const APP_ROOT = path.join(__dirname, '..');
 const MIME = { '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.png':'image/png','.svg':'image/svg+xml','.ttf':'font/ttf','.woff2':'font/woff2','.gz':'application/gzip','.mp3':'audio/mpeg' };

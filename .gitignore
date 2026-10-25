@@ -19,6 +19,7 @@ app/js/_snippet.txt
 # belong in git.
 app/js/app.bundle.js
 app/js/app.bundle.min.js
+app/js/build-info.json
 
 # Python is not part of the build; the two scripts below are one-off migration
 # tools kept in the repo on purpose.

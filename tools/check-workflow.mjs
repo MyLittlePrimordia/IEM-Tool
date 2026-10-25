@@ -111,6 +111,11 @@ for (const f of ['IEM-Tool-Setup.exe', 'IEM-Tool.dmg', 'IEM-Tool.appimage']) {
 // files and picks their OS. A fourth entry - a stray portable exe or a per-arch
 // DMG - reintroduces the guesswork, so pin the count as well as the names.
 check('rolling release publishes exactly 3 files', releaseArtifacts.length, '3');
+// The app's update check compares the commit compiled into the installer with
+// this hidden marker, so losing it silently breaks update detection on an
+// otherwise healthy release.
+const releaseBody = String(releaseStep?.with?.body || '');
+check('rolling release stamps the build commit', /iem-build:\s*\$\{\{\s*github\.sha\s*\}\}/.test(releaseBody), 'true');
 
 console.log(failures === 0 ? '\nWORKFLOW OK' : `\n${failures} WORKFLOW PROBLEM(S)`);
 process.exit(failures === 0 ? 0 : 1);

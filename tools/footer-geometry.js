@@ -3,6 +3,7 @@
 // h-[110px] but lives inside a fixed-height h-14 parent, so it can be shrunk),
 // whether its rows fit, and whether anything overflows horizontally.
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('footer-geometry');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

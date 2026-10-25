@@ -33,6 +33,7 @@
 // buttons, then reading the class lists, the computed display, the boxes and
 // aria-selected.
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('tab-panels');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

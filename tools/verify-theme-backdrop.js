@@ -1,3 +1,4 @@
+// Stand-alone probe: run by hand. Not part of npm run verify:ui - see tools/run-ui-verify.mjs.
 // Verify the nine per-theme 3D backdrops.
 //  - every theme's pattern actually reaches #app-window (not occluded)
 //  - image / position / size lists all have the SAME layer count per theme
@@ -6,6 +7,7 @@
 //  - the glow layer is still present and first
 // Run: electron tools/verify-theme-backdrop.js
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('theme-backdrop');
 const http = require('http'); const fs = require('fs'); const path = require('path'); const os = require('os');
 const APP_ROOT = path.join(__dirname, '..');
 const MIME = { '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.png':'image/png','.svg':'image/svg+xml','.ttf':'font/ttf','.woff2':'font/woff2','.gz':'application/gzip','.mp3':'audio/mpeg' };

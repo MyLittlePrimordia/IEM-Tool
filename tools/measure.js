@@ -2,6 +2,7 @@
 // metrics for the elements behind the design findings, so symmetry claims are
 // measured rather than eyeballed.
 const { app, BrowserWindow } = require('electron');
+require('./lib/verify-profile').isolateProfile('measure');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

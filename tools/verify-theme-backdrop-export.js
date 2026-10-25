@@ -1,3 +1,4 @@
+// Stand-alone probe: run by hand. Not part of npm run verify:ui - see tools/run-ui-verify.mjs.
 // Verify the review-card export can reproduce the nine theme backdrops.
 //
 // This runs in the Electron MAIN process (tools/verify-*.js boot app.whenReady),
@@ -15,6 +16,7 @@
 //
 // Run: electron tools/verify-theme-backdrop-export.js
 const { app, BrowserWindow, nativeImage } = require('electron');
+require('./lib/verify-profile').isolateProfile('theme-backdrop-export');
 const fs = require('fs');
 const path = require('path');
 const APP_ROOT = path.join(__dirname, '..');
